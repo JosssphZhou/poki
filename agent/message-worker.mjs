@@ -28,7 +28,7 @@ export async function runMessageWorker(channel, Source) {
   let config;
   try { config = JSON.parse(await readFile(values.config, 'utf8')); }
   catch { throw new Error('Cannot read the channel configuration as JSON.'); }
-  const fields = ['sender', 'chatGuid', 'allowedUsers', 'device', 'model', 'auth', 'serviceTier', 'context'];
+  const fields = ['sender', 'chatGuid', 'allowedUsers', 'device', 'model', 'provider', 'auth', 'serviceTier', 'baseUrl', 'context'];
   if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !fields.includes(key))) throw new Error('Unsupported channel configuration. Keep credentials in environment variables.');
   if (typeof config.device !== 'string' || !config.device.trim()) throw new Error('Configure one device before starting.');
   if (!values.check) { modelConfig(config); await checkDeviceTools(); }
