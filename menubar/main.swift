@@ -16,6 +16,14 @@ let logDir = home.appendingPathComponent("Library/Logs/Poki")
 let logFile = logDir.appendingPathComponent("daemon.log")
 let imessageLog = logDir.appendingPathComponent("imessage.log")
 let imessageDir = home.appendingPathComponent(".config/poki-agent/imessage")
+let imessageLock = imessageDir.appendingPathComponent("state/messages.lock")
+
+private func processPath(of pid: Int32) -> String? {
+    var buffer = [CChar](repeating: 0, count: 4096)
+    let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+    guard length > 0 else { return nil }
+    return String(cString: buffer)
+}
 let launchAgent = home.appendingPathComponent("Library/LaunchAgents/bot.poki.menubar.plist")
 let agentLabel = "bot.poki.menubar"
 let defaultPort = 47825
@@ -213,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var imessageCheckItem: NSMenuItem!
     var imessageProcess: Process?
     var imessageTrouble: String?
+    var imessageExpectedStop = false
     var settingsWindow: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -411,25 +420,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FileManager.default.fileExists(atPath: imessageDir.appendingPathComponent("connection.json").path)
     }
 
+    /// 通道是否在跑要以锁文件为准：进程可能在上一次 App 退出后仍然活着。
+    func liveChannelPid() -> Int32? {
+        guard let data = try? Data(contentsOf: imessageLock),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = object["pid"] as? Int, raw > 0 else { return nil }
+        let pid = Int32(raw)
+        guard kill(pid, 0) == 0 else {
+            try? FileManager.default.removeItem(at: imessageLock)
+            return nil
+        }
+        // pid 复用：这个号已经属于别的进程，说明锁是陈旧的。
+        if let path = processPath(of: pid), !path.contains("Poki.app") { return nil }
+        return pid
+    }
+
     func refreshIMessage() {
         guard imessageStatusLine != nil else { return }
-        let running = imessageProcess?.isRunning ?? false
+        let runningPid = liveChannelPid()
         if !imessageConfigured {
-            imessageStatusLine.title = "未配置 · 用「配置 BlueBubbles…」取命令"
-        } else if let trouble = imessageTrouble {
+            imessageStatusLine.title = "未配置 · 在「设置…」里填 BlueBubbles"
+        } else if let trouble = imessageTrouble, runningPid == nil {
             imessageStatusLine.title = "已配置 · \(trouble)"
-        } else if running {
-            imessageStatusLine.title = "通道运行中"
+        } else if let pid = runningPid {
+            imessageStatusLine.title = "通道运行中 · pid \(pid)"
         } else {
             imessageStatusLine.title = "已配置 · 通道未启动"
         }
-        imessageToggleItem.title = running ? "停止通道" : "启动通道"
+        imessageToggleItem.title = runningPid != nil ? "停止通道" : "启动通道"
         imessageToggleItem.isEnabled = imessageConfigured
         imessageCheckItem.isEnabled = imessageConfigured
     }
 
     @objc func toggleIMessage() {
-        if imessageProcess?.isRunning == true { stopIMessage() } else { startIMessage() }
+        if liveChannelPid() != nil { stopIMessage() } else { startIMessage() }
         refreshIMessage()
     }
 
@@ -444,6 +468,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func startIMessage() {
         guard imessageConfigured else { return }
         imessageTrouble = nil
+        // 上一次 App 退出留下的 worker 还活着就先收掉，否则它会一直占着锁。
+        if let stale = liveChannelPid() {
+            kill(stale, SIGTERM)
+            let deadline = Date().addingTimeInterval(3)
+            while kill(stale, 0) == 0 && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            if kill(stale, 0) == 0 { kill(stale, SIGKILL) }
+            try? FileManager.default.removeItem(at: imessageLock)
+        }
         try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: imessageLog.path) {
             FileManager.default.createFile(atPath: imessageLog.path, contents: nil)
@@ -460,11 +494,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         p.standardError = handle
         p.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
-                self?.imessageProcess = nil
-                if proc.terminationStatus != 0 {
-                    self?.imessageTrouble = "退出码 \(proc.terminationStatus)，看通道日志"
+                guard let self else { return }
+                self.imessageProcess = nil
+                if proc.terminationStatus != 0 && !self.imessageExpectedStop {
+                    self.imessageTrouble = "退出码 \(proc.terminationStatus)，看通道日志"
                 }
-                self?.refreshIMessage()
+                self.imessageExpectedStop = false
+                self.refreshIMessage()
             }
         }
         do {
@@ -478,6 +514,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func stopIMessage() {
+        imessageExpectedStop = true
+        if let pid = liveChannelPid() {
+            kill(pid, SIGTERM)
+            let deadline = Date().addingTimeInterval(3)
+            while kill(pid, 0) == 0 && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+            if kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+            try? FileManager.default.removeItem(at: imessageLock)
+        }
         imessageProcess?.terminate()
         imessageProcess = nil
         flash("iMessage 通道已停止")

@@ -51,6 +51,28 @@ export async function runMessageWorker(channel, Source) {
   const abort = new AbortController();
   const stop = () => abort.abort();
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  // 托管方的 stdout 管道断掉时不要被 SIGPIPE 直接带走，否则锁文件来不及清理。
+  process.stdout.on('error', () => {});
+  process.stderr.on('error', () => {});
+  process.on('SIGHUP', stop);
+
+  // 由菜单栏 App 托管时，父进程消失就退出，避免留下孤儿进程一直占着锁。
+  const supervisedBy = Number(process.env.POKI_PARENT_PID ?? '');
+  let watchdog;
+  if (Number.isInteger(supervisedBy) && supervisedBy > 0 && !values.check) {
+    watchdog = setInterval(() => {
+      try { process.kill(supervisedBy, 0); } catch {
+        console.log(`${channel}: supervisor ${supervisedBy} is gone, stopping.`);
+        stop();
+        return;
+      }
+      if (process.ppid !== supervisedBy) {
+        console.log(`${channel}: reparented away from supervisor, stopping.`);
+        stop();
+      }
+    }, 1500);
+    watchdog.unref();
+  }
   try {
     if (values.check) {
       await source.check(abort.signal);
@@ -75,6 +97,7 @@ export async function runMessageWorker(channel, Source) {
   } catch (error) {
     if (!abort.signal.aborted) throw error;
   } finally {
+    if (watchdog) clearInterval(watchdog);
     try { await Promise.all([...runners.values()].map(runner => runner.close())); }
     finally { await unlink(lock); process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
   }

@@ -5,6 +5,7 @@ import Cocoa
 private let homeDir = FileManager.default.homeDirectoryForCurrentUser
 private let agentConfigPath = homeDir.appendingPathComponent(".config/poki-agent/config.json")
 private let agentSecretsPath = homeDir.appendingPathComponent(".config/poki-agent/env.json")
+private let agentModelsPath = homeDir.appendingPathComponent(".config/poki-agent/models.json")
 private let imessageDirectory = homeDir.appendingPathComponent(".config/poki-agent/imessage")
 private let customKeyName = "POKI_CUSTOM_API_KEY"
 
@@ -40,6 +41,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let runtime: URL
 
     // 模型页
+    private var savedPopUp: NSPopUpButton!
     private var providerField: NSTextField!
     private var baseUrlField: NSTextField!
     private var keyField: NSSecureTextField!
@@ -59,7 +61,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     init(nodeBin: URL, runtime: URL) {
         self.nodeBin = nodeBin
         self.runtime = runtime
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 480),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Poki 设置"
         window.isReleasedWhenClosed = false
@@ -101,7 +103,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private func buildUI() {
         guard let content = window?.contentView else { return }
-        let tabs = NSTabView(frame: NSRect(x: 12, y: 12, width: 596, height: 456))
+        let tabs = NSTabView(frame: NSRect(x: 12, y: 12, width: 596, height: 496))
         tabs.autoresizingMask = [.width, .height]
 
         let modelTab = NSTabViewItem(identifier: "model")
@@ -118,46 +120,53 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func buildModelTab() -> NSView {
-        let view = FlippedView(frame: NSRect(x: 0, y: 0, width: 572, height: 420))
+        let view = FlippedView(frame: NSRect(x: 0, y: 0, width: 572, height: 460))
 
-        view.addSubview(label("供应商", x: 16, top: 20, width: 76, bold: true))
-        providerField = NSTextField(frame: NSRect(x: 96, y: 18, width: 340, height: 26))
+        view.addSubview(label("已保存", x: 16, top: 20, width: 76, bold: true))
+        savedPopUp = NSPopUpButton(frame: NSRect(x: 96, y: 18, width: 340, height: 26), pullsDown: false)
+        savedPopUp.target = self
+        savedPopUp.action = #selector(savedProviderChanged)
+        view.addSubview(savedPopUp)
+        view.addSubview(button("重新载入", x: 446, top: 17, width: 80, action: #selector(reloadSavedProviders)))
+
+        view.addSubview(label("供应商", x: 16, top: 56, width: 76, bold: true))
+        providerField = NSTextField(frame: NSRect(x: 96, y: 54, width: 430, height: 26))
         providerField.placeholderString = "自定义名字，如 deepseek / my-relay"
         view.addSubview(providerField)
 
-        view.addSubview(label("API 地址", x: 16, top: 56, width: 76, bold: true))
-        baseUrlField = NSTextField(frame: NSRect(x: 96, y: 54, width: 430, height: 26))
+        view.addSubview(label("API 地址", x: 16, top: 92, width: 76, bold: true))
+        baseUrlField = NSTextField(frame: NSRect(x: 96, y: 90, width: 430, height: 26))
         baseUrlField.placeholderString = "https://api.deepseek.com/v1"
         view.addSubview(baseUrlField)
 
-        view.addSubview(label("API Key", x: 16, top: 92, width: 76, bold: true))
-        keyField = NSSecureTextField(frame: NSRect(x: 96, y: 90, width: 430, height: 26))
+        view.addSubview(label("API Key", x: 16, top: 128, width: 76, bold: true))
+        keyField = NSSecureTextField(frame: NSRect(x: 96, y: 126, width: 430, height: 26))
         keyField.placeholderString = "sk-…"
         view.addSubview(keyField)
 
-        view.addSubview(label("模型", x: 16, top: 128, width: 76, bold: true))
-        modelCombo = NSComboBox(frame: NSRect(x: 96, y: 126, width: 340, height: 26))
+        view.addSubview(label("模型", x: 16, top: 164, width: 76, bold: true))
+        modelCombo = NSComboBox(frame: NSRect(x: 96, y: 162, width: 340, height: 26))
         modelCombo.isEditable = true
         modelCombo.completes = true
         modelCombo.numberOfVisibleItems = 12
         modelCombo.placeholderString = "点「获取模型」或直接输入模型名"
         view.addSubview(modelCombo)
 
-        fetchButton = button("获取模型", x: 446, top: 125, width: 80, action: #selector(fetchModels))
+        fetchButton = button("获取模型", x: 446, top: 161, width: 80, action: #selector(fetchModels))
         view.addSubview(fetchButton)
 
         view.addSubview(note("模型列表来自「API 地址」+ /models 接口。拉不到也可以直接手输模型名。",
-                             x: 96, top: 160, width: 430, height: 32))
+                             x: 96, top: 196, width: 430, height: 32))
 
-        modelStatus = label("", x: 16, top: 200, width: 520)
+        modelStatus = label("", x: 16, top: 236, width: 520)
         modelStatus.textColor = .secondaryLabelColor
         view.addSubview(modelStatus)
 
-        view.addSubview(button("保存", x: 96, top: 228, width: 96, action: #selector(saveModel), key: "\r"))
-        view.addSubview(button("打开配置目录", x: 200, top: 228, width: 120, action: #selector(openAgentConfigDir)))
+        view.addSubview(button("保存", x: 96, top: 264, width: 96, action: #selector(saveModel), key: "\r"))
+        view.addSubview(button("打开配置目录", x: 200, top: 264, width: 120, action: #selector(openAgentConfigDir)))
 
-        view.addSubview(note("API Key 写入 ~/.config/poki-agent/env.json（权限 600，仅本机可读）。供应商与模型写进 models.json，pi 通过它识别自定义端点。",
-                             x: 16, top: 268, width: 540, height: 34))
+        view.addSubview(note("「已保存」里选一个可切回之前配好的端点；改完点「保存」才生效。API Key 写入 ~/.config/poki-agent/env.json（600），供应商与模型写入 models.json。",
+                             x: 16, top: 304, width: 540, height: 44))
         return view
     }
 
@@ -339,6 +348,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             }
             self.providerField.stringValue = lower
             self.modelStatus.stringValue = "已保存 \(lower) · \(model)（\(pool.count) 个模型）"
+            self.reloadSavedProviders()
             NotificationCenter.default.post(name: Notification.Name("PokiSettingsChanged"), object: nil)
         }
     }
@@ -347,6 +357,46 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let dir = agentConfigPath.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir)
+    }
+
+    /// 列出 models.json 里已保存过的供应商，供一键切回。
+    @objc func reloadSavedProviders() {
+        savedPopUp.removeAllItems()
+        guard let models = readJSON(agentModelsPath),
+              let providers = models["providers"] as? [String: Any], !providers.isEmpty else {
+            savedPopUp.addItem(withTitle: "（还没有保存过）")
+            savedPopUp.isEnabled = false
+            return
+        }
+        savedPopUp.isEnabled = true
+        let ids = providers.keys.sorted()
+        for id in ids {
+            savedPopUp.addItem(withTitle: id)
+            savedPopUp.lastItem?.representedObject = id
+        }
+        if let current = readJSON(agentConfigPath)?["provider"] as? String,
+           let index = ids.firstIndex(of: current) {
+            savedPopUp.selectItem(at: index)
+        }
+    }
+
+    @objc func savedProviderChanged() {
+        guard let id = savedPopUp.selectedItem?.representedObject as? String,
+              let models = readJSON(agentModelsPath),
+              let providers = models["providers"] as? [String: Any],
+              let entry = providers[id] as? [String: Any] else { return }
+        providerField.stringValue = id
+        baseUrlField.stringValue = entry["baseUrl"] as? String ?? ""
+        let ids = (entry["models"] as? [[String: Any]])?.compactMap { $0["id"] as? String } ?? []
+        modelCombo.removeAllItems()
+        if !ids.isEmpty { modelCombo.addItems(withObjectValues: ids) }
+        if let savedModel = readJSON(agentConfigPath)?["model"] as? String, ids.contains(savedModel) {
+            modelCombo.stringValue = savedModel
+        } else {
+            modelCombo.stringValue = ids.first ?? ""
+        }
+        let isCurrent = (readJSON(agentConfigPath)?["provider"] as? String) == id
+        modelStatus.stringValue = isCurrent ? "当前使用：\(id)" : "已载入 \(id)，点「保存」切换过去"
     }
 
     /// 读回已保存的设置填进表单，密钥不回填。
@@ -358,6 +408,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let secrets = readJSON(agentSecretsPath), secrets[customKeyName] != nil {
             keyField.placeholderString = "已保存（留空则不修改）"
         }
+        reloadSavedProviders()
         modelStatus.stringValue = saved["baseUrl"] != nil
             ? "已配置：\(saved["provider"] as? String ?? "") · \(saved["model"] as? String ?? "")"
             : "还没配置，填好四项后保存。"
@@ -507,7 +558,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// 自检：不显示窗口，只验证控件都构建成功
     func selfCheck() -> Bool {
         window?.contentView?.layoutSubtreeIfNeeded()
-        return providerField != nil && baseUrlField != nil && keyField != nil && modelCombo != nil
+        return providerField != nil && baseUrlField != nil && keyField != nil && modelCombo != nil && savedPopUp != nil
             && urlField != nil && passwordField != nil && chatDevicePopUp != nil
     }
 }
