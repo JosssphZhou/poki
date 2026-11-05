@@ -217,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        installEditMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.image = makeStatusImage(running: false)
@@ -285,16 +286,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         imessageCheckItem = NSMenuItem(title: "检查连接", action: #selector(checkIMessage), keyEquivalent: "")
         imessageCheckItem.target = self
         imessageMenu.addItem(imessageCheckItem)
-        imessageMenu.addItem(.separator())
-        let imessageSetup = NSMenuItem(title: "配置 BlueBubbles…", action: #selector(copyIMessageSetup), keyEquivalent: "")
-        imessageSetup.target = self
-        imessageMenu.addItem(imessageSetup)
-        let imessageOpen = NSMenuItem(title: "打开配置目录", action: #selector(openIMessageDir), keyEquivalent: "")
-        imessageOpen.target = self
-        imessageMenu.addItem(imessageOpen)
-        let imessageLogItem = NSMenuItem(title: "查看通道日志", action: #selector(openIMessageLog), keyEquivalent: "")
-        imessageLogItem.target = self
-        imessageMenu.addItem(imessageLogItem)
         imessage.submenu = imessageMenu
         menu.addItem(imessage)
 
@@ -527,14 +518,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func copyIMessageSetup() {
-        let command = "poki imessage-setup"
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(command, forType: .string)
-        flash("已复制「\(command)」，粘到终端运行即配置")
-    }
-
     @objc func openIMessageDir() {
         try? FileManager.default.createDirectory(at: imessageDir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(imessageDir)
@@ -546,6 +529,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FileManager.default.createFile(atPath: imessageLog.path, contents: nil)
         }
         NSWorkspace.shared.open(imessageLog)
+    }
+
+    /// LSUIElement 应用默认没有主菜单，文本框就收不到 ⌘C/⌘V/⌘A。
+    /// 这里装一个不可见的编辑菜单，让快捷键经由菜单分发到当前焦点控件。
+    func installEditMenu() {
+        let mainMenu = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Poki")
+        appMenu.addItem(withTitle: "退出 Poki", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        mainMenu.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "编辑")
+        editMenu.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+
+        NSApp.mainMenu = mainMenu
     }
 
     @objc func toggleLogin() {
