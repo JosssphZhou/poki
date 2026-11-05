@@ -183,17 +183,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         passwordField.placeholderString = "BlueBubbles → Connection 里设置的那个"
         view.addSubview(passwordField)
 
-        view.addSubview(label("允许发送者", x: 16, top: 92, width: 82, bold: true))
-        senderField = NSTextField(frame: NSRect(x: 100, y: 90, width: 340, height: 26))
-        senderField.placeholderString = "邮箱或手机号，只接受这一个"
+        view.addSubview(label("直聊会话", x: 16, top: 92, width: 82, bold: true))
+        guidField = NSTextField(frame: NSRect(x: 100, y: 90, width: 240, height: 26))
+        guidField.placeholderString = "any;-;+8613800138000"
+        view.addSubview(guidField)
+        view.addSubview(button("从 BlueBubbles 选…", x: 348, top: 89, width: 160, action: #selector(pickChat)))
+
+        view.addSubview(label("允许发送者", x: 16, top: 128, width: 82, bold: true))
+        senderField = NSTextField(frame: NSRect(x: 100, y: 126, width: 340, height: 26))
+        senderField.placeholderString = "选会话后自动填入"
         senderField.target = self
         senderField.action = #selector(senderEdited)
         view.addSubview(senderField)
-
-        view.addSubview(label("直聊 GUID", x: 16, top: 128, width: 82, bold: true))
-        guidField = NSTextField(frame: NSRect(x: 100, y: 126, width: 340, height: 26))
-        guidField.placeholderString = "留空自动用 iMessage;-;<发送者>"
-        view.addSubview(guidField)
 
         view.addSubview(label("目标设备", x: 16, top: 164, width: 82, bold: true))
         chatDevicePopUp = NSPopUpButton(frame: NSRect(x: 100, y: 162, width: 340, height: 26), pullsDown: false)
@@ -418,7 +419,76 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func senderEdited() {
         let sender = senderField.stringValue.trimmingCharacters(in: .whitespaces)
-        if !sender.isEmpty { guidField.placeholderString = "iMessage;-;\(sender)" }
+        if !sender.isEmpty { guidField.placeholderString = "any;-;\(sender)" }
+    }
+
+    /// 直接从 BlueBubbles 读会话列表，避免手填 GUID 时格式对不上（any 前缀、+86 国家码）。
+    @objc func pickChat() {
+        let raw = urlField.stringValue.trimmingCharacters(in: .whitespaces)
+        let text = raw.isEmpty ? "http://127.0.0.1:1234" : raw
+        guard let parsed = URL(string: text), parsed.host != nil else {
+            imessageStatus.stringValue = "服务地址无效。"
+            return
+        }
+        let password = passwordField.stringValue
+        guard !password.isEmpty else {
+            imessageStatus.stringValue = "先填 BlueBubbles 服务器密码。"
+            return
+        }
+        var components = URLComponents(url: parsed.appendingPathComponent("api/v1/chat/query"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "password", value: password)]
+        guard let target = components?.url else { return }
+        var request = URLRequest(url: target)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["with": ["lastMessage"], "limit": 40, "offset": 0])
+        imessageStatus.stringValue = "正在读取会话列表…"
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let error {
+                    self.imessageStatus.stringValue = "读取会话失败：\(error.localizedDescription)"
+                    return
+                }
+                if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                    self.imessageStatus.stringValue = "会话接口返回 HTTP \(http.statusCode)，检查密码。"
+                    return
+                }
+                guard let data,
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let chats = object["data"] as? [[String: Any]], !chats.isEmpty else {
+                    self.imessageStatus.stringValue = "没读到会话。先在 iPhone「信息」里给自己发一条消息，再看一次。"
+                    return
+                }
+                let alert = NSAlert()
+                alert.messageText = "选择要监听的直聊会话"
+                alert.informativeText = "建议用自己的自聊会话。选别人的会话，Poki 会把回复发到对方聊天里。"
+                let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 430, height: 26), pullsDown: false)
+                for chat in chats {
+                    guard let guid = chat["guid"] as? String else { continue }
+                    let last = chat["lastMessage"] as? [String: Any]
+                    let preview = (last?["text"] as? String).map { String($0.prefix(16)) } ?? "空会话"
+                    popup.addItem(withTitle: "\(guid)  ·  \(preview)")
+                    popup.lastItem?.representedObject = guid
+                }
+                alert.accessoryView = popup
+                alert.addButton(withTitle: "使用这个")
+                alert.addButton(withTitle: "取消")
+                guard alert.runModal() == .alertFirstButtonReturn,
+                      let guid = popup.selectedItem?.representedObject as? String else { return }
+                self.guidField.stringValue = guid
+                if let sender = Self.senderFrom(guid: guid) { self.senderField.stringValue = sender }
+                self.imessageStatus.stringValue = "已选 \(guid)，确认后点「保存」。"
+            }
+        }.resume()
+    }
+
+    static func senderFrom(guid: String) -> String? {
+        let parts = guid.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return nil }
+        let sender = String(parts[2])
+        return sender.isEmpty ? nil : sender
     }
 
     func reloadIMessage() {
@@ -534,7 +604,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: imessageDirectory.path)
         var base = parsed.absoluteString
         if base.hasSuffix("/") { base.removeLast() }
-        let config: [String: Any] = ["sender": sender, "chatGuid": guid, "device": device, "auth": "oauth"]
+        // 不写 auth：让通道继承全局的供应商与密钥设置，避免写死 oauth 与实际不符。
+        let config: [String: Any] = ["sender": sender, "chatGuid": guid, "device": device]
         let connection: [String: Any] = ["url": base, "password": password]
         guard writeJSON(imessageDirectory.appendingPathComponent("imessage.json"), config),
               writeJSON(imessageDirectory.appendingPathComponent("connection.json"), connection) else {
