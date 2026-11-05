@@ -62,25 +62,26 @@ export function supportsServiceTier(providerId) {
   return TIER_PROVIDERS.has(providerId);
 }
 
-/** 实际生效的凭据值：环境变量优先，其次 GUI 写入的私有文件。 */
-export function credentialValue(providerId) {
-  const name = credentialEnv(providerId);
-  if (!name) return undefined;
+/** 自定义（手填 baseUrl）供应商统一的凭据变量名。 */
+export const CUSTOM_CREDENTIAL_ENV = 'POKI_CUSTOM_API_KEY';
+
+/** 实际生效的凭据值：环境变量优先，其次 GUI 写入的私有文件。自定义供应商统一用 POKI_CUSTOM_API_KEY。 */
+export function credentialValue(providerId, custom = false) {
+  const name = custom ? CUSTOM_CREDENTIAL_ENV : (credentialEnv(providerId) ?? CUSTOM_CREDENTIAL_ENV);
   return process.env[name]?.trim() || readSecretsSync()[name];
 }
 
 /** 凭据来源标签，用于 CLI / GUI 展示。 */
-export function credentialOrigin(providerId) {
-  const name = credentialEnv(providerId);
-  if (!name) return null;
+export function credentialOrigin(providerId, custom = false) {
+  const name = custom ? CUSTOM_CREDENTIAL_ENV : (credentialEnv(providerId) ?? CUSTOM_CREDENTIAL_ENV);
   if (process.env[name]?.trim()) return 'environment';
   if (readSecretsSync()[name]) return 'local file';
   return null;
 }
 
 /** 看某个 provider 的凭据是否已就绪（只看本地，不碰网络）。 */
-export function envCredentialPresent(providerId) {
-  return Boolean(credentialValue(providerId));
+export function envCredentialPresent(providerId, custom = false) {
+  return Boolean(credentialValue(providerId, custom));
 }
 
 /** 规范化 --auth 取值，兼容旧写法 chatgpt。 */

@@ -6,7 +6,9 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { PokiClient } from './poki-client.mjs';
-import { modelConfig, safeModelError } from './model-config.mjs';
+import { modelConfig, customModelsPath, safeModelError } from './model-config.mjs';
+import { readFile, writeFile, mkdir, chmod, rename } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { credentialEnv, credentialOrigin, envCredentialPresent, isOAuthCapable, normalizeAuth, supportsServiceTier } from './providers.mjs';
 import { configPath, readConfig, writeConfig, unsetConfig } from './config-file.mjs';
 
@@ -27,6 +29,8 @@ const help = `Usage: poki "task" [--device <UUID>] [--state <directory>] [--prov
        poki config               Show the saved configuration
        poki config set <provider|model|auth|serviceTier|baseUrl> <value>
        poki config unset <key>
+       poki provider-set --id <id> --base-url <url> [--model <id>] [--models a,b,c]
+                         手填一个 OpenAI 兼容端点（GUI 的「保存」就是调它）
        poki imessage [--check]   BlueBubbles iMessage channel (configure with poki imessage-setup)
        poki imessage-setup       Write the private BlueBubbles connection settings
        poki telegram --config <private JSON file> [--check]
@@ -48,10 +52,11 @@ async function signedInProvider(modelRuntime, providerId) {
   return credentials.some(item => item.providerId === providerId && item.type === 'oauth');
 }
 
-function credentialSource(providerId, credentials) {
-  const origin = credentialOrigin(providerId);
-  if (origin === 'environment') return credentialEnv(providerId);
-  if (origin === 'local file') return `${credentialEnv(providerId)} (local file)`;
+function credentialSource(providerId, credentials, custom = false) {
+  const origin = credentialOrigin(providerId, custom);
+  const envName = custom ? 'POKI_CUSTOM_API_KEY' : credentialEnv(providerId);
+  if (origin === 'environment') return envName;
+  if (origin === 'local file') return `${envName} (local file)`;
   if (credentials.some(c => c.providerId === providerId && c.type === 'oauth')) return 'OAuth';
   if (credentials.some(c => c.providerId === providerId)) return 'stored';
   return null;
@@ -183,6 +188,75 @@ async function showModels(args) {
   console.log(`\nSet one with: poki config set model <id>`);
 }
 
+/** 写入自定义供应商：config.json 记指向，models.json 供 pi 注册 provider 与模型。 */
+async function providerSet(args) {
+  const { values } = parse(args, {
+    id: { type: 'string' }, 'base-url': { type: 'string' }, model: { type: 'string' },
+    models: { type: 'string' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+  });
+  if (values.help) {
+    console.log('Usage: poki provider-set --id <id> --base-url <url> [--model <id>] [--models a,b,c] [--json]\n'
+      + '把自定义 OpenAI 兼容端点写成 pi 能识别的 provider。API Key 不放这里，用 POKI_CUSTOM_API_KEY 或 env.json。');
+    return;
+  }
+  const id = (values.id ?? '').trim();
+  if (!/^[a-z0-9][a-z0-9-]{0,48}$/.test(id)) throw new Error('供应商 id 只能用小写字母、数字和连字符。');
+  const rawBase = (values['base-url'] ?? '').trim();
+  if (!rawBase) throw new Error('必须提供 --base-url。');
+  let parsedBase;
+  try { parsedBase = new URL(rawBase); } catch { throw new Error('--base-url 不是合法 URL。'); }
+  if (!['http:', 'https:'].includes(parsedBase.protocol)) throw new Error('只支持 http 或 https。');
+  const baseUrl = rawBase.replace(/\/+$/, '');
+
+  let previous = {};
+  try { previous = JSON.parse(await readFile(customModelsPath, 'utf8')); } catch { previous = {}; }
+  const providers = (previous.providers && typeof previous.providers === 'object') ? previous.providers : {};
+  const oldModels = Array.isArray(providers[id]?.models) ? providers[id].models : [];
+
+  const requested = (values.models ?? '').split(',').map(item => item.trim()).filter(Boolean);
+  const ids = requested.length ? requested : oldModels.map(entry => entry.id).filter(Boolean);
+  const chosen = (values.model ?? '').trim();
+  if (chosen && !ids.includes(chosen)) ids.push(chosen);
+  if (!ids.length) throw new Error('没有可用的模型 id。传 --models 或 --model。');
+
+  const modelEntries = ids.map(modelId => {
+    const existing = oldModels.find(entry => entry.id === modelId);
+    return existing ?? {
+      id: modelId,
+      name: modelId,
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 8192,
+    };
+  });
+
+  const payload = {
+    providers: {
+      ...providers,
+      [id]: { name: (providers[id]?.name ?? id), baseUrl, api: 'openai-completions', models: modelEntries },
+    },
+  };
+  await mkdir(dirname(customModelsPath), { recursive: true, mode: 0o700 });
+  const temporary = `${customModelsPath}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify(payload, null, 2) + '\n', { mode: 0o600 });
+  await rename(temporary, customModelsPath);
+  await chmod(customModelsPath, 0o600);
+
+  const defaultModel = chosen || ids[0];
+  await writeConfig({ provider: id, baseUrl, auth: 'api-key', model: defaultModel });
+
+  const summary = { provider: id, baseUrl, models: ids, model: defaultModel, configFile: configPath, modelsFile: customModelsPath };
+  if (values.json) { console.log(JSON.stringify(summary, null, 2)); return; }
+  console.log(`已写入供应商 ${id}`);
+  console.log(`  API 地址：${baseUrl}`);
+  console.log(`  模型：${ids.length} 个（默认 ${summary.model}）`);
+  console.log(`  配置：${configPath}`);
+  console.log(`  模型目录：${customModelsPath}`);
+  console.log('\nAPI Key 请放在环境变量 POKI_CUSTOM_API_KEY，或在 Poki 设置里填。');
+}
+
 async function showConfig(args) {
   const wantJSON = args.includes('--json');
   args = args.filter(argument => argument !== '--json');
@@ -244,9 +318,9 @@ async function status(args) {
   const config = modelConfig();
   const modelRuntime = await runtime();
   const credentials = await modelRuntime.listCredentials();
-  const source = credentialSource(config.provider, credentials);
+  const source = credentialSource(config.provider, credentials, config.custom);
   const ready = config.auth === 'api-key'
-    ? envCredentialPresent(config.provider)
+    ? envCredentialPresent(config.provider, config.custom)
     : (await signedInProvider(modelRuntime, config.provider)) || (config.provider === 'openai' && await signedInProvider(modelRuntime, 'openai-codex'));
 
   let devices = [];
@@ -270,7 +344,8 @@ async function status(args) {
   }
 
   console.log(`Provider: ${config.provider}`);
-  console.log(`Access: ${config.auth} (${ready ? `configured via ${source ?? 'sign-in'}` : 'not configured; run poki login'})`);
+  const hint = config.custom ? 'not configured; 在 Poki 设置里填 API Key' : 'not configured; run poki login';
+  console.log(`Access: ${config.auth} (${ready ? `configured via ${source ?? 'sign-in'}` : hint})`);
   console.log(`Model: ${config.model ?? '(auto: first chat model of the provider)'}`);
   if (config.serviceTier) console.log(`Service tier: ${config.serviceTier}`);
   if (config.baseUrl) console.log(`Base URL: ${config.baseUrl}`);
@@ -293,6 +368,7 @@ async function main() {
   if (command === 'providers') return showProviders(args.slice(1));
   if (command === 'models') return showModels(args.slice(1));
   if (command === 'config') return showConfig(args.slice(1));
+  if (command === 'provider-set') return providerSet(args.slice(1));
   if (command === 'imessage-setup') {
     const entry = new URL('imessage-setup.mjs', import.meta.url);
     process.argv = [process.execPath, fileURLToPath(entry), ...args.slice(1)];

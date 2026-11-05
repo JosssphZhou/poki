@@ -24,14 +24,14 @@ export class PiSession extends EventEmitter {
     this.provider = this.config.provider;
 
     if (this.config.auth === 'api-key') {
-      const key = credentialValue(this.provider);
+      const key = credentialValue(this.provider, this.config.custom);
       if (!key) {
         throw new Error(`No API key for ${this.provider}. ${credentialHint(this.provider)} Or switch with poki config set provider <id>.`);
       }
-      this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: null, allowModelNetwork: false, credentials: new InMemoryCredentialStore() });
+      this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: this.config.modelsPath ?? null, allowModelNetwork: false, credentials: new InMemoryCredentialStore() });
       await this.runtime.setRuntimeApiKey(this.provider, key);
     } else {
-      this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: null, allowModelNetwork: false, authPath: process.env.POKI_AGENT_AUTH_FILE });
+      this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: this.config.modelsPath ?? null, allowModelNetwork: false, authPath: process.env.POKI_AGENT_AUTH_FILE });
       const credentials = await this.runtime.listCredentials();
       const signedIn = id => credentials.some(c => c.providerId === id && c.type === 'oauth');
       if (!signedIn(this.provider)) {
