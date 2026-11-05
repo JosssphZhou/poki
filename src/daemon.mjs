@@ -90,3 +90,22 @@ async function stop() {
 }
 process.on('SIGINT', () => void stop());
 process.on('SIGTERM', () => void stop());
+
+// 被菜单栏 App 托管时（POKI_PARENT_PID 由 App 传入），父进程消失就立刻退出，
+// 避免强杀 App 后留下孤儿进程继续占用端口。手动 npm start 不受影响。
+const supervisedBy = Number(process.env.POKI_PARENT_PID ?? '');
+if (Number.isInteger(supervisedBy) && supervisedBy > 0) {
+  const watchdog = setInterval(() => {
+    try { process.kill(supervisedBy, 0); } catch {
+      console.error(JSON.stringify({ event: 'parent-gone', pid: supervisedBy }));
+      void stop();
+      return;
+    }
+    if (process.ppid !== supervisedBy) {
+      console.error(JSON.stringify({ event: 'parent-changed', expected: supervisedBy, actual: process.ppid }));
+      void stop();
+    }
+  }, 1500);
+  watchdog.unref();
+  process.on('exit', () => clearInterval(watchdog));
+}

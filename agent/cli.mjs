@@ -9,6 +9,7 @@ import { safeModelError } from './model-config.mjs';
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     device: { type: 'string' }, state: { type: 'string' }, model: { type: 'string' },
+    provider: { type: 'string' }, 'base-url': { type: 'string' },
     auth: { type: 'string' }, 'service-tier': { type: 'string' },
     context: { type: 'string' }, 'step-timeout': { type: 'string' },
     help: { type: 'boolean', short: 'h' },
@@ -19,7 +20,7 @@ async function main() {
     console.error('A device and a task are required. Use --help.'); process.exitCode = 2;
   } else {
     const stateDirectory = resolve(values.state ?? 'agent/.runtime');
-    const task = new PhoneTask(positionals.join(' '), values.device, { stateDirectory, stepTimeout: values['step-timeout'], context: values.context, model: values.model, auth: values.auth, ...(values['service-tier'] === undefined ? {} : { serviceTier: values['service-tier'] }) });
+    const task = new PhoneTask(positionals.join(' '), values.device, { stateDirectory, stepTimeout: values['step-timeout'], context: values.context, model: values.model, provider: values.provider, baseUrl: values['base-url'], auth: values.auth, ...(values['service-tier'] === undefined ? {} : { serviceTier: values['service-tier'] }) });
     const input = createInterface({ input: process.stdin });
     input.on('line', line => {
       try {

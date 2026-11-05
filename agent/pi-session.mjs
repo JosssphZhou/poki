@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { readFile, mkdir, appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { modelConfig, safeModelError } from './model-config.mjs';
+import { modelConfig, safeModelError, credentialHint } from './model-config.mjs';
+import { credentialValue } from './providers.mjs';
 import { AssistantMessageEventStream, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 
 export class PiSession extends EventEmitter {
@@ -20,17 +21,33 @@ export class PiSession extends EventEmitter {
     this.sdk = await import('@earendil-works/pi-coding-agent');
     this.config = modelConfig(this.options);
     this.serviceTier = this.config.serviceTier === 'fast' ? 'priority' : this.config.serviceTier;
-    if (this.config.auth === 'api-key' && !process.env.OPENAI_API_KEY?.trim()) throw new Error('Set OPENAI_API_KEY in your environment, or choose POKI_AGENT_AUTH=chatgpt and sign in with poki login.');
-    this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: null, allowModelNetwork: false,
-      ...(this.config.auth === 'api-key' ? { credentials: new InMemoryCredentialStore() } : { authPath: process.env.POKI_AGENT_AUTH_FILE }),
-    });
+    this.provider = this.config.provider;
+
     if (this.config.auth === 'api-key') {
-      this.provider = 'openai';
-      await this.runtime.setRuntimeApiKey(this.provider, process.env.OPENAI_API_KEY);
+      const key = credentialValue(this.provider, this.config.custom);
+      if (!key) {
+        throw new Error(`No API key for ${this.provider}. ${credentialHint(this.provider)} Or switch with poki config set provider <id>.`);
+      }
+      this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: this.config.modelsPath ?? null, allowModelNetwork: false, credentials: new InMemoryCredentialStore() });
+      await this.runtime.setRuntimeApiKey(this.provider, key);
     } else {
+      this.runtime = await this.sdk.ModelRuntime.create({ modelsPath: this.config.modelsPath ?? null, allowModelNetwork: false, authPath: process.env.POKI_AGENT_AUTH_FILE });
       const credentials = await this.runtime.listCredentials();
-      this.provider = ['openai', 'openai-codex'].find(provider => credentials.some(c => c.providerId === provider && c.type === 'oauth'));
-      if (!this.provider) throw new Error('ChatGPT is not signed in. Run poki login and choose ChatGPT. Then run Poki Agent again.');
+      const signedIn = id => credentials.some(c => c.providerId === id && c.type === 'oauth');
+      if (!signedIn(this.provider)) {
+        // OpenAI 的旧 Codex 凭据仍可复用，其他 provider 不做这种回退。
+        const legacy = this.provider === 'openai' && signedIn('openai-codex');
+        if (!legacy) throw new Error(`${this.provider} is not signed in. Run poki login --provider ${this.provider}, or use poki config set auth api-key with a key in the environment.`);
+        this.provider = 'openai-codex';
+      }
+    }
+
+    // 未指定模型时，取该供应商目录里第一个可对话的模型，并回写环境变量供同进程后续同步读取。
+    if (!this.config.model) {
+      const candidates = this.runtime.getModels(this.provider).filter(model => !['image', 'classifier'].includes(model.type));
+      if (!candidates.length) throw new Error(`No chat model is available for ${this.provider}. Run poki models --provider ${this.provider}.`);
+      this.config.model = candidates[0].id;
+      process.env.POKI_AGENT_MODEL = this.config.model;
     }
     const originalStream = this.runtime.streamSimple.bind(this.runtime);
     this.runtime.streamSimple = (model, context, options) => {
@@ -112,7 +129,16 @@ export class PiSession extends EventEmitter {
         payload.instructions = this.instructions;
         if (this.serviceTier === undefined) delete payload.service_tier;
         else payload.service_tier = this.serviceTier;
-        const actual = [...new Set([...(payload.tools ?? []), ...(payload.input ?? []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools ?? [])].map(tool => tool.name))];
+        if (process.env.POKI_DEBUG_PAYLOAD) {
+          console.error(JSON.stringify({
+            event: 'payload', model: payload.model, api: resolved.model.api,
+            keys: Object.keys(payload), tools: payload.tools?.length ?? null,
+            inputTypes: (payload.input ?? []).map(item => item?.type),
+          }));
+        }
+        // 不同 API 的工具形状不同：Responses 用 { name }，chat-completions 用 { function: { name } }。
+        const toolName = tool => tool?.name ?? tool?.function?.name;
+        const actual = [...new Set([...(payload.tools ?? []), ...(payload.input ?? []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools ?? [])].map(toolName).filter(Boolean))];
         if (actual.length !== names.length || actual.some(name => !names.includes(name))) throw new Error(`pi tools do not match Poki: expected=${names.join(',')} actual=${actual.join(',')}`);
         this.responseStarted = performance.now();
         this.requestedServiceTier = payload.service_tier ?? null;

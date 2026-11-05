@@ -55,6 +55,44 @@ A requested tier is not proof of the tier served. Each response records the actu
 
 For local protocol development, API-key mode accepts `OPENAI_BASE_URL` pointing to a loopback HTTP server. Other remote providers are not supported.
 
+## Other providers
+
+Poki Agent ships pi's built-in provider catalog, so any provider pi can reach works here. OpenAI stays the default.
+
+```sh
+poki providers            # providers that already have credentials
+poki providers --all      # every built-in provider id with its chat model count
+poki models --provider anthropic --limit 20
+poki config set provider anthropic
+poki config set model claude-sonnet-4-5
+```
+
+Settings resolve in this order: CLI flag, environment variable, `~/.config/poki-agent/config.json`, built-in default.
+
+| Flag | Environment | Config key |
+| --- | --- | --- |
+| `--provider` | `POKI_AGENT_PROVIDER` | `provider` |
+| `--model` | `POKI_AGENT_MODEL` | `model` |
+| `--auth` | `POKI_AGENT_AUTH` | `auth` |
+| `--service-tier` | `POKI_AGENT_SERVICE_TIER` | `serviceTier` |
+| `--base-url` | `POKI_AGENT_BASE_URL` | `baseUrl` |
+
+API keys stay in the provider's own variable (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DEEPSEEK_API_KEY`, …); `poki providers` prints which one each provider reads. `poki login --provider <id>` runs that provider's OAuth flow when it has one.
+
+`serviceTier` applies only to OpenAI providers and is ignored elsewhere. A custom `baseUrl` requires `auth=api-key`. When no model is configured, the first chat model of the selected provider is used.
+
+## Configure iMessage without the installer
+
+If BlueBubbles already runs locally, skip `./bin/setup-channels` and write the private settings directly:
+
+```sh
+poki imessage-setup          # interactive; the password prompt is hidden
+poki imessage --check        # authenticate and read only, no reply and no task
+poki imessage                # start the channel
+```
+
+`poki imessage-setup` writes `~/.config/poki-agent/imessage/{imessage.json,connection.json}` with mode 600 and mode 700 on the directory. It never installs or starts BlueBubbles and never sends a message. Pass `--url`, `--sender`, `--device` and `--check`-free flags for unattended runs; `--force` overwrites an existing configuration.
+
 ## Send a terminal task
 
 Run from the repository root.
