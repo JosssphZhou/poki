@@ -105,7 +105,7 @@ apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng python3
 install -m 755 native/ocr-linux.py build/ocr
 ```
 
-It recognizes a doubled copy of the frame when the screenshot is narrow, because a 390-pixel-wide Chinese label is otherwise unreadable. On a 390×844 capture of a home screen that reads 20 confident lines in about 8 seconds on a 4-core ARM board, against about 5 without the doubling; the labels it loses at native size are the small ones. Recognition stays a fallback for that reason — `src/interaction.mjs` only waits for it when accessibility returned nothing at all.
+It recognizes a doubled copy of the frame when the screenshot is narrow, because a 390-pixel-wide Chinese label is otherwise unreadable. On a 390×844 capture of a home screen that reads 20 confident lines in about 8 seconds on a 4-core ARM board, against about 5 without the doubling; the labels it loses at native size are the small ones. Recognition stays a fallback for that reason: a search still ends at five seconds, no recognition starts after that, and only one that began inside them is allowed to finish and be used.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
