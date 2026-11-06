@@ -107,7 +107,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Screen | `wait_for` | Poll visible text until it appears, or disappears when gone=true. |
 | Screen | `wait` | Pause for seconds without interacting with a device. |
 | Touch | `tap` | Tap at x/y in screen points or at the center of a current element ref. |
-| Touch | `tap_text` | Find one visible element matching text, waiting up to five seconds for it to appear and hold still, trying OCR when needed, and tap it. |
+| Touch | `tap_text` | Find one visible element matching text, waiting for it to appear and hold still (five seconds on a screen accessibility can read, longer when only screen text recognition can find it), trying OCR when needed, and tap it. |
 | Touch | `double_tap` | Send two taps at x/y in logical screen points or at a current element ref. |
 | Touch | `long_press` | Hold one touch at x/y or an element ref. |
 | Touch | `swipe` | Move a touch from from_x/from_y to to_x/to_y in logical screen points. |
