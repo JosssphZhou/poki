@@ -118,14 +118,44 @@ export class TelegramSource {
 
   acknowledge(id) { return this.state.save(id + 1); }
 
+  async photo(chat, image, caption) {
+    const bytes = Buffer.from(image.data, 'base64');
+    const type = image.mimeType || 'image/png';
+    const form = new FormData();
+    form.append('chat_id', String(chat));
+    if (caption) form.append('caption', caption.slice(0, 1024));
+    form.append('photo', new Blob([bytes], { type }), type.includes('png') ? 'screen.png' : 'screen.jpg');
+    let response, result;
+    try {
+      response = await fetch(new URL(`/bot${this.token}/sendPhoto`, this.url), {
+        method: 'POST', body: form, redirect: 'error', signal: AbortSignal.timeout(60000),
+      });
+    } catch (error) {
+      throw new TelegramError('network', 'photo upload failed; delivery may be uncertain');
+    }
+    result = await response.json().catch(() => null);
+    if (!response.ok || result?.ok !== true) throw new TelegramError(result?.error_code ?? response.status, 'photo rejected');
+    if (!Number.isSafeInteger(result.result?.message_id)) throw new Error('Telegram did not confirm a photo message ID. Check the chat before retrying.');
+    return result.result.message_id;
+  }
+
   replyTo(message) {
     const chat = message.conversation;
     if (!this.allowedUsers.has(chat)) throw new Error('Telegram recipient is not configured.');
     let progress;
     return {
       acknowledge: id => this.acknowledge(id),
-      send: async (text, { kind = 'notice', taskId } = {}) => {
+      send: async (text, { kind = 'notice', taskId, image } = {}) => {
         if (!text.trim()) return;
+        if (image?.data && kind === 'final' && text.length <= 1024) {
+          try {
+            await this.photo(chat, image, text);
+            progress = undefined;
+            return;
+          } catch (error) {
+            console.error('telegram: photo delivery failed, sending text instead:', error.message);
+          }
+        }
         const chunks = splitMessage(text);
         if (kind === 'progress' && progress?.taskId === taskId && chunks.length === 1) {
           try {
@@ -144,6 +174,10 @@ export class TelegramSource {
         }
         if (kind === 'progress' && chunks.length === 1) progress = { taskId, id: first };
         else progress = undefined;
+        if (image?.data && kind === 'final') {
+          try { await this.photo(chat, image, ''); }
+          catch (error) { console.error('telegram: photo delivery failed:', error.message); }
+        }
       },
     };
   }
