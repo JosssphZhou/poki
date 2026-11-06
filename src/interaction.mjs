@@ -8,7 +8,16 @@ export { pause } from './work.mjs';
 export const justReadMs = 500;
 const patienceMs = 5000, ocrAfterMs = 1000, ocrEveryMs = 2000, pollMs = 100, quietMs = 3000, stableWithinMs = 2500, focusWithinMs = 2000, screenTextLimit = 80;
 const strings = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(v => typeof v === 'string');
-const normalize = v => v.normalize('NFKC').toLocaleLowerCase().trim();
+// A recognizer may put a space after every Chinese character it reads, and Windows OCR
+// also does it inside numbers and around punctuation ("微信 ( 714 )"). A caller never
+// writes those spaces, so a string that contains CJK loses all of its whitespace before
+// matching; a Latin-only string keeps its word boundaries.
+const cjk = '\\u3400-\\u9fff\\uf900-\\ufaff\\u3040-\\u30ff';
+const hasCjk = new RegExp(`[${cjk}]`, 'u');
+const normalize = v => {
+  const n = v.normalize('NFKC').toLocaleLowerCase().trim();
+  return hasCjk.test(n) ? n.replace(/\s+/gu, '') : n;
+};
 const visible = e => e.visible !== false && e.visible !== 0;
 const alertText = v => v.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase().trim().replace(/’/g, "'");
 
@@ -155,7 +164,9 @@ export async function readScreen(ctx) {
     if (same) break;
   }
   const compared = seen.elements.length > 0;
-  const elements = compared ? seen.elements : (await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER })).elements;
+  // Accessibility could not describe the screen, so this is the screen's own text: only
+  // used to tell whether it changed, which the fast recognizer answers well enough.
+  const elements = compared ? seen.elements : (await ctx.recognize({ source: 'ocr', fast: true, max_elements: Number.MAX_SAFE_INTEGER })).elements;
   const text = [...new Set(elements.filter(visible).map(describeElement).filter(Boolean))];
   const warning = promptWarning(elements);
   return {

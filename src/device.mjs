@@ -1,4 +1,7 @@
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { owned } from './os.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
 import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
@@ -6,7 +9,8 @@ import { join, extname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
-import { root, stateDir, idevice } from './config.mjs';
+import { root, stateDir, idevice, nativeBin, ocr } from './config.mjs';
+import { python } from './os.mjs';
 import { definitions } from './tools.mjs';
 import { platformTool, inventorySimulators, simulatorModels, readSettings, closePlatform } from './platform.mjs';
 import { interaction, promptWarning, readScreen, screenChanged, justReadMs } from './interaction.mjs';
@@ -21,6 +25,51 @@ const approvedTools = new Set(['install_app', 'uninstall_app', 'build_and_run', 
 const platformTools = new Set(['start_simulator', 'shut_down_simulator', 'start_recording', 'stop_recording', 'set_appearance', 'set_accessibility', 'list_apps', 'launch_app', 'terminate_app', 'install_app', 'uninstall_app', 'open_settings', 'open_url', 'build_and_run', 'set_location', 'clear_location', 'get_clipboard', 'set_clipboard', 'list_crashes', 'get_crash', 'download_app_container']);
 
 const settleMs = 600, readbackMs = 5000;
+
+// A recognizer that has to load its model per screen costs seconds, and Poki asks for
+// OCR whenever accessibility misses. Each engine therefore stays resident: one path per
+// line in, one JSON array per line out, one child per engine.
+//
+// Two engines, because they trade places on this hardware. Measured on a 1320x2868
+// capture: Windows.Media.OCR answers in 203 ms and reads 5 of 7 checked strings, while
+// RapidOCR (PP-OCRv6 tiny) needs about a second and reads all 7. Screen polling only
+// needs to know whether anything moved, so it takes the fast one; finding a control by
+// its label takes the accurate one.
+const ocrSessions = new Map();
+function ocrSession(mode) {
+  if (ocrSessions.has(mode)) return ocrSessions.get(mode);
+  const session = { child: undefined, waiting: [], tail: Promise.resolve() };
+  session.ensure = () => {
+    if (session.child) return session.child;
+    const env = { ...process.env, POKI_OCR_ENGINE: mode === 'accurate' ? 'rapidocr' : 'windows' };
+    const child = spawn(ocr.file, [...ocr.prefix, '--server'], owned({ stdio: ['pipe', 'pipe', 'ignore'], env }));
+    createInterface({ input: child.stdout }).on('line', line => session.waiting.shift()?.(line));
+    child.stdin.on('error', () => {});
+    const retire = () => {
+      if (session.child !== child) return;
+      session.child = undefined;
+      for (const resolve of session.waiting.splice(0)) resolve(undefined);
+    };
+    child.once('exit', retire); child.once('error', retire);
+    child.unref(); child.stdout.unref?.();
+    session.child = child;
+    return child;
+  };
+  session.ask = file => new Promise(resolve => {
+    const child = session.ensure();
+    session.waiting.push(line => {
+      if (line === undefined) { resolve(undefined); return; }
+      try { resolve(JSON.parse(line)); } catch { resolve(undefined); }
+    });
+    child.stdin.write(`${file}\n`);
+  });
+  ocrSessions.set(mode, session);
+  return session;
+}
+export function stopOcr() {
+  for (const session of ocrSessions.values()) { session.child?.stdin.end(); session.child = undefined; }
+  ocrSessions.clear();
+}
 const reportsScreen = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe', 'drag', 'scroll', 'pinch', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert', 'system_gesture']);
 // These exist to act on a control, so the reply says when nothing was seen to change after one.
 const touchesControl = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'go_back', 'handle_alert']);
@@ -39,8 +88,8 @@ export class Devices {
   selected; requested; frame; size; seen; elements = []; elementsAt = 0; lastInputAt = -Infinity; inBatch = false;
   scales = new Map(); physicalNames = new Map(); backgroundDevices = new Map(); nextRef = 0;
   constructor(coordinator = new Coordination()) { this.coordinator = coordinator; }
-  async run(file, args, timeout = 45000, input) {
-    const result = await execute(file, args, { timeout, input });
+  async run(file, args, timeout = 45000, input, env) {
+    const result = await execute(file, args, { timeout, input, env });
     return { stdout: result.stdout.trimEnd(), stderr: result.stderr.trimEnd() };
   }
   async cleanup(onlyDevices) {
@@ -50,7 +99,7 @@ export class Devices {
     if (!onlyDevices || onlyDevices.has(this.frame?.device)) { this.frame = undefined; this.elements = []; }
     return result;
   }
-  close() { return this.coordinator.end(this, 'session_closed'); }
+  close() { stopOcr(); return this.coordinator.end(this, 'session_closed'); }
   async call(name, args = {}, requestSignal, requestId) {
     if (managementTools.has(name)) {
       const parsed = definitions.find(d => d[0] === name)[2].parse(args);
@@ -68,7 +117,7 @@ export class Devices {
   access(target) { this.coordinator.access(this, target); }
   changed(target) { this.coordinator.changed(target.id); this.elements = []; this.elementsAt = 0; this.frame = undefined; this.seen = undefined; }
   async inventory(all = false) {
-    const { stdout } = await this.run('python3', [join(root, 'native/devices.py')], 8000);
+    const { stdout } = await this.run(python, [join(root, 'native/devices.py')], 8000);
     const physical = new Map();
     for (const device of JSON.parse(stdout)) {
       if (!device.id || (physical.has(device.id) && device.connection !== 'USB')) continue;
@@ -140,7 +189,7 @@ export class Devices {
     const target = await this.target();
     if (target.kind === 'simulator') return simulatorRequest(target.id, request);
     const nativeRequest = request.op === 'ax' ? { op: 'ax_tree', include_offscreen: request.include_offscreen ?? false } : request;
-    const { stdout } = await this.run(join(root, 'build/poki-native'), ['--udid', target.id], 95000, JSON.stringify(nativeRequest));
+    const { stdout } = await this.run(nativeBin, ['--udid', target.id], 95000, JSON.stringify(nativeRequest));
     const result = JSON.parse(stdout);
     if (request.op === 'ax') return { ...result, foreground: result.foreground_app, elements: result.elements?.map(e => ({ ...e, type: e.type ?? e.role })) };
     return result;
@@ -188,16 +237,40 @@ export class Devices {
     if (!this.frame || this.frame.device !== target.id) return this.capture();
     return this.frame;
   }
-  async ocr(frame) {
+  async ocr(frame, accurate = false) {
     checkWork();
-    return frame.ocr ??= phase('ocr', () => this.readOCR(frame));
+    // The accurate pass says everything the fast one does, so it answers a later fast
+    // question as well; the reverse is not true, and a fast result is never reused for a
+    // caller that has to read a control's label.
+    if (frame.ocrAccurate) return frame.ocrAccurate;
+    if (!accurate && frame.ocr) return frame.ocr;
+    const key = accurate ? 'ocrAccurate' : 'ocr';
+    return frame[key] ??= phase('ocr', () => this.readOCR(frame, accurate));
   }
-  async readOCR(frame) {
+  async readOCR(frame, accurate = false) {
     const file = join(stateDir, 'frames', `${randomUUID()}-ocr.png`);
+    // Recognition is sharper on the capture the device produced than on the frame reduced
+    // to points: at a third of the size a Chinese character loses the strokes that tell it
+    // from another. The original is read instead, and the coordinates are divided back so
+    // every caller keeps working in points.
+    const original = frame.original;
+    const scale = original && Number.isFinite(frame.scale) && frame.scale > 0 ? frame.scale : 1;
     try {
-      await writeFile(file, frame.data, { mode: 0o600 });
-      const { stdout } = await this.run(join(root, 'build/ocr'), [file]);
-      return JSON.parse(stdout).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x:e.x,y:e.y,width:e.width,height:e.height } }));
+      await writeFile(file, original ?? frame.data, { mode: 0o600 });
+      // The resident helper answers in order; a helper that died falls back to one process
+      // per request, which is slower but never silently empty.
+      const session = ocrSession(accurate ? 'accurate' : 'fast');
+      const run = session.tail = session.tail.then(async () => {
+        const resident = await Promise.race([session.ask(file), pause(20000).then(() => undefined)]);
+        if (resident === undefined) {
+          const env = { ...process.env, POKI_OCR_ENGINE: accurate ? 'rapidocr' : 'windows' };
+          const { stdout } = await this.run(ocr.file, [...ocr.prefix, file], 60000, undefined, env);
+          return JSON.parse(stdout);
+        }
+        if (resident?.error) throw new Error(`Text recognition failed: ${resident.error}`);
+        return resident;
+      });
+      return (await run).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x: e.x / scale, y: e.y / scale, width: e.width / scale, height: e.height / scale } }));
     } finally { await unlink(file).catch(() => {}); }
   }
   async recognize(args = {}, existingFrame) {
@@ -212,7 +285,9 @@ export class Devices {
       } catch (error) { if (stopped(error)) throw error; nativeError = error.message; if (args.source === 'accessibility' || args.source === 'ax') throw error; }
     }
     if (!elements) {
-      elements = await this.ocr(frame);
+      // A caller that intends to act on what it finds needs the accurate engine; the fast
+      // one is only right for asking whether anything on the screen moved.
+      elements = await this.ocr(frame, args.accurate !== false);
       source = 'ocr';
     }
     if (!args.include_offscreen) elements = elements.filter(onScreen(frame));

@@ -88,5 +88,8 @@ async function stop() {
   const entry = await readFile(endpointFile, 'utf8').then(JSON.parse).catch(() => null);
   if (entry?.pid === process.pid) await unlink(endpointFile);
 }
-process.on('SIGINT', () => void stop());
-process.on('SIGTERM', () => void stop());
+// Windows delivers Ctrl+C as SIGINT and closing a console window as SIGHUP or SIGBREAK;
+// it never delivers SIGTERM to a console process. Every one of them means the same stop.
+for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK', 'SIGQUIT']) {
+  try { process.on(name, () => void stop()); } catch { /* not a signal this platform has */ }
+}

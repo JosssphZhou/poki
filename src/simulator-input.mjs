@@ -2,7 +2,8 @@ import { execFile, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { checkWork, phase, signal } from './work.mjs';
-import { root } from './config.mjs';
+import { root, simulatorBin } from './config.mjs';
+import { owned } from './os.mjs';
 
 const idleMs = 30000, nothingSent = 75;
 const sessions = new Map();
@@ -26,7 +27,7 @@ class InputSession {
   }
 
   start() {
-    this.child = spawn(join(root, 'build/simulator'), ['--hid-session', this.id], { detached: true, stdio: 'pipe' });
+    this.child = spawn(simulatorBin, ['--hid-session', this.id], owned({ stdio: 'pipe' }));
     this.child.stdin.on('error', () => {});
     this.child.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-4000); });
     createInterface({ input: this.child.stdout }).on('line', line => {

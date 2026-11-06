@@ -10,7 +10,7 @@
     "start": "node src/daemon.mjs",
     "mcp": "node src/stdio.mjs",
     "test": "node --test test/*.test.mjs",
-    "build:native": "./bin/build-native"
+    "build:native": "node bin/build-native.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.4.0",

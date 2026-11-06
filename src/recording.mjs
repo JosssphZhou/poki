@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { idevice } from './config.mjs';
 import { checkWork, execute, signal, work } from './work.mjs';
+import { killTree, mediaDirectory, owned } from './os.mjs';
 
 const sessions = new WeakMap();
 const MAX_AUTOMATIC_RETRIES = 3;
@@ -23,8 +24,8 @@ function track(child) {
 }
 async function finish(process, signal = 'SIGINT') {
   if (!process || process.closed) return;
-  process.child.kill(signal);
-  const timer = setTimeout(() => process.child.kill('SIGKILL'), 1000);
+  killTree(process.child, signal);
+  const timer = setTimeout(() => killTree(process.child, 'SIGKILL'), 1000);
   try { await process.done; } finally { clearTimeout(timer); }
 }
 function firstOutput(process, stream, pattern, requestSignal) {
@@ -41,7 +42,7 @@ function firstOutput(process, stream, pattern, requestSignal) {
 }
 function connect(session) {
   if (session.stopping || session.encoder.closed) throw new Error('Recording is stopped.');
-  const receiver = track(spawn(idevice, ['--udid', session.target.id, 'screencapture', '--stdout'], { stdio: ['ignore', 'pipe', 'pipe'] }));
+  const receiver = track(spawn(idevice, ['--udid', session.target.id, 'screencapture', '--stdout'], owned({ stdio: ['ignore', 'pipe', 'pipe'] })));
   session.receiver = receiver;
   receiver.child.stdout.pipe(session.encoder.child.stdin, { end: false });
   receiver.done.then(() => {
@@ -75,7 +76,7 @@ export async function startRecording(ctx, target) {
   checkWork();
   const active = recordings(ctx);
   if (active.has(target.id)) throw new Error('This device is already recording. Call stop_recording first.');
-  const directory = join(homedir(), 'Movies', 'Poki MCP');
+  const directory = join(mediaDirectory('Movies'), 'Poki MCP');
   await mkdir(directory, { recursive: true, mode: 0o700 }); checkWork();
   const path = join(directory, `${new Date().toISOString().replaceAll(':', '-')}-${randomUUID().slice(0, 8)}.mov`);
   const session = { target, path, stopping: false, inputReconnects: 0, automaticRetries: 0, controller: new AbortController() };
@@ -83,10 +84,10 @@ export async function startRecording(ctx, target) {
   try {
     const requestSignal = signal();
     if (target.kind === 'simulator') {
-      session.encoder = track(spawn('xcrun', ['simctl', 'io', target.id, 'recordVideo', '--codec=h264', path], { stdio: ['ignore', 'ignore', 'pipe'] }));
+      session.encoder = track(spawn('xcrun', ['simctl', 'io', target.id, 'recordVideo', '--codec=h264', path], owned({ stdio: ['ignore', 'ignore', 'pipe'] })));
       await firstOutput(session.encoder, session.encoder.child.stderr, /Recording started/, requestSignal);
     } else {
-      session.encoder = track(spawn('ffmpeg', ['-hide_banner', '-loglevel', 'warning', '-n', '-use_wallclock_as_timestamps', '1', '-f', 'hevc', '-i', 'pipe:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-r', '30', '-fps_mode', 'cfr', '-movflags', '+faststart', path], { stdio: ['pipe', 'ignore', 'pipe'] }));
+      session.encoder = track(spawn('ffmpeg', ['-hide_banner', '-loglevel', 'warning', '-n', '-use_wallclock_as_timestamps', '1', '-f', 'hevc', '-i', 'pipe:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-r', '30', '-fps_mode', 'cfr', '-movflags', '+faststart', path], owned({ stdio: ['pipe', 'ignore', 'pipe'] })));
       session.encoder.child.stdin.on('error', error => { if (!session.stopping) session.error = error.message; });
       const receiver = connect(session);
       await firstOutput(receiver, receiver.child.stdout, undefined, requestSignal);
@@ -126,8 +127,8 @@ export async function stopRecording(ctx, target) {
       await finish(session.receiver, 'SIGTERM');
       if (session.receiver) {
         session.encoder.child.stdin.end();
-        const timer = setTimeout(() => session.encoder.child.kill('SIGINT'), 1000);
-        const kill = setTimeout(() => session.encoder.child.kill('SIGKILL'), 2000);
+        const timer = setTimeout(() => killTree(session.encoder.child, 'SIGINT'), 1000);
+        const kill = setTimeout(() => killTree(session.encoder.child, 'SIGKILL'), 2000);
         try { await session.encoder.done; } finally { clearTimeout(timer); clearTimeout(kill); }
       } else await finish(session.encoder);
       if (session.encoder.code !== 0) throw new Error(`Recording could not be finalized: ${session.encoder.stderr || session.encoder.error?.message}`);

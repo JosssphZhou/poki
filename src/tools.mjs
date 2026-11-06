@@ -2,6 +2,12 @@ import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { version } from './build-info.mjs';
+import { isWin } from './os.mjs';
+
+// Xcode owns the simulator and the iOS build system. Where it does not exist the
+// catalog does not list the tools it would back, so a listing is a promise the host
+// can keep.
+const requiresXcode = new Set(['start_simulator', 'shut_down_simulator', 'build_and_run', 'download_app_container']);
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
 const defaultTools = new Set([
@@ -34,7 +40,9 @@ Arguments of common steps: launch_app {bundle_id or name}; tap_text {text}; tap 
   press_key: 'Use key=return to submit existing text after it has been checked; do not re-enter the text. A sent result only confirms key dispatch, so verify the app result before reporting delivery.',
   launch_app: 'On a simulator it returns once the app shows readable elements, with their text in screen, so there is no need to look again or wait. If launch fails with CoreDeviceError 4016, inspect the current screen and use the observed Home Screen or app switcher controls. Avoid repeating the same failing launch until device conditions change.',
 };
-export const definitions = catalog.tools.map(tool => [tool.name, [tool.description, guidance[tool.name]].filter(Boolean).join('\n\n'), z.fromJSONSchema(tool.inputSchema), readOnly.has(tool.name)]);
+export const definitions = catalog.tools
+  .filter(tool => !(isWin && requiresXcode.has(tool.name)))
+  .map(tool => [tool.name, [tool.description, guidance[tool.name]].filter(Boolean).join('\n\n'), z.fromJSONSchema(tool.inputSchema), readOnly.has(tool.name)]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, and approval mode for this session.', z.object({}), true]);
 
 export function createServer(call) {

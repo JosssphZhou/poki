@@ -6,3 +6,6 @@ build/
 .DS_Store
 .env
 .env.*
+
+# Compiled by test/shim.c; rebuilt by bin/setup.ps1 and by the test fixture on demand.
+test/shim.exe

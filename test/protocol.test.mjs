@@ -4,12 +4,18 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { root } from '../src/config.mjs';
+import { isWin } from '../src/os.mjs';
+import { exe } from '../src/os.mjs';
 import { hidPoint } from '../src/device.mjs';
 import { fixture, value } from './fixture.mjs';
+
+// start_simulator, shut_down_simulator, build_and_run and download_app_container need Xcode,
+// so the catalog a Windows host lists is those four short of the macOS one.
+const catalogSize = isWin ? 52 : 56;
 
 test('fill asks for a daemon restart after native or JavaScript updates and recovers after restart', async t => {
   for (const updated of ['native', 'JavaScript']) await t.test(updated, async t => {
@@ -25,9 +31,13 @@ test('fill asks for a daemon restart after native or JavaScript updates and reco
     const before = await f.call('fill', { field: 'Name', text: 'before update' });
     assert.ok(!before.isError, JSON.stringify(before));
     if (updated === 'native') {
-      const file = join(f.dir, 'build/poki-native');
-      const program = await readFile(file, 'utf8');
-      await writeFile(file, program.replace("if(state.block===req.op)", "if(req.op==='type_text'&&'x' in req){console.error('unknown field `x`, expected one of `text`, `clear`, `submit`, `target`');process.exit(1);}\n if(state.block===req.op)"));
+      const file = join(f.dir, 'build', exe('poki-native'));
+      // On Windows the helper on PATH is a launcher and the program is its sibling script,
+      // so the rejection lives in the script while the build marker follows the launcher.
+      const program = isWin ? join(f.dir, 'build/poki-native.mjs') : file;
+      const source = await readFile(program, 'utf8');
+      await writeFile(program, source.replace("if(state.block===req.op)", "if(req.op==='type_text'&&'x' in req){console.error('unknown field `x`, expected one of `text`, `clear`, `submit`, `target`');process.exit(1);}\n if(state.block===req.op)"));
+      if (isWin) await utimes(file, new Date(), new Date());
     } else await writeFile(join(f.dir, 'src/interaction.mjs'), currentInteraction);
 
     const result = await f.call('fill', { field: 'Name', text: 'after update' });
@@ -55,7 +65,9 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
     assert.equal(f.stderr.trim().split('\n').length, 1);
     assert.match(f.stderr, /older than its source/);
     const endpoint = JSON.parse(await readFile(join(f.dir, 'state/mcp.json'), 'utf8'));
-    assert.equal((await stat(join(f.dir, 'state/mcp.json'))).mode & 0o777, 0o600);
+    // Windows reports no POSIX mode bits; it carries access as ACLs, so the check there is
+    // that the file is present and writable rather than a specific octal value.
+    assert.equal((await stat(join(f.dir, 'state/mcp.json'))).mode & (isWin ? 0o200 : 0o777), isWin ? 0o200 : 0o600);
     assert.equal((await fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
     assert.equal((await fetch(endpoint.url, { method: 'POST', headers: { Authorization: `Bearer ${endpoint.token}`, Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
     assert.equal((await fetch(endpoint.url, { method: 'POST', headers: { Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' }, body: '{}' })).status, 400);
@@ -79,16 +91,16 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
         assert.ok(!status.isError);
         const statusValue = JSON.parse(status.content[0].text);
         assert.equal(typeof statusValue.devices, 'number');
-        assert.equal(statusValue.total_tools, 56);
+        assert.equal(statusValue.total_tools, catalogSize);
         assert.equal(statusValue.implementation, 'Poki MCP 0.1.0');
         assert.equal(statusValue.commit, 'unknown', 'A packaged copy outside Git must report unknown');
-        assert.equal(statusValue.native_build, (await stat(join(f.dir, 'build/poki-native'))).mtime.toISOString());
+        assert.equal(statusValue.native_build, (await stat(join(f.dir, 'build', exe('poki-native')))).mtime.toISOString());
         assert.equal(value(await transportClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0);
       }
     } finally { await httpClient.close(); }
     const fullClient = await f.connect('all');
     const full = await fullClient.listTools();
-    assert.equal(full.tools.length, 56);
+    assert.equal(full.tools.length, catalogSize);
     for (const tool of (await client.listTools()).tools) {
       assert.deepEqual(tool, full.tools.find(candidate => candidate.name === tool.name));
     }
@@ -144,7 +156,7 @@ test('an all-profile HTTP service still lets each stdio client choose its own li
     requestInit: { headers: { Authorization: `Bearer ${endpoint.token}`, 'x-poki-mcp-session': 'all-profile-contract' } },
   }));
   const full = await httpClient.listTools();
-  assert.equal(full.tools.length, 56);
+  assert.equal(full.tools.length, catalogSize);
   assert.deepEqual(await f.a.listTools(), full);
   const defaultClient = await f.connect('');
   assert.equal((await defaultClient.listTools()).tools.length, 29);
@@ -165,7 +177,7 @@ test('Poki Agent opens its own MCP with the complete catalog even when the paren
     } finally { await client.close(); }
   `], { env: f.env });
   const { tools, result } = JSON.parse(stdout);
-  assert.equal(tools.length, 56);
+  assert.equal(tools.length, catalogSize);
   for (const name of ['list_apps', 'observe_device', 'hide_keyboard', 'acquire_device']) {
     assert.ok(tools.some(tool => tool.name === name), name);
   }
@@ -261,7 +273,7 @@ test('a call cut off by a restart is not sent again, because the phone may alrea
   assert.equal((await f.events()).filter(e => e.op === 'key').length, 1);
 });
 
-test('bin/call.mjs says a select_device choice lasts for that run only', { timeout: 20000 }, async t => {
+test('bin/call.mjs says a select_device choice lasts for that run only', { timeout: 20000, skip: isWin && 'the simulator inventory this selects from is provided by Xcode' }, async t => {
   const f = await fixture(t);
   await f.set({ simulatorOnly: true, simulatorBooted: true });
   const call = (...args) => spawnSync(process.execPath, [join(root, 'bin/call.mjs'), ...args], { env: f.env, encoding: 'utf8' });
@@ -275,7 +287,9 @@ test('bin/call.mjs says a select_device choice lasts for that run only', { timeo
   assert.doesNotMatch(absent.stderr, /only for this run/);
 });
 
-test('bin/setup says what to install for a missing prerequisite', { timeout: 20000 }, async t => {
+// bin/setup is a POSIX shell script that tests for Xcode tool names. Its Windows
+// counterpart is bin/setup.ps1, which is checked against a real toolchain instead.
+test('bin/setup says what to install for a missing prerequisite', { timeout: 20000, skip: isWin && 'bin/setup is the macOS installer; Windows uses bin/setup.ps1' }, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'poki-setup-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const present = ['git', 'node', 'npm', 'cargo', 'rustc', 'python3', 'xcrun', 'xcodebuild', 'ffmpeg', 'ffprobe'];

@@ -3,15 +3,19 @@ import { randomUUID } from 'node:crypto';
 import { execute, pause, checkWork, signal, deadline, stopped, stoppingReason, phase } from './work.mjs';
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { basename, extname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { idevice, stateDir, root } from './config.mjs';
+import { idevice, stateDir, root, nativeBin, simulatorBin, crashLogDirectory } from './config.mjs';
+import { isWin, killTree, owned } from './os.mjs';
+import { readPlistValue } from './plist.mjs';
 import { startRecording, stopRecording, closeRecordings } from './recording.mjs';
 import { openInput, selectKeyboard } from './simulator-input.mjs';
 
 const launchReadyMs = 10000;
+// A simulator is Xcode's; every entry point that needs it says so once, here.
+const requiresMac = what => { throw new Error(`${what} requires macOS with Xcode. This host cannot provide it.`); };
 
 const states = new WeakMap();
 function state(ctx) {
@@ -28,7 +32,7 @@ const physical = async (id, args, expect) => {
   return result;
 };
 async function configuration(target, method, value) {
-  const { stdout } = await platformRun(join(root, 'build/poki-native'), ['--udid', target.id], { input: JSON.stringify({ op: 'configuration', method, ...(value === undefined ? {} : { value }) }) });
+  const { stdout } = await platformRun(nativeBin, ['--udid', target.id], { input: JSON.stringify({ op: 'configuration', method, ...(value === undefined ? {} : { value }) }) });
   return JSON.parse(stdout);
 }
 
@@ -54,6 +58,8 @@ async function newDirectory(parent, prefix) {
 }
 
 export async function inventorySimulators() {
+  // Simulators are provided by Xcode's CoreSimulator; there is nothing to ask elsewhere.
+  if (isWin) return [];
   const listing = JSON.parse(await simctl(['list', 'devices', 'available', '--json']));
   return Object.entries(listing.devices).flatMap(([runtime, devices]) => devices.map(device => ({
     id: device.udid, name: device.name, kind: 'simulator', connection: 'Simulator', state: device.state,
@@ -64,6 +70,7 @@ export async function inventorySimulators() {
 }
 
 export async function simulatorModels() {
+  if (isWin) return { runtime: null, models: [] };
   const listing = JSON.parse(await simctl(['list', '--json']));
   const runtime = listing.runtimes.filter(r => r.isAvailable && r.identifier.includes('.iOS-'))
     .sort((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))[0];
@@ -92,7 +99,7 @@ async function waitForSimulatorAccessibility(target) {
   let lastError;
   do {
     try {
-      const { stdout } = await platformRun(join(root, 'build/simulator'), [], { timeout: 45000, input: JSON.stringify({ id: target.id, op: 'ax' }) });
+      const { stdout } = await platformRun(simulatorBin, [], { timeout: 45000, input: JSON.stringify({ id: target.id, op: 'ax' }) });
       const tree = JSON.parse(stdout);
       if (tree.pid > 0 && tree.elements?.length) return;
       lastError = 'No foreground accessibility elements were returned.';
@@ -103,6 +110,7 @@ async function waitForSimulatorAccessibility(target) {
 }
 
 async function startSimulator(ctx, args) {
+  if (isWin) requiresMac('Starting an iOS Simulator');
   let matches;
   let created = false;
   if (args.model) {
@@ -152,7 +160,7 @@ async function apps(target, includeSystem = false) {
       path: app.Path, executable: app.CFBundleExecutable,
     })).filter(app => includeSystem || !app.system);
   }
-  const { stdout } = await platformRun(join(root, 'build/poki-native'), ['--udid', target.id], { input: JSON.stringify({ op: 'list_apps' }), timeout: 95000 });
+  const { stdout } = await platformRun(nativeBin, ['--udid', target.id], { input: JSON.stringify({ op: 'list_apps' }), timeout: 95000 });
   return JSON.parse(stdout).apps.filter(app => includeSystem || !app.system);
 }
 
@@ -294,7 +302,7 @@ async function applicationMutation(target, request, verify) {
   }
   let receipt = {}, result;
   try {
-    const { stdout } = await platformRun(join(root, 'build/poki-native'), ['--udid', target.id], {
+    const { stdout } = await platformRun(nativeBin, ['--udid', target.id], {
       input: JSON.stringify(request), timeout: request.op === 'install_app' ? 185000 : 95000,
     });
     receipt = JSON.parse(stdout);
@@ -325,6 +333,18 @@ async function applicationMutation(target, request, verify) {
   return result;
 }
 
+// An .ipa is a zip with Payload/<name>.app inside. macOS ships ditto; Windows
+// ships tar, which reads and writes the same zip.
+async function unpack(archive, directory) {
+  if (isWin) await platformRun('tar', ['-xf', archive, '-C', directory]);
+  else await platformRun('ditto', ['-x', '-k', archive, directory]);
+}
+// --keepParent holds for ditto only, so tar is given the parent as its working below.
+async function pack(directory, archive) {
+  if (isWin) await platformRun('tar', ['-a', '-c', '-f', archive, '-C', dirname(directory), basename(directory)]);
+  else await platformRun('ditto', ['-c', '-k', '--keepParent', directory, archive]);
+}
+
 async function install(target, value) {
   const path = absolutePath(value);
   await access(path, constants.R_OK);
@@ -334,14 +354,16 @@ async function install(target, value) {
     if (extname(path).toLowerCase() === '.ipa') {
       if (target.kind === 'simulator') throw new Error('A simulator requires a simulator-built .app, not an .ipa.');
       temporary = await newDirectory(join(stateDir, 'install'), 'ipa-');
-      await platformRun('ditto', ['-x', '-k', path, temporary]);
+      await unpack(path, temporary);
       const bundles = (await readdir(join(temporary, 'Payload'))).filter(f => f.endsWith('.app'));
       if (bundles.length !== 1) throw new Error('The .ipa must contain exactly one Payload/*.app.');
       source = join(temporary, 'Payload', bundles[0]);
     }
     if (extname(source).toLowerCase() !== '.app' || !(await stat(source)).isDirectory()) throw new Error('Install expects an .app directory or .ipa archive.');
-    const { stdout } = await platformRun('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(source, 'Info.plist')]);
-    const bundle = stdout.trim();
+    // plutil only exists on macOS; the plist is read directly everywhere else.
+    const bundle = isWin
+      ? await readPlistValue(join(source, 'Info.plist'), 'CFBundleIdentifier')
+      : (await platformRun('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(source, 'Info.plist')])).stdout.trim();
     if (target.kind === 'simulator') await simctl(['install', target.id, source]);
     else {
       let archive = path;
@@ -350,8 +372,11 @@ async function install(target, value) {
         const payload = join(temporary, 'Payload');
         await mkdir(payload);
         await cp(source, join(payload, basename(source)), { recursive: true, verbatimSymlinks: true });
+        // The device side requires an .ipa path, so the archive is renamed after packing.
+        archive = join(temporary, 'package.zip');
+        await pack(payload, archive);
         archive = join(temporary, 'package.ipa');
-        await platformRun('ditto', ['-c', '-k', '--keepParent', payload, archive]);
+        await rename(join(temporary, 'package.zip'), archive);
       }
       return await applicationMutation(target, { op: 'install_app', ipa_path: archive, bundle_id: bundle }, async () => {
         const app = (await apps(target, true)).find(app => app.bundle_id === bundle);
@@ -397,6 +422,10 @@ async function openURLTransport(target, url) {
   try { parsed = new URL(url); } catch { throw new Error('URL must include a scheme.'); }
   if (!parsed.protocol) throw new Error('URL must include a scheme.');
   if (target.kind === 'simulator') await simctl(['openurl', target.id, url]);
+  // devicectl's process service is part of Xcode. idevice does not expose an equivalent, so a
+  // link is opened the way a person would: type it into Safari's address field with type_text,
+  // or reach the page through launch_app when an app owns the scheme.
+  else if (isWin) throw new Error('open_url needs Xcode\'s CoreDevice process service, which this host does not have. Open the address with Safari and type_text, or use open_settings for the Settings pages it supports.');
   else await devicectl(target.id, ['device', 'process', 'openURL', url]);
 }
 
@@ -496,8 +525,8 @@ async function stopLocation(ctx, target) {
   ctx.changed(target);
   const active = state(ctx).locations.get(target.id);
   if (active) {
-    active.child.kill('SIGTERM');
-    const escalation = setTimeout(() => active.child.kill('SIGKILL'), 1000);
+    killTree(active.child, 'SIGTERM');
+    const escalation = setTimeout(() => killTree(active.child, 'SIGKILL'), 1000);
     try { await active.closed; } finally { clearTimeout(escalation); }
     state(ctx).locations.delete(target.id);
   }
@@ -513,11 +542,11 @@ async function startLocation(ctx, target, args) {
     state(ctx).locations.set(target.id, { target, child: { kill() {} }, closed: Promise.resolve() });
   } else {
     checkWork();
-    const child = spawn(idevice, ['--udid', target.id, 'location_simulation', 'set', String(args.latitude), String(args.longitude)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(idevice, ['--udid', target.id, 'location_simulation', 'set', String(args.latitude), String(args.longitude)], owned({ stdio: ['ignore', 'pipe', 'pipe'] }));
     const closed = new Promise(resolveClose => child.once('close', resolveClose));
     const requestSignal = signal();
     let escalation;
-    const abort = () => { child.kill('SIGTERM'); escalation = setTimeout(() => child.kill('SIGKILL'), 1000); };
+    const abort = () => { killTree(child, 'SIGTERM'); escalation = setTimeout(() => killTree(child, 'SIGKILL'), 1000); };
     requestSignal?.addEventListener('abort', abort, { once: true });
     state(ctx).locations.set(target.id, { target, child, closed });
     closed.then(() => { clearTimeout(escalation); requestSignal?.removeEventListener('abort', abort); });
@@ -535,12 +564,27 @@ async function startLocation(ctx, target, args) {
   return { simulated: true, latitude: args.latitude, longitude: args.longitude, until: 'clear_location or this server session ends' };
 }
 
+// idevice prints its report listing as a Rust debug tree, and no stable machine format is offered.
+// Every report name ends in a known suffix, so those are collected and the rest of the tree ignored.
+function reportsFromListing(output) {
+  const found = new Map();
+  for (const match of output.matchAll(/"([^"\n]+\.(?:ips|crash|spin|hang|panic|diag|log|txt))"/g)) {
+    const path = match[1];
+    if (!found.has(path)) found.set(path, { path, name: path.split('/').at(-1) });
+  }
+  return [...found.values()];
+}
+
 async function listCrashes(target, args) {
   let reports;
   if (target.kind === 'simulator') {
-    const directory = join(homedir(), 'Library/Logs/DiagnosticReports');
-    const filenames = (await readdir(directory)).filter(name => /\.(ips|crash|spin|hang|diag|log|txt)$/.test(name));
-    reports = await Promise.all(filenames.map(async name => ({ path: join(directory, name), name, modified: (await stat(join(directory, name))).mtime.toISOString() })));
+    const filenames = (await readdir(crashLogDirectory)).filter(name => /\.(ips|crash|spin|hang|diag|log|txt)$/.test(name));
+    reports = await Promise.all(filenames.map(async name => ({ path: join(crashLogDirectory, name), name, modified: (await stat(join(crashLogDirectory, name))).mtime.toISOString() })));
+  } else if (isWin) {
+    // devicectl is Xcode's; the same crash directory is reachable over CrashReportCopyMobile.
+    await platformRun(idevice, ['--udid', target.id, 'crash_logs', 'flush'], { timeout: 60000 }).catch(() => {});
+    const listing = await platformRun(idevice, ['--udid', target.id, 'crash_logs', 'list', '/'], { timeout: 120000 });
+    reports = reportsFromListing(listing.stdout + '\n' + listing.stderr).map(report => ({ ...report, modified: null }));
   } else {
     const result = await devicectl(target.id, ['device', 'info', 'files', '--domain-type', 'systemCrashLogs']);
     reports = (result.files ?? []).filter(item => !item.resources?.isDirectory).map(item => ({ path: item.relativePath, name: item.name, modified: item.metadata?.lastModDate, size: item.metadata?.size }));
@@ -566,10 +610,14 @@ async function getCrash(ctx, target, args) {
   const directory = await newDirectory(join(stateDir, 'crashes'), 'report-');
   const local = join(directory, basename(reportPath));
   if (target.kind === 'simulator') {
-    const allowed = await realpath(join(homedir(), 'Library/Logs/DiagnosticReports'));
+    const allowed = await realpath(crashLogDirectory);
     const source = await realpath(absolutePath(reportPath));
-    if (!source.startsWith(allowed + '/')) throw new Error('Simulator crash path must be in ~/Library/Logs/DiagnosticReports.');
+    if (!source.startsWith(allowed + '/')) throw new Error('Simulator crash path must be in the host DiagnosticReports folder.');
     await copyFile(source, local, constants.COPYFILE_EXCL);
+  } else if (isWin) {
+    if (reportPath.split(/[\\/]/).includes('..')) throw new Error('Invalid crash report path.');
+    await platformRun(idevice, ['--udid', target.id, 'crash_logs', 'pull', reportPath, local], { timeout: 180000 });
+    await access(local, constants.R_OK);
   } else {
     if (reportPath.split('/').includes('..')) throw new Error('Invalid crash report path.');
     await devicectl(target.id, ['device', 'copy', 'from', '--domain-type', 'systemCrashLogs', '--source', reportPath, '--destination', local]);
@@ -607,7 +655,42 @@ async function getCrash(ctx, target, args) {
   return { path: local, process: report.procName, bundle_id: report.bundleInfo?.CFBundleIdentifier, exception: report.exception, termination: report.termination, faulting_thread: report.faultingThread, frames, symbolication: { resolved_frames: resolved, method: 'atos with exact Mach-O UUID and architecture match', matching_build_available: matchingBuild } };
 }
 
+// The app service reports processes as a Rust debug tree with no machine format. Blocks are
+// split at each pid and the rest of a block is searched for the identity of that process.
+function processesFromListing(output) {
+  const processes = [];
+  for (const block of output.split(/(?=pid:\s*\d+)/)) {
+    const pid = Number(block.match(/pid:\s*(\d+)/)?.[1]);
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    const name = block.match(/(?:name|bundle_identifier|executable|path):\s*"([^"]+)"/)?.[1];
+    processes.push({ pid, name, text: block.slice(0, 4000) });
+  }
+  return processes;
+}
+
+async function terminatePhysical(ctx, target, app) {
+  if (!isWin) {
+    const result = await devicectl(target.id, ['device', 'info', 'processes']);
+    const appPath = app.path.startsWith('file:') ? fileURLToPath(app.path) : app.path;
+    const processes = result.runningProcesses.filter(process => process.executable.startsWith(appPath));
+    if (!processes.length) return { bundle_id: app.bundle_id, already_stopped: true };
+    for (const process of processes) await devicectl(target.id, ['device', 'process', 'terminate', '--pid', String(process.processIdentifier)]);
+    return { terminated: app.bundle_id };
+  }
+  // devicectl is Xcode's. The same app service is reachable over CoreDevice, so the process
+  // list and the signal come from idevice instead, and an unmatched listing is never reported
+  // as a completed termination.
+  const listing = await platformRun(idevice, ['--udid', target.id, 'app_service', 'processes'], { timeout: 120000 });
+  const names = [app.executable, app.bundle_id, app.name, app.path ? basename(app.path).replace(/\.app\/?$/, '') : null].filter(Boolean);
+  const matches = processesFromListing(listing.stdout + '\n' + listing.stderr)
+    .filter(process => names.some(name => process.text.includes(name)));
+  if (!matches.length) return { bundle_id: app.bundle_id, already_stopped: true, verified_by: 'app_service process list showed no matching process' };
+  for (const process of matches) await platformRun(idevice, ['--udid', target.id, 'app_service', 'signal', String(process.pid), '9'], { timeout: 60000 });
+  return { terminated: app.bundle_id, pids: matches.map(process => process.pid) };
+}
+
 async function downloadContainer(target, args) {
+  if (isWin && target.kind !== 'simulator') requiresMac('Downloading an app data container');
   const app = await resolveApp(target, args);
   const base = absolutePath(args.output_directory ?? args.destination ?? join(stateDir, 'containers'));
   const holder = await newDirectory(base, `${app.bundle_id}-`);
@@ -625,6 +708,7 @@ async function downloadContainer(target, args) {
 }
 
 async function buildAndRun(ctx, target, args) {
+  if (isWin) requiresMac('Building and installing an Xcode project');
   let project = absolutePath(args.project_path);
   if (!/\.(xcodeproj|xcworkspace)$/.test(project)) {
     const entries = await readdir(project);
@@ -708,13 +792,7 @@ export async function platformTool(ctx, name, args = {}) {
     case 'terminate_app': {
       const app = await resolveApp(target, args);
       if (target.kind === 'simulator') await simctl(['terminate', target.id, app.bundle_id]);
-      else {
-        const result = await devicectl(target.id, ['device', 'info', 'processes']);
-        const appPath = app.path.startsWith('file:') ? fileURLToPath(app.path) : app.path;
-        const processes = result.runningProcesses.filter(process => process.executable.startsWith(appPath));
-        if (!processes.length) return { bundle_id: app.bundle_id, already_stopped: true };
-        for (const process of processes) await devicectl(target.id, ['device', 'process', 'terminate', '--pid', String(process.processIdentifier)]);
-      }
+      else return await terminatePhysical(ctx, target, app);
       ctx.frame = undefined; ctx.elements = [];
       return { terminated: app.bundle_id };
     }
@@ -746,11 +824,14 @@ export async function platformTool(ctx, name, args = {}) {
     case 'set_location': return startLocation(ctx, target, args);
     case 'clear_location': await stopLocation(ctx, target); return { simulated: false };
     case 'get_clipboard': {
-      if (target.kind === 'simulator') return JSON.parse((await platformRun(join(root, 'build/simulator'), [], { input: JSON.stringify({ id: target.id, op: 'clipboard' }) })).stdout);
+      if (target.kind === 'simulator') return JSON.parse((await platformRun(simulatorBin, [], { input: JSON.stringify({ id: target.id, op: 'clipboard' }) })).stdout);
       const result = await physical(target.id, ['pasteboard', 'paste']);
       const listing = await physical(target.id, ['pasteboard', 'items']);
       const types = [...listing.stdout.matchAll(/^\[\d+\] ([^:]+):/gm)].map(match => match[1]);
-      const imageInfo = JSON.parse((await platformRun(join(root, 'build/simulator'), [], { input: JSON.stringify({ op: 'image_types', types }) })).stdout);
+      // Decoding which of those types are images is the simulator helper's job, and it only
+      // exists where it was compiled. Elsewhere the type list is still reported as observed.
+      if (!(await access(simulatorBin, constants.X_OK).then(() => true, () => false))) return { text: result.stdout, types };
+      const imageInfo = JSON.parse((await platformRun(simulatorBin, [], { input: JSON.stringify({ op: 'image_types', types }) })).stdout);
       return { text: result.stdout, ...imageInfo, types };
     }
     case 'set_clipboard': {

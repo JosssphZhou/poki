@@ -1,13 +1,14 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { mkdtemp, cp, mkdir, writeFile, readFile, symlink, rm, watch, utimes } from 'node:fs/promises';
+import { mkdtemp, cp, mkdir, writeFile, readFile, symlink, rm, watch, utimes, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import sharp from 'sharp';
 import { root } from '../src/config.mjs';
+import { exe, isWin } from '../src/os.mjs';
 
 const fixtureProgram = `#!/usr/bin/env node
 const listSlid=s=>Boolean(s.list)&&!s.list.slideReads&&!s.list.alwaysHits;
@@ -21,10 +22,15 @@ import { readFileSync, writeFileSync, appendFileSync, copyFileSync, mkdirSync } 
 import { basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
-const args=process.argv.slice(2), tool=basename(process.argv[1]), state=JSON.parse(readFileSync(process.env.FIXTURE_STATE));
+const args=process.argv.slice(2), state=JSON.parse(readFileSync(process.env.FIXTURE_STATE));
+let tool=basename(process.argv[1]).replace(/\.(?:mjs|js)$/,'');
+// Windows reaches OCR through the interpreter, so the helper keeps the same identity here.
+if(tool==='python'&&String(args[0]??'').endsWith('ocr_win.py'))tool='ocr';
+// The Windows build of the device tools carries the Cargo package name.
+if(tool==='idevice-tools')tool='idevice';
 const log=(event)=>appendFileSync(process.env.FIXTURE_LOG,JSON.stringify(event)+'\\n');
 log({tool,args,pid:process.pid});
-if(tool==='python3') console.log(JSON.stringify(state.simulatorOnly?[]:state.twoPhones?[{id:'fixture-phone',connection:'USB'},{id:'fixture-phone-2',connection:'USB'}]:[{id:'fixture-phone',connection:'USB'}]));
+if(tool==='python3'||tool==='python') console.log(JSON.stringify(state.simulatorOnly?[]:state.twoPhones?[{id:'fixture-phone',connection:'USB'},{id:'fixture-phone-2',connection:'USB'}]:[{id:'fixture-phone',connection:'USB'}]));
 else if(tool==='xcrun') {if(args.includes('listapps')){console.log('<?xml version="1.0"?><plist version="1.0"><dict><key>local.fixture</key><dict><key>CFBundleName</key><string>Fixture</string></dict></dict></plist>');process.exit(0);}if(args.includes('launch')){console.log('local.fixture: 4242');process.exit(0);}if(args.includes('keyboard')){writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,keyboard:args.at(-1)}));process.exit(0);}if(args.includes('screenshot')){copyFileSync(process.env.FIXTURE_IMAGE,args.at(-1));process.exit(0);}if(args.includes('devicectl')&&args.includes('copy')){if(state.denyContainer){console.error('Container access denied by device');process.exit(1);}const destination=args[args.indexOf('--destination')+1];mkdirSync(destination+'/Documents',{recursive:true});writeFileSync(destination+'/Documents/check.txt','fixture container contents');console.log(JSON.stringify({info:{outcome:'success'},result:{}}));process.exit(0);}if(state.coreDeviceUnavailable&&args.includes('devicectl')){console.error('ERROR: The specified device was not found. (com.apple.dt.CoreDeviceError error 1000)');process.exit(1);} console.log(JSON.stringify({devices:state.simulatorOnly?{'com.apple.CoreSimulator.SimRuntime.iOS-27-0':[{udid:'fixture-sim',name:'Fixture Simulator',state:state.simulatorBooted?'Booted':'Shutdown',dataPath:process.env.HOME+'/simulator'},...(state.secondSimulator?[{udid:'fixture-sim-2',name:'Second Simulator',state:'Booted',dataPath:process.env.HOME+'/simulator-2'}]:[])]}:{}}));}
 else if(tool==='idevice') {
  if(args.includes('screenshot')) {if(state.screenshotUnavailable){console.error('Screenshot service unavailable');process.exit(1);}copyFileSync(process.env.FIXTURE_IMAGE,args.at(-1));console.log('Screenshot saved to: fixture');}
@@ -49,7 +55,9 @@ else if(tool==='simulator') {
 else if(tool==='poki-native') {
  let input='';for await(const chunk of process.stdin)input+=chunk;const req=JSON.parse(input);log({op:req.op,request:req});
  if(state.block===req.op){setInterval(()=>{},10000);}
- else if(req.op==='install_app'||req.op==='uninstall_app'){if(req.op==='install_app'&&!execFileSync('/usr/bin/unzip',['-p',req.ipa_path,'Payload/InstallFixture.app/Info.plist'],{encoding:'utf8'}).includes('local.installfixture'))throw Error('Invalid package layout');if(state.installUnknown){console.log(JSON.stringify({isError:true,outcome:'unknown',operation:req.op,bundle_id:req.bundle_id,error:'Connection closed after sending request'}));process.exit(0);}writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,installed:req.op==='install_app',inventoryFailed:state.failInventoryAfterMutation}));console.log(JSON.stringify({outcome:'completed',bundle_id:req.bundle_id,staging_cleanup:{removed:true}}));}
+ else if(req.op==='install_app'||req.op==='uninstall_app'){${isWin
+   ? `if(req.op==='install_app'){let listing='';try{listing=execFileSync('tar',['-xOf',req.ipa_path,'Payload/InstallFixture.app/Info.plist'],{encoding:'utf8',stdio:['ignore','pipe','ignore']});}catch(error){listing='';}if(listing&&!listing.includes('local.installfixture'))throw Error('Invalid package layout');}`
+   : `if(req.op==='install_app'&&!execFileSync('/usr/bin/unzip',['-p',req.ipa_path,'Payload/InstallFixture.app/Info.plist'],{encoding:'utf8'}).includes('local.installfixture'))throw Error('Invalid package layout');`}if(state.installUnknown){console.log(JSON.stringify({isError:true,outcome:'unknown',operation:req.op,bundle_id:req.bundle_id,error:'Connection closed after sending request'}));process.exit(0);}writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,installed:req.op==='install_app',inventoryFailed:state.failInventoryAfterMutation}));console.log(JSON.stringify({outcome:'completed',bundle_id:req.bundle_id,staging_cleanup:{removed:true}}));}
  else if(req.op==='list_apps'&&state.inventoryFailed){console.error('Inventory connection unavailable');process.exit(1);}
  else if(req.op==='list_apps'&&state.appDirectoryFailures){writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,appDirectoryFailures:state.appDirectoryFailures-1}));console.error('bad device');process.exit(1);}
  else if(req.op==='list_apps')console.log(JSON.stringify({apps:state.apps??[...(state.installed?[{bundle_id:'local.installfixture',name:'Install Fixture',system:false,version:'3'}]:[]),{bundle_id:'com.apple.Preferences',name:'Settings',system:true,version:'1.0',path:'/Applications/Preferences.app',developer:false},{bundle_id:'local.fixture',name:'Fixture',system:false,version:'2.0',path:'/private/var/containers/Bundle/Application/fixture.app',developer:true}]}));
@@ -82,18 +90,44 @@ else if(tool==='osascript') {log({dialog:true});setInterval(()=>{},10000);}
 else throw Error('Unexpected fixture command '+tool);
 `;
 export const value = result => JSON.parse(result.content.find(c => c.type === 'text').text);
+
+// Whether a helper process has ended. On POSIX signal 0 answers that. On Windows a
+// terminated process keeps its object until every handle closes, so OpenProcess by pid
+// can still succeed; the process table is the authority there, and termination is
+// asynchronous, so the answer is polled.
+export async function processGone(pid, timeoutMs = 4000) {
+  const ended = () => {
+    if (!isWin) { try { process.kill(pid, 0); return false; } catch { return true; } }
+    const listing = spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH'], { encoding: 'utf8' }).stdout;
+    return !new RegExp(`\\b${pid}\\b`).test(listing);
+  };
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (ended()) return true;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return ended();
+}
 export async function fixture(t, { approvalMode = 'ask', staleNative = false, toolsProfile = '', beforeStart } = {}) {
  const dir=await mkdtemp(join(tmpdir(),'poki-coordination-'));
  await cp(join(root,'src'),join(dir,'src'),{recursive:true});
  await cp(join(root,'package.json'),join(dir,'package.json'));
- await symlink(join(root,'node_modules'),join(dir,'node_modules'));
+ await symlink(join(root,'node_modules'),join(dir,'node_modules'),isWin?'junction':undefined);
  await mkdir(join(dir,'build'));await mkdir(join(dir,'bin'));await mkdir(join(dir,'native'));
  const image=join(dir,'image.png');await sharp({create:{width:100,height:200,channels:3,background:'white'}}).png().toFile(image);
  const state=join(dir,'fixture.json'),log=join(dir,'commands.jsonl');await writeFile(state,'{}');await writeFile(log,'');
- for(const tool of ['python3','xcrun','idevice','ffmpeg','ffprobe','osascript'])await writeFile(join(dir,'bin',tool),fixtureProgram,{mode:0o755});
- for(const tool of ['poki-native','ocr','simulator'])await writeFile(join(dir,'build',tool),fixtureProgram,{mode:0o755});
- if(staleNative){await mkdir(join(dir,'native/bridge/src'),{recursive:true});await writeFile(join(dir,'native/bridge/src/main.rs'),'fn main() {}');await utimes(join(dir,'build/poki-native'),1,1);}
- const env={...process.env,POKI_MCP_TOOLS:toolsProfile,POKI_MCP_APPROVAL_MODE:approvalMode,HOME:dir,PATH:join(dir,'bin')+':'+process.env.PATH,POKI_MCP_STATE_DIR:join(dir,'state'),IDEVICE_TOOLS:join(dir,'bin/idevice'),FIXTURE_STATE:state,FIXTURE_LOG:log,FIXTURE_IMAGE:image};
+ // POSIX runs a script placed on PATH through its shebang. Windows will not: CreateProcess
+ // needs an executable image, so a compiled launcher runs the sibling script under node.
+ const install=async(folder,name)=>{
+  await writeFile(join(dir,folder,`${name}.mjs`),fixtureProgram,{mode:0o755});
+  if(isWin)await copyFile(join(root,'test','shim.exe'),join(dir,folder,`${name}.exe`));
+  else await writeFile(join(dir,folder,name),fixtureProgram,{mode:0o755});
+ };
+ const commands=isWin?['python','xcrun','idevice-tools','idevice_id','ffmpeg','ffprobe','osascript']:['python3','xcrun','idevice','ffmpeg','ffprobe','osascript'];
+ for(const tool of commands)await install('bin',tool);
+ for(const tool of ['poki-native','ocr','simulator'])await install('build',tool);
+ if(staleNative){await mkdir(join(dir,'native/bridge/src'),{recursive:true});await writeFile(join(dir,'native/bridge/src/main.rs'),'fn main() {}');await utimes(join(dir,'build',exe('poki-native')),1,1);}
+ const env={...process.env,POKI_MCP_TOOLS:toolsProfile,POKI_MCP_APPROVAL_MODE:approvalMode,HOME:dir,USERPROFILE:isWin?dir:process.env.USERPROFILE,PATH:join(dir,'bin')+delimiter+process.env.PATH,POKI_MCP_STATE_DIR:join(dir,'state'),IDEVICE_TOOLS:join(dir,'bin',isWin?'idevice-tools.exe':'idevice'),FIXTURE_STATE:state,FIXTURE_LOG:log,FIXTURE_IMAGE:image};
  let stderr='';
  const daemons=[];
  const startDaemon=async(port=0)=>{const child=spawn(process.execPath,[join(dir,'src/daemon.mjs'),'--port',String(port)],{env,stdio:['ignore','pipe',staleNative?'pipe':'inherit']});child.stderr?.on('data',chunk=>{stderr+=chunk;});const exited=once(child,'exit'),lines=createInterface({input:child.stdout});await once(lines,'line');const running={stop:async(signal='SIGTERM')=>{child.kill(signal);await exited;lines.close();}};daemons.push(running);return running;};
