@@ -27,7 +27,7 @@ catch (error) {
 }
 await chmod(pairing, 0o600);
 const verification = await exec(idevice, ['--udid', id, 'remotepairing_lockdown', 'verify', pairing, 'poki-mcp'], { timeout: 30000 });
-if (!verification.stdout.includes('the device recognizes this pairing record')) throw new Error('The iPhone did not verify the saved pairing record.');
+if (!verification.stdout.includes('the device recognizes this pairing record')) throw new Error('The iPhone did not verify the saved pairing record. Keep it trusted, unlocked, and connected over USB. Rename remote/DEVICE_ID/pairing.plist in this installation\'s private state directory, then run prepare-remote again. See docs/remote-iphone.md.');
 const configPath = join(directory, 'config.json');
 await writeFile(configPath, JSON.stringify({ id, host, port, pairing_file: pairing }), { mode: 0o600 });
 await chmod(configPath, 0o600);

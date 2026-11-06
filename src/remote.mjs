@@ -70,18 +70,16 @@ export async function remoteRequest(target, request) {
   try { checkWork(); } catch (error) { socket.destroy(); throw error; }
   return new Promise((resolve, reject) => {
     const lines = createInterface({ input: socket });
-    let pid, outcome, abortReason, escalation;
+    let pid, outcome, abortReason;
     const abort = reason => {
       abortReason = reason;
-      if (!pid) { socket.destroy(); return; }
-      // Wait for the helper's sockets to close before releasing device ownership.
-      try { process.kill(pid, 'SIGTERM'); } catch (error) { if (error.code === 'ESRCH') socket.destroy(); }
-      escalation = setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch {} }, 1000);
+      socket.destroy();
     };
     const onAbort = () => abort(callerSignal.reason);
-    const timer = setTimeout(() => abort(new DOMException('Remote operation timed out; inspect before retrying input.', 'TimeoutError')), 95000);
+    const timer = setTimeout(() => abort(new DOMException('Remote operation timed out; inspect before retrying input.', 'TimeoutError')), 120000);
     callerSignal?.addEventListener('abort', onAbort, { once: true });
     lines.on('line', line => {
+      if (abortReason) return;
       let value;
       try { value = JSON.parse(line); } catch { abort(new Error('Invalid remote helper response. Inspect before retrying input.')); return; }
       if (!pid) {
@@ -93,7 +91,7 @@ export async function remoteRequest(target, request) {
     });
     socket.on('error', () => { abortReason ??= new Error('Remote connection closed. Input may have been delivered; inspect before retrying.'); });
     socket.once('close', () => {
-      clearTimeout(timer); clearTimeout(escalation); lines.close();
+      clearTimeout(timer); lines.close();
       callerSignal?.removeEventListener('abort', onAbort);
       if (abortReason) reject(abortReason);
       else if (!outcome) reject(new Error('Remote helper closed without confirming the action. Inspect before retrying input.'));

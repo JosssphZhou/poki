@@ -10,7 +10,7 @@ The added or modified tests in this PR are:
 
 | Test and location | Protected behavior | Regression that fails it | Failed on the pre-change base? |
 | --- | --- | --- | --- |
-| `Remote screen capture survives client and daemon restarts after the phone stops accepting new connections` in `test/remote.test.mjs` | A later MCP client can still capture the remote phone after the Poki daemon restarts | Dropping the persistent native helper or failing to route registered remote devices | Yes: the base cannot select the configured remote device |
+| `Remote screen capture survives observation cancellation and daemon restart after new connections are refused` in `test/remote.test.mjs` | A later capture still works after an observation deadline and a daemon restart | Killing the persistent helper on observation cancellation or losing it on daemon restart | Yes: before the cancellation fix, the next screenshot failed with `Remote helper stopped before becoming ready.` |
 | `stdio reaches the authenticated local MCP service and rejects an absent device` in `test/protocol.test.mjs` | Default discovery stays limited while full HTTP discovery exposes the maintenance tools | Keeping the old full-catalog size after adding the two tools | Yes: full discovery returns 56 instead of 58 |
 | `an all-profile HTTP service still lets each stdio client choose its own list` in `test/protocol.test.mjs` | Per-client default/full catalog selection survives the HTTP bridge | Applying the default filter to the full client | Yes: the full catalog lacks the two added tools |
 | `Poki Agent opens its own MCP with the complete catalog even when the parent uses the default profile` in `test/protocol.test.mjs` | The independent Agent receives the full catalog | Losing the full profile when launching its own MCP client | Yes: the full catalog lacks the two added tools |
@@ -27,8 +27,20 @@ Tested on iPhone17,1 with iOS 27.3. The operator confirmed USB disconnection and
 - Disconnecting Tailscale caused capture to fail explicitly rather than return a cached frame.
 - Restoring Tailscale on cellular did not restore a lost native tunnel; Wi-Fi was required. Further [native-listener diagnostics](cellular-native-listener.md) record the evidence and its limits.
 
+## Cancellation repair verification
+
+The updated remote lifecycle regression failed before the repair with `Remote helper stopped before becoming ready.` It passed after the repair. The remote and protocol test files passed all 17 cases, and the native release build passed. After adding an assertion that the deadline actually interrupted an accessibility request, the single regression was rerun on both versions and again failed before the fix and passed after it.
+
+On the authorized physical iPhone over RemotePairing, the original `wait_for` one-second timeout terminated the helper. The next screenshot needed a new process. With the rebuilt helper, the same timeout left the helper alive and the next screenshot reused its PID. A missing-element `tap_text` also returned an error without tapping, and the following screenshot retained the same helper and established TCP connections.
+
+Two native-protocol checks exercised different failure paths. A screenshot aimed at an existing file returned an error, preserved the file, and kept the same tunnel connections. Abandoning a screenshot request removed its late output before the next request ran. These checks used the real native helper and phone, not the integration fixture.
+
+The phone was on Wi-Fi during this repair round. The checks do not establish cellular cold reconnection. One Settings launch returned a delivered launch but failed foreground verification; it is not counted as a successful app-launch check. No text was typed or submitted during the repair verification.
+
 ## Unresolved behavior
 
-An additional, uncommitted diagnostic test reproduced the existing behavior where cancelling a foreground observation terminates the native helper, preventing the next capture when new phone connections are refused. That pending test and its unfinished fix are not included in this PR. The limitation is disclosed in the user documentation; excluding the pending test does not mean the defect is fixed.
+The cancellation regression now passes at the MCP boundary. Its synthetic helper refuses a replacement process, so the successful second screenshot proves reuse at that boundary. Native device verification is separate from this fixture.
 
-Full cellular cold start/reconnection, observation-timeout resilience, simultaneous use with another iOS VPN, and continuous video have not passed acceptance. A clipboard snapshot was unavailable in the final mixed-text run, so restoration was not claimed. One accessibility read took 46.8 seconds; this evidence does not establish latency or long-duration stability targets.
+Full cellular cold reconnection, remote automatic unlock, Linux hosting, simultaneous use with another iOS VPN, and continuous video have not passed acceptance. Device name and OS version may be absent from remote device information because the current implementation reads RSD properties. These metadata omissions do not block screen or input operations. USB and simulator behavior has not been retested on devices in this repair round.
+
+A clipboard snapshot was unavailable in the earlier mixed-text run, so restoration was not claimed. One accessibility read took 46.8 seconds; this evidence does not establish latency or long-duration stability targets.

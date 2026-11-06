@@ -678,7 +678,7 @@ async function buildAndRun(ctx, target, args) {
 export async function platformTool(ctx, name, args = {}) {
   if (name === 'start_simulator') return startSimulator(ctx, args);
   const target = await ctx.target();
-  if (target.remote && !['list_apps', 'launch_app'].includes(name)) throw new Error(`${name} requires USB or local Wi-Fi; it is not supported by the RemotePairing transport.`);
+  if (target.remote && !['list_apps', 'launch_app'].includes(name)) throw new Error(`${name} is unavailable over RemotePairing. Remove this device from remote-devices.json and reconnect over USB or local Wi-Fi.`);
   if (!['list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'download_app_container', 'start_recording', 'stop_recording'].includes(name)) ctx.changed(target);
   const changesApps = ['install_app', 'uninstall_app', 'build_and_run'].includes(name);
   try {

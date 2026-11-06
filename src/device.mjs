@@ -138,7 +138,7 @@ export class Devices {
   async native(args, expected, timeout = 45000) {
     const target = await this.target();
     if (target.kind !== 'physical') throw new Error('This native command requires a physical device.');
-    if (target.remote) throw new Error('This operation requires a USB or local Wi-Fi connection.');
+    if (target.remote) throw new Error('This operation is unavailable over RemotePairing. Remove this device from remote-devices.json and reconnect over USB or local Wi-Fi.');
     const result = await this.run(idevice, ['--udid', target.id, ...args], timeout);
     if (expected && !expected.test(result.stdout + '\n' + result.stderr)) throw new Error(`Device service did not confirm the action: ${(result.stderr || result.stdout).slice(-3000)}`);
     return result;
@@ -362,7 +362,7 @@ export class Devices {
           }
           if (target.kind === 'physical') { info.name=info.DeviceName; info.model=info.ProductType; info.osVersion=info.ProductVersion; this.physicalNames.set(target.id,info.name); }
           info.engine=target.kind==='simulator'?'CoreSimulator':'CoreDevice'; info.mirror_status='screen capture available';
-          if (args.include_settings && target.remote) throw new Error('Device settings inspection requires USB or local Wi-Fi.');
+          if (args.include_settings && target.remote) throw new Error('Device settings inspection is unavailable over RemotePairing. Remove this device from remote-devices.json and reconnect over USB or local Wi-Fi.');
           if (args.include_settings) info.settings = await readSettings(target);
           return text(info);
         }

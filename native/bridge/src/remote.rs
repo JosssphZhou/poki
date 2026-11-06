@@ -114,7 +114,11 @@ impl Session {
         match result {
             Ok(Ok(value)) => Ok(value),
             failure => {
-                self.connection = None;
+                // A service or file error does not imply the shared tunnel died.
+                // bind_udp checks the adapter task locally without opening a phone service.
+                if adapter.bind_udp(0).await.is_err() {
+                    self.connection = None;
+                }
                 // Delivery can be ambiguous: the caller must inspect, never replay automatically.
                 let message = match failure {
                     Ok(Err(e)) => e.to_string(),
@@ -194,17 +198,44 @@ pub async fn serve_socket(path: &str, socket_path: &str) -> Result<Value> {
                 .await?;
             break;
         }
+        let request = serde_json::from_str::<Request>(&line);
+        let screenshot_path = match &request {
+            Ok(Request::Screenshot { path }) => Some(path),
+            _ => None,
+        };
+        let read_only = matches!(
+            &request,
+            Ok(Request::AxTree { .. }
+                | Request::Screenshot { .. }
+                | Request::DeviceInfo
+                | Request::DisplayInfo
+                | Request::ListApps)
+        );
         let mut byte = [0u8; 1];
-        let output = tokio::select! {
-            output = reply(&mut session, &line) => output,
-            _ = stream.read(&mut byte) => {
-                // The requester disappeared while delivery may be in flight. Exit, closing every owned service.
-                return Err("Remote operation cancelled; inspect the device before retrying input".into());
+        let (output, abandoned) = if read_only {
+            // Draining an observation preserves service framing when its caller stops waiting.
+            let response = reply(&mut session, &line);
+            tokio::pin!(response);
+            tokio::select! {
+                biased;
+                _ = stream.read(&mut byte) => (response.await, true),
+                output = &mut response => (output, false),
+            }
+        } else {
+            tokio::select! {
+                biased;
+                _ = stream.read(&mut byte) => continue,
+                output = reply(&mut session, &line) => (output, false),
             }
         };
         let mut bytes = serde_json::to_vec(&output)?;
         bytes.push(b'\n');
-        let _ = stream.get_mut().write_all(&bytes).await;
+        let delivered = !abandoned && stream.get_mut().write_all(&bytes).await.is_ok();
+        if !delivered && output["saved"] == true {
+            if let Some(path) = screenshot_path {
+                let _ = tokio::fs::remove_file(path).await;
+            }
+        }
     }
     let _ = std::fs::remove_file(socket_path);
     Ok(json!({"closed":true}))
