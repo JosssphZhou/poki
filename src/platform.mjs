@@ -230,11 +230,15 @@ async function launch(ctx, target, args) {
       if (launched.isError) return { ...launched, ...metadata, foreground_verified: false, ...(launched.outcome === 'unknown' ? { stop_reason: 'unknown' } : {}) };
       if (!Number.isSafeInteger(launched.pid) || launched.pid <= 0) throw new Error('Launch service returned no valid PID.');
       ctx.frame = undefined; ctx.elements = [];
-      await phase('foreground_verification', () => deadline(8000, async () => {
+      // A cable answers one accessibility read in about 200 ms; RemotePairing answers in about 2 s,
+      // and a tap takes 6 s. 8 s and 2.5 s are right for the cable and too tight for the tunnel, so
+      // the allowance follows the transport instead of being raised for everybody.
+      const tunneled = target.kind === 'physical' && target.connection === 'RemotePairing';
+      await phase('foreground_verification', () => deadline(tunneled ? 20000 : 8000, async () => {
         let lastError = new Error('The launched app did not become the observed foreground.');
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            const tree = await deadline(2500, () => phase('foreground_query', () => ctx.bridge({ op: 'ax', include_offscreen: false })));
+            const tree = await deadline(tunneled ? 6000 : 2500, () => phase('foreground_query', () => ctx.bridge({ op: 'ax', include_offscreen: false })));
             if (tree.foreground?.pid === launched.pid) return;
           } catch (error) {
             checkWork();
