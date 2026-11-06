@@ -17,9 +17,22 @@ await warnIfNativeStale();
 const sessions = new Map();
 const coordinator = new Coordination();
 const token = process.env.POKI_MCP_TOKEN?.trim() || randomBytes(32).toString('hex');
+// A short token is the only thing standing between the network and the device, and it is cheap
+// to type in a shell by mistake.
+if (token.length < 32) throw new Error('POKI_MCP_TOKEN must be at least 32 characters long.');
 const expected = Buffer.from(`Bearer ${token}`);
-const bindHost = process.env.POKI_BIND_HOST ?? '127.0.0.1';
+const requestedBind = process.env.POKI_BIND_HOST?.trim() ?? '';
+if (process.env.POKI_BIND_HOST !== undefined && !requestedBind) throw new Error('POKI_BIND_HOST is empty. Unset it to listen on 127.0.0.1.');
+const bindHost = requestedBind || '127.0.0.1';
 const hostAllow = (process.env.POKI_HOST_ALLOW ?? '').split(',').map(part => part.trim()).filter(Boolean);
+// Binding beyond loopback without an allowlist answers 403 to every client, which reads as
+// "the daemon is broken" rather than "you forgot a variable".
+const loopback = new Set(['127.0.0.1', 'localhost', '::1']);
+const wildcard = new Set(['0.0.0.0', '::']);
+if (!loopback.has(bindHost)) {
+  if (!hostAllow.length) throw new Error(`POKI_BIND_HOST=${bindHost} serves beyond loopback, so POKI_HOST_ALLOW must list the Host headers your clients send.`);
+  if (!wildcard.has(bindHost) && !hostAllow.includes(bindHost)) throw new Error(`POKI_BIND_HOST=${bindHost} is not in POKI_HOST_ALLOW (${hostAllow.join(',')}); every request would be rejected.`);
+}
 const validHost = hostAllow.length ? hostHeaderValidation(hostAllow) : localhostHostValidation();
 const validOrigin = localhostOriginValidation();
 const active = new Set();
