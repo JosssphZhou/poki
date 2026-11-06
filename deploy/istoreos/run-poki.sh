@@ -1,6 +1,8 @@
 #!/bin/sh
 # Start (or restart) the Poki MCP daemon in a container on an iStoreOS router.
 set -eu
+# The token is written below; do not create it world-readable even for a moment.
+umask 077
 
 BASE_DIR=${BASE_DIR:-/mnt/data/poki}
 STATE_DIR=${STATE_DIR:-$BASE_DIR/state}
@@ -10,15 +12,18 @@ ENV_FILE=${ENV_FILE:-$BASE_DIR/poki.env}
 
 # Bind to the router's own LAN address without hard-coding one. With --network host,
 # 0.0.0.0 would answer on the WAN side too, so loopback is the fallback instead.
+# POKI_BIND_HOST may be a comma-separated list; the daemon adds loopback itself.
 LAN_IP=$(ip -4 -o addr show br-lan 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
 BIND_HOST=${POKI_BIND_HOST:-${LAN_IP:-127.0.0.1}}
 HOST_ALLOW=${POKI_HOST_ALLOW:-localhost,127.0.0.1,[::1]${LAN_IP:+,$LAN_IP}}
 
 # A bind address outside the allowlist answers 403 to everything: fail here instead.
-case ",$HOST_ALLOW," in
-  *",$BIND_HOST,"*) ;;
-  *) echo "POKI_BIND_HOST=$BIND_HOST is not covered by POKI_HOST_ALLOW=$HOST_ALLOW." >&2; exit 1 ;;
-esac
+for host in $(echo "$BIND_HOST" | tr ',' ' '); do
+  case ",$HOST_ALLOW," in
+    *",$host,"*) ;;
+    *) echo "POKI_BIND_HOST=$host is not covered by POKI_HOST_ALLOW=$HOST_ALLOW." >&2; exit 1 ;;
+  esac
+done
 
 mkdir -p "$STATE_DIR" "$SRC_DIR/build" "$BASE_DIR/lockdown"
 chmod 700 "$STATE_DIR"
@@ -28,10 +33,9 @@ if [ ! -s "$TOKEN_FILE" ]; then
   chmod 600 "$TOKEN_FILE"
 fi
 
-# Values passed with `docker run -e` are readable in `docker inspect`, and this token now
-# gives anyone on the LAN control of the phone. A 0600 env file keeps it off the process
-# table and out of shell history.
-umask 077
+# `docker run -e` would put the token on the command line, where history and `ps` collect it.
+# An env file keeps it out of both. It does not hide it from `docker inspect`, which lists
+# Config.Env: anyone who can run docker on this router can already read the token file.
 {
   echo "POKI_MCP_STATE_DIR=/state"
   echo "POKI_MCP_TOKEN=$(cat "$TOKEN_FILE")"
@@ -63,4 +67,4 @@ docker logs poki 2>&1 | tail -20
 echo "--- endpoint ---"
 # The endpoint file repeats the bearer token, so only its path is printed here.
 echo "$STATE_DIR/mcp.json (bearer token: $TOKEN_FILE, mode 0600)"
-echo "Listening on $BIND_HOST:47825; Host allowlist: $HOST_ALLOW"
+echo "Listening on $BIND_HOST and 127.0.0.1:47825; Host allowlist: $HOST_ALLOW"

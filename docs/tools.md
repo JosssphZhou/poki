@@ -5,7 +5,7 @@
 - **Screen & UI Inspection**: Capture screenshots (`take_screenshot`, `save_screenshot`) and inspect UI hierarchies via Accessibility or Vision OCR (`list_elements`).
 - **Touch & Keyboard Input**: Send taps, swipes, hardware keys, and Unicode text across simulators and paired physical devices.
 - **App & Device Lifecycle**: Manage applications, open URLs, inspect containers, record video, and run diagnostic checks.
-- **Local Daemon Architecture**: Runs a localhost-only service (`127.0.0.1:47825`) with serialized device execution, per-client session isolation, and interactive local approval gates for sensitive actions.
+- **Local Daemon Architecture**: Runs a localhost-only service (`127.0.0.1:47825`) with serialized device execution, per-client session isolation, and interactive local approval gates for sensitive actions. Loopback only by default; `POKI_BIND_HOST` adds an interface and `POKI_HOST_ALLOW` the `Host` names it answers to.
 
 Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) with remote connection maintenance definitions in [`src/tools.mjs`](../src/tools.mjs). MCP serves them through `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools.
 
