@@ -30,7 +30,7 @@ class TelegramError extends Error {
 }
 
 export class TelegramSource {
-  constructor({ allowedUsers, stateDirectory }) {
+  constructor({ allowedUsers, stateDirectory, photos = false }) {
     if (!Array.isArray(allowedUsers) || !allowedUsers.length || allowedUsers.some(id =>
       !/^\d+$/.test(String(id)) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0)) {
       throw new Error('Configure allowedUsers as a nonempty list of numeric Telegram user IDs.');
@@ -44,6 +44,8 @@ export class TelegramSource {
       throw new Error('TELEGRAM_API_URL must be the official Bot API or a loopback HTTP development server.');
     }
     this.state = new ChannelCursor(stateDirectory, 'telegram', `${this.url.origin}/${this.token.split(':')[0]}`);
+    // Off unless asked for: a photo uploads the phone's screen into a chat on every task.
+    this.photos = photos === true;
   }
 
   async request(method, body = {}, signal) {
@@ -147,7 +149,11 @@ export class TelegramSource {
       acknowledge: id => this.acknowledge(id),
       send: async (text, { kind = 'notice', taskId, image } = {}) => {
         if (!text.trim()) return;
-        if (image?.data && kind === 'final' && text.length <= 1024) {
+        // One upload attempt per reply, at most: after a timeout there is no way to tell whether
+        // the photo arrived, and a second try hands the user the same screenshot twice.
+        let photoAttempted = false;
+        if (this.photos && image?.data && kind === 'final' && text.length <= 1024) {
+          photoAttempted = true;
           try {
             await this.photo(chat, image, text);
             progress = undefined;
@@ -174,7 +180,7 @@ export class TelegramSource {
         }
         if (kind === 'progress' && chunks.length === 1) progress = { taskId, id: first };
         else progress = undefined;
-        if (image?.data && kind === 'final') {
+        if (this.photos && image?.data && kind === 'final' && !photoAttempted) {
           try { await this.photo(chat, image, ''); }
           catch (error) { console.error('telegram: photo delivery failed:', error.message); }
         }
