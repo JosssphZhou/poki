@@ -23,26 +23,27 @@ if (token.length < 32) throw new Error('POKI_MCP_TOKEN must be at least 32 chara
 const expected = Buffer.from(`Bearer ${token}`);
 const requestedBind = process.env.POKI_BIND_HOST?.trim() ?? '';
 if (process.env.POKI_BIND_HOST !== undefined && !requestedBind) throw new Error('POKI_BIND_HOST is empty. Unset it to listen on 127.0.0.1.');
-const loopback = new Set(['127.0.0.1', 'localhost', '::1']);
+// Local clients are pinned to one name. `src/stdio.mjs` reads mcp.json, refuses any endpoint whose
+// hostname is not `127.0.0.1`, and then sends `Host: 127.0.0.1:PORT`. `localhost` and `::1` are
+// different addresses as far as that request and the Host check are concerned, so only `127.0.0.1`
+// - or a wildcard, which answers on it too - keeps the local clients reachable.
+const localHost = '127.0.0.1';
 const wildcard = new Set(['0.0.0.0', '::']);
-const requested = (requestedBind || '127.0.0.1').split(',').map(part => part.trim()).filter(Boolean);
+const answersLocalClients = host => host === localHost || wildcard.has(host);
+const requested = (requestedBind || localHost).split(',').map(part => part.trim()).filter(Boolean);
 if (!requested.length) throw new Error('POKI_BIND_HOST must name at least one address.');
 if (requested.some(host => wildcard.has(host)) && requested.length > 1) throw new Error('POKI_BIND_HOST: a wildcard address already covers every interface, so it cannot be combined with another one.');
-// `src/stdio.mjs` accepts a 127.0.0.1 endpoint only, and every local client (the agent, bin/call.mjs)
-// reads that endpoint from mcp.json. Serving loopback as well is what keeps them working once the
-// daemon also listens on a LAN address.
-const bindHosts = [...new Set(requested.some(host => wildcard.has(host) || loopback.has(host)) ? requested : [...requested, '127.0.0.1'])];
-const serveLoopback = bindHosts.some(host => loopback.has(host) || wildcard.has(host));
+const bindHosts = [...new Set(requested.some(answersLocalClients) ? requested : [...requested, localHost])];
 const hostAllow = (process.env.POKI_HOST_ALLOW ?? '').split(',').map(part => part.trim()).filter(Boolean);
 // Binding beyond loopback without an allowlist answers 403 to every client, which reads as
 // "the daemon is broken" rather than "you forgot a variable".
-if (bindHosts.some(host => !loopback.has(host))) {
-  if (!hostAllow.length) throw new Error(`POKI_BIND_HOST=${bindHosts.join(',')} serves beyond loopback, so POKI_HOST_ALLOW must list the Host headers your clients send.`);
-  for (const host of bindHosts) if (!wildcard.has(host) && !hostAllow.includes(host)) throw new Error(`POKI_BIND_HOST=${host} is not in POKI_HOST_ALLOW (${hostAllow.join(',')}); every request to it would be rejected.`);
-}
-// Local clients send `Host: 127.0.0.1:PORT`, so an allowlist that omits loopback locks out the
-// very clients the loopback listener exists for.
-if (serveLoopback && hostAllow.length && !hostAllow.some(host => loopback.has(host))) throw new Error(`POKI_HOST_ALLOW (${hostAllow.join(',')}) must include 127.0.0.1 or localhost, because local clients connect through the loopback endpoint.`);
+if (!hostAllow.length && bindHosts.some(host => !answersLocalClients(host))) throw new Error(`POKI_BIND_HOST=${bindHosts.join(',')} serves beyond ${localHost}, so POKI_HOST_ALLOW must list the Host headers your clients send.`);
+const uncovered = hostAllow.length ? bindHosts.filter(host => !wildcard.has(host) && !hostAllow.includes(host)) : [];
+// The same one-name rule applies to the allowlist: an entry for `localhost` or `::1` does not cover
+// the `Host: 127.0.0.1:PORT` that every local client sends. Checked before `uncovered` so the error
+// names the rule instead of reporting the automatically added 127.0.0.1 as an odd bind address.
+if (hostAllow.length && !hostAllow.includes(localHost)) throw new Error(`POKI_HOST_ALLOW (${hostAllow.join(',')}) must include ${localHost}, because local clients connect through http://${localHost} and send that Host header.`);
+if (uncovered.length) throw new Error(`POKI_HOST_ALLOW (${hostAllow.join(',')}) does not cover POKI_BIND_HOST=${uncovered.join(',')}; every request to ${uncovered.length === 1 ? 'that address' : 'those addresses'} would be rejected.`);
 const validHost = hostAllow.length ? hostHeaderValidation(hostAllow) : localhostHostValidation();
 const validOrigin = localhostOriginValidation();
 const active = new Set();
