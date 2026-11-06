@@ -97,4 +97,18 @@ Local helpers belong to one daemon and stop when its stdin pipe closes. The daem
 
 `native/ocr.swift` is a host binary, not part of the bridge: it prints recognized text as JSON boxes, and `src/device.mjs` runs `build/ocr` whenever the accessibility tree cannot describe a screen. It links Vision, so a host without Vision has no recognizer at all, and until now that surfaced as `spawn build/ocr ENOENT` in the middle of a tap.
 
-`native/ocr-linux.py` is the same contract built on tesseract: it prints `text`, `confidence`, `x`, `y`, `width`, `height` in pixels of the image it was given. Install it as `build/ocr` and nothing above it changes. A host with neither keeps working from the accessibility tree: recognition reports itself unavailable once, and that is remembered only for a missing or unexecutable binary - a run that failed once is reported for that frame and retried on the next. It recognizes a doubled copy of the frame when the screenshot is narrow, because a 390-pixel-wide Chinese label is otherwise unreadable, and it needs `tesseract-ocr` with the `chi_sim` and `eng` language packs.
+`native/ocr-linux.py` is the same contract built on tesseract: it prints `text`, `confidence`, `x`, `y`, `width`, `height` in pixels of the image it was given. Nothing above it changes when it replaces the Swift helper. A host with neither keeps working from the accessibility tree: recognition reports itself unavailable once, and that is remembered only for a missing or unexecutable binary - a run that failed once is reported for that frame and retried on the next.
+
+```sh
+# Debian/Ubuntu host or image
+apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng python3-pil
+install -m 755 native/ocr-linux.py build/ocr
+```
+
+It recognizes a doubled copy of the frame when the screenshot is narrow, because a 390-pixel-wide Chinese label is otherwise unreadable. On a 390×844 capture of a home screen that reads 20 confident lines in about 8 seconds on a 4-core ARM board, against about 5 without the doubling; the labels it loses at native size are the small ones. Recognition stays a fallback for that reason — `src/interaction.mjs` only waits for it when accessibility returned nothing at all.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `POKI_OCR_LANGS` | `chi_sim+eng` | tesseract language packs |
+| `POKI_OCR_PSM` | `11` | tesseract page mode; `11` is sparse text, which is what a screen is |
+| `POKI_OCR_UPSCALE` | `2` | recognize a doubled copy and halve the boxes; `1` is faster and blinder |
