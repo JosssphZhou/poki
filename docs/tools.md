@@ -220,6 +220,17 @@ Batch results retain the executed prefix and each step's `elapsed_ms`, then repo
 
 Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input, recording recovery and external-process durations where exercised. Each stage has an ID and parent ID. Parent durations include their children, so do not add parents and children. External-process time includes helper startup, connection and work inside the helper; those internal costs are not separately measured. Timing metadata contains no input text, device identifiers or image content, and it does not measure model reasoning or client round-trip time. No end-to-end speed multiplier is claimed.
 
+## Humanized input shaping
+
+Physical input is shaped after measured human movement before it reaches the HID channel. `poki-native` applies this per request, so the behavior is always current with the built binary:
+
+- **Taps** land with a small scatter around the requested point (~2 px at 3x, bounded), hold for a log-normal press duration (median ~97 ms, 55–220 ms) instead of a fixed interval, and drift slightly before release. Long presses keep the requested duration within ±10%.
+- **Drags and scrolls** follow a minimum-jerk timing profile (`10t³ − 15t⁴ + 6t⁵`), so motion starts slow, peaks mid-stroke and decelerates, rather than interpolating linearly. The path carries a slow lateral arc (0.4–2% of distance) with layered drift noise and per-frame micro jitter; frame deadlines are individually jittered so event cadence is never uniform; the release point scatters in proportion to peak speed (Schmidt's speed-accuracy tradeoff). Total duration varies ±12–18% around the request.
+- **Pinches** use the same minimum-jerk distance progression with smooth noise, jittered deadlines, and per-finger contact jitter around the requested angle and center.
+- **Keys and hardware buttons** sample log-normal hold and inter-key intervals (medians ~90/130 ms) with jittered modifier lead-in and tail; double-tap gaps are sampled (~110 ms median).
+
+Set `POKI_HUMANIZE=off` to disable shaping and get the exact legacy schedules (also honored by tests). `POKI_HUMANIZE_SEED=<u64>` makes plans reproducible, and `POKI_HUMANIZE_DEBUG=<path>` appends one JSON line per plan with the sampled contact, release, durations and frame count. The JS tool layer is untouched: requested `duration_ms` values act as the nominal timing that shaping varies around.
+
 ## Efficient short workflows
 
 - **Put the whole known task in one batch:** When the request already names what to do, send `launch_app` and every step in one `batch_commands` call. `launch_app` on a simulator returns once the interface is readable; `tap_text`, `fill` and `handle_alert` wait five seconds for their target to appear and hold still (a recognition already running on a screen accessibility cannot read may finish a few seconds later), so a batch can cross screens; the reply ends with the visible text, so a closing `take_screenshot` is only needed for pixels. Leave out a step when whether to do it depends on what an earlier step shows, or when it needs the user's decision. A wrong target stops the batch without tapping and reports the closest text on screen. Each step result reports `elapsed_ms`, which reflects server-side execution time only and excludes model reasoning and client round-trip overhead.
