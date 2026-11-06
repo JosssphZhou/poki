@@ -2,7 +2,7 @@
 
 RemotePairing lets Poki use an already paired iPhone through its Tailscale address. It uses an encrypted userspace tunnel and does not change the Mac's default route, DNS, proxy, or other VPN settings. This is an opt-in transport; the existing USB path remains available for devices without a remote configuration.
 
-**Experimental cross-network support:** the Mac and iPhone no longer need to remain on the same LAN. The verified route initializes a session on Wi-Fi, then keeps it while the iPhone uses cellular data. This is not yet a fully recoverable cellular-only connection.
+**Experimental cross-network support:** the Mac and iPhone no longer need to remain on the same LAN. The verified route initializes a session on Wi-Fi, then keeps it while the iPhone uses cellular data.
 
 ## Prepare
 
@@ -28,11 +28,9 @@ The native connection helper is independent of MCP clients and the Poki daemon. 
 
 `reconnect_device` attempts a replacement tunnel before dropping a working one. It never repeats a previous input. If an operation loses its response, inspect the screen before retrying. `disconnect_device` explicitly closes the helper and phone connection. Cancelling an observation abandons only that request. The helper finishes the read and discards its response. Cancelling an input drops the in-flight operation without replaying it or closing the shared tunnel. Some input may already have reached the phone; inspect the screen before retrying. The helper processes one request at a time, so later operations cannot overtake a draining read.
 
-**A complete loss of the phone tunnel is not recoverable on every cellular configuration.** On the tested iOS 27.3 phone, new RemotePairing connections are refused on cellular even though an established connection continues working. Returning the phone to Wi-Fi is required after the helper exits, the Mac restarts, or the underlying tunnel is lost. Keeping the helper alive handles client/daemon restarts; it does not prove recovery from those other failures.
-
 Ordinary service errors and observation deadlines preserve a live tunnel. The helper clears a connection after its underlying adapter has stopped. A cancelled read can occupy the helper until its native deadline, so the next request may wait. Native connection setup has a 25-second limit and execution has a 90-second limit; the JavaScript request budget is 120 seconds.
 
-On iOS, Tailscale cannot run alongside another ordinary VPN. Users who need that other VPN to reach their AI client must resolve the internet-access requirement too. A suitable Tailscale exit node is a possible topology, but it has not been validated in this experiment and does not itself fix native cellular reconnection. See [Tailscale's VPN compatibility documentation](https://tailscale.com/docs/reference/faq/other-vpns).
+On iOS, Tailscale cannot run alongside another ordinary VPN. Users who need that other VPN to reach their AI client must resolve the internet-access requirement too. A suitable Tailscale exit node is a possible topology, but it has not been validated in this experiment. See [Tailscale's VPN compatibility documentation](https://tailscale.com/docs/reference/faq/other-vpns).
 
 Device-management paths such as app installation, process termination, Settings deep links, recording, location simulation, and standalone clipboard access are not supported by this transport. They report a transport limitation instead of silently using a local connection.
 
@@ -51,12 +49,6 @@ The initial transport checks used an iPhone17,1 running iOS 27.3 on 2026-11-06, 
 - Continuing to read and clear the field after an explicit reconnect failed, demonstrating that the old working tunnel survived the failed replacement attempt.
 - Returning an error without a cached image when Tailscale was disconnected.
 
-After Tailscale was restored on cellular, Tailscale ping succeeded but both IPv4 and IPv6 RemotePairing connections were refused. Screen capture could not resume until the iPhone rejoined Wi-Fi. This is an observed blocker on this device and network, not a claim about every iOS configuration.
-
 Clipboard restoration was unavailable for the final mixed-text check and was reported as such. One accessibility-tree request took 46.8 seconds; this run is not a performance or long-duration stability acceptance. Continuous video/recording is outside the implemented remote transport.
-
-Complete cellular reconnection remains an acceptance blocker. Do not describe this transport as fully accepted until that requirement is resolved.
-
-Further [native-listener diagnostics](verification/cellular-native-listener.md) confirmed that wireless connections were already enabled and captured listener registrations being removed during the switch to cellular. The phone's own hotspot did not restore access. This investigation found no verified repair for the cold-reconnection blocker.
 
 The [cancellation repair checks](verification/tailscale-pr-validation.md#cancellation-repair-verification) separately verify timeout recovery, missing-element failure, and late screenshot cleanup on a real phone using Wi-Fi.

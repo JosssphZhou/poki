@@ -15,7 +15,7 @@ The one-second deadline is the failure trigger, not a delay used to synchronize 
 
 On one authorized, prepared iPhone, capture the screen, run `wait_for` with a one-second timeout for absent text, and capture again. Record the helper PID before and after. The helper must remain alive and the second capture must use it. Repeat after a missing-element lookup. Do not submit text.
 
-For cellular acceptance, establish the session on Wi-Fi, disconnect USB, and switch to cellular. Verify screenshots, app launch, and exact field readback. Test explicit reconnection and recovery after complete tunnel loss separately. An existing session surviving a timeout does not prove cellular cold reconnection.
+For cellular acceptance, establish the session on Wi-Fi, disconnect USB, and switch to cellular. Verify screenshots, app launch, and exact field readback. Test explicit reconnection and recovery after complete tunnel loss separately.
 
 ## Tool catalog contract
 

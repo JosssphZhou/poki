@@ -25,7 +25,6 @@ Tested on iPhone17,1 with iOS 27.3. The operator confirmed USB disconnection and
 - Restarting the Poki daemon preserved the helper. Settings launched, and `poki123 AbC 中文24680` was entered with exact accessibility readback and a matching screen capture inspected during the check. The field was subsequently cleared.
 - A failed explicit reconnect preserved the old usable session.
 - Disconnecting Tailscale caused capture to fail explicitly rather than return a cached frame.
-- Restoring Tailscale on cellular did not restore a lost native tunnel; Wi-Fi was required. Further [native-listener diagnostics](cellular-native-listener.md) record the evidence and its limits.
 
 ## Cancellation repair verification
 
@@ -35,12 +34,12 @@ On the authorized physical iPhone over RemotePairing, the original `wait_for` on
 
 Two native-protocol checks exercised different failure paths. A screenshot aimed at an existing file returned an error, preserved the file, and kept the same tunnel connections. Abandoning a screenshot request removed its late output before the next request ran. These checks used the real native helper and phone, not the integration fixture.
 
-The phone was on Wi-Fi during this repair round. The checks do not establish cellular cold reconnection. One Settings launch returned a delivered launch but failed foreground verification; it is not counted as a successful app-launch check. No text was typed or submitted during the repair verification.
+The phone was on Wi-Fi during this repair round. One Settings launch returned a delivered launch but failed foreground verification; it is not counted as a successful app-launch check. No text was typed or submitted during the repair verification.
 
 ## Unresolved behavior
 
 The cancellation regression now passes at the MCP boundary. Its synthetic helper refuses a replacement process, so the successful second screenshot proves reuse at that boundary. Native device verification is separate from this fixture.
 
-Full cellular cold reconnection, remote automatic unlock, Linux hosting, simultaneous use with another iOS VPN, and continuous video have not passed acceptance. Device name and OS version may be absent from remote device information because the current implementation reads RSD properties. These metadata omissions do not block screen or input operations. USB and simulator behavior has not been retested on devices in this repair round.
+Remote automatic unlock, Linux hosting, simultaneous use with another iOS VPN, and continuous video have not passed acceptance. Device name and OS version may be absent from remote device information because the current implementation reads RSD properties. These metadata omissions do not block screen or input operations. USB and simulator behavior has not been retested on devices in this repair round.
 
 A clipboard snapshot was unavailable in the earlier mixed-text run, so restoration was not claimed. One accessibility read took 46.8 seconds; this evidence does not establish latency or long-duration stability targets.

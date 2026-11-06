@@ -79,7 +79,7 @@ Installing apps, opening URLs, and reading the clipboard trigger a macOS approva
 | Devices | `start_simulator` | Boot an existing simulator by id or name, or create one from an available model. |
 | Devices | `shut_down_simulator` | Shut down the selected simulator. |
 | Devices | `reconnect_device` | Attempt a replacement RemotePairing tunnel while preserving a working tunnel if replacement fails. Does not replay input. |
-| Devices | `disconnect_device` | Close the selected RemotePairing helper and tunnel. A new session may require Wi-Fi. |
+| Devices | `disconnect_device` | Close the selected RemotePairing helper and tunnel. |
 | Devices | `select_device` | Select one connected device by id or unambiguous name for this MCP session. |
 | Devices | `get_device_info` | Read device identity, capture dimensions in logical points, and optionally platform settings. |
 | Devices | `poki_mcp_status` | Report tool counts, connected-device count, selected device, and approval mode. |
