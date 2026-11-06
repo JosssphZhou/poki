@@ -2,7 +2,7 @@ import http from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, writeFile, readFile, unlink, rename, chmod } from 'node:fs/promises';
 import { once } from 'node:events';
-import { NodeStreamableHTTPServerTransport, localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
+import { NodeStreamableHTTPServerTransport, localhostHostValidation, localhostOriginValidation, hostHeaderValidation } from '@modelcontextprotocol/node';
 import { createServer, definitions } from './tools.mjs';
 import { Coordination } from './coordination.mjs';
 import { Devices } from './device.mjs';
@@ -16,9 +16,11 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invali
 await warnIfNativeStale();
 const sessions = new Map();
 const coordinator = new Coordination();
-const token = randomBytes(32).toString('hex');
+const token = process.env.POKI_MCP_TOKEN?.trim() || randomBytes(32).toString('hex');
 const expected = Buffer.from(`Bearer ${token}`);
-const validHost = localhostHostValidation();
+const bindHost = process.env.POKI_BIND_HOST ?? '127.0.0.1';
+const hostAllow = (process.env.POKI_HOST_ALLOW ?? '').split(',').map(part => part.trim()).filter(Boolean);
+const validHost = hostAllow.length ? hostHeaderValidation(hostAllow) : localhostHostValidation();
 const validOrigin = localhostOriginValidation();
 const active = new Set();
 
@@ -67,10 +69,10 @@ const listener = http.createServer(async (req, res) => {
 });
 
 await mkdir(stateDir, { recursive: true, mode: 0o700 });
-listener.listen(port, '127.0.0.1');
+listener.listen(port, bindHost);
 await once(listener, 'listening');
 const actualPort = listener.address().port;
-const entry = { url: `http://127.0.0.1:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid };
+const entry = { url: `http://${bindHost === '0.0.0.0' || bindHost === '::' ? '127.0.0.1' : bindHost}:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid };
 const temporary = `${endpointFile}.${process.pid}.tmp`;
 await writeFile(temporary, JSON.stringify(entry, null, 2), { mode: 0o600, flag: 'wx' });
 await rename(temporary, endpointFile);
