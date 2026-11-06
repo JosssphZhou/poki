@@ -23,21 +23,31 @@ if (token.length < 32) throw new Error('POKI_MCP_TOKEN must be at least 32 chara
 const expected = Buffer.from(`Bearer ${token}`);
 const requestedBind = process.env.POKI_BIND_HOST?.trim() ?? '';
 if (process.env.POKI_BIND_HOST !== undefined && !requestedBind) throw new Error('POKI_BIND_HOST is empty. Unset it to listen on 127.0.0.1.');
-const bindHost = requestedBind || '127.0.0.1';
+const loopback = new Set(['127.0.0.1', 'localhost', '::1']);
+const wildcard = new Set(['0.0.0.0', '::']);
+const requested = (requestedBind || '127.0.0.1').split(',').map(part => part.trim()).filter(Boolean);
+if (!requested.length) throw new Error('POKI_BIND_HOST must name at least one address.');
+if (requested.some(host => wildcard.has(host)) && requested.length > 1) throw new Error('POKI_BIND_HOST: a wildcard address already covers every interface, so it cannot be combined with another one.');
+// `src/stdio.mjs` accepts a 127.0.0.1 endpoint only, and every local client (the agent, bin/call.mjs)
+// reads that endpoint from mcp.json. Serving loopback as well is what keeps them working once the
+// daemon also listens on a LAN address.
+const bindHosts = [...new Set(requested.some(host => wildcard.has(host) || loopback.has(host)) ? requested : [...requested, '127.0.0.1'])];
+const serveLoopback = bindHosts.some(host => loopback.has(host) || wildcard.has(host));
 const hostAllow = (process.env.POKI_HOST_ALLOW ?? '').split(',').map(part => part.trim()).filter(Boolean);
 // Binding beyond loopback without an allowlist answers 403 to every client, which reads as
 // "the daemon is broken" rather than "you forgot a variable".
-const loopback = new Set(['127.0.0.1', 'localhost', '::1']);
-const wildcard = new Set(['0.0.0.0', '::']);
-if (!loopback.has(bindHost)) {
-  if (!hostAllow.length) throw new Error(`POKI_BIND_HOST=${bindHost} serves beyond loopback, so POKI_HOST_ALLOW must list the Host headers your clients send.`);
-  if (!wildcard.has(bindHost) && !hostAllow.includes(bindHost)) throw new Error(`POKI_BIND_HOST=${bindHost} is not in POKI_HOST_ALLOW (${hostAllow.join(',')}); every request would be rejected.`);
+if (bindHosts.some(host => !loopback.has(host))) {
+  if (!hostAllow.length) throw new Error(`POKI_BIND_HOST=${bindHosts.join(',')} serves beyond loopback, so POKI_HOST_ALLOW must list the Host headers your clients send.`);
+  for (const host of bindHosts) if (!wildcard.has(host) && !hostAllow.includes(host)) throw new Error(`POKI_BIND_HOST=${host} is not in POKI_HOST_ALLOW (${hostAllow.join(',')}); every request to it would be rejected.`);
 }
+// Local clients send `Host: 127.0.0.1:PORT`, so an allowlist that omits loopback locks out the
+// very clients the loopback listener exists for.
+if (serveLoopback && hostAllow.length && !hostAllow.some(host => loopback.has(host))) throw new Error(`POKI_HOST_ALLOW (${hostAllow.join(',')}) must include 127.0.0.1 or localhost, because local clients connect through the loopback endpoint.`);
 const validHost = hostAllow.length ? hostHeaderValidation(hostAllow) : localhostHostValidation();
 const validOrigin = localhostOriginValidation();
 const active = new Set();
 
-const listener = http.createServer(async (req, res) => {
+async function handle(req, res) {
   if (!validHost(req, res) || !validOrigin(req, res)) return;
   const received = Buffer.from(req.headers.authorization ?? '');
   if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
@@ -79,13 +89,16 @@ const listener = http.createServer(async (req, res) => {
     if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
     if (!res.writableEnded) res.end(JSON.stringify({ error: error.message }));
   }
-});
+}
 
 await mkdir(stateDir, { recursive: true, mode: 0o700 });
-listener.listen(port, bindHost);
-await once(listener, 'listening');
-const actualPort = listener.address().port;
-const entry = { url: `http://${bindHost === '0.0.0.0' || bindHost === '::' ? '127.0.0.1' : bindHost}:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid };
+const servers = bindHosts.map(() => http.createServer(handle));
+servers[0].listen(port, bindHosts[0]);
+await once(servers[0], 'listening');
+const actualPort = servers[0].address().port;
+for (const [index, server] of servers.entries()) if (index > 0) server.listen(actualPort, bindHosts[index]);
+await Promise.all(servers.slice(1).map(server => once(server, 'listening')));
+const entry = { url: `http://127.0.0.1:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid };
 const temporary = `${endpointFile}.${process.pid}.tmp`;
 await writeFile(temporary, JSON.stringify(entry, null, 2), { mode: 0o600, flag: 'wx' });
 await rename(temporary, endpointFile);
@@ -99,8 +112,8 @@ async function stop() {
   if (stopping) return;
   stopping = true;
   stopUpdateChecks();
-  const closed = new Promise(resolve => listener.close(resolve));
-  listener.closeAllConnections();
+  const closed = Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
+  for (const server of servers) server.closeAllConnections();
   await Promise.allSettled([...sessions.values()].map(devices => devices.close()));
   await Promise.allSettled([...active].map(server => server.close()));
   await closed;
