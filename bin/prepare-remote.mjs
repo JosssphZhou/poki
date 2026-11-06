@@ -6,10 +6,17 @@ import { join } from 'node:path';
 import { isIP } from 'node:net';
 import { root, stateDir, idevice } from '../src/config.mjs';
 const exec = promisify(execFile);
-const [id, host, portText = '49152'] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const flagIndex = args.indexOf('--proxy');
+let proxy;
+if (flagIndex >= 0) {
+  proxy = args[flagIndex + 1];
+  args.splice(flagIndex, 2);
+}
+const [id, host, portText = '49152'] = args;
 const port = Number(portText);
-if (!id || !/^[a-zA-Z0-9-]+$/.test(id) || !isIP(host) || !Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error('Usage: node bin/prepare-remote.mjs DEVICE_ID TAILSCALE_IP [PORT]. Connect the trusted iPhone by USB and Wi-Fi first.');
+if (!id || !/^[a-zA-Z0-9-]+$/.test(id) || !isIP(host) || !Number.isInteger(port) || port < 1 || port > 65535 || proxy !== undefined && !proxy.startsWith('socks5://')) {
+  throw new Error('Usage: node bin/prepare-remote.mjs DEVICE_ID IP [PORT] [--proxy socks5://HOST:PORT]. Connect the trusted iPhone by USB and Wi-Fi first.');
 }
 const devices = JSON.parse((await exec('python3', [join(root, 'native/devices.py')])).stdout);
 if (!devices.some(d => d.id === id && d.connection === 'USB')) throw new Error('The selected iPhone must be connected over USB for initial pairing.');
@@ -29,7 +36,7 @@ await chmod(pairing, 0o600);
 const verification = await exec(idevice, ['--udid', id, 'remotepairing_lockdown', 'verify', pairing, 'poki-mcp'], { timeout: 30000 });
 if (!verification.stdout.includes('the device recognizes this pairing record')) throw new Error('The iPhone did not verify the saved pairing record.');
 const configPath = join(directory, 'config.json');
-await writeFile(configPath, JSON.stringify({ id, host, port, pairing_file: pairing }), { mode: 0o600 });
+await writeFile(configPath, JSON.stringify({ id, host, port, pairing_file: pairing, proxy: proxy ?? null }), { mode: 0o600 });
 await chmod(configPath, 0o600);
 let configs = [];
 const registry = join(stateDir, 'remote-devices.json');

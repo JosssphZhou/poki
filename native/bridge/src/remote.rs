@@ -10,9 +10,29 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{io::Write, time::Duration};
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
 };
+
+/// A parsed SOCKS5 endpoint. The tunnel traffic is already encrypted by
+/// RPPairing, so the proxy itself only needs the no-authentication method.
+#[derive(Debug, Clone)]
+struct ProxyAddr {
+    host: String,
+    port: u16,
+}
+
+impl ProxyAddr {
+    fn parse(value: &str) -> Option<Self> {
+        let rest = value.strip_prefix("socks5://")?;
+        let (host, port_text) = rest.rsplit_once(':')?;
+        let port = port_text.parse().ok()?;
+        if host.is_empty() {
+            return None;
+        }
+        Some(Self { host: host.to_string(), port })
+    }
+}
 
 #[derive(Deserialize)]
 struct Config {
@@ -20,9 +40,58 @@ struct Config {
     host: String,
     port: u16,
     pairing_file: String,
+    proxy: Option<String>,
 }
 
 type Control = RemotePairingClient<RpPairingSocket<TcpStream>>;
+
+/// Opens a raw byte stream to `host:port`, either directly or through the
+/// configured SOCKS5 proxy. The halves are reunited into a `TcpStream` so
+/// the pairing and tunnel layers keep their existing types.
+async fn connect_stream(config: &Config, host: &str, port: u16) -> Result<TcpStream> {
+    let Some(proxy_text) = config.proxy.as_deref() else {
+        let socket = TcpStream::connect((host, port)).await?;
+        socket.set_nodelay(true)?;
+        return Ok(socket);
+    };
+    let proxy = ProxyAddr::parse(proxy_text)
+        .ok_or_else(|| format!("Invalid proxy URL: {proxy_text}"))?;
+    let socket = TcpStream::connect((proxy.host.as_str(), proxy.port))
+        .await
+        .map_err(|e| format!("Cannot reach the SOCKS5 proxy at {}: {e}", proxy.host))?;
+    socket.set_nodelay(true)?;
+    let (mut reader, mut writer) = socket.into_split();
+
+    // SOCKS5 greeting: offer only the no-authentication method.
+    writer.write_all(&[0x05, 0x01, 0x00]).await?;
+    let mut method = [0u8; 2];
+    reader.read_exact(&mut method).await?;
+    if method != [0x05, 0x00] {
+        return Err("The SOCKS5 proxy refused the no-authentication method".into());
+    }
+
+    // CONNECT with a domain name; the proxy resolves DNS itself.
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
+    request.extend_from_slice(host.as_bytes());
+    request.extend_from_slice(&port.to_be_bytes());
+    writer.write_all(&request).await?;
+    let mut header = [0u8; 4];
+    reader.read_exact(&mut header).await?;
+    if header[1] != 0x00 {
+        return Err(format!("The SOCKS5 proxy rejected CONNECT with reply code {}", header[1]).into());
+    }
+    // Consume the bound address so the next bytes are the tunnel payload.
+    let skip = match header[3] {
+        0x01 => 6,
+        0x03 => 1 + reader.read_u8().await? as usize + 2,
+        0x04 => 18,
+        other => return Err(format!("Unknown SOCKS5 address type {other} in the proxy reply").into()),
+    };
+    let mut bound = vec![0u8; skip];
+    reader.read_exact(&mut bound).await?;
+
+    Ok(reader.reunite(writer)?)
+}
 
 struct Session {
     config: Config,
@@ -33,9 +102,8 @@ struct Session {
 impl Session {
     async fn connect(&mut self) -> Result<()> {
         if self.control.is_none() {
-            let socket = TcpStream::connect((self.config.host.as_str(), self.config.port)).await
-                .map_err(|_| "Remote pairing is unreachable. Keep Tailscale connected; reconnect the iPhone to Wi-Fi to establish a new session.")?;
-            socket.set_nodelay(true)?;
+            let socket = connect_stream(&self.config, &self.config.host, self.config.port).await
+                .map_err(|e| format!("Remote pairing is unreachable: {e}. Keep the proxy and tunnel connected; reconnect the iPhone to Wi-Fi to establish a new session."))?;
             let mut control = RemotePairingClient::new(RpPairingSocket::new(socket), "poki-mcp");
             let mut record = RpPairingFile::read_from_file(&self.config.pairing_file).await?;
             control.attempt_pair_verify().await?;
@@ -51,9 +119,8 @@ impl Session {
                 return Err(format!("The remote pairing control connection closed: {error}. Reconnect the iPhone to Wi-Fi, then reconnect the device.").into());
             }
         };
-        let socket = TcpStream::connect((self.config.host.as_str(), port)).await
-            .map_err(|_| "The iPhone refused a new tunnel. Reconnect it to Wi-Fi, then reconnect the device.")?;
-        socket.set_nodelay(true)?;
+        let socket = connect_stream(&self.config, &self.config.host, port).await
+            .map_err(|e| format!("The iPhone refused a new tunnel: {e}. Reconnect it to Wi-Fi, then reconnect the device."))?;
         let tunnel = connect_tls_psk_tunnel_native(socket, control.encryption_key()).await?;
         let info = tunnel.info.clone();
         let mut adapter = idevice::tcp::adapter::Adapter::new(

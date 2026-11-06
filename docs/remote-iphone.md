@@ -1,20 +1,22 @@
-# iPhone over Tailscale
+# iPhone over a remote address
 
-RemotePairing lets Poki use an already paired iPhone through its Tailscale address. It uses an encrypted userspace tunnel and does not change the Mac's default route, DNS, proxy, or other VPN settings. This is an opt-in transport; the existing USB path remains available for devices without a remote configuration.
+RemotePairing lets Poki use an already paired iPhone through an IP address that the Mac can reach with plain TCP. It uses an encrypted userspace tunnel and does not change the Mac's default route, DNS, proxy, or other VPN settings. This is an opt-in transport; the existing USB path remains available for devices without a remote configuration.
 
 **Experimental cross-network support:** the Mac and iPhone no longer need to remain on the same LAN. The verified route initializes a session on Wi-Fi, then keeps it while the iPhone uses cellular data. This is not yet a fully recoverable cellular-only connection.
 
 ## Prepare
 
-1. Run `./bin/setup` in this checkout. Both devices must already be connected to the same tailnet.
+1. Run `./bin/setup` in this checkout. Both devices must already be reachable over the chosen transport.
 2. Connect the trusted, unlocked iPhone over USB and Wi-Fi. Developer Mode and UI Automation must already be enabled.
 3. Set `POKI_MCP_STATE_DIR` to this installation's private state directory, then run:
 
    ```sh
-   node bin/prepare-remote.mjs DEVICE_ID TAILSCALE_IP
+   node bin/prepare-remote.mjs DEVICE_ID DEVICE_IP [--proxy socks5://HOST:PORT]
    ```
 
    This verifies a RemotePairing record over the existing trusted USB connection. The pairing key remains in the private state directory. Ordinary operations never trigger a new pairing flow.
+
+   The optional `--proxy` flag routes both the control connection and the tunnel connection through a SOCKS5 proxy that supports CONNECT to arbitrary hosts and ports. Only the no-authentication method is offered; the pairing traffic itself is already encrypted. Use this when the phone is reachable only through a tunnel that exposes a SOCKS5 entry point rather than a direct route.
 4. Start Poki with the same state directory. Call `take_screenshot` with the selected device ID while Wi-Fi is connected. Confirm the actual screen before disconnecting USB.
 5. Disconnect Wi-Fi from Control Center, leaving the Wi-Fi setting enabled, Tailscale connected, and the phone unlocked. Verify the phone is using cellular data.
 
