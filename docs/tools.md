@@ -55,6 +55,24 @@ Consecutive device calls do not require `acquire_device`. With one available dev
 
 Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing tool allowlist determines which tools reach its model.
 
+### Computer-use profile: look and do
+
+`POKI_TOOL_PROFILE=cua` lists only `look`, `do`, `list_apps`, `list_devices`, `select_device` and `poki_mcp_status`, with short server instructions. It works the way desktop computer-use tools do: `do` runs a list of actions in order (tap by element number or point, type, key, swipe, scroll_to, long_press, drag, pinch, button, launch, wait), waits a short fixed time after the last one, and reads the screen once; `look` reads it without acting. Each answer lists the screen's elements with numbers for the next call, marks the ones that are new since the previous read, names what disappeared, and attaches a screenshot. There is no verdict: the model decides what happened from the elements and the picture.
+
+- Each action is reported as `sent`, `not_sent` or `unknown`. Nothing after a failed action is sent, and an `unknown` action is never sent again. Element numbers that are not in the latest read are refused before anything is sent.
+- Typing uses hardware key presses (the bridge's `type_keys`). Only text the keyboard cannot type is pasted, and then the user's clipboard is saved first and put back afterwards; a clipboard that cannot be read back exactly is never pasted over.
+- Accessibility gets `POKI_CUA_TREE_MS` (default 2500 ms) per read; after that the screenshot's OCR answers instead. Actions and the wait after them get at most `POKI_CUA_ACTION_CAP_MS` (default 4000 ms).
+- A locked or dark phone, or Poki's own app in front, stops the actions.
+- `POKI_CUA_BACKEND=wda` with `POKI_WDA_URL=http://<phone>:8100` reads and acts through a WebDriverAgent runner on the phone instead of the bridge. `look` and `do` answer the same way on either backend.
+
+The complete catalog (`POKI_MCP_TOOLS=all`) includes `look` and `do` too.
+
+### One daemon, several clients
+
+`POKI_INPUT_LOCK=1` gives each MCP session its own queue instead of one queue for every session. Read-only tools run beside other sessions' work, capped by `POKI_MAX_CONCURRENT_READS` (default 4), and tools that change the screen take a lock on their device. A call that cannot get the lock within `POKI_INPUT_LOCK_WAIT_MS` (default 30000 ms) fails with an error that names the session and tool holding it.
+
+`POKI_MCP_CALL_LOG=<path>` appends one JSON line per finished tool call: the tool, how long it took, its verdict when it has one, and whether it failed. Arguments, text and images are never written, and the session appears only as a hash.
+
 ## Ask in plain language
 
 Ask your agent for the task you want done:
