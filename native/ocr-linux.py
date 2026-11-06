@@ -10,11 +10,14 @@ Coordinates are pixels of the image that was handed in, which the caller has alr
 screen points, so a recognized box can be compared with accessibility frames unchanged.
 """
 
+import atexit
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 
 LANGUAGES = os.environ.get('POKI_OCR_LANGS', 'chi_sim+eng')
 # Sparse text: a screen is a collection of labels, not a page of prose.
@@ -23,6 +26,24 @@ PSM = os.environ.get('POKI_OCR_PSM', '11')
 # boxes back is far more accurate than reading the original.
 UPSCALE = int(os.environ.get('POKI_OCR_UPSCALE', '2'))
 MIN_WIDTH = 700
+
+
+# Copies made here are removed on the way out, including when the daemon stops a slow run with
+# SIGTERM: that skips `finally`, which is how they used to be left beside the frame they came from.
+_temporary = []
+
+
+def _discard_temporary():
+    while _temporary:
+        try:
+            os.unlink(_temporary.pop())
+        except OSError:
+            pass
+
+
+def _on_signal(signum, _frame):
+    _discard_temporary()
+    raise SystemExit(128 + signum)
 
 
 def enlarge(path):
@@ -38,7 +59,11 @@ def enlarge(path):
         if image.width >= MIN_WIDTH:
             return path, 1
         big = image.resize((image.width * UPSCALE, image.height * UPSCALE), Image.LANCZOS)
-        out = path + f'.x{UPSCALE}.png'
+        # Outside the frame directory on purpose, and named, so a killed run leaves at most one file
+        # under the host's temporary directory rather than a growing set next to the screenshots.
+        handle, out = tempfile.mkstemp(prefix='poki-ocr-', suffix='.png')
+        os.close(handle)
+        _temporary.append(out)
         big.save(out)
         return out, UPSCALE
     except Exception:
@@ -118,6 +143,9 @@ def main():
     if not shutil.which('tesseract'):
         print('tesseract is not installed; install tesseract-ocr and a language pack', file=sys.stderr)
         return 1
+    atexit.register(_discard_temporary)
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
     prepared, factor = enlarge(source)
     try:
         text = tesseract(prepared, PSM)
@@ -127,10 +155,7 @@ def main():
             lines = collect(tesseract(prepared, '6'), factor)
     finally:
         if prepared != source:
-            try:
-                os.unlink(prepared)
-            except OSError:
-                pass
+            _discard_temporary()
     print(json.dumps(lines, ensure_ascii=False))
     return 0
 
