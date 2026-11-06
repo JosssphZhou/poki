@@ -138,9 +138,11 @@ export class TelegramSource {
       throw new TelegramError('network', 'photo upload failed; delivery may be uncertain');
     }
     const result = await response.json().catch(() => null);
-    // Only a body that says `ok: false` is a rejection. A 200 whose body could not be read is not:
-    // the photo may well be in the chat already.
-    if (result?.ok === false || (!result && !response.ok)) {
+    // A rejection is a body that says `ok: false`, or a 4xx that should have carried one - a proxy
+    // answering 413 for a photo that is too large. A 5xx whose body could not be read is not: a 504
+    // from Telegram's gateway can arrive after the photo was accepted, and sending the text as well
+    // would show the reply twice.
+    if (result?.ok === false || (!result && response.status >= 400 && response.status < 500)) {
       throw new TelegramError(result?.error_code ?? response.status, 'photo rejected');
     }
     if (result?.ok !== true || !Number.isSafeInteger(result.result?.message_id)) {

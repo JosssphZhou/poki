@@ -136,11 +136,33 @@ test('Telegram uploads at most one photo per reply and only resends text on a re
   assert.deepEqual(methods(), ['sendPhoto']);
   assert.equal(api.messages.length, unreadable);
 
+  // A gateway error with an unreadable body is the same unknown: a 504 is sent after the upload
+  // was accepted, so the text must not follow it.
+  api.requests.length = 0;
+  api.failures.push({ method: 'sendPhoto', code: 504, raw: '<html>gateway timeout</html>' });
+  await reply.send('done', { kind: 'final', image });
+  assert.deepEqual(methods(), ['sendPhoto']);
+  assert.equal(api.messages.length, unreadable);
+
+  api.requests.length = 0;
+  api.failures.push({ method: 'sendPhoto', code: 502, raw: '' });
+  await reply.send('done', { kind: 'final', image });
+  assert.deepEqual(methods(), ['sendPhoto']);
+
+  // A 4xx with an unreadable body is a rejection - a proxy's 413 for a photo that is too large -
+  // so the reply is still delivered as text.
+  api.requests.length = 0;
+  api.failures.push({ method: 'sendPhoto', code: 413, raw: 'Payload Too Large' });
+  await reply.send('done', { kind: 'final', image });
+  assert.deepEqual(methods(), ['sendPhoto', 'sendMessage']);
+  const textDelivered = api.messages.length;
+  assert.equal(textDelivered, unreadable + 1);
+
   // A reply too long for a caption sends the text first, then one captionless photo.
   api.requests.length = 0;
   const long = 'x'.repeat(1500);
   await reply.send(long, { kind: 'final', image });
   assert.deepEqual(methods(), ['sendMessage', 'sendPhoto']);
   assert.equal(api.requests.at(-1).body.caption, undefined);
-  assert.equal(api.messages.length, unreadable + 1);
+  assert.equal(api.messages.length, textDelivered + 1);
 });
