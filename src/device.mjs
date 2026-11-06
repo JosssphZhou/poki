@@ -2,7 +2,7 @@ import { remoteDevices, remoteRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { owned } from './os.mjs';
+import { killTree, owned } from './os.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
 import { runBatch } from './batch.mjs';
 import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
@@ -39,10 +39,12 @@ const settleMs = 600, readbackMs = 5000;
 // when one is available, and it falls back to Windows.Media.OCR only if that cannot load.
 // Callers still say what they need recognition for; both answers now come from one child.
 const ocrSessions = new Map();
-function ocrSession(mode) {
+function ocrSession() {
+  // One key for one engine. Storing under anything else and looking up under 'engine' made
+  // every call miss the map, start a fresh child, and leak the previous one.
   const key = 'engine';
   if (ocrSessions.has(key)) return ocrSessions.get(key);
-  const session = { child: undefined, waiting: [], tail: Promise.resolve() };
+  const session = { child: undefined, waiting: [], killed: false };
   session.ensure = () => {
     if (session.child) return session.child;
     const env = { ...process.env, POKI_OCR_ENGINE: process.env.POKI_OCR_ENGINE ?? 'auto' };
@@ -55,24 +57,40 @@ function ocrSession(mode) {
       for (const resolve of session.waiting.splice(0)) resolve(undefined);
     };
     child.once('exit', retire); child.once('error', retire);
-    child.unref(); child.stdout.unref?.();
+    child.stdout.unref?.();
     session.child = child;
     return child;
   };
-  session.ask = file => new Promise(resolve => {
+  // A helper that does not answer is discarded rather than left in the queue: its replies
+  // are matched by position, so one unanswered request would shift every later answer onto
+  // the wrong caller. Killing it clears the queue and the next call starts a fresh one.
+  session.ask = (file, timeoutMs = 20000) => new Promise(resolve => {
     const child = session.ensure();
-    session.waiting.push(line => {
+    const holder = line => {
+      clearTimeout(timer);
       if (line === undefined) { resolve(undefined); return; }
       try { resolve(JSON.parse(line)); } catch { resolve(undefined); }
-    });
+    };
+    session.waiting.push(holder);
+    const timer = setTimeout(() => {
+      const index = session.waiting.indexOf(holder);
+      if (index >= 0) session.waiting.splice(index, 1);
+      if (session.child === child) { killTree(child, 'SIGKILL'); session.child = undefined; }
+      for (const other of session.waiting.splice(0)) other(undefined);
+      resolve(undefined);
+    }, timeoutMs);
     child.stdin.write(`${file}\n`);
   });
-  ocrSessions.set(mode, session);
+  session.close = () => {
+    if (session.child) { killTree(session.child, 'SIGKILL'); session.child = undefined; }
+    for (const resolve of session.waiting.splice(0)) resolve(undefined);
+    ocrSessions.delete(key);
+  };
+  ocrSessions.set(key, session);
   return session;
 }
 export function stopOcr() {
-  for (const session of ocrSessions.values()) { session.child?.stdin.end(); session.child = undefined; }
-  ocrSessions.clear();
+  for (const session of [...ocrSessions.values()]) session.close();
 }
 const reportsScreen = new Set(['tap', 'double_tap', 'long_press', 'tap_text', 'swipe', 'drag', 'scroll', 'pinch', 'type_text', 'fill', 'press_key', 'press_button', 'go_back', 'handle_alert', 'system_gesture']);
 // These exist to act on a control, so the reply says when nothing was seen to change after one.
@@ -270,19 +288,18 @@ export class Devices {
     const scale = original && Number.isFinite(frame.scale) && frame.scale > 0 ? frame.scale : 1;
     try {
       await writeFile(file, original ?? frame.data, { mode: 0o600 });
-      // The resident helper answers in order; a helper that died falls back to one process
-      // per request, which is slower but never silently empty.
-      const session = ocrSession(accurate ? 'accurate' : 'fast');
-      const run = session.tail = session.tail.then(async () => {
-        const resident = await Promise.race([session.ask(file), pause(20000).then(() => undefined)]);
-        if (resident === undefined) {
-          const env = { ...process.env, POKI_OCR_ENGINE: accurate ? 'rapidocr' : 'windows' };
-          const { stdout } = await this.run(ocr.file, [...ocr.prefix, file], 60000, undefined, env);
-          return JSON.parse(stdout);
-        }
-        if (resident?.error) throw new Error(`Text recognition failed: ${resident.error}`);
-        return resident;
-      });
+      // The resident helper answers in order, one line per image. A helper that has to be
+      // discarded is replaced by a fresh one, and the one-shot path remains for a host where
+      // the helper cannot stay resident at all.
+      const session = ocrSession();
+      let resident = await session.ask(file);
+      if (resident === undefined) {
+        const env = { ...process.env, POKI_OCR_ENGINE: process.env.POKI_OCR_ENGINE ?? 'auto' };
+        const { stdout } = await this.run(ocr.file, [...ocr.prefix, file], 60000, undefined, env);
+        resident = JSON.parse(stdout);
+      }
+      if (resident?.error) throw new Error(`Text recognition failed: ${resident.error}`);
+      const run = resident;
       return (await run).map(e => ({ ...e, label: e.text, type: 'StaticText', frame: { x: e.x / scale, y: e.y / scale, width: e.width / scale, height: e.height / scale } }));
     } finally { await unlink(file).catch(() => {}); }
   }
