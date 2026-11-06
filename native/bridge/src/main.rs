@@ -2,6 +2,7 @@ mod apps;
 mod ax;
 mod configuration;
 mod gesture;
+mod humanize;
 mod installation;
 mod pasteboard;
 mod remote;
@@ -401,6 +402,7 @@ async fn execute_connected(
     // error. The touch connection therefore stays open through the wait that follows the action;
     // NATIVE.md has the counts.
     let mut touch: Option<Touch> = None;
+    let mut humanize = humanize::Humanize::from_env();
     let action: Result<Value> = async {
         match request {
             Request::DisplayInfo
@@ -415,14 +417,16 @@ async fn execute_connected(
                 unreachable!()
             }
             Request::Tap { x, y, duration_ms } | Request::LongPress { x, y, duration_ms } => {
+                let long_press = matches!(request, Request::LongPress { .. });
                 let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
-                held_tap(hid, x, y, duration_ms).await?;
+                held_tap(hid, x, y, duration_ms, long_press, &mut humanize).await?;
             }
             Request::DoubleTap { x, y, duration_ms } => {
                 let hid = touch.insert(Touch::connect_rsd(adapter, rsd).await?);
-                held_tap(hid, x, y, duration_ms).await?;
-                tokio::time::sleep(Duration::from_millis(80)).await;
-                held_tap(hid, x, y, duration_ms).await?;
+                held_tap(hid, x, y, duration_ms, false, &mut humanize).await?;
+                let gap = humanize::double_tap_gap_ms(&mut humanize);
+                tokio::time::sleep(Duration::from_millis(gap)).await;
+                held_tap(hid, x, y, duration_ms, false, &mut humanize).await?;
             }
             Request::Drag {
                 x1,
@@ -443,7 +447,7 @@ async fn execute_connected(
                     hold_ms,
                     end_hold_ms,
                 }
-                .send(hid)
+                .send(hid, &mut humanize)
                 .await?;
             }
             Request::Pinch {
@@ -463,7 +467,7 @@ async fn execute_connected(
                     angle,
                     duration_ms,
                 }
-                .send(hid)
+                .send(hid, &mut humanize)
                 .await?;
             }
             Request::Key {
@@ -478,7 +482,7 @@ async fn execute_connected(
                     .collect::<Result<Vec<_>>>()?;
                 let outcome: Result<()> = async {
                     for _ in 0..count {
-                        chord(&mut keyboard, key_usage(&key)?, &usages).await?;
+                        chord(&mut keyboard, key_usage(&key)?, &usages, &mut humanize).await?;
                     }
                     Ok(())
                 }
@@ -496,10 +500,12 @@ async fn execute_connected(
                 let (code, duration) = button_usage(&button)?;
                 for index in 0..count {
                     if index > 0 {
-                        tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+                        let interval = humanize::button_interval_ms(&mut humanize, interval_ms);
+                        tokio::time::sleep(Duration::from_millis(interval)).await;
                     }
                     keyboard.send_button(0x0c, code, ButtonState::Down).await?;
-                    tokio::time::sleep(Duration::from_millis(duration)).await;
+                    let hold = humanize::button_hold_ms(&mut humanize, duration);
+                    tokio::time::sleep(Duration::from_millis(hold)).await;
                     keyboard.send_button(0x0c, code, ButtonState::Up).await?;
                 }
             }
@@ -518,6 +524,7 @@ async fn execute_connected(
                     clear,
                     submit,
                     target.as_ref(),
+                    &mut humanize,
                 )
                 .await;
                 let cleanup = keyboard.close().await;
@@ -539,11 +546,19 @@ async fn execute_connected(
     Ok(output)
 }
 
-async fn held_tap(hid: &mut Touch, x: u16, y: u16, ms: u64) -> Result<()> {
-    hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, None)
+async fn held_tap(
+    hid: &mut Touch,
+    x: u16,
+    y: u16,
+    ms: u64,
+    long_press: bool,
+    h: &mut humanize::Humanize,
+) -> Result<()> {
+    let plan = humanize::tap_plan(h, x, y, ms, long_press);
+    hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, plan.contact.0, plan.contact.1, None)
         .await?;
-    tokio::time::sleep(Duration::from_millis(ms)).await;
-    hid.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, None)
+    tokio::time::sleep(Duration::from_millis(plan.press_ms)).await;
+    hid.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, plan.release.0, plan.release.1, None)
         .await?;
     Ok(())
 }
@@ -614,30 +629,39 @@ fn button_usage(name: &str) -> Result<(u64, u64)> {
     })
 }
 
-async fn chord(keyboard: &mut Keyboard, key: u64, modifiers: &[u64]) -> Result<()> {
+async fn chord(
+    keyboard: &mut Keyboard,
+    key: u64,
+    modifiers: &[u64],
+    h: &mut humanize::Humanize,
+) -> Result<()> {
     let pressed = modifiers
         .iter()
         .map(|&v| KeyboardUsage::new(v as u16))
         .collect::<std::result::Result<Vec<_>, _>>()?;
     let key = KeyboardUsage::new(key as u16)?;
+    let lead = humanize::modifier_lead_ms(h);
+    let hold = humanize::key_hold_ms(h);
+    let tail = humanize::modifier_tail_ms(h);
+    let gap = humanize::key_gap_ms(h);
     let result: Result<()> = async {
         for usage in &pressed {
             keyboard
                 .hid
                 .main_keyboard_key_down(&mut keyboard.service, *usage)
                 .await?;
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(lead)).await;
         }
         keyboard
             .hid
             .main_keyboard_key_down(&mut keyboard.service, key)
             .await?;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(hold)).await;
         keyboard
             .hid
             .main_keyboard_key_up(&mut keyboard.service, key)
             .await?;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(tail)).await;
         Ok(())
     }
     .await;
@@ -650,6 +674,6 @@ async fn chord(keyboard: &mut Keyboard, key: u64, modifiers: &[u64]) -> Result<(
     if let Some(error) = release_error {
         return Err(error.into());
     }
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::sleep(Duration::from_millis(gap)).await;
     Ok(())
 }

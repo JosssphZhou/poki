@@ -1,5 +1,5 @@
 // Protocol fields follow jkcoxson/idevice pasteboard_service.rs (8970209), MIT.
-use super::{Keyboard, Result, chord};
+use super::{Keyboard, Result, chord, humanize::Humanize};
 use idevice::{
     RemoteXpcClient, rsd::RsdHandshake, tcp::handle::AdapterHandle, xpc, xpc::XPCObject,
 };
@@ -26,6 +26,7 @@ pub async fn paste_text(
     clear: bool,
     submit: bool,
     target: Option<&Target>,
+    h: &mut Humanize,
 ) -> Result<serde_json::Value> {
     super::trace("paste AX initial");
     let Ok(mut initial) = observe(adapter, rsd).await else {
@@ -39,7 +40,7 @@ pub async fn paste_text(
         // This request has pasted nothing yet, so Allow would paste whatever the clipboard holds now.
         if let Some((x, y)) = left_over.deny {
             tokio::time::sleep(ALERT_ACCEPTS_TOUCHES_AFTER).await;
-            super::held_tap(&mut keyboard.hid, x, y, 50).await?;
+            super::held_tap(&mut keyboard.hid, x, y, 50, false, h).await?;
             tokio::time::sleep(ALERT_ACCEPTS_TOUCHES_AFTER).await;
             match observe(adapter, rsd).await {
                 Ok(tree) => initial = tree,
@@ -76,7 +77,7 @@ pub async fn paste_text(
     // A clear-only request does not need or modify the user's clipboard.
     if text.is_empty() {
         if clear_first {
-            clear_text(keyboard).await?;
+            clear_text(keyboard, h).await?;
         }
         let checked = verify(adapter, rsd, &baseline, &others, "", true).await;
         if !matches!(checked.status, Verification::Complete) {
@@ -92,7 +93,7 @@ pub async fn paste_text(
             ));
         }
         if submit {
-            chord(keyboard, 0x28, &[]).await?;
+            chord(keyboard, 0x28, &[], h).await?;
         }
         return Ok(completed(0, submit, true, &baseline));
     }
@@ -122,7 +123,7 @@ pub async fn paste_text(
     };
     if clear_first {
         super::trace("paste clear");
-        clear_text(keyboard).await?;
+        clear_text(keyboard, h).await?;
         super::trace("paste AX cleared");
         let tree = match observe(adapter, rsd).await {
             Ok(tree) => tree,
@@ -177,7 +178,7 @@ pub async fn paste_text(
     client.send_object(xpc!({"command":"SET","pasteboardName":"general","items":new_items,"sourceMetadata":XPCObject::Null}),true).await?;
     check_reply(&client.recv().await?)?;
     super::trace("paste command V");
-    if chord(keyboard, 0x19, &[0xe3]).await.is_err() {
+    if chord(keyboard, 0x19, &[0xe3], h).await.is_err() {
         return Ok(clipboard_result(
             unconfirmed("paste_dispatch_unconfirmed", true, true),
             snapshot_status,
@@ -194,7 +195,7 @@ pub async fn paste_text(
         };
         super::trace("paste permission: tapping allow");
         tokio::time::sleep(ALERT_ACCEPTS_TOUCHES_AFTER).await;
-        if super::held_tap(&mut keyboard.hid, x, y, 50).await.is_err() {
+        if super::held_tap(&mut keyboard.hid, x, y, 50, false, h).await.is_err() {
             break;
         }
         answered = true;
@@ -242,7 +243,7 @@ pub async fn paste_text(
         ));
     }
     if submit {
-        chord(keyboard, 0x28, &[]).await?;
+        chord(keyboard, 0x28, &[], h).await?;
     }
     Ok(clipboard_result(
         noting_answer(completed(characters, submit, restored, &baseline), answered),
@@ -692,12 +693,12 @@ fn check_reply(value: &plist::Value) -> Result<()> {
     Ok(())
 }
 
-async fn clear_text(keyboard: &mut Keyboard) -> Result<()> {
+async fn clear_text(keyboard: &mut Keyboard, h: &mut Humanize) -> Result<()> {
     // The first selection may cover an IME composition only. Repeat once
     // after it resolves to clear the committed field as well.
     for _ in 0..2 {
-        chord(keyboard, 0x04, &[0xe3]).await?;
-        chord(keyboard, 0x2a, &[]).await?;
+        chord(keyboard, 0x04, &[0xe3], h).await?;
+        chord(keyboard, 0x2a, &[], h).await?;
     }
     Ok(())
 }
