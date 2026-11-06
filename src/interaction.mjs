@@ -98,13 +98,15 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
     return await deadline(patienceMs + ocrAllowanceMs, async () => {
       const started = performance.now();
       let nextOcr = ocrAfterMs, ocrMissing = false;
+      const remaining = () => patienceMs - (performance.now() - started);
       for (let attempt = 0; ; attempt++) {
-        // Nothing new starts after the five seconds. One read or one recognition that began before
-        // them is allowed to finish, and its result still counts: a phone-sized image takes seconds,
-        // and cutting it off would throw away the only source an unreadable screen has.
-        if (attempt && performance.now() - started >= patienceMs) break;
+        // Nothing new starts after the five seconds. An accessibility read is stopped at that
+        // boundary as it always was; only a recognition that began inside the window is allowed to
+        // run on, because it is the sole source a screen accessibility cannot read has and a
+        // phone-sized image takes seconds.
+        if (attempt && remaining() <= 0) break;
         checkWork();
-        seen = await readStructure(ctx, verify && attempt === 0 ? justReadMs : 0);
+        seen = await deadline(Math.max(1, remaining()), () => readStructure(ctx, verify && attempt === 0 ? justReadMs : 0));
         checkWork();
         let found = find(seen.elements);
         const elapsed = performance.now() - started, quiet = performance.now() - ctx.lastInputAt > quietMs;
