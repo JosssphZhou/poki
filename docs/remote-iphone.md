@@ -32,4 +32,15 @@ Device-management paths such as app installation, process termination, Settings 
 
 ## Verification status
 
-The experimental branch has demonstrated real 5G screenshots, launching Settings, and exact readback of `poki123 AbC 中文24680`, followed by a verified clear without submitting. Complete cellular reconnection remains an acceptance blocker. Do not describe this transport as fully accepted until that requirement is resolved.
+On 2026-11-06, code at `4f37888` passed real-device checks on an iPhone17,1 running iOS 27.3:
+
+- Wi-Fi initialization followed by cellular operation, with USB disconnected.
+- Restarting the Poki daemon on 5G while retaining the native helper, then launching Settings and entering `poki123 AbC 中文24680` with exact accessibility readback and a matching screenshot.
+- Continuing to read and clear the field after an explicit reconnect failed, demonstrating that the old working tunnel survived the failed replacement attempt.
+- Returning an error without a cached image when Tailscale was disconnected.
+
+After Tailscale was restored on cellular, Tailscale ping succeeded but both IPv4 and IPv6 RemotePairing connections were refused. Screen capture could not resume until the iPhone rejoined Wi-Fi. This is an observed blocker on this device and network, not a claim about every iOS configuration. The user has retained the Tailscale plus native-protocol constraint; no additional phone control component is part of this solution.
+
+Clipboard restoration was unavailable for the final mixed-text check and was reported as such. One accessibility-tree request took 46.8 seconds; this run is not a performance or long-duration stability acceptance. Continuous video/recording is outside the implemented remote transport.
+
+Complete cellular reconnection remains an acceptance blocker. Do not describe this transport as fully accepted until that requirement is resolved.
