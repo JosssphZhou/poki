@@ -8,9 +8,12 @@ BASE_DIR=${BASE_DIR:-/mnt/data/poki}
 TOKEN_FILE=${TOKEN_FILE:-$BASE_DIR/telegram-token}
 CONF_DIR=${CONF_DIR:-$BASE_DIR/telegram}
 ENV_FILE=${ENV_FILE:-$CONF_DIR/telegram.env}
-# Model credentials, either an API key or a sign-in file. See the README section.
+# Model credentials, either an API key (`"auth": "api-key"`) or a sign-in file (`"auth": "chatgpt"`).
+# See the README section. The sign-in has to stay writable: the agent refreshes its token and writes
+# the file back, so a read-only mount turns the next refresh into "Credential store modify failed".
+# It lives in $CONF_DIR, which is already mounted read-write at /tg.
 KEY_FILE=${KEY_FILE:-$BASE_DIR/openai-key}
-AUTH_FILE=${AUTH_FILE:-$BASE_DIR/agent-auth.json}
+AUTH_FILE=${AUTH_FILE:-$CONF_DIR/auth.json}
 
 if [ ! -s "$TOKEN_FILE" ]; then
   echo "Missing $TOKEN_FILE (one bot token per file, chmod 600)." >&2
@@ -36,15 +39,21 @@ chmod 700 "$CONF_DIR" "$CONF_DIR/state"
 if [ -s "$KEY_FILE" ]; then
   echo "OPENAI_API_KEY=$(cat "$KEY_FILE")" >> "$ENV_FILE"
 fi
-AUTH_MOUNT=""
 if [ -s "$AUTH_FILE" ]; then
+  chmod 600 "$AUTH_FILE"
+  # The file is at $CONF_DIR/auth.json, which $CONF_DIR already carries to /tg. Mounting it again
+  # read-only would break the refresh write, and mounting it read-write at a second path over the
+  # same directory is fragile, so it is not mounted separately at all.
   echo "POKI_AGENT_AUTH_FILE=/tg/auth.json" >> "$ENV_FILE"
-  AUTH_MOUNT="-v $AUTH_FILE:/tg/auth.json:ro"
 fi
 chmod 600 "$ENV_FILE"
 
-if [ ! -s "$KEY_FILE" ] && [ ! -s "$AUTH_FILE" ] && ! grep -q '"auth": *"chatgpt"' "$CONF_DIR/telegram.json" 2>/dev/null; then
-  echo "No model credential: create $KEY_FILE (chmod 600) with an API key, or $AUTH_FILE for a chatgpt sign-in. --check passes without one; the first message fails." >&2
+if [ ! -s "$KEY_FILE" ] && [ ! -s "$AUTH_FILE" ]; then
+  if grep -q '"auth"[[:space:]]*:[[:space:]]*"chatgpt"' "$CONF_DIR/telegram.json" 2>/dev/null; then
+    echo "telegram.json says auth=chatgpt but $AUTH_FILE does not exist. It is mounted as /tg/auth.json; --check passes without it, the first message fails." >&2
+  else
+    echo "No model credential: create $KEY_FILE (chmod 600) with an API key, or $AUTH_FILE with a chatgpt sign-in. --check passes without one; the first message fails." >&2
+  fi
 fi
 
 docker rm -f poki-telegram >/dev/null 2>&1 || true
@@ -53,7 +62,6 @@ docker rm -f poki-telegram >/dev/null 2>&1 || true
 # hold it was just stopped above.
 rm -f "$CONF_DIR/state/messages.lock"
 
-# shellcheck disable=SC2086
 docker run -d --name poki-telegram \
   --network host \
   --restart unless-stopped \
@@ -61,7 +69,6 @@ docker run -d --name poki-telegram \
   -v "$BASE_DIR/state":/state \
   -v "$BASE_DIR/agent-config":/root/.config/poki-agent \
   -v "$CONF_DIR":/tg \
-  $AUTH_MOUNT \
   --env-file "$ENV_FILE" \
   poki:linux node agent/telegram.mjs --config /tg/telegram.json --state /tg/state "$@" >/dev/null
 

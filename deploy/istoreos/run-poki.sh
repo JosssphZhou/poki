@@ -15,10 +15,20 @@ ENV_FILE=${ENV_FILE:-$BASE_DIR/poki.env}
 # POKI_BIND_HOST may be a comma-separated list; the daemon adds loopback itself.
 LAN_IP=$(ip -4 -o addr show br-lan 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)
 BIND_HOST=${POKI_BIND_HOST:-${LAN_IP:-127.0.0.1}}
-HOST_ALLOW=${POKI_HOST_ALLOW:-localhost,127.0.0.1,[::1]${LAN_IP:+,$LAN_IP}}
+# Only `127.0.0.1` covers the local clients: src/stdio.mjs refuses any other hostname in mcp.json,
+# so it dials 127.0.0.1 and sends `Host: 127.0.0.1:47825`. Listing `localhost` or `[::1]` as well
+# would suggest those names work for that request, which they do not.
+HOST_ALLOW=${POKI_HOST_ALLOW:-127.0.0.1${LAN_IP:+,$LAN_IP}}
 
-# A bind address outside the allowlist answers 403 to everything: fail here instead.
+case ",$HOST_ALLOW," in
+  *,127.0.0.1,*) ;;
+  *) echo "POKI_HOST_ALLOW=$HOST_ALLOW must include 127.0.0.1, or every local client is rejected." >&2; exit 1 ;;
+esac
+
+# A bind address outside the allowlist answers 403 to everything: fail here instead. A wildcard
+# covers every address, so the daemon accepts it without an entry of its own.
 for host in $(echo "$BIND_HOST" | tr ',' ' '); do
+  case "$host" in 0.0.0.0|::) continue ;; esac
   case ",$HOST_ALLOW," in
     *",$host,"*) ;;
     *) echo "POKI_BIND_HOST=$host is not covered by POKI_HOST_ALLOW=$HOST_ALLOW." >&2; exit 1 ;;

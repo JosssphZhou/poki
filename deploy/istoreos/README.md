@@ -94,11 +94,11 @@ Configuration goes through three environment variables that this branch adds to 
 
 | Variable | Daemon default | What `run-poki.sh` sets |
 | --- | --- | --- |
-| `POKI_BIND_HOST` | `127.0.0.1` | the `br-lan` address, else `127.0.0.1`; accepts a comma-separated list, and loopback is always added |
-| `POKI_HOST_ALLOW` | unset, so `localhostHostValidation()` applies | `localhost,127.0.0.1,[::1]` plus the `br-lan` address |
+| `POKI_BIND_HOST` | `127.0.0.1` | the `br-lan` address, else `127.0.0.1`; accepts a comma-separated list, and `127.0.0.1` is always added |
+| `POKI_HOST_ALLOW` | unset, so `localhostHostValidation()` applies | `127.0.0.1` plus the `br-lan` address |
 | `POKI_MCP_TOKEN` | random per start | the contents of `$BASE_DIR/token` |
 
-When `POKI_HOST_ALLOW` is set it replaces `localhostHostValidation()`, which otherwise rejects any non-loopback `Host` with `403`. It must include `127.0.0.1` or `localhost`, or the local clients are locked out.
+When `POKI_HOST_ALLOW` is set it replaces `localhostHostValidation()`, which otherwise rejects any non-loopback `Host` with `403`. It must contain `127.0.0.1` itself: local clients are pinned to that name, so an entry for `localhost` or `[::1]` does not cover the `Host: 127.0.0.1:47825` they send, and they are locked out.
 
 Clients must send `X-Poki-MCP-Session`; the daemon answers `400` without it.
 
@@ -154,28 +154,39 @@ Settings → Privacy & Security → Developer Mode → **Enable UI Automation**.
 From `deploy/istoreos`:
 
 ```sh
-printf '%s' 'BOT-TOKEN' > /mnt/data/poki/telegram-token && chmod 600 /mnt/data/poki/telegram-token
 mkdir -p /mnt/data/poki/telegram
-cp telegram.json.example /mnt/data/poki/telegram/telegram.json   # then edit device and model
+cp telegram.json.example /mnt/data/poki/telegram/telegram.json   # then edit device and auth
+(umask 077; read -rs TOKEN; printf '%s' "$TOKEN" > /mnt/data/poki/telegram-token)   # paste the bot token
 docker run --rm -v /mnt/data/poki/src:/app -w /app/agent poki:linux npm ci --no-audit --no-fund
 sh start-telegram.sh --check
 sh start-telegram.sh
 ```
 
-`telegram.json.example` contains only the keys the worker accepts: `device`, `model`, `auth`, `allowedUsers`. This branch does not add model providers: the worker and `agent/model-config.mjs` support the OpenAI configurations that ship with the agent today. Running something else on the router takes a separate patch, which belongs in its own change rather than here.
+`telegram.json.example` contains only the keys the worker accepts: `device`, `auth`, `allowedUsers`. It leaves `model` out on purpose, so the agent's own default applies. This branch does not add model providers: the worker and `agent/model-config.mjs` support the OpenAI configurations that ship with the agent today. Running something else on the router takes a separate patch, which belongs in its own change rather than here.
 
 `start-telegram.sh` writes the bot token into `$BASE_DIR/telegram/telegram.env` (0600) and passes it with `--env-file`. As above, that keeps it off the command line, not out of `docker inspect`.
 
 **Model credentials.** The container is not your Mac: nothing in your shell reaches it. Pick one of these before the first message, or the task fails with "Set OPENAI_API_KEY in your environment":
 
+**API key.** `"auth": "api-key"` reads `OPENAI_API_KEY`:
+
 ```sh
-# API key: read into the same env file on every start
-printf '%s' 'sk-...' > /mnt/data/poki/openai-key && chmod 600 /mnt/data/poki/openai-key
+# read without echoing, so the key is not in shell history and the file is never 0644
+(umask 077; read -rs KEY; printf '%s' "$KEY" > /mnt/data/poki/openai-key)
 ```
 
-`start-telegram.sh` picks that file up when it exists.
+`start-telegram.sh` copies that file into the env file on every start.
 
-The alternative is `"auth": "chatgpt"`, which reads a sign-in file instead of a key: sign in on a machine with a browser, then place the credentials file where `POKI_AGENT_AUTH_FILE` points and mount it into the container. The path must be inside the container's view, so mount it under `/tg` rather than referring to a host path.
+**ChatGPT sign-in.** `"auth": "chatgpt"` reads a credentials file instead. Sign in with a browser anywhere, into a path of its own rather than the one your Mac uses day to day:
+
+```sh
+POKI_AGENT_AUTH_FILE=/tmp/router-auth.json poki login --auth chatgpt
+install -m 600 /tmp/router-auth.json /mnt/data/poki/telegram/auth.json && rm /tmp/router-auth.json
+```
+
+On the router that file is `$BASE_DIR/telegram/auth.json`, and it appears in the container as `/tg/auth.json`, because `$CONF_DIR` is already mounted at `/tg`. It is not mounted separately and it must stay writable: the agent refreshes its access token and writes the file back, so a read-only mount turns the next refresh into `Credential store modify failed` and every task after it fails.
+
+Do not point the container at your Mac's own `~/.pi/agent/auth.json` and keep using that Mac for tasks. One sign-in copied to two machines holds one refresh token, and the first refresh on either side invalidates the other.
 
 The worker talks to the daemon through `src/stdio.mjs`, which reads the loopback endpoint from `/state/mcp.json`, so `--network host` matters. Copy the model configuration from `~/.config/poki-agent` into `$BASE_DIR/agent-config` and mount it at `/root/.config/poki-agent`; set `HOME=/root` or the agent will not find it.
 
