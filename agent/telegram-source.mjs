@@ -125,19 +125,27 @@ export class TelegramSource {
     const type = image.mimeType || 'image/png';
     const form = new FormData();
     form.append('chat_id', String(chat));
-    if (caption) form.append('caption', caption.slice(0, 1024));
+    if (caption) form.append('caption', caption);
     form.append('photo', new Blob([bytes], { type }), type.includes('png') ? 'screen.png' : 'screen.jpg');
-    let response, result;
+    let response;
     try {
       response = await fetch(new URL(`/bot${this.token}/sendPhoto`, this.url), {
         method: 'POST', body: form, redirect: 'error', signal: AbortSignal.timeout(60000),
       });
     } catch (error) {
+      // No response, so no way to tell whether Telegram accepted the body: the request may have
+      // been read and the reply lost. Nothing here may be resent.
       throw new TelegramError('network', 'photo upload failed; delivery may be uncertain');
     }
-    result = await response.json().catch(() => null);
-    if (!response.ok || result?.ok !== true) throw new TelegramError(result?.error_code ?? response.status, 'photo rejected');
-    if (!Number.isSafeInteger(result.result?.message_id)) throw new Error('Telegram did not confirm a photo message ID. Check the chat before retrying.');
+    const result = await response.json().catch(() => null);
+    // Only a body that says `ok: false` is a rejection. A 200 whose body could not be read is not:
+    // the photo may well be in the chat already.
+    if (result?.ok === false || (!result && !response.ok)) {
+      throw new TelegramError(result?.error_code ?? response.status, 'photo rejected');
+    }
+    if (result?.ok !== true || !Number.isSafeInteger(result.result?.message_id)) {
+      throw new TelegramError(response.status, 'photo upload returned no confirmation; delivery may be uncertain');
+    }
     return result.result.message_id;
   }
 
@@ -159,7 +167,13 @@ export class TelegramSource {
             progress = undefined;
             return;
           } catch (error) {
-            console.error('telegram: photo delivery failed, sending text instead:', error.message);
+            // Text only after a definite rejection. Anything else may already be in the chat, so
+            // sending the same words again would be the duplicate this fallback exists to avoid.
+            if (error.kind !== 'photo rejected') {
+              console.error('telegram: photo may have arrived, not resending as text:', error.message);
+              return;
+            }
+            console.error('telegram: photo rejected, sending text instead:', error.message);
           }
         }
         const chunks = splitMessage(text);
