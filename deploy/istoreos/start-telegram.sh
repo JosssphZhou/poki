@@ -1,12 +1,12 @@
 #!/bin/sh
 # Start (or restart) the Poki Telegram channel worker on an iStoreOS router.
-# The bot token lives in its own file so it never shows up in the process list.
 # Usage: sh start-telegram.sh [--check]
 set -eu
 
 BASE_DIR=${BASE_DIR:-/mnt/data/poki}
 TOKEN_FILE=${TOKEN_FILE:-$BASE_DIR/telegram-token}
 CONF_DIR=${CONF_DIR:-$BASE_DIR/telegram}
+ENV_FILE=${ENV_FILE:-$CONF_DIR/telegram.env}
 
 if [ ! -s "$TOKEN_FILE" ]; then
   echo "Missing $TOKEN_FILE (one bot token per file, chmod 600)." >&2
@@ -19,6 +19,16 @@ fi
 
 mkdir -p "$CONF_DIR/state"
 chmod 700 "$CONF_DIR" "$CONF_DIR/state"
+
+# Keeping the token in a file is pointless if it is then handed over with `docker run -e`,
+# where `docker inspect` shows it to anyone who can run docker.
+umask 077
+{
+  echo "POKI_MCP_STATE_DIR=/state"
+  echo "HOME=/root"
+  echo "TELEGRAM_BOT_TOKEN=$(cat "$TOKEN_FILE")"
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 docker rm -f poki-telegram >/dev/null 2>&1 || true
 # Container PIDs are reused across restarts, so a stale lock looks "alive" to the
@@ -33,9 +43,7 @@ docker run -d --name poki-telegram \
   -v "$BASE_DIR/state":/state \
   -v "$BASE_DIR/agent-config":/root/.config/poki-agent \
   -v "$CONF_DIR":/tg \
-  -e POKI_MCP_STATE_DIR=/state \
-  -e HOME=/root \
-  -e TELEGRAM_BOT_TOKEN="$(cat "$TOKEN_FILE")" \
+  --env-file "$ENV_FILE" \
   poki:linux node agent/telegram.mjs --config /tg/telegram.json --state /tg/state "$@" >/dev/null
 
 sleep 6

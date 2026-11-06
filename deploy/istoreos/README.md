@@ -19,9 +19,23 @@ So everything runs in a `node:24-bookworm-slim` based image (`poki:linux`). The 
 - A phone already paired once with a Mac that has the full Xcode toolchain, or the willingness to build `idevice-tools` for the router (see below).
 - `usbmuxd` present on the host if you want the USB path; it is optional.
 
+## 0. Put the repository on the router
+
+Every command below runs **on the router**, over SSH, from the checkout directory unless stated otherwise. Clone into the data disk, not the overlay:
+
+```sh
+mkdir -p /mnt/data/poki
+git clone https://github.com/REPO/OWNER/poki.git /mnt/data/poki/src
+cd /mnt/data/poki/src
+```
+
+`/mnt/data/poki/src` is then mounted at `/app` in the runtime container, so the daemon runs the source you cloned rather than a copy baked into the image.
+
 ## 1. Build the native bridge
 
 `poki-native` and `idevice-tools` must be compiled **on the router**, inside a container, because the Mac cannot produce a glibc aarch64 binary without an extra toolchain.
+
+Run this from the checkout root (`/mnt/data/poki/src`):
 
 ```sh
 docker run -d --name poki-build \
@@ -30,10 +44,10 @@ docker run -d --name poki-build \
   -v /mnt/data/poki/cargo-home:/cargo \
   -e CARGO_HOME=/cargo \
   -e PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-  -w /src rust:1-bookworm sh /src/build-poki.sh
+  -w /src rust:1-bookworm sh /src/deploy/istoreos/build-poki.sh
 ```
 
-`build-poki.sh` clones `jkcoxson/idevice` at the revision `bin/setup` pins, builds `idevice-tools`, then builds `poki-native` into `/out`. It overrides the workspace profile (`lto = false`, `codegen-units = 16`); the default `lto = true` makes this take far longer than the ~42 minutes measured with `-j 2`.
+`deploy/istoreos/build-poki.sh` clones `jkcoxson/idevice` at the revision `bin/setup` pins, builds `idevice-tools`, then builds `poki-native` into `/out`. It overrides the workspace profile (`lto = false`, `codegen-units = 16`); the default `lto = true` makes this take far longer than the ~42 minutes measured with `-j 2`.
 
 Run it with `-j 1` or `-j 2`. Four A55 cores and no swap will OOM at higher parallelism.
 
@@ -41,29 +55,45 @@ Do not mount a volume over `/usr/local/cargo` — it shadows the `cargo` binary 
 
 ## 2. Install the runtime
 
+From `deploy/istoreos`:
+
 ```sh
+cd deploy/istoreos
 docker build -t poki:linux .
 ```
 
-The image only adds `python3`, which `native/devices.py` needs to talk to the usbmuxd socket, and which `bin/prepare-remote.mjs` needs at pairing time.
+The image adds `python3` (which `native/devices.py` needs for the usbmuxd socket and `bin/prepare-remote.mjs` needs at pairing time) and tesseract with the `chi_sim` and `eng` packs, which replaces the macOS-only recognizer — see [screen text recognition](#screen-text-recognition).
+
+The MCP server dependencies are not part of the image, so install them into the checkout itself. From the checkout root:
+
+```sh
+docker run --rm -v /mnt/data/poki/src:/app -w /app poki:linux npm ci --no-audit --no-fund
+```
+
+Do not copy `node_modules` from a Mac: `sharp` ships per-platform binaries and the arm64 macOS build will not load on Linux.
 
 ## 3. Start the daemon
+
+From `deploy/istoreos`:
 
 ```sh
 BASE_DIR=/mnt/data/poki sh run-poki.sh
 ```
 
-The script generates a bearer token into `$BASE_DIR/token` (0600), starts the container with `--network host`, and prints the endpoint plus the token. The token is fixed across restarts through `POKI_MCP_TOKEN`; otherwise the daemon generates a fresh one every launch and every client breaks.
+The script generates a bearer token into `$BASE_DIR/token` (0600), writes the container's environment to `$BASE_DIR/poki.env` (0600, so the token never appears in `docker inspect`), starts the container with `--network host`, and prints the endpoint path, the token path, the bind address and the Host allowlist. It does not print the token itself. The token is fixed across restarts through `POKI_MCP_TOKEN`; otherwise the daemon generates a fresh one every launch and every client breaks.
+
+The daemon is bound to the router's `br-lan` address, so it is reachable from the LAN and not from the WAN.
 
 Configuration goes through three environment variables that this branch adds to `src/daemon.mjs`:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `POKI_BIND_HOST` | `127.0.0.1` | listen address; `0.0.0.0` exposes the daemon to the LAN |
-| `POKI_HOST_ALLOW` | unset | comma-separated `Host` header allowlist; when set it replaces `localhostHostValidation()`, which otherwise rejects any non-loopback `Host` with `403` |
+| `POKI_BIND_HOST` | `br-lan` address, else `127.0.0.1` | listen address; the script refuses to start if it is not covered by the allowlist |
+| `POKI_HOST_ALLOW` | `localhost,127.0.0.1,[::1]` plus the `br-lan` address | comma-separated `Host` header allowlist; when set it replaces `localhostHostValidation()`, which otherwise rejects any non-loopback `Host` with `403` |
 | `POKI_MCP_TOKEN` | random per start | fixed bearer token |
 
 Clients must send `X-Poki-MCP-Session`; the daemon answers `400` without it.
+
 
 ```json
 {
@@ -111,17 +141,38 @@ Settings → Privacy & Security → Developer Mode → **Enable UI Automation**.
 
 ## 5. Optional: Telegram channel
 
+From `deploy/istoreos`:
+
 ```sh
 printf '%s' 'BOT-TOKEN' > /mnt/data/poki/telegram-token && chmod 600 /mnt/data/poki/telegram-token
-cp telegram.json.example /mnt/data/poki/telegram/telegram.json   # then edit
+mkdir -p /mnt/data/poki/telegram
+cp telegram.json.example /mnt/data/poki/telegram/telegram.json   # then edit device and model
 docker run --rm -v /mnt/data/poki/src:/app -w /app/agent poki:linux npm ci --no-audit --no-fund
 sh start-telegram.sh --check
 sh start-telegram.sh
 ```
 
+`telegram.json.example` contains only the keys the worker accepts. This branch does not add model providers: the worker and `agent/model-config.mjs` support the OpenAI configurations that ship with the agent today. Running something else on the router takes a separate patch, which belongs in its own change rather than here.
+
+`start-telegram.sh` writes the bot token into `$BASE_DIR/telegram/telegram.env` (0600) and passes it with `--env-file`, so it is not visible in `docker inspect`.
+
 The worker talks to the daemon through `src/stdio.mjs`, so `--network host` matters. Copy the model configuration from `~/.config/poki-agent` into `$BASE_DIR/agent-config` and mount it at `/root/.config/poki-agent`; set `HOME=/root` or the agent will not find it.
 
 The bot must not have a webhook — the worker polls and refuses to start otherwise. `getUpdates` returns nothing until the owner sends the bot a message, so configure `allowedUsers` after that first message.
+
+## Screen text recognition
+
+`src/device.mjs` runs `build/ocr` when the accessibility tree cannot describe a screen, which is how system dialogs — the paste permission prompt, for one — are found. On macOS that binary is `native/ocr.swift`, built by `bin/setup`, and it links Vision. There is no Vision here.
+
+Install the tesseract equivalent once, from the checkout root:
+
+```sh
+install -m 755 native/ocr-linux.py /mnt/data/poki/src/build/ocr
+```
+
+It prints the same JSON as the Swift helper (`text`, `confidence`, `x`, `y`, `width`, `height`, in pixels of the image it is handed), so nothing above it changes. Recognition takes about 8 seconds on a 390×844 capture on this SoC, against roughly 2 seconds for one accessibility read, so it stays a fallback: `src/interaction.mjs` only waits for it when accessibility returned nothing at all.
+
+The language packs are `chi_sim` and `eng`; set `POKI_OCR_LANGS` to change them, `POKI_OCR_PSM` for the tesseract page mode (default `11`, sparse text), and `POKI_OCR_UPSCALE=1` to recognize the frame at native size when speed matters more than small labels.
 
 ## What works over RemotePairing
 

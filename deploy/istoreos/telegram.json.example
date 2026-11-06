@@ -1,8 +1,6 @@
 {
   "allowedUsers": [123456789],
   "device": "00008101-0000000000000000",
-  "provider": "deepseek",
-  "model": "deepseek-flash",
-  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "gpt-5.4",
   "auth": "api-key"
 }
