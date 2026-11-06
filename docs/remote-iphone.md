@@ -1,0 +1,54 @@
+# iPhone over Tailscale
+
+RemotePairing lets Poki use an already paired iPhone through its Tailscale address. It uses an encrypted userspace tunnel and does not change the Mac's default route, DNS, proxy, or other VPN settings. This is an opt-in transport; the existing USB path remains available for devices without a remote configuration.
+
+**Experimental cross-network support:** the Mac and iPhone no longer need to remain on the same LAN. The verified route initializes a session on Wi-Fi, then keeps it while the iPhone uses cellular data. This is not yet a fully recoverable cellular-only connection.
+
+## Prepare
+
+1. Run `./bin/setup` in this checkout. Both devices must already be connected to the same tailnet.
+2. Connect the trusted, unlocked iPhone over USB and Wi-Fi. Developer Mode and UI Automation must already be enabled.
+3. Set `POKI_MCP_STATE_DIR` to this installation's private state directory, then run:
+
+   ```sh
+   node bin/prepare-remote.mjs DEVICE_ID TAILSCALE_IP
+   ```
+
+   This verifies a RemotePairing record over the existing trusted USB connection. The pairing key remains in the private state directory. Ordinary operations never trigger a new pairing flow.
+4. Start Poki with the same state directory. Call `take_screenshot` with the selected device ID while Wi-Fi is connected. Confirm the actual screen before disconnecting USB.
+5. Disconnect Wi-Fi from Control Center, leaving the Wi-Fi setting enabled, Tailscale connected, and the phone unlocked. Verify the phone is using cellular data.
+
+The configured device uses RemotePairing even when a USB connection is present, so testing does not silently fall back to USB.
+
+## Operations and recovery
+
+Supported paths are screenshots, accessibility observations, app listing and launch, touches and gestures, keyboard events, and verified text input through Poki's existing clipboard/field verification flow. Clipboard restoration is reported separately; an unavailable snapshot means the prior clipboard cannot be restored.
+
+The native connection helper is independent of MCP clients and the Poki daemon. Closing a client or restarting the daemon preserves an idle phone connection. The private local socket is under `/tmp/poki-remote-<uid>`; it exposes no network listener. Pairing keys remain in the state directory; ephemeral tunnel keys are not saved.
+
+`reconnect_device` attempts a replacement tunnel before dropping a working one. It never repeats a previous input. If an operation loses its response, inspect the screen before retrying. `disconnect_device` explicitly closes the helper and phone connection. Cancellation of an active operation also terminates its helper before releasing ownership, because delivery may be ambiguous.
+
+**A complete loss of the phone tunnel is not recoverable on every cellular configuration.** On the tested iOS 27.3 phone, new RemotePairing connections are refused on cellular even though an established connection continues working. Returning the phone to Wi-Fi is required after the helper exits, the Mac restarts, or the underlying tunnel is lost. Keeping the helper alive handles client/daemon restarts; it does not prove recovery from those other failures.
+
+Observation cancellation currently also terminates the helper. For example, a foreground-query deadline during app launch can discard the warm connection even though the launch was delivered. A follow-up screen read may then require Wi-Fi. This remains an open defect; do not describe the transport as resilient to observation timeouts.
+
+On iOS, Tailscale cannot run alongside another ordinary VPN. Users who need that other VPN to reach their AI client must resolve the internet-access requirement too. A suitable Tailscale exit node is a possible topology, but it has not been validated in this experiment and does not itself fix native cellular reconnection. See [Tailscale's VPN compatibility documentation](https://tailscale.com/docs/reference/faq/other-vpns).
+
+Device-management paths such as app installation, process termination, Settings deep links, recording, location simulation, and standalone clipboard access are not supported by this transport. They report a transport limitation instead of silently using a local connection.
+
+## Verification status
+
+On 2026-11-06, the transport passed real-device checks on an iPhone17,1 running iOS 27.3:
+
+- Wi-Fi initialization followed by cellular operation, with USB disconnected.
+- Restarting the Poki daemon on 5G while retaining the native helper, then launching Settings and entering `poki123 AbC 中文24680` with exact accessibility readback and a matching screenshot.
+- Continuing to read and clear the field after an explicit reconnect failed, demonstrating that the old working tunnel survived the failed replacement attempt.
+- Returning an error without a cached image when Tailscale was disconnected.
+
+After Tailscale was restored on cellular, Tailscale ping succeeded but both IPv4 and IPv6 RemotePairing connections were refused. Screen capture could not resume until the iPhone rejoined Wi-Fi. This is an observed blocker on this device and network, not a claim about every iOS configuration.
+
+Clipboard restoration was unavailable for the final mixed-text check and was reported as such. One accessibility-tree request took 46.8 seconds; this run is not a performance or long-duration stability acceptance. Continuous video/recording is outside the implemented remote transport.
+
+Complete cellular reconnection remains an acceptance blocker. Do not describe this transport as fully accepted until that requirement is resolved.
+
+Further [native-listener diagnostics](verification/cellular-native-listener.md) confirmed that wireless connections were already enabled and captured listener registrations being removed during the switch to cellular. The phone's own hotspot did not restore access. This investigation found no verified repair for the cold-reconnection blocker.
