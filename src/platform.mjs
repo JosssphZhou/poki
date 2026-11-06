@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { execute, pause, checkWork, signal, deadline, stopped, stoppingReason, phase } from './work.mjs';
 import { access, chmod, copyFile, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { constants, readFileSync } from 'node:fs';
 import { basename, extname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -174,11 +174,24 @@ async function refreshApps(ctx, target) {
   appDirectory(ctx).set(target.id, directory);
   return directory;
 }
+// Localized names come from the SpringBoard icon state, which a paired Wi-Fi connection cannot
+// read: the list then carries `localized_names.status: "unavailable"` and only English display
+// names, so a Chinese name never reaches "WeChat". src/data/app-names.json holds the settled bundle
+// ids for the names a phone task most often uses. It is consulted only when the localized names are
+// missing - if they arrived, ordinary matching already knows the name the user typed - and an entry
+// only wins when that bundle really is installed. ASCII names are deliberately absent: matching
+// lowercases both sides already.
+const knownNames = new Map(Object.entries(JSON.parse(readFileSync(new URL('./data/app-names.json', import.meta.url), 'utf8'))).map(([name, bundle]) => [name.toLowerCase(), bundle]));
+
 async function launchAppMatch(ctx, target, query) {
   const directory = appDirectory(ctx), cached = directory.get(target.id);
   let cacheHit = Boolean(cached && performance.now() - cached.at < 300000);
-  let all = (cacheHit ? cached : await refreshApps(ctx, target)).apps;
+  const current = cacheHit ? cached : await refreshApps(ctx, target);
+  let all = current.apps;
   const normalized = query.toLowerCase();
+  const settled = current.localized_names?.status === 'available' ? undefined : knownNames.get(normalized);
+  const installed = settled && all.find(app => app.bundle_id === settled);
+  if (installed) return { app: installed, cache_hit: cacheHit };
   const matches = list => {
     const names = app => [app.name, ...(app.aliases ?? [])].filter(name => typeof name === 'string').map(name => name.toLowerCase());
     const exact = list.filter(app => app.bundle_id === query || names(app).includes(normalized));
