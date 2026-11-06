@@ -153,38 +153,42 @@ second patience window would expire before the answer arrived. `native/ocr_win.p
 prints the same JSON an `ocr.swift` build does — `{text, confidence, x, y, width,
 height}` in the pixels of the image it was given.
 
-### Two engines, and the measurement that chose them
+### One engine is enough, and it took three measurements to find it
 
 Measured on a 1320×2868 device capture of one screen, ten runs, same process:
 
 | Engine | Median | Lines | Strings right (of 7) |
 | --- | --- | --- | --- |
-| `Windows.Media.Ocr` | **203 ms** | 43 | 5 |
-| RapidOCR PP-OCRv6 **tiny** (onnxruntime) | 1054 ms | 44 | **7** |
-| RapidOCR PP-OCRv6 tiny (OpenVINO) | 1186 ms | 44 | 7 |
-| RapidOCR PP-OCRv6 small (onnxruntime) | 1541 ms | 40 | 7 |
-| RapidOCR PP-OCRv6 small (OpenVINO) | 1647 ms | 40 | 7 |
+| `Windows.Media.Ocr` | 203 ms | 43 | 5 |
+| PP-OCRv6 **tiny**, onnxruntime on the CPU | 1054 ms | 44 | **7** |
+| PP-OCRv6 tiny, **onnxruntime-directml** | **202 ms** | 44 | **7** |
+| PP-OCRv6 small, onnxruntime-directml | 350 ms | 40 | 7 |
+| PP-OCRv6 tiny, OpenVINO on the CPU | 1186 ms | 44 | 7 |
 
 The seven strings were read off the screenshot by eye: the status bar time, the chat
 title with its unread count, the search placeholder, an "official accounts" row, a
-preview line, a group name with less common characters, and a row timestamp.
-Windows OCR got both `公众号` and `下午 4:56` wrong, and it is the one that splits
-Chinese into single characters.
+preview line, a group name with less common characters, and a row timestamp. Windows
+OCR got `公众号` and `下午 4:56` wrong, and it is the one that splits Chinese into single
+characters; the same model on the CPU was accurate but five times slower.
 
-Neither engine is both fast and right, so each keeps the job it wins:
+**DirectML is what made one engine possible.** It runs the same ONNX graphs on the GPU,
+so the accurate engine became the fast one too — 202 ms and 7 of 7, against 203 ms and
+5 of 7 for the system recognizer. OpenVINO, on the other hand, was slower than the CPU
+build for both model sizes on this Intel Core Ultra 9, so it is not used.
 
-* **Screen polling and the prompt check** use `Windows.Media.Ocr`. They only ask whether
-  anything changed, and a missed row does not change that answer.
-* **Anything that will be tapped** — `tap_text`, `fill`, `handle_alert`, `locate()` —
-  uses RapidOCR, because it has to read the exact label.
+`native/ocr_win.py` therefore asks for `rapidocr` first, puts it on the GPU when
+`DmlExecutionProvider` is available, and falls back to `Windows.Media.OCR` only if that
+cannot load. One child process stays resident and answers one JSON array per image path.
 
-Both stay resident: `--server` mode takes one image path per line and answers with one
-JSON array per line, and `src/device.mjs` holds one child per engine, serializing
-requests through each. A one-shot call pays model load every time, which is what made an
-earlier measurement say RapidOCR needed 6.7 s.
+Detection resolution barely matters past 960 (the point at which the recognizer's crops
+stop gaining detail), and 736 loses a row: 976 ms and 6 of 7 there, 1083 ms and 7 of 7 at
+960, 1500 ms and 7 of 7 at 1600.
 
-**OpenVINO is not worth installing here.** On this Intel Core Ultra 9 it was slower than
-onnxruntime for both model sizes.
+```powershell
+python -m pip install winsdk rapidocr onnxruntime-directml --index-url https://pypi.org/simple
+# Without onnxruntime-directml the same model still works on the CPU, about five times slower.
+$env:POKI_OCR_ENGINE = 'rapidocr'    # or 'windows', or 'auto' (default)
+```
 
 ### Read the capture, not the reduced frame
 

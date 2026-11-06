@@ -9,14 +9,20 @@ points, so those pixels are the screen points the tools take.
     python native/ocr_win.py shot.png
     python native/ocr_win.py --server          # one path per line, one array per line
 
-Two engines are available, and the difference is not small: measured on a 440x956
-screen, Windows.Media.OCR answered in 86 ms while RapidOCR needed 6.7 s on the same
-CPU. Poki polls recognition during interaction and inside a five second patience
-window, so the fast engine is the default here and the accurate one is opt-in:
+Two engines are available, and the choice is made by measurement rather than pedigree.
+On a 1320x2868 capture, ten runs, same process:
 
-    POKI_OCR_ENGINE=windows   (default) Windows.Media.OCR, needs its language pack
-    POKI_OCR_ENGINE=rapidocr  RapidOCR, better on small and mixed-script text
-    POKI_OCR_ENGINE=auto      try windows, then rapidocr
+    Windows.Media.OCR                        203 ms, 5 of 7 checked strings
+    PP-OCRv6 tiny, onnxruntime on the CPU   1054 ms, 7 of 7
+    PP-OCRv6 tiny, onnxruntime on DirectML   202 ms, 7 of 7
+
+DirectML runs the same ONNX graphs on the GPU, which is why the accurate engine is also
+the fast one there, and why one engine is enough. It needs the onnxruntime-directml
+package; without it the same model still works on the CPU, five times slower.
+
+    POKI_OCR_ENGINE=auto      (default) rapidocr, then Windows.Media.OCR if it cannot load
+    POKI_OCR_ENGINE=rapidocr  rapidocr only
+    POKI_OCR_ENGINE=windows   Windows.Media.OCR only
 """
 import asyncio
 import json
@@ -65,6 +71,15 @@ def windows_engine(path):
     return elements
 
 
+def directml_available():
+    """Whether this onnxruntime build can put the graph on a GPU."""
+    try:
+        import onnxruntime
+        return 'DmlExecutionProvider' in onnxruntime.get_available_providers()
+    except Exception:  # noqa: BLE001 - a missing or broken runtime means CPU only
+        return False
+
+
 def rapidocr(path):
     """PP-OCRv6 tiny for accuracy, loaded once per process.
 
@@ -76,7 +91,7 @@ def rapidocr(path):
     if 'rapidocr' not in _engines:
         try:
             from rapidocr import ModelType, OCRVersion, RapidOCR
-            _engines['rapidocr'] = ('v3', RapidOCR(params={
+            params = {
                 'Global.log_level': 'error',
                 'Global.max_side_len': 4000,
                 'Global.use_cls': False,
@@ -86,7 +101,10 @@ def rapidocr(path):
                 'Det.limit_type': 'max',
                 'Rec.ocr_version': OCRVersion('PP-OCRv6'),
                 'Rec.model_type': ModelType('tiny'),
-            }))
+            }
+            if directml_available():
+                params['EngineConfig.onnxruntime.use_dml'] = True
+            _engines['rapidocr'] = ('v3', RapidOCR(params=params))
         except ImportError:
             from rapidocr_onnxruntime import RapidOCR
             _engines['rapidocr'] = ('v1', RapidOCR())
@@ -122,17 +140,23 @@ def rapidocr(path):
 ENGINES = {'windows': windows_engine, 'rapidocr': rapidocr}
 
 
+# An engine that failed to load once is not worth paying for on every frame.
+_disabled = set()
+
+
 def recognize(path):
-    choice = os.environ.get('POKI_OCR_ENGINE', 'windows').strip().lower()
-    if choice in ENGINES:
-        return ENGINES[choice](path), choice
-    order = ['windows', 'rapidocr'] if choice == 'auto' else ['windows']
+    choice = os.environ.get('POKI_OCR_ENGINE', 'auto').strip().lower()
+    order = [choice] if choice in ENGINES else ['rapidocr', 'windows']
     errors = []
     for name in order:
+        if name in _disabled:
+            continue
         try:
             return ENGINES[name](path), name
         except Exception as error:  # noqa: BLE001 - try the next engine, report all failures
             errors.append(f'{name}: {error}')
+            if 'import' in str(error).lower() or 'no module' in str(error).lower() or 'cannot' in str(error).lower():
+                _disabled.add(name)
     raise RuntimeError('; '.join(errors) or f'unknown POKI_OCR_ENGINE {choice!r}')
 
 

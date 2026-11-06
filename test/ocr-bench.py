@@ -52,7 +52,7 @@ def load_rapidocr_old():
     return run
 
 
-def load_rapidocr3(version, model_type, engine_type, limit_side=736, limit_type='min', cls=True):
+def load_rapidocr3(version, model_type, engine_type, limit_side=736, limit_type='min', cls=True, dml=False):
     """One rapidocr 3.x engine.
 
     Det.limit_type decides what happens to an image that is already the right size:
@@ -74,6 +74,8 @@ def load_rapidocr3(version, model_type, engine_type, limit_side=736, limit_type=
         'Rec.ocr_version': OCRVersion(version),
         'Rec.model_type': ModelType(model_type),
     }
+    if dml:
+        params['EngineConfig.onnxruntime.use_dml'] = True
     engine = RapidOCR(params=params)
 
     def run(path):
@@ -110,6 +112,9 @@ CONFIGS = {
     'v6-tiny-1280': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 1280, 'max', False),
     'v6-tiny-1600': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 1600, 'max', False),
     'v6-tiny-2000': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 2000, 'max', False),
+    # DirectML runs the same ONNX graphs on the GPU. It needs onnxruntime-directml.
+    'v6-tiny-960-dml': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 960, 'max', False, True),
+    'v6-small-960-dml': lambda: load_rapidocr3('PP-OCRv6', 'small', 'onnxruntime', 960, 'max', False, True),
 }
 
 

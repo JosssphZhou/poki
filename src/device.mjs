@@ -29,21 +29,23 @@ const platformTools = new Set(['start_simulator', 'shut_down_simulator', 'start_
 const settleMs = 600, readbackMs = 5000;
 
 // A recognizer that has to load its model per screen costs seconds, and Poki asks for
-// OCR whenever accessibility misses. Each engine therefore stays resident: one path per
-// line in, one JSON array per line out, one child per engine.
+// OCR whenever accessibility misses. It therefore stays resident: one path per line in,
+// one JSON array per line out.
 //
-// Two engines, because they trade places on this hardware. Measured on a 1320x2868
-// capture: Windows.Media.OCR answers in 203 ms and reads 5 of 7 checked strings, while
-// RapidOCR (PP-OCRv6 tiny) needs about a second and reads all 7. Screen polling only
-// needs to know whether anything moved, so it takes the fast one; finding a control by
-// its label takes the accurate one.
+// One engine is enough. On a 1320x2868 capture, PP-OCRv6 tiny on DirectML answered in
+// 202 ms and read all seven strings checked against the screen; Windows.Media.OCR
+// answered in 203 ms and missed two of them, and the same model without a GPU needs about
+// a second. So this asks the helper for the accurate engine, the helper puts it on the GPU
+// when one is available, and it falls back to Windows.Media.OCR only if that cannot load.
+// Callers still say what they need recognition for; both answers now come from one child.
 const ocrSessions = new Map();
 function ocrSession(mode) {
-  if (ocrSessions.has(mode)) return ocrSessions.get(mode);
+  const key = 'engine';
+  if (ocrSessions.has(key)) return ocrSessions.get(key);
   const session = { child: undefined, waiting: [], tail: Promise.resolve() };
   session.ensure = () => {
     if (session.child) return session.child;
-    const env = { ...process.env, POKI_OCR_ENGINE: mode === 'accurate' ? 'rapidocr' : 'windows' };
+    const env = { ...process.env, POKI_OCR_ENGINE: process.env.POKI_OCR_ENGINE ?? 'auto' };
     const child = spawn(ocr.file, [...ocr.prefix, '--server'], owned({ stdio: ['pipe', 'pipe', 'ignore'], env }));
     createInterface({ input: child.stdout }).on('line', line => session.waiting.shift()?.(line));
     child.stdin.on('error', () => {});
