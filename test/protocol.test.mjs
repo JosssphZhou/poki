@@ -15,7 +15,7 @@ import { fixture, value } from './fixture.mjs';
 
 // start_simulator, shut_down_simulator, build_and_run and download_app_container need Xcode,
 // so the catalog a Windows host lists is those four short of the macOS one.
-const catalogSize = isWin ? 52 : 56;
+const catalogSize = isWin ? 54 : 58;
 
 test('fill asks for a daemon restart after native or JavaScript updates and recovers after restart', async t => {
   for (const updated of ['native', 'JavaScript']) await t.test(updated, async t => {
@@ -72,7 +72,7 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
     assert.equal((await fetch(endpoint.url, { method: 'POST', headers: { Authorization: `Bearer ${endpoint.token}`, Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
     assert.equal((await fetch(endpoint.url, { method: 'POST', headers: { Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' }, body: '{}' })).status, 400);
     assert.equal(client.getServerVersion().name, 'poki-mcp');
-    assert.equal(client.getServerVersion().version, '0.1.0');
+    assert.equal(client.getServerVersion().version, '0.1.1');
     assert.match(client.getInstructions(), /batch_commands/);
     const httpClient = new Client({ name: 'discovery-contract', version: '1' });
     try {
@@ -92,7 +92,7 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
         const statusValue = JSON.parse(status.content[0].text);
         assert.equal(typeof statusValue.devices, 'number');
         assert.equal(statusValue.total_tools, catalogSize);
-        assert.equal(statusValue.implementation, 'Poki MCP 0.1.0');
+        assert.equal(statusValue.implementation, 'Poki MCP 0.1.1');
         assert.equal(statusValue.commit, 'unknown', 'A packaged copy outside Git must report unknown');
         assert.equal(statusValue.native_build, (await stat(join(f.dir, 'build', exe('poki-native')))).mtime.toISOString());
         assert.equal(value(await transportClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0);
@@ -178,7 +178,7 @@ test('Poki Agent opens its own MCP with the complete catalog even when the paren
   `], { env: f.env });
   const { tools, result } = JSON.parse(stdout);
   assert.equal(tools.length, catalogSize);
-  for (const name of ['list_apps', 'observe_device', 'hide_keyboard', 'acquire_device']) {
+  for (const name of ['list_apps', 'observe_device', 'hide_keyboard', 'acquire_device', 'reconnect_device', 'disconnect_device']) {
     assert.ok(tools.some(tool => tool.name === name), name);
   }
   assert.equal(value(result).waited, 0);

@@ -127,7 +127,7 @@ export async function fixture(t, { approvalMode = 'ask', staleNative = false, to
  for(const tool of commands)await install('bin',tool);
  for(const tool of ['poki-native','ocr','simulator'])await install('build',tool);
  if(staleNative){await mkdir(join(dir,'native/bridge/src'),{recursive:true});await writeFile(join(dir,'native/bridge/src/main.rs'),'fn main() {}');await utimes(join(dir,'build',exe('poki-native')),1,1);}
- const env={...process.env,POKI_MCP_TOOLS:toolsProfile,POKI_MCP_APPROVAL_MODE:approvalMode,HOME:dir,USERPROFILE:isWin?dir:process.env.USERPROFILE,PATH:join(dir,'bin')+delimiter+process.env.PATH,POKI_MCP_STATE_DIR:join(dir,'state'),IDEVICE_TOOLS:join(dir,'bin',isWin?'idevice-tools.exe':'idevice'),FIXTURE_STATE:state,FIXTURE_LOG:log,FIXTURE_IMAGE:image};
+ const env={...process.env,POKI_NO_UPDATE_CHECK:'1',POKI_MCP_TOOLS:toolsProfile,POKI_MCP_APPROVAL_MODE:approvalMode,HOME:dir,USERPROFILE:isWin?dir:process.env.USERPROFILE,PATH:join(dir,'bin')+delimiter+process.env.PATH,POKI_MCP_STATE_DIR:join(dir,'state'),IDEVICE_TOOLS:join(dir,'bin',isWin?'idevice-tools.exe':'idevice'),FIXTURE_STATE:state,FIXTURE_LOG:log,FIXTURE_IMAGE:image};
  let stderr='';
  const daemons=[];
  const startDaemon=async(port=0)=>{const child=spawn(process.execPath,[join(dir,'src/daemon.mjs'),'--port',String(port)],{env,stdio:['ignore','pipe',staleNative?'pipe':'inherit']});child.stderr?.on('data',chunk=>{stderr+=chunk;});const exited=once(child,'exit'),lines=createInterface({input:child.stdout});await once(lines,'line');const running={stop:async(signal='SIGTERM')=>{child.kill(signal);await exited;lines.close();}};daemons.push(running);return running;};

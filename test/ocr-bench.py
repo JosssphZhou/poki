@@ -103,6 +103,13 @@ CONFIGS = {
     # Accuracy-oriented: keep more of the original 3x capture.
     'v6-small-1600': lambda: load_rapidocr3('PP-OCRv6', 'small', 'onnxruntime', 1600, 'max', False),
     'v6-small-1600-ov': lambda: load_rapidocr3('PP-OCRv6', 'small', 'openvino', 1600, 'max', False),
+    # Detection resolution is the knob that trades time for detail: everything is cropped
+    # for recognition out of the image detection ran on, so a smaller limit also blurs the
+    # characters the recognizer sees.
+    'v6-tiny-736': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 736, 'max', False),
+    'v6-tiny-1280': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 1280, 'max', False),
+    'v6-tiny-1600': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 1600, 'max', False),
+    'v6-tiny-2000': lambda: load_rapidocr3('PP-OCRv6', 'tiny', 'onnxruntime', 2000, 'max', False),
 }
 
 

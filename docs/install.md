@@ -1,5 +1,7 @@
 # Install
 
+For experimental access across networks, see [iPhone over Tailscale](remote-iphone.md). The iPhone needs the Tailscale app and an initial trusted USB setup.
+
 ## Requirements
 
 - **macOS 15 or later** with a full **Xcode** installation from the App Store, opened at least once to finish its first-launch setup (Command Line Tools alone are not enough). Xcode also provides Git and Python 3.
@@ -15,7 +17,7 @@
 
 > **Reference environment**: Prepared on an Apple silicon Mac with macOS 27.3, Xcode 27.0 (`27A5209h`), Node 26.10.0, npm 11.19.1, Rust/Cargo 1.99.0, Python 3.13.0, and `ffmpeg`/`ffprobe` 9.0.2. These versions record the build environment rather than claiming that every tool and parameter works across all platform versions.
 
-If you received the optional `poki-v0.1.0-macos-arm64.tar.gz` build, follow its bundled README; the source installation below does not depend on that archive.
+If you received the optional `poki-v0.1.1-macos-arm64.tar.gz` build, follow its bundled README; the source installation below does not depend on that archive.
 
 ## 1. Build from Source and Start the Daemon
 

@@ -7,6 +7,7 @@ import { createServer, definitions } from './tools.mjs';
 import { Coordination } from './coordination.mjs';
 import { Devices } from './device.mjs';
 import { stateDir, endpointFile } from './config.mjs';
+import { startUpdateChecks } from './update-check.mjs';
 import { warnIfNativeStale } from './build-info.mjs';
 
 const portIndex = process.argv.indexOf('--port');
@@ -76,10 +77,13 @@ await rename(temporary, endpointFile);
 await chmod(endpointFile, 0o600);
 console.log(JSON.stringify({ event: 'ready', url: entry.url, endpointFile, tools: definitions.length }));
 
+const stopUpdateChecks = startUpdateChecks();
+
 let stopping = false;
 async function stop() {
   if (stopping) return;
   stopping = true;
+  stopUpdateChecks();
   const closed = new Promise(resolve => listener.close(resolve));
   listener.closeAllConnections();
   await Promise.allSettled([...sessions.values()].map(devices => devices.close()));
@@ -92,4 +96,25 @@ async function stop() {
 // it never delivers SIGTERM to a console process. Every one of them means the same stop.
 for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK', 'SIGQUIT']) {
   try { process.on(name, () => void stop()); } catch { /* not a signal this platform has */ }
+}
+
+// A supervised service stops when the process that started it goes away. Windows never
+// delivers a signal for that, so the parent is polled instead; on a platform that does
+// deliver one, the listen above has already handled it.
+const supervisedBy = Number(process.env.POKI_PARENT_PID ?? '');
+if (Number.isInteger(supervisedBy) && supervisedBy > 0) {
+  const watchdog = setInterval(() => {
+    const gone = (() => { try { process.kill(supervisedBy, 0); return false; } catch { return true; } })();
+    if (gone) {
+      console.error(JSON.stringify({ event: 'parent-gone', pid: supervisedBy }));
+      void stop();
+      return;
+    }
+    if (process.ppid !== supervisedBy) {
+      console.error(JSON.stringify({ event: 'parent-changed', expected: supervisedBy, actual: process.ppid }));
+      void stop();
+    }
+  }, 1500);
+  watchdog.unref();
+  process.on('exit', () => clearInterval(watchdog));
 }

@@ -8,8 +8,8 @@ license = "AGPL-3.0-only"
 [dependencies]
 # rustcrypto is a pure-Rust TLS backend. aws-lc needs CMake, NASM and Perl to build;
 # on Windows those are not part of a default toolchain, and this keeps the bridge
-# buildable with nothing but cargo.
-idevice = { path = "../../.deps/idevice/idevice", default-features = false, features = ["rustcrypto", "usbmuxd", "core_device", "display_stream", "core_device_proxy", "rsd", "tunnel_tcp_stack", "dvt", "afc", "installation_proxy", "springboardservices"] }
+# buildable with nothing but cargo. remote_pairing is v0.1.1's remote iPhone transport.
+idevice = { path = "../../.deps/idevice/idevice", default-features = false, features = ["rustcrypto", "remote_pairing", "usbmuxd", "core_device", "display_stream", "core_device_proxy", "rsd", "tunnel_tcp_stack", "dvt", "afc", "installation_proxy", "springboardservices"] }
 tokio = { version = "1.43", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
