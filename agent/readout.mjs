@@ -1,8 +1,9 @@
 import { matching, selectorFor } from './fast/task.mjs';
+import { axFlagIsFalse } from './ax-flags.mjs';
 
 const time = /\b\d{1,2}:\d{2}\b/u;
 const text = (element, field) => typeof element?.[field] === 'string' ? element[field] : '';
-const visible = element => element.visible !== false && element.enabled !== false;
+const visible = element => !axFlagIsFalse(element.visible) && !axFlagIsFalse(element.enabled);
 const unique = (elements, selector) => {
   const found = matching(elements, selector);
   return found.length === 1 ? found[0] : null;
