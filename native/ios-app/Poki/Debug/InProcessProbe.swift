@@ -15,6 +15,10 @@ import UIKit
 /// launches it again and terminates it, noting the front app and its pid after each;
 /// `-pokiInProcess tools -pokiProbeApp BUNDLE` runs PokiCore's look and do as an agent would: open
 /// the app, tap its first field and type, open Settings and swipe, press Home, looking after each.
+/// `-pokiInProcess cycle -pokiProbeDelay 15` opens, reads and ends the session three times, noting iOS's
+/// automation state after each end; `-pokiInProcess idle -pokiProbeRounds 3 -pokiProbeIdle 30`
+/// looks through PokiCore and waits for the idle end, each round, then looks once more; the owner's idle
+/// setting is put back afterwards.
 @MainActor
 final class InProcessProbe: ObservableObject {
     static let shared = InProcessProbe()
@@ -43,7 +47,8 @@ final class InProcessProbe: ObservableObject {
             case "self": await selfTest()
             case "later": await later()
             case "read": await readOnly()
-            case "separate": await separateTrial()
+            case "cycle": await sessionCycle()
+            case "idle": await idleRounds(model: model, rounds: max(defaults.integer(forKey: "pokiProbeRounds"), 1), idle: defaults.integer(forKey: "pokiProbeIdle"))
             case "port": await portCheck()
             case "source": await sourceBothPaths(model: model)
             case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
@@ -211,19 +216,62 @@ final class InProcessProbe: ObservableObject {
         }
     }
 
-    /// Whether ending a session ends the Automation Running banner: a session of its own (not the
-    /// shared one), one tap, a hold, then its connection closed. Only meaningful in a fresh process.
-    func separateTrial() async {
-        guard begin("separate session trial") else { return }
+    /// Whether ending the session ends Automation Mode and whether a new one opens in the same process:
+    /// three rounds of open, read, end, then a hold of `delay` seconds with iOS's automation state noted
+    /// now and then. The phone's system log says when testmanagerd turns Automation Mode off.
+    func sessionCycle() async {
+        guard begin("session cycle") else { return }
         defer { end() }
-        let point = CGPoint(x: Double(x) ?? 201, y: Double(y) ?? 437)
-        let hold = Double(delay) ?? 8
-        note("separate session: open, Automation Mode, tap [\(Int(point.x)), \(Int(point.y))], hold \(Int(hold)) s, close", ["step": "separate_start"])
-        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
-            queue.async { c.resume(returning: PKInProcess.shared().separateSessionTrial(at: point, hold: hold)) }
+        let hold = Int(delay) ?? 15
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        note("automation before: \(automationOn())", ["step": "automation_before", "on": automationOn()])
+        for round in 1...3 {
+            guard await prepare() else { return }
+            await read()
+            let ended = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in queue.async { c.resume(returning: PKInProcess.shared().end()) } }
+            note("round \(round): session ended (\(ended ? "was open" : "none was open"))", ["step": "ended", "round": round, "was_open": ended])
+            for second in 1...max(hold, 1) {
+                try? await Task.sleep(for: .seconds(1))
+                if second == 1 || second == 2 || second % 5 == 0 { note("round \(round), \(second) s after the end: automation \(automationOn())", ["step": "after_end", "round": round, "second": second, "on": automationOn()]) }
+            }
         }
-        let line = result.keys.sorted().map { "\($0)=\(result[$0].map { "\($0)" } ?? "")" }.joined(separator: " ")
-        note("separate session: \(line); watch whether the banner goes now", (["step": "separate_result"] as [String: Any]).merging(result) { a, _ in a })
+    }
+
+    private func automationOn() -> Bool { PKInProcess.shared().automationEnabled() }
+
+    /// The app's own path, as an agent's calls take it (ESP-161): `rounds` times, a look (which opens
+    /// the session), then a wait until Poki ends the session for idle, noting when it did, whether
+    /// Poki was in front, and iOS's automation state. A last look shows the session opening again.
+    func idleRounds(model: AppModel, rounds: Int, idle: Int) async {
+        guard begin("idle rounds") else { return }
+        let owners = model.idleStopSeconds
+        if idle > 0 { model.idleStopSeconds = idle }
+        defer { model.idleStopSeconds = owners; end() }
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let on = Date().addingTimeInterval(20)
+        while !model.sessionOn, Date() < on { try? await Task.sleep(for: .seconds(0.5)) }
+        note("idle stop after \(model.idleStopSeconds) s; Poki \(model.sessionOn ? "on" : "off")", ["step": "idle_setting", "seconds": model.idleStopSeconds, "on": model.sessionOn])
+        for round in 1...rounds + 1 {
+            let t = ProcessInfo.processInfo.systemUptime
+            let result = await model.phoneTool("look", arguments: "{}")
+            let seconds = ProcessInfo.processInfo.systemUptime - t
+            let head = result.text.split(separator: "\n").prefix(2).joined(separator: " | ")
+            note("look \(round): \(result.isError ? "failed" : "ok") in \(String(format: "%.2f", seconds)) s, automation \(automationOn()): \(head.prefix(160))",
+                 ["step": "look", "round": round, "seconds": seconds, "error": result.isError, "automation": automationOn()])
+            guard round <= rounds else { return }
+            let looked = Date()
+            let by = looked.addingTimeInterval(Double(model.idleStopSeconds) + 40)
+            while !model.runnerPaused, Date() < by { try? await Task.sleep(for: .seconds(0.5)) }
+            let front = UIApplication.shared.applicationState == .active
+            note("round \(round): \(model.runnerPaused ? "session ended" : "still open") \(String(format: "%.1f", Date().timeIntervalSince(looked))) s after the look, Poki \(front ? "in front" : "in the background")",
+                 ["step": "idle_end", "round": round, "ended": model.runnerPaused, "after": Date().timeIntervalSince(looked), "front": front])
+            for (second, wait) in [(1, 1), (3, 2), (6, 3)] {
+                try? await Task.sleep(for: .seconds(wait))
+                note("round \(round), \(second) s after the end: automation \(automationOn())", ["step": "after_end", "round": round, "second": second, "on": automationOn()])
+            }
+        }
     }
 
     /// Nothing in Poki may listen on WebDriverAgent's port on the in-process path: a connection to
@@ -319,7 +367,7 @@ struct InProcessSection: View {
             ProbeField(probe: probe).frame(height: 44)
             HStack {
                 Button("Port 8100") { Task { await probe.portCheck() } }
-                Button("Separate session") { Task { await probe.separateTrial() } }
+                Button("Session cycle") { Task { await probe.sessionCycle() } }
             }.disabled(probe.running)
             Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
             HStack {

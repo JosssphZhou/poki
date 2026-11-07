@@ -59,11 +59,11 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 - (BOOL)screenLocked;
 /// The current session's generation: it goes up when the daemon session is replaced.
 - (uint64_t)generation;
-/// A trial for ending the session: opens a session of its own (not the shared one that XCUIAutomation
-/// uses), turns on Automation Mode with it, taps once at the point, waits `hold` seconds, then closes its
-/// connection to testmanagerd and waits for the invalidation handler. Run it in a fresh Poki process
-/// before anything opens the shared session. The dictionary says what each step returned and when.
-- (NSDictionary<NSString *, id> *)separateSessionTrialAt:(CGPoint)point hold:(double)hold;
+/// Ends the session, and with it Automation Mode and the Automation Running banner. The next call that
+/// needs automation opens a new session. YES when a session was open.
+- (BOOL)end;
+/// Whether iOS has UI automation on right now (libAccessibility), for the log.
+- (BOOL)automationEnabled;
 @end
 
 NS_ASSUME_NONNULL_END

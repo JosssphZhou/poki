@@ -17,6 +17,8 @@ protocol InProcessAutomation: AnyObject, Sendable {
     /// Opens the session and Automation Mode, or reuses an open one. Keys: ok, code, detail,
     /// generation, reused, seconds. Blocks: call it off the main thread.
     func prepare() -> [String: Any]
+    /// Ends the session and Automation Mode. True when one was open.
+    func end() -> Bool
 }
 
 /// Thread-safe: its session state is behind locks, and every call blocks on its own.
@@ -28,12 +30,15 @@ enum InProcessSession: Equatable {
     case open
     /// prepare answered no: its code and detail.
     case failed(code: String, detail: String)
+    /// Ended while no agent used the phone (idle, Stop or Turn off); the next request opens a new one.
+    case ended
 
     /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
     var agentState: RunnerState {
         switch self {
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
+        case .ended: return .starting("opening the in-process session again after it stood by; it takes about a second")
         case .failed(let code, let detail):
             return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
                            fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")

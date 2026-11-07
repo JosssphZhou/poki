@@ -3,11 +3,12 @@
 #import <unistd.h>
 
 // Selectors found by inspecting XCTest private classes at run time (NativeHIDProbe), not the public SDK.
+// The private session (connectionForInitiatingSharedSession, sessionWithConnection:completion:) is
+// written here for ESP-161 from XCTestCore's class methods, not recovered from the shipped app.
 @interface NSObject (SRObservedPrivateAPI)
-+ (id)sharedSessionPromiseAndImplicitlyInitiateSession:(BOOL)start;
-- (BOOL)promiseFulfilled;
-- (id)value;
-- (NSError *)error;
++ (id)connectionForInitiatingSharedSession;
++ (void)sessionWithConnection:(id)connection completion:(void (^)(id, NSError *))completion;
+- (void)invalidate;
 - (BOOL)supportsAutomationMode;
 - (BOOL)enableAutomationModeWithError:(NSError **)error;
 - (id)registerInvalidationHandler:(void (^)(void))handler;
@@ -94,7 +95,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
 @implementation SRNativeSession {
     NSLock *_prepareLock;
     NSRecursiveLock *_lifecycleLock;
-    id _observed, _token, _enabled;
+    id _observed, _token, _enabled, _connection;
     uint64_t _generation, _enabledGeneration;
     BOOL _invalidated, _reused;
     NSMutableSet<NSString *> *_loaded;
@@ -146,36 +147,46 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
         }
         [_loaded addObject:path]; // Keep loaded for the lifetime of the process.
     }
-    Class cls = NSClassFromString(@"XCTRunnerDaemonSession");
-    if (![cls respondsToSelector:@selector(sharedSessionPromiseAndImplicitlyInitiateSession:)]) {
-        SRFail(error, @"session_api_unavailable"); return nil;
-    }
-    id promise = [cls sharedSessionPromiseAndImplicitlyInitiateSession:YES];
-    for (NSString *selector in @[@"promiseFulfilled", @"value", @"error"])
-        if (![promise respondsToSelector:NSSelectorFromString(selector)]) {
-            SRFail(error, @"promise_api_unavailable"); return nil;
-        }
-    for (NSUInteger i = 0; i < 300 && ![promise promiseFulfilled]; i++) usleep(10000);
-    if (![promise promiseFulfilled]) { SRFail(error, @"session_timeout"); return nil; }
-    if ([promise error]) { if (error) *error = [promise error]; return nil; }
-    id session = [promise value];
-    if (![session respondsToSelector:@selector(supportsAutomationMode)] ||
-        ![session supportsAutomationMode] ||
-        ![session respondsToSelector:@selector(enableAutomationModeWithError:)] ||
-        ![session respondsToSelector:@selector(registerInvalidationHandler:)]) {
-        SRFail(error, @"automation_api_unavailable"); return nil;
-    }
+    // A session of Poki's own, not XCTest's shared one: the shared session is opened once per process
+    // and can never be opened again, so ending it would leave Poki without automation until it exits.
+    // Ending this one ends Automation Mode, and with it the Automation Running banner (ESP-161).
     [_lifecycleLock lock];
-    if (_observed != session) {
-        id oldSession = _observed, oldToken = _token;
-        _observed = session; _token = nil; _enabled = nil;
+    BOOL open = _observed != nil && !_invalidated && _token != nil;
+    [_lifecycleLock unlock];
+    if (!open) {
+        // An invalidated session (the phone locked, testmanagerd restarted) is replaced, not reused.
+        [_lifecycleLock lock];
+        id stale = _connection; _connection = nil;
+        [_lifecycleLock unlock];
+        [stale invalidate];
+        Class cls = NSClassFromString(@"XCTRunnerDaemonSession");
+        if (![cls respondsToSelector:@selector(connectionForInitiatingSharedSession)] ||
+            ![cls respondsToSelector:@selector(sessionWithConnection:completion:)]) {
+            SRFail(error, @"session_api_unavailable"); return nil;
+        }
+        id connection = [cls connectionForInitiatingSharedSession];
+        __block id opened; __block NSError *openError;
+        dispatch_semaphore_t ready = dispatch_semaphore_create(0);
+        [cls sessionWithConnection:connection completion:^(id value, NSError *e) { opened = value; openError = e; dispatch_semaphore_signal(ready); }];
+        if (dispatch_semaphore_wait(ready, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) {
+            [connection invalidate];
+            SRFail(error, @"session_timeout"); return nil;
+        }
+        if (!opened) { [connection invalidate]; if (error) *error = openError; if (!openError) SRFail(error, @"session_failed"); return nil; }
+        if (![opened respondsToSelector:@selector(supportsAutomationMode)] ||
+            ![opened supportsAutomationMode] ||
+            ![opened respondsToSelector:@selector(enableAutomationModeWithError:)] ||
+            ![opened respondsToSelector:@selector(registerInvalidationHandler:)]) {
+            [connection invalidate];
+            SRFail(error, @"automation_api_unavailable"); return nil;
+        }
+        [_lifecycleLock lock];
+        _observed = opened; _connection = connection; _token = nil; _enabled = nil;
         _enabledGeneration = 0; _invalidated = NO; _generation++;
         uint64_t generation = _generation;
         [_lifecycleLock unlock];
-        if (oldToken && [oldSession respondsToSelector:@selector(unregisterInvalidationHandlerWithToken:)])
-            [oldSession unregisterInvalidationHandlerWithToken:oldToken];
         __weak SRNativeSession *weakSelf = self;
-        id token = [session registerInvalidationHandler:^{
+        id token = [opened registerInvalidationHandler:^{
             SRNativeSession *owner = weakSelf;
             if (!owner) return;
             [owner->_lifecycleLock lock];
@@ -184,8 +195,10 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
             }
             [owner->_lifecycleLock unlock];
         }];
-        [_lifecycleLock lock]; _token = token;
+        [_lifecycleLock lock]; if (_generation == generation) _token = token; [_lifecycleLock unlock];
     }
+    [_lifecycleLock lock];
+    id session = _observed;
     uint64_t generation = _generation;
     BOOL current = !_invalidated && _token != nil;
     _reused = current && _enabled == session && _enabledGeneration == generation;
@@ -200,6 +213,21 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     [_lifecycleLock unlock];
     if (!current) { SRFail(error, @"native_session_invalidated"); return nil; }
     return session;
+}
+- (BOOL)end {
+    // Waits for an open under way, so the session it opens is the one that ends.
+    [_prepareLock lock];
+    [_lifecycleLock lock];
+    id session = _observed, token = _token, connection = _connection;
+    BOOL wasOpen = session != nil && !_invalidated;
+    _observed = nil; _token = nil; _enabled = nil; _connection = nil;
+    _enabledGeneration = 0; _invalidated = YES;
+    [_lifecycleLock unlock];
+    if (token && [session respondsToSelector:@selector(unregisterInvalidationHandlerWithToken:)])
+        [session unregisterInvalidationHandlerWithToken:token];
+    [connection invalidate];
+    [_prepareLock unlock];
+    return wasOpen;
 }
 @end
 
