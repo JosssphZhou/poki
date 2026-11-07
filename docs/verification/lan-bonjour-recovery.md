@@ -38,10 +38,14 @@ other the patch. Both read the same private configuration containing the actual
 Bonjour hostname and the existing pairing-file reference. The baseline uses a
 manually configured hostname because its setup command rejects hostnames.
 
-Both helpers successfully read `device_info` before the change. The user changed
-the phone's private Wi-Fi address setting and rejoined the LAN. Both IPv4 and IPv6
-addresses changed. No configuration edit, explicit reconnect call, helper restart,
-or re-pairing took place between baseline and first post-change reads.
+Both helpers successfully read `device_info` before the change. The user switched
+the phone between the same router's 2.4 GHz and 5 GHz Wi-Fi networks, which yielded
+different IPv4 and IPv6 addresses. The user subsequently clarified that they did
+not change the private Wi-Fi address setting. This is a Wi-Fi-network-switch
+recovery test, not a same-SSID DHCP lease-renewal test. Frequency bands do not by
+themselves imply separate IP subnets; subnet separation was not established.
+No configuration edit, explicit reconnect call, helper restart, or re-pairing
+took place between baseline and first post-change reads.
 
 | Helper | First post-change read | Subsequent read |
 | --- | --- | --- |
@@ -59,10 +63,18 @@ that guard leaves the tested hostname recovery path unchanged. Its numeric-host
 branch is covered by the separate regression above. The removed experimental
 DNS-change detector was not present in either comparison helper.
 
+A later test used the final patch `f6e5acb` through a dedicated MCP daemon.
+The pre-change device-info request completed in 1.197 s. After another switch
+between the router's Wi-Fi networks, the first request recovered in 20.672 s.
+The native helper PID and configuration checksum were unchanged. This separately
+exercises the final hostname path, including the compatibility guard; it is not
+a claim that an end-to-end model-driven app task completed successfully.
+
 ## Limits
 
 This is one controlled address-change comparison, not a latency or long-duration
-reliability claim. Recovery still waits for the existing transport/RSD timeouts;
+reliability claim. Same-SSID DHCP lease changes have not been separately tested.
+Recovery still waits for the existing transport/RSD timeouts;
 it is not instantaneous. Renamed Bonjour hosts, changed advertised ports,
 multiple phones, cross-network Bonjour, and IPv6 scope migration have not been
 independently exercised. Numeric-IP/Tailscale compatibility is regression-tested,
