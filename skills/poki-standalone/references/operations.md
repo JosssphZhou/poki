@@ -188,7 +188,7 @@ xcrun devicectl device install app --device "$TEST_UDID" "$APP_PATH"
 
 准备开发者磁盘映像后开启 Poki。启动器经 connecting → pairing → running，重启后的首次运行可能还有 mounting_ddi；它只挂载映像，不经过 launching。随后 Poki 打开进程内会话，首次打开时 iOS 可能要求用户输入设备密码以允许自动化。完成标准是 Poki 日志出现 `in-process session ready`；出现 `in-process session not ready` 时，智能体的调用会立即收到失败原因，下一次调用、Poki 回到前台或智能体重新连接时 Poki 会再试。
 
-进程内会话一直开到 Poki 退出，不按空闲停止，「Automation Running」横幅也一直显示。锁屏、切后台可能让会话失效；按设计下一次调用由 Poki 重新建立，这一条还没有真机验证。后台存活检查时记录失效后第一次调用的结果和用时。
+进程内会话只在 Poki 工作时开着：智能体连上或调用、Poki 从后台回到前台时打开；超过空闲时长（默认 60 秒，设置里的「Stop when idle for」）没有智能体活动、点停止或关掉 Poki 时结束，「Automation Running」横幅随之消失。开发者磁盘映像保持挂载，下一次调用只重建会话。Poki 冷启动和在后台时不会自己打开会话。iOS 允许自动化的授权有效 8 小时，超过 8 小时后第一次打开会话会弹出密码，要机主输入。锁屏、切后台可能让会话失效，下一次调用会重新建立。后台存活检查时记录空闲结束后第一次调用的结果和用时。
 
 走 Runner 路径时，状态还会经过 launching，Poki 可能按空闲设置主动停止 Runner。出现休眠状态不等于会话失效；用新工具调用确认能否唤醒，并记录当前空闲超时。
 

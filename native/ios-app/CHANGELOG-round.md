@@ -11,6 +11,7 @@ Changed:
 - Chat page with pi as the model loop (Anthropic, OpenAI, DeepSeek, Gemini, ChatGPT login), Poki's details page, model settings and the voice page.
 - Built-in local connection for using the iPhone on its own; it reconnects with backoff after a failure or drop, unless the owner turned it off or another VPN is up.
 - One app by default: Poki automates the iPhone in its own process through testmanagerd, without Poki Runner. The session opens ahead of the first look, a session that fails to open answers at once and is tried again, and the clipboard works in-process. The runner path stays behind the switch in Settings > Diagnostics.
+- The Automation Running banner shows only while Poki works: the in-process session opens when an agent connects or calls, or when Poki comes back to the front, and ends after the idle time (default 60 s), Stop or Turn off. A cold launch and the background open nothing. iOS asks for the passcode again when a session opens more than 8 hours after the last one.
 - When a task ends (do with finish, a client ending its session, the chat's turn ending, or the idle stop), the phone goes back to the app the task began in.
 - do waits up to 115 s for the owner's approval (less behind a relay that gives up sooner) and runs in the same call once approved; the Live Activity's Allow, Deny and Stop do not open the app.
 - PokiCore from cdebb5d: a launch reads until the launched app is in front; wait_until gets the time it asks for; a long call says where its time went.

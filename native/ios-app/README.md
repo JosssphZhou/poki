@@ -49,11 +49,19 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 
 ## How it runs
 
-- Poki stays on once turned on, and turns on again at launch. Once the launcher has mounted the
-  disk image, Poki opens its automation session (the log says `in-process session ready`), so the
-  first look does not wait for it. The session, and with it iOS's automation banner, stays open until
-  Poki exits; it is not stopped for idle. If it cannot be opened, an agent's call answers at once with
-  the reason, and the next call, Poki coming to the front, or an agent connecting tries again.
+- Poki stays on once turned on, and turns on again at launch. Its automation session, and with it
+  iOS's Automation Running banner, is open only while Poki works. It opens when an agent connects or
+  calls, and when Poki comes back to the front from the background (the log says `in-process session
+  ready`), so the first look does not wait for it; a cold launch and the background open nothing.
+  After the idle time with no agent activity (default 60 s, Settings > Stop when idle for), from Stop
+  on the Live Activity or in Poki, and at Turn off, Poki ends the session and the banner goes; the
+  disk image stays mounted, so the next call only opens a new session. If it cannot be opened, an
+  agent's call answers at once with the reason, and the next call, Poki coming to the front, or an
+  agent connecting tries again.
+- iOS asks the owner for the passcode before it allows UI automation, and the permission lasts 8
+  hours (`automationmode-writer`: credential timeout 28800 s). A session that opens more than 8 hours
+  after the last passcode waits up to 60 s for it on the phone; meanwhile an agent's call hears that
+  the session is opening, and without the passcode the next call answers with the reason.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
@@ -196,7 +204,8 @@ Setup
 - [ ] Let Poki stay on: Allow location shows iOS's prompt; Live Activities show as on.
 
 Turned on
-- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; once the session opens, the log says `in-process session ready` and the automation banner shows.
+- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; no automation banner until an agent connects or calls, then the log says `in-process session ready` and the banner shows.
+- [ ] After the idle time with no calls the log says `in-process session ended` and the banner goes, with Poki in front and in the background; the next call opens a new session and answers with the screen.
 - [ ] An agent's first call finds the session open; its steps show on the Lock Screen and in the chat.
 - [ ] No banner flicker during a run; a slow swipe or drag does not reopen the session.
 - [ ] Runner path only: no banner until an agent's first call starts the runner; opening Poki Runner while in use shows "Poki is using this iPhone"; Stop on the Live Activity or in Poki takes the banner away within seconds and the next call starts it again; after the idle time with no calls, the banner goes away by itself.
