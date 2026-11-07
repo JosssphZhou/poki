@@ -1,108 +1,71 @@
 # LAN Bonjour recovery verification
 
 Issue: [#30](https://github.com/JosssphZhou/poki/issues/30).
-Final base: `9ce5e5e`, including the dead-tunnel RSD probe from `f55f98e` (#19).
-The physical comparison used `2801d2b`; the later upstream changes add tests and
-documentation, without changing the production RemotePairing implementation.
+Implementation tested: `6ac8da8`, based on `9ce5e5e` (including #19's RSD probe).
+Subsequent commits update documentation only. Checks below were run on 2026-11-07.
 
-## Automated checks
+## Current behavior
 
-- `npm test`: 145 passed on the `2801d2b` base. Subsequent upstream changes
-  through `9ce5e5e` affect only native tests and documentation, not those Node
-  production paths. The expanded scoped-IPv6 setup regression also passed separately.
-- Final `cargo test --locked --manifest-path native/bridge/Cargo.toml`: 21 passed
-  on the `9ce5e5e` base; native debug build, rustfmt check and diff check passed.
+- Setup accepts and persists `.local` names alongside numeric IP addresses.
+- Confirmed dead-tunnel recovery and explicit reconnect refresh Bonjour control
+  connections, allowing the system resolver to select the current address.
+- Numeric IPs, scoped IPv6 and other hostnames retain their existing control reuse.
+- The data socket uses the authenticated control peer's address and IPv6 scope.
+- Failed replacement preserves the working tunnel. Pairing and device identity
+  checks remain enforced; uncertain input is never automatically replayed.
 
-- `test/prepare-remote.test.mjs` executes setup with synthetic USB/pairing tools.
-  It verifies persistence of `.local` names (rather than a one-time IP), existing
-  IPv4/IPv6 setup (including interface-scoped IPv6), and rejection of
-  malformed/non-local names before device access.
-- `dead_bonjour_tunnel_drops_stale_control` failed on the latest
-  base before the control reset, then passed after it. It uses real loopback
-  sockets and a stopped tunnel adapter, not a real phone or authentication record.
-  The follow-up uses an unadvertised `.local` name and asserts that the old control
-  receives no bytes. It proves invalidation, not successful mDNS or authentication.
-- `non_bonjour_recovery_keeps_using_its_existing_control` failed before restricting
-  the reset to hostname mode, then passed after it. Numeric-IP/Tailscale recovery
-  keeps the base implementation's control reuse.
-- `failed_remote_replacement_keeps_the_working_tunnel` verifies that an explicit
-  replacement failure does not discard an existing live tunnel. This also passes
-  on the base: it protects the existing contract, not a newly fixed behavior.
-- Existing upstream tests cover a silent phone, a stopped adapter and a refused
-  service. The patch does not change the upstream retry gate: only reads and
-  inputs known not to have been sent may retry; uncertain inputs are not replayed.
+## Automated validation
 
-## Physical LAN address-change comparison, 2026-11-07
+| Check | Result |
+| --- | --- |
+| Full Node suite (`npm test`) | 145 passed |
+| Updated setup regression, run separately | Passed |
+| Full Rust suite (`cargo test --locked --manifest-path native/bridge/Cargo.toml`) | 24 passed |
+| Native debug build, remote.rs rustfmt check, diff check | Passed |
 
-Two separately compiled debug helpers were kept running on one Mac against the
-same paired iPhone 15 Pro over RemotePairing. One used the unmodified base, the
-other the patch. Both read the same private configuration containing the actual
-Bonjour hostname and the existing pairing-file reference. The baseline uses a
-manually configured hostname because its setup command rejects hostnames.
+Coverage includes hostname persistence and validation, Bonjour-only mode detection,
+scoped IPv6, stale-control invalidation, explicit reconnect with a failed
+replacement, and control reuse for IP/MagicDNS configurations. New control-refresh
+and classification regressions were observed failing before their fixes.
 
-Both helpers successfully read `device_info` before the change. The user switched
-the phone between the same router's 2.4 GHz and 5 GHz Wi-Fi networks, which yielded
-different IPv4 and IPv6 addresses. The user subsequently clarified that they did
-not change the private Wi-Fi address setting. This is a Wi-Fi-network-switch
-recovery test, not a same-SSID DHCP lease-renewal test. Frequency bands do not by
-themselves imply separate IP subnets; subnet separation was not established.
-No configuration edit, explicit reconnect call, helper restart, or re-pairing
-took place between baseline and first post-change reads.
+The socket fixtures establish invalidation and preservation, not real mDNS or
+RemotePairing authentication. The data-socket test exercises its extracted
+connector, not the full authenticated connection path.
+`failed_remote_replacement_keeps_the_working_tunnel` also passes on the base;
+it protects the existing contract rather than demonstrating a newly fixed bug.
 
-| Helper | First post-change read | Subsequent read |
-| --- | --- | --- |
-| Unmodified base | Failed after 36.106 s: old RemotePairing control connection closed | Succeeded after 1.028 s |
-| Patch | Succeeded after 18.999 s within that request | Not required for recovery |
+## Physical validation
 
-Each helper retained its original PID and configuration checksum. Host socket
-inspection confirmed the patched helper's TCP peer changed to the newly advertised
-address. Raw network addresses, device identifiers, pairing records and checksums
-are deliberately omitted here. No screenshots, messages, audio or video were
-captured or sent by this comparison.
+Device: iPhone 15 Pro, iOS 27.2. The phone stayed unlocked with USB disconnected.
+The user switched between the same router's 2.4 GHz and 5 GHz Wi-Fi networks;
+system resolution confirmed changed IPv4 and IPv6 addresses. These are network
+switches, not isolated same-SSID DHCP renewals; separate subnets were not established.
+The tests used an isolated configuration with the actual Bonjour name and an
+existing verified pairing record. No configuration edit, helper restart or
+re-pairing occurred between each connected baseline and its post-switch requests.
 
-The comparison ran before the final numeric-host compatibility guard was added;
-that guard leaves the tested hostname recovery path unchanged. Its numeric-host
-branch is covered by the separate regression above. The removed experimental
-DNS-change detector was not present in either comparison helper.
+| Scenario | Result |
+| --- | --- |
+| Explicit reconnect after address change | Wireless baseline read: 109 ms. First post-switch request, `reconnect`: success in 768 ms. Following `device_info`: success in 172 ms. |
+| Poki Agent task after another address change | CLI autonomously navigated Settings → General → About and read iOS 27.2; independent Agent verification passed. Total: 85.404 s, 4 tool calls, 1 navigation error recovered without intervention. |
 
-A later test used the final patch `f6e5acb` through a dedicated MCP daemon.
-The pre-change device-info request completed in 1.197 s. After another switch
-between the router's Wi-Fi networks, the first request recovered in 20.672 s.
-The native helper PID and configuration checksum were unchanged. This separately
-exercises the final hostname path, including the compatibility guard; it is not
-a claim that an end-to-end model-driven app task completed successfully.
+The explicit-reconnect test used native requests through Poki's transport wrapper.
+The Agent test used the final implementation through an isolated daemon, with no
+manual reconnect or supplemental phone actions after the switch. The navigation
+error was a lookup for General while Settings was still on the Wi-Fi page.
 
 ## Limits
 
-This is one controlled address-change comparison, not a latency or long-duration
-reliability claim. Same-SSID DHCP lease changes have not been separately tested.
-Recovery still waits for the existing transport/RSD timeouts;
-it is not instantaneous. Renamed Bonjour hosts, changed advertised ports,
-multiple phones, cross-network Bonjour, and IPv6 scope migration have not been
-independently exercised. Numeric-IP/Tailscale compatibility is regression-tested,
-not revalidated over a cellular network. Simulator operation was not tested on
-hardware. Device pairing and UniqueDeviceID checks remain unchanged.
+These are individual successful runs, not latency or long-duration reliability
+claims. Internal reset/resolution events were not independently traced; their
+ordering is supported by source review and socket regressions.
 
-## Review follow-up
+Same-SSID DHCP renewal, renamed hosts, changed advertised ports, multiple phones,
+cross-network Bonjour and IPv6 scope migration remain untested. IP/Tailscale
+compatibility is regression-tested, not revalidated over cellular. Simulator
+hardware validation is outside these checks. Ordinary recovery still depends on
+the existing transport/RSD timeouts. Setup requires a trusted, reachable phone;
+revoking its connection to the Mac requires restoring trust before testing.
 
-Explicit Bonjour reconnect now invalidates cached control before replacement,
-while retaining the existing tunnel until a new one connects. A real-socket
-regression asserts no bytes reach stale control and the old adapter remains live
-on replacement failure. Non-Bonjour hostname configurations retain control reuse.
-The physical runs above predate this follow-up; explicit reconnect after a real
-address change has not been hardware-validated on this follow-up.
-
-A real-loopback data-socket test checks that the authenticated control peer address
-is reused with the new listener port. IPv6 scope migration remains untested.
-
-Follow-up validation (2026-11-07): full Node suite 145 passed; updated setup
-regression passed separately; full Rust suite 24 passed. The two new behavior
-regressions were observed failing before their production fixes; the scoped-IPv6
-zone classification regression also failed before its guard. The data-socket
-loopback check covers its extracted connector, not full RemotePairing authentication.
-
-A later hardware follow-up attempt on 2026-11-07 could not establish a usable
-baseline: fresh Bonjour reconnect and a separate numeric-IPv4 connection both
-returned `device socket io failed`, including after the user confirmed the phone
-was unlocked. No network switch was requested during this attempt. Its cause
-was not established; this is not a successful explicit-reconnect hardware test.
+No pairing records, device identifiers, raw network addresses or phone screenshots
+are included in this document.
