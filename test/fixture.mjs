@@ -71,7 +71,8 @@ else if(tool==='simulator') {
 }
 else if(tool==='poki-native') {
  let input='';for await(const chunk of process.stdin)input+=chunk;const req=JSON.parse(input);log({op:req.op,request:req});
- if(req.op==='release_input')console.log(JSON.stringify({released:true}));
+ if(req.op==='screenshot'){if(state.screenshotUnavailable){console.error('Screenshot service unavailable');process.exit(1);}copyFileSync(process.env.FIXTURE_IMAGE,req.path);console.log(JSON.stringify({saved:true}));}
+ else if(req.op==='release_input')console.log(JSON.stringify({released:true}));
  else if(state.block===req.op){setInterval(()=>{},10000);}
  else if(req.op==='install_app'||req.op==='uninstall_app'){if(req.op==='install_app'&&!execFileSync('/usr/bin/unzip',['-p',req.ipa_path,'Payload/InstallFixture.app/Info.plist'],{encoding:'utf8'}).includes('local.installfixture'))throw Error('Invalid package layout');if(state.installUnknown){console.log(JSON.stringify({isError:true,outcome:'unknown',operation:req.op,bundle_id:req.bundle_id,error:'Connection closed after sending request'}));process.exit(0);}writeFileSync(process.env.FIXTURE_STATE,JSON.stringify({...state,installed:req.op==='install_app',inventoryFailed:state.failInventoryAfterMutation}));console.log(JSON.stringify({outcome:'completed',bundle_id:req.bundle_id,staging_cleanup:{removed:true}}));}
  else if(req.op==='list_apps'&&state.inventoryFailed){console.error('Inventory connection unavailable');process.exit(1);}

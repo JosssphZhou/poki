@@ -406,6 +406,7 @@ mod tests {
             DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().to_string(),
             AppServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().to_string(),
             "com.apple.accessibility.axAuditDaemon.remoteAXService".to_string(),
+            "com.apple.coredevice.deviceinfo".to_string(),
         ]
         .into_iter()
         .zip(50000u16..)
