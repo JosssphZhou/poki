@@ -210,6 +210,6 @@ Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input
   - If a paste prompt is pending or the target field cannot be verified, automatic submission stops and leaves the intended text on the clipboard.
   - Poki MCP **never** auto-accepts an iOS **Allow Paste** prompt. Note that a true first-time **Allow Paste** human-handoff flow remains unverified on hardware (prior successful paste checks did not trigger the system prompt).
 
-## Optional unlock and input variation
+## Optional unlock
 
-See [configuration and validation limits](unlock-and-variation.md) before using `unlock_device` or enabling `variation` on input calls.
+See [configuration and validation limits](unlock.md) before using `unlock_device`.

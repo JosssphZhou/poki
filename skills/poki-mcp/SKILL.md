@@ -42,9 +42,9 @@ Basis: a test alert, both paths, 1 of 1.
 
 On a physical iPhone, use `press_button` with `button: "home"`. `press_key` with `key: "home"` sends a keyboard Home key and does not navigate to the iPhone Home screen. Read the screen after the button event to confirm navigation.
 
-## Optional MCP unlock and input variation
+## Optional MCP unlock
 
-The MCP catalog includes `unlock_device`, separate from the standalone Agent helper below. Read `docs/unlock-and-variation.md` before use: user-only host configuration, device binding, fresh empty-keypad observation, one attempt, and screenshot verification are required. Never request or include the passcode in model context. For small input variability, explicitly opt in with `variation: true` on supported taps and gestures; this does not guarantee avoidance of app detection.
+The MCP catalog includes `unlock_device`, separate from the standalone Agent helper below. Read `docs/unlock.md` before use: user-only host configuration, device binding, fresh empty-keypad observation, one attempt, and screenshot verification are required. Never request or include the passcode in model context.
 
 ## Optional Poki Agent iPhone unlock
 

@@ -200,10 +200,6 @@
           "verify": {
             "type": "boolean",
             "description": "Set false to skip action verification. Returns verified:false. Text targeting and coordinate sizing still read current device data."
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         }
       }
@@ -223,10 +219,6 @@
           "verify": {
             "type": "boolean",
             "description": "Set false to skip action verification. Returns verified:false. Text targeting and coordinate sizing still read current device data."
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         },
         "required": [
@@ -256,10 +248,6 @@
             "type": "number",
             "minimum": -1000000,
             "maximum": 1000000
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         }
       }
@@ -291,10 +279,6 @@
             "type": "number",
             "minimum": 0,
             "maximum": 60
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         }
       }
@@ -336,10 +320,6 @@
           "verify": {
             "type": "boolean",
             "description": "Set false to skip action verification. Returns verified:false. Text targeting and coordinate sizing still read current device data."
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         },
         "required": [
@@ -381,10 +361,6 @@
           "verify": {
             "type": "boolean",
             "description": "Set false to skip action verification. Returns verified:false. Text targeting and coordinate sizing still read current device data."
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         },
         "required": [
@@ -426,10 +402,6 @@
             "type": "number",
             "minimum": -1000000,
             "maximum": 1000000
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         },
         "required": [
@@ -475,10 +447,6 @@
             "type": "number",
             "minimum": 0,
             "maximum": 60000
-          },
-          "variation": {
-            "type": "boolean",
-            "description": "Opt in to bounded timing variation. Taps on observed targets may move up to 3 points inside their middle half. Explicit durations and coordinate-only target positions are preserved. No guarantee against detection."
           }
         },
         "required": [

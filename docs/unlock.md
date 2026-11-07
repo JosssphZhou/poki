@@ -1,6 +1,6 @@
-# Optional MCP unlock and input variation
+# Optional MCP unlock
 
-Both features are opt-in. Existing calls keep their behavior.
+Unlock is opt-in. Existing calls keep their behavior.
 
 ## Unlock
 
@@ -24,15 +24,5 @@ Workflow:
 3. Call `unlock_device` with the screenshot's `observation_id`, `empty_keypad_confirmed: true`, and `digits`: ten `{x,y}` centers in logical screen points indexed **0,1,...,9**. Never include the passcode. The screenshot must be from the same session, under 30 seconds old, and not invalidated by intervening input. The server resolves the foreground process executable to SpringBoard, checks an English or Chinese Enter Passcode label, requires an explicitly empty six-digit accessibility value, and matches every supplied coordinate to the freshly observed numeric keys before sending anything. Unknown languages or inaccessible keypads fail closed.
 4. Inspect the returned screenshot. `input_sent` alone does not prove unlock. After the keypad disappears, Poki opens Settings and confirms that its process actually becomes the readable foreground. Uncertain results block further attempts across sessions until a human checks the phone and restarts the daemon. No automatic retries.
 
-The keypad uses observed coordinates instead of scaling a hard-coded phone layout. The first implementation intentionally accepts only six digits and standard portrait layout. On an iPhone 15 Pro Max running iOS 27.2 over RemotePairing, bounded tapping, locking, waking and observing an empty six-digit keypad have been exercised. One user-local passcode attempt completed successfully, followed by Settings foreground PID verification and screenshot inspection. This is one successful run, not a long-term reliability measurement.
+The keypad uses observed coordinates instead of scaling a hard-coded phone layout. The first implementation intentionally accepts only six digits and standard portrait layout. On an iPhone 15 Pro Max running iOS 27.2 over RemotePairing, locking, waking and observing an empty six-digit keypad have been exercised. One user-local passcode attempt completed successfully, followed by Settings foreground PID verification and screenshot inspection. This is one successful run, not a long-term reliability measurement.
 
-## Input variation
-
-Add `"variation": true` to `tap`, `tap_text`, `long_press`, `double_tap`, `swipe`, `drag`, `scroll`, or `scroll_to`.
-
-- Adds 40–120 ms before input and varies default gesture duration by up to 15%.
-- Single taps on an observed element/ref may shift at most 3 points per axis, confined to its middle half. Coordinate-only taps retain their exact location.
-- Explicit durations, swipe endpoints, text input, alert handling, and unlock digits remain unchanged. Double taps and long presses vary timing only.
-- Cancellation during the delay sends nothing. Existing device serialization still applies.
-
-This is bounded input variability, not a guarantee of human equivalence or avoidance of app detection. It adds a small delay and does not address connection or screenshot latency.

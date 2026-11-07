@@ -1,4 +1,3 @@
-import { variedInput } from './input-variation.mjs';
 import { readFileSync } from 'node:fs';
 import { askHuman } from './human.mjs';
 import { screenIdentity } from './screen-identity.mjs';
@@ -200,9 +199,7 @@ export async function interaction(ctx, name, args) {
   };
   const tap = async (a, op = 'tap') => {
     const p = await point(a);
-    const element = a.ref && ctx.elements.find(e => e.ref === a.ref.toLowerCase());
-    const bounds = element && (element.frame ?? element), position = p;
-    return variedInput(ctx, { op, ...position, duration_ms: op === 'long_press' ? Math.max(1, Math.round((a.duration ?? 1) * 1000)) : 50 }, a.variation, bounds, a.duration === undefined);
+    return ctx.input({ op, ...p, duration_ms: op === 'long_press' ? Math.max(1, Math.round((a.duration ?? 1) * 1000)) : 50 });
   };
   const read = (a, current = false) => ctx.recognize(a ?? {}, current ? ctx.frame : undefined);
   const readComplete = async () => {
@@ -225,26 +222,26 @@ export async function interaction(ctx, name, args) {
     case 'tap': case 'double_tap': case 'long_press': return tap(args, name);
     case 'tap_text': {
       const element = await locate(ctx, elements => matching(elements, args.text, args.exact), { missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found) }, undefined, args.verify !== false);
-      return variedInput(ctx, { op: 'tap', ...center(element), duration_ms: 50 }, args.variation, element.frame ?? element);
+      return ctx.input({ op: 'tap', ...center(element), duration_ms: 50 });
     }
-    case 'swipe': case 'drag': return variedInput(ctx, {
+    case 'swipe': case 'drag': return ctx.input({
       op: 'drag', x1: args.from_x, y1: args.from_y, x2: args.to_x, y2: args.to_y,
       duration_ms: Math.max(1, Math.round(args.duration_ms ?? (name === 'drag' ? 800 : 300))),
       hold_ms: name === 'drag' ? Math.round((args.hold_seconds ?? 0.6) * 1000) : 0,
-    }, args.variation, undefined, args.duration_ms === undefined);
+    });
     case 'scroll': {
       const f = await frame();
       const x = (args.x ?? f.width / 2) / f.width, y = (args.y ?? f.height / 2) / f.height;
       const horizontal = ['left', 'right'].includes(args.direction);
       const direction = ['down', 'right'].includes(args.direction) ? -1 : 1;
       const clamp = n => Math.max(0, Math.min(1, n));
-      return variedInput(ctx, { op: 'drag',
+      return ctx.input({ op: 'drag',
         x1: clamp(x - (horizontal ? direction * .15 : 0)) * (f.width - 1),
         y1: clamp(y - (horizontal ? 0 : direction * .15)) * (f.height - 1),
         x2: clamp(x + (horizontal ? direction * .15 : 0)) * (f.width - 1),
         y2: clamp(y + (horizontal ? 0 : direction * .15)) * (f.height - 1),
         duration_ms: 350, hold_ms: 0,
-      }, args.variation);
+      });
     }
     case 'scroll_to': {
       let previous;
