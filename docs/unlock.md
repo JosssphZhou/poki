@@ -25,4 +25,3 @@ Workflow:
 4. Inspect the returned screenshot. `input_sent` alone does not prove unlock. After the keypad disappears, Poki opens Settings and confirms that its process actually becomes the readable foreground. Uncertain results block further attempts across sessions until a human checks the phone and restarts the daemon. No automatic retries.
 
 The keypad uses observed coordinates instead of scaling a hard-coded phone layout. The first implementation intentionally accepts only six digits and standard portrait layout. On an iPhone 15 Pro Max running iOS 27.2 over RemotePairing, locking, waking and observing an empty six-digit keypad have been exercised. One user-local passcode attempt completed successfully, followed by Settings foreground PID verification and screenshot inspection. This is one successful run, not a long-term reliability measurement.
-
