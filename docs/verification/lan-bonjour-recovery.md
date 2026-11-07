@@ -100,3 +100,9 @@ regression passed separately; full Rust suite 24 passed. The two new behavior
 regressions were observed failing before their production fixes; the scoped-IPv6
 zone classification regression also failed before its guard. The data-socket
 loopback check covers its extracted connector, not full RemotePairing authentication.
+
+A later hardware follow-up attempt on 2026-11-07 could not establish a usable
+baseline: fresh Bonjour reconnect and a separate numeric-IPv4 connection both
+returned `device socket io failed`, including after the user confirmed the phone
+was unlocked. No network switch was requested during this attempt. Its cause
+was not established; this is not a successful explicit-reconnect hardware test.
