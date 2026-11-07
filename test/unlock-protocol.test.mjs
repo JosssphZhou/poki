@@ -53,3 +53,10 @@ test('daemon retains its configured secret but execute and native helper childre
  assert.match(refused.content[0].text,/fresh screenshot/,'The secret remains configured after its environment entry is removed');
  assert.ok(!JSON.stringify(refused).includes('102938'));
 });
+
+test('configured unlock preserves the separate computer-use profile while remaining in the full catalog', async t => {
+ const {tools}=await import('../src/cua.mjs');
+ const f=await fixture(t,{daemonEnv:{POKI_UNLOCK_DEVICE:'fixture-phone'},extraEnv:()=>({POKI_TOOL_PROFILE:'cua'})});
+ assert.deepEqual(new Set((await f.a.listTools()).tools.map(x=>x.name)),tools);
+ assert.ok((await (await f.connect('all')).listTools()).tools.some(x=>x.name==='unlock_device'));
+});
