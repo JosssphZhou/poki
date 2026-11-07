@@ -12,6 +12,16 @@ enum AutomationPath: String, CaseIterable, Identifiable {
     static let current: AutomationPath = UserDefaults.standard.string(forKey: "automationPath").flatMap(AutomationPath.init(rawValue:)) ?? .inProcess
 }
 
+/// Poki's own automation session: `PKInProcess`, or a fake in tests.
+protocol InProcessAutomation: AnyObject, Sendable {
+    /// Opens the session and Automation Mode, or reuses an open one. Keys: ok, code, detail,
+    /// generation, reused, seconds. Blocks: call it off the main thread.
+    func prepare() -> [String: Any]
+}
+
+/// Thread-safe: its session state is behind locks, and every call blocks on its own.
+extension PKInProcess: InProcessAutomation, @unchecked Sendable {}
+
 /// Poki's own automation session, once the launcher has mounted the disk image (ESP-152).
 enum InProcessSession: Equatable {
     case opening

@@ -11,6 +11,24 @@ final class FakeLauncher: RunnerLauncher, @unchecked Sendable {
     func stop() { stops += 1 }
 }
 
+/// Poki's own automation session as iOS keeps it: open (Automation Mode on, the banner showing) or
+/// not, and how many times it was opened.
+final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
+    private let lock = NSLock()
+    private var open = false
+    private var opened = 0
+    var isOpen: Bool { lock.withLock { open } }
+    var timesOpened: Int { lock.withLock { opened } }
+    func prepare() -> [String: Any] {
+        lock.withLock {
+            let reused = open
+            if !open { open = true; opened += 1 }
+            return ["ok": true, "generation": opened, "reused": reused, "seconds": 0.0]
+        }
+    }
+    func end() -> Bool { lock.withLock { defer { open = false }; return open } }
+}
+
 final class FakePairing: DevicePairing {
     func start(hostName: String, saveTo: URL, onEvent: @escaping @Sendable (PairingEvent) -> Void) throws {}
     func cancel() {}
@@ -125,3 +143,79 @@ final class PasscodeTests: XCTestCase {
         XCTAssertTrue(model.host.currentRunner.isRunning)
     }
 }
+
+/// The in-process session follows the work (ESP-161): opened for an agent or for the owner coming back
+/// to Poki, ended after the idle time, so iOS's Automation Running banner shows only while Poki works.
+@MainActor
+final class InProcessIdleTests: XCTestCase {
+    private var saved: (relay: String?, idle: Int, setup: SetupState)!
+    private var model: AppModel!
+    private var session: FakeAutomation!
+
+    override func setUp() async throws {
+        try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
+        session = FakeAutomation()
+        model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: session)
+        saved = (UserDefaults.standard.string(forKey: "relayAddress"), model.idleStopSeconds, SetupState.load())
+        model.loopback.simulate(.working(ms: 9))
+        model.setup.loopback = .proxy
+        XCTAssertTrue(model.setRelay("https://relay.invalid"))
+        model.idleStopSeconds = 60
+        model.startSession()
+        XCTAssertTrue(model.sessionOn)
+    }
+
+    override func tearDown() async throws {
+        guard let saved, let model else { return }
+        model.stopSession()
+        model.idleStopSeconds = saved.idle
+        UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
+        saved.setup.save()
+    }
+
+    private func waitFor(_ what: String, _ condition: @escaping () -> Bool) async {
+        let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+        done.expectationDescription = what
+        await fulfillment(of: [done], timeout: 5)
+    }
+
+    /// An agent connects: the launcher starts and the session opens, as it did before the first look.
+    private func agentConnects() async {
+        model.host.warmUp()
+        await waitFor("the agent's connection wakes Poki") { !self.model.runnerPaused }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the session opens") { self.session.isOpen }
+    }
+
+    func testIdleEndsTheSessionAndTheNextRequestOpensIt() async {
+        await agentConnects()
+        model.checkIdle(now: Date().addingTimeInterval(61))
+        await waitFor("the session ends after the idle time") { !self.session.isOpen && self.model.runnerPaused }
+        let waiting = model.host.runnerState().describe
+        XCTAssertTrue(waiting.hasPrefix("starting"), waiting)
+        await waitFor("the agent's next request opens it again") { self.session.isOpen }
+        XCTAssertEqual(session.timesOpened, 2)
+        XCTAssertTrue(model.host.currentRunner.isRunning, model.host.currentRunner.describe)
+    }
+
+    func testNothingButTheOwnerOrAnAgentOpensItAgain() async {
+        await agentConnects()
+        model.checkIdle(now: Date().addingTimeInterval(61))
+        await waitFor("the session ends after the idle time") { !self.session.isOpen && self.model.runnerPaused }
+        model.wentToBackground()
+        model.runnerChanged(RunnerStatus(state: "running"))
+        model.checkIdle(now: Date().addingTimeInterval(200))
+        let stillEnded = model.coreState(of: RunnerStatus(state: "running")).describe
+        XCTAssertTrue(stillEnded.contains("after it stood by"), stillEnded)
+        model.becameActive()
+        await waitFor("coming back to the front opens it") { self.session.isOpen }
+        XCTAssertEqual(session.timesOpened, 2)
+    }
+
+    func testColdLaunchOpensNothing() {
+        model.becameActive()
+        model.runnerChanged(RunnerStatus(state: "running"))
+        XCTAssertTrue(model.runnerPaused, "a cold launch woke the session")
+    }
+}
+

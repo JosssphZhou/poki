@@ -70,6 +70,8 @@ final class AppModel {
     private let core: LiveCore
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
+    /// Poki's own automation session (ESP-152); a fake in tests.
+    private let automation: InProcessAutomation
     private let pairingKeepAlive = KeepAlive()
     private let activity = ActivityController()
     let log = AppLog.shared
@@ -101,8 +103,9 @@ final class AppModel {
     /// The chat watches the steps and approvals of the task it runs.
     var onShellEvent: ((ShellEvent) -> Void)?
 
-    init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing()) {
+    init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(), automation: InProcessAutomation = PKInProcess.shared()) {
         ActivityController.endAll()
+        self.automation = automation
         let core = LiveCore(host: host, transport: automationPath == .inProcess ? InProcessWDA(screen: UIScreen.main.bounds.size) : URLSessionTransport())
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
@@ -189,8 +192,8 @@ final class AppModel {
             inProcessSession = .opening
             host.update(runner: coreState(of: runner))
         }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = PKInProcess.shared().prepare()
+        DispatchQueue.global(qos: .userInitiated).async { [automation] in
+            let result = automation.prepare()
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.inProcessWarming = false
@@ -491,13 +494,13 @@ final class AppModel {
         launchRunner()
     }
 
-    private func checkIdle() {
-        passcodeHint = runner.state == "launching" && launchingSince.map { Date().timeIntervalSince($0) > 10 } == true
+    func checkIdle(now: Date = Date()) {
+        passcodeHint = runner.state == "launching" && launchingSince.map { now.timeIntervalSince($0) > 10 } == true
         // In-process the session (and its banner) stays open until Poki exits; stopping the launcher
         // for idle saves nothing and costs the next agent a restart (ESP-152).
         guard automationPath == .runner else { return }
         guard sessionOn, !runnerPaused, idleStopSeconds > 0, approvals.isEmpty, activityText == "Idle" else { return }
-        if Date().timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
+        if now.timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) {
             let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
             // The task is over: the phone goes back to the app it began in while the runner can still
             // switch apps, then the runner stops unless an agent came back meanwhile.
