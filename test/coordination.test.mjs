@@ -23,7 +23,7 @@ test('a system prompt during input is an ordinary failure that stop_on_error dec
 test('AX miss uses OCR from the same captured observation',async t=>{
  const f=await fixture(t);await f.set({label:'Other'});
  const result=await f.call('wait_for',{text:'Absent',gone:true,timeout:10});assert.ok(!result.isError, JSON.stringify(result));
- const events=await f.events();assert.equal(events.filter(e=>e.args?.includes('screenshot')).length,1);
+ const events=await f.events();assert.equal(events.filter(e=>e.op==='screenshot').length,1);
  assert.equal(events.filter(e=>e.tool==='ocr').length,1);
 });
 

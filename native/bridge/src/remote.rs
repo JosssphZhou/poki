@@ -654,7 +654,8 @@ mod tests {
             DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().to_string(),
             AppServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().to_string(),
             "com.apple.accessibility.axAuditDaemon.remoteAXService".to_string(),
-            crate::Touch::rsd_service_name().to_string(),
+            crate::Hid::rsd_service_name().to_string(),
+            "com.apple.coredevice.deviceinfo".to_string(),
         ]
         .into_iter()
         .zip(50000u16..)
@@ -1167,7 +1168,7 @@ mod tests {
         };
         let (mut connection, phone) = tunnel();
         connection.media = Some(media);
-        let touch = connection.rsd.services[crate::Touch::rsd_service_name().as_ref()].port;
+        let touch = connection.rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
         // The touch report reaches the phone; the tunnel goes down before the release.
         let phone = tokio::spawn(async move { answer(phone, vec![touch], Some(b"send\0")).await });
         let mut session = Session {
@@ -1464,7 +1465,7 @@ mod tests {
         drop(display_phone);
         let (mut connection, mut wire) = tunnel();
         connection.media = Some(media);
-        let touch_port = connection.rsd.services[crate::Touch::rsd_service_name().as_ref()].port;
+        let touch_port = connection.rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
 
         let (first_send_tx, first_send_rx) = tokio::sync::oneshot::channel::<()>();
         let phone_task = tokio::spawn(async move {
