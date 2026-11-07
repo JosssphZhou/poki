@@ -42,7 +42,11 @@ Basis: a test alert, both paths, 1 of 1.
 
 On a physical iPhone, use `press_button` with `button: "home"`. `press_key` with `key: "home"` sends a keyboard Home key and does not navigate to the iPhone Home screen. Read the screen after the button event to confirm navigation.
 
-## Optional iPhone unlock
+## Optional MCP unlock and input variation
+
+The MCP catalog includes `unlock_device`, separate from the standalone Agent helper below. Read `docs/unlock-and-variation.md` before use: user-only host configuration, device binding, fresh empty-keypad observation, one attempt, and screenshot verification are required. Never request or include the passcode in model context. For small input variability, explicitly opt in with `variation: true` on supported taps and gestures; this does not guarantee avoidance of app detection.
+
+## Optional Poki Agent iPhone unlock
 
 Poki Agent's host-integrated `unlock_device` is separate from the MCP tool catalog. Only the user may choose and configure `POKI_IPHONE_PASSCODE` in a private local launcher environment. Ask "Do you want Poki Agent to unlock this iPhone when it is locked?" and stop for that decision. Default to no configuration. Anyone or any program with access to this Mac may be able to read the passcode. If the user agrees, give them the hidden-input zsh commands in `agent/README.md` to run themselves. Never ask for the passcode in chat. Never read or write their passcode for them. The host passes it to the helper over stdin, outside model inputs and logs.
 

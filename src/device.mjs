@@ -1,3 +1,4 @@
+import { unlockDevice } from './unlock.mjs';
 import { remoteDevices, nativeRequest } from './remote.mjs';
 import { execute, checkWork, deadline, pause, phase, stopped, stoppingReason } from './work.mjs';
 import { Coordination, managementTools } from './coordination.mjs';
@@ -338,8 +339,17 @@ export class Devices {
         return { ...text(result), ...(result.isError ? { isError: true } : {}), ...(_meta || result.stop_reason ? { _meta: { ..._meta, ...(result.stop_reason ? { stop_reason: result.stop_reason } : {}) } } : {}) };
       }
       switch (name) {
+        case 'unlock_device': {
+          const result = await unlockDevice(this, args);
+          const content = text(result).content;
+          try {
+            const frame = await this.capture();
+            content.push(...text({ observation: this.observation(frame) }).content, { type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' });
+          } catch { content.push({ type: 'text', text: 'Screenshot unavailable. Inspect the phone manually; do not retry input.' }); }
+          return { content, ...(result.isError ? { isError: true } : {}), ...(result.stop_reason ? { _meta: { stop_reason: result.stop_reason } } : {}) };
+        }
         case 'acquire_device': return text(await this.coordinator.acquire(this, await this.target(false), args.ttl_seconds ?? 120));
-        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 50, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human' });
+        case 'poki_mcp_status': return text({ update: await updateNotice(), implementation: `Poki MCP ${version}`, ...await buildInfo(), registered_device_tools: 51, observation_tools: 1, management_tools: 4, transport_tools: 2, total_tools: definitions.length, devices: (await this.inventory()).length, selected: this.selected ?? null, approval_mode: process.env.POKI_MCP_APPROVAL_MODE === 'allow' ? 'operator-preapproved' : 'ask-human' });
         case 'list_devices': return text({ devices: await this.describeDevices(args.include_all_simulators), ...(args.include_all_simulators ? { simulator_models: await simulatorModels() } : {}) });
         case 'disconnect_device':
         case 'reconnect_device': {
