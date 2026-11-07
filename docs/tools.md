@@ -90,6 +90,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Devices | `shut_down_simulator` | Shut down the selected simulator. |
 | Devices | `reconnect_device` | Attempt a replacement RemotePairing tunnel while preserving a working tunnel if replacement fails. Does not replay input. |
 | Devices | `disconnect_device` | Close the selected RemotePairing helper and tunnel. |
+| Devices | `unlock_device` | Opt-in MCP unlock using a host-configured secret, fresh `observation_id`, `empty_keypad_confirmed` and ten accessibility-derived digit centers. Distinct from the Agent-local tool below; see [setup and limits](unlock.md). |
 | Devices | `select_device` | Select one connected device by id or unambiguous name for this MCP session. |
 | Devices | `get_device_info` | Read device identity, capture dimensions in logical points, and optionally platform settings. |
 | Devices | `poki_mcp_status` | Report tool counts, connected-device count, selected device, and approval mode. |
@@ -146,7 +147,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 
 ## Agent skills
 
-[Unlock an iPhone](../agent/skills/iphone-unlock/SKILL.md) packages an authorized passcode workflow, a calibrated portrait keypad, and a native helper that keeps one connection open for the entire input sequence. Poki Agent loads this skill and exposes the host-side `unlock_device` tool when the user has configured a passcode locally. It requires Poki device ownership; it does not add an MCP tool. The skill documents the physical-device evidence and supported layout.
+[Unlock an iPhone](../agent/skills/iphone-unlock/SKILL.md) packages an authorized passcode workflow, a calibrated portrait keypad, and a native helper that keeps one connection open for the entire input sequence. Poki Agent loads this skill and exposes the host-side `unlock_device` tool when the user has configured a passcode locally. This Agent-local tool requires Poki device ownership and uses the Agent skill's calibrated layout and its own schema; it is not the MCP implementation. The separate MCP `unlock_device` in the table above requires `observation_id`, `empty_keypad_confirmed` and accessibility-derived `digits`, plus a daemon device binding. Do not interchange their arguments. The Agent skill documents its own physical-device evidence and supported layout.
 
 ## Coordinates, Screenshots, and Recordings
 

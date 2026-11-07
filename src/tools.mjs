@@ -5,7 +5,7 @@ import { version } from './build-info.mjs';
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
 const defaultTools = new Set([
-  'unlock_device', 'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
+  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
   'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
   'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
   'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
@@ -35,12 +35,12 @@ Arguments of common steps: launch_app {bundle_id or name}; tap_text {text}; tap 
   launch_app: 'On a simulator it returns once the app shows readable elements, with their text in screen, so there is no need to look again or wait. If launch fails with CoreDeviceError 4016, inspect the current screen and use the observed Home Screen or app switcher controls. Avoid repeating the same failing launch until device conditions change.',
 };
 export const definitions = catalog.tools.map(tool => [tool.name, [tool.description, guidance[tool.name]].filter(Boolean).join('\n\n'), z.fromJSONSchema(tool.inputSchema), readOnly.has(tool.name)]);
-definitions.push(['unlock_device', 'Use the host-configured passcode on a freshly observed empty six-digit system keypad. Wake with press_button home and inspect take_screenshot first. Supply ten observed digit centers indexed 0 through 9, never a passcode. USB and RemotePairing use the same input transport. Verify the returned screenshot; never retry an uncertain attempt.', z.object({ device: z.string().optional(), observation_id: z.string(), empty_keypad_confirmed: z.literal(true), digits: z.array(z.object({ x: z.number(), y: z.number() }).strict()).length(10) }).strict(), false]);
+definitions.push(['unlock_device', 'Use the host-configured passcode on a freshly observed empty six-digit system keypad. Wake with press_button home and inspect take_screenshot first. Read the ten digit centers from list_elements (or observe_device) and use that call\'s observation_id; do not estimate centers from the image. Index centers 0 through 9, never supply a passcode. USB and RemotePairing use the same input transport. Verify the returned screenshot; never retry an uncertain attempt.', z.object({ device: z.string().optional(), observation_id: z.string(), empty_keypad_confirmed: z.literal(true), digits: z.array(z.object({ x: z.number(), y: z.number() }).strict()).length(10) }).strict(), false]);
 definitions.push(['disconnect_device', 'Close the selected remote device connection and its local helper. Cellular reconnection may require returning the iPhone to Wi-Fi. Does not undo input.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['reconnect_device', 'Re-establish the selected RemotePairing tunnel. Does not replay input. A new session may require Wi-Fi when iOS closes its remote pairing listener.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, approval mode for this session, and any available Poki update with release notes and the update command.', z.object({}), true]);
 
-export function createServer(call) {
+export function createServer(call, { unlockEnabled = () => Boolean(process.env.POKI_UNLOCK_DEVICE) } = {}) {
   const server = new McpServer({ name: 'poki-mcp', version }, { instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
     server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
@@ -49,12 +49,16 @@ export function createServer(call) {
     });
   }
   if (process.env.POKI_MCP_TOOLS !== 'all') {
-    server.server.setRequestHandler('tools/list', () => ({
-      tools: definitions.filter(([name]) => defaultTools.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
-        name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
-        annotations: { readOnlyHint },
-      })),
-    }));
+    server.server.setRequestHandler('tools/list', async () => {
+      const shown = new Set(defaultTools);
+      if (await unlockEnabled()) shown.add('unlock_device');
+      return {
+        tools: definitions.filter(([name]) => shown.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
+          name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
+          annotations: { readOnlyHint },
+        })),
+      };
+    });
   }
   return server;
 }

@@ -44,7 +44,7 @@ On a physical iPhone, use `press_button` with `button: "home"`. `press_key` with
 
 ## Optional MCP unlock
 
-The MCP catalog includes `unlock_device`, separate from the standalone Agent helper below. Read `docs/unlock.md` before use: user-only host configuration, device binding, fresh empty-keypad observation, one attempt, and screenshot verification are required. Never request or include the passcode in model context.
+The MCP catalog includes `unlock_device`, separate from the standalone Agent helper below. Read `docs/unlock.md` before use: user-only host configuration, device binding, fresh empty-keypad observation, one attempt, and screenshot verification are required. Read digit centers from `list_elements` or `observe_device` and use that call's observation ID, not estimated image positions. Stop recording before unlock. Never request or include the passcode in model context.
 
 ## Optional Poki Agent iPhone unlock
 

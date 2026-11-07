@@ -11,7 +11,7 @@ const readEndpoint = async () => {
   const entry = await readFile(endpointFile, 'utf8').then(JSON.parse).catch(() => { throw notRunning(); });
   const url = new URL(entry.url);
   if (!entry.enabled || url.hostname !== '127.0.0.1' || url.protocol !== 'http:' || url.pathname !== '/mcp') throw new Error('Invalid local MCP endpoint');
-  return { url, token: entry.token };
+  return { url, token: entry.token, unlockEnabled: entry.unlock_enabled === true };
 };
 let endpoint = await readEndpoint();
 const session = process.env.POKI_MCP_SESSION ?? randomUUID();
@@ -58,7 +58,7 @@ const server = createServer(async (name, args, extra) => {
     extra.signal.throwIfAborted();
     return await remote.callTool({ name, arguments: args, _meta: { 'poki/request_id': id } }, { timeout: 3700000, signal: extra.signal });
   } finally { extra.signal.removeEventListener('abort', cancel); }
-});
+}, { unlockEnabled: async () => (await readEndpoint()).unlockEnabled });
 const transport = new StdioServerTransport();
 await server.connect(transport);
 let stopping;

@@ -1,8 +1,12 @@
 import { checkWork, pause } from './work.mjs';
 
+// Capture once before the daemon starts children; helpers must not inherit the secret.
+const hostPasscode = process.env.POKI_IPHONE_PASSCODE;
+delete process.env.POKI_IPHONE_PASSCODE;
+
 // Shared across MCP sessions. An uncertain attempt is never automatically retried.
 const attempts = new Set();
-export function validateKeypad(points, width, height) {
+function validateKeypad(points, width, height) {
   if (width >= height || points.length !== 10) throw new Error('A portrait ten-key numeric keypad is required.');
   for (const p of points) if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x >= width || p.y < height * .2 || p.y >= height) throw new Error('Keypad points must be inside the observed screen.');
   const tolerance = Math.min(width, height) * .025;
@@ -19,16 +23,17 @@ export function validateKeypad(points, width, height) {
   }
 }
 
-export async function unlockDevice(ctx, args, env = process.env, attempted = attempts) {
+export async function unlockDevice(ctx, args) {
   const target = await ctx.target();
-  if (target.kind !== 'physical' || env.POKI_UNLOCK_DEVICE !== target.id) throw new Error('Unlock is disabled for this device. Configure POKI_UNLOCK_DEVICE locally.');
-  let pin = env.POKI_IPHONE_PASSCODE;
+  if (target.kind !== 'physical' || process.env.POKI_UNLOCK_DEVICE !== target.id) throw new Error('Unlock is disabled for this device. Configure POKI_UNLOCK_DEVICE locally.');
+  let pin = hostPasscode;
   if (!/^[0-9]{6}$/.test(pin ?? '')) throw new Error('Configure a six-digit POKI_IPHONE_PASSCODE in the private local launcher. Never send it in chat.');
   if (args.empty_keypad_confirmed !== true) throw new Error('Observe an empty six-digit lock-screen keypad first.');
+  if ([...(ctx.peers?.() ?? [ctx])].some(owner => owner.backgroundDevices?.get(target.id)?.has('recording'))) throw new Error('Stop recording this device before unlocking. Nothing was sent.');
   const frame = ctx.frame;
   if (!frame || frame.id !== args.observation_id || frame.device !== target.id || Date.now() - frame.at > 30000 || frame.revision !== ctx.coordinator.revision(target.id)) throw new Error('Use a fresh screenshot from this session; the keypad observation has expired.');
   validateKeypad(args.digits, frame.width, frame.height);
-  if (attempted.has(target.id)) throw new Error('An unlock attempt needs human review. Inspect the phone and restart the service before another attempt.');
+  if (attempts.has(target.id)) throw new Error('An unlock attempt needs human review. Inspect the phone and restart the service before another attempt.');
   // Fresh server-side confirmation rejects an app keypad or a dismissed lock screen.
   const tree = await ctx.bridge({ op: 'ax' });
   const elements = tree.elements ?? [];
@@ -43,7 +48,7 @@ export async function unlockDevice(ctx, args, env = process.env, attempted = att
     if (keys.length !== 1 || !box || Math.abs(args.digits[digit].x - (box.x + box.width / 2)) > 3 || Math.abs(args.digits[digit].y - (box.y + box.height / 2)) > 3) throw new Error('Keypad coordinates do not match the fresh system keys. Nothing was sent.');
   }
   checkWork();
-  attempted.add(target.id);
+  attempts.add(target.id);
   try {
     for (const digit of pin) {
       checkWork();
@@ -65,7 +70,7 @@ export async function unlockDevice(ctx, args, env = process.env, attempted = att
         await pause(400);
       }
     }
-    if (verified) attempted.delete(target.id);
+    if (verified) attempts.delete(target.id);
     return { input_sent: true, unlock_verified: verified, ...(!verified ? { isError: true, outcome: 'unknown', stop_reason: 'unknown' } : {}), instruction: verified ? 'Unlock verified by a readable foreground app.' : 'Inspect a fresh screenshot. Do not retry. Human review and a service restart are required before the next unlock attempt.' };
   } catch {
     // Never expose bridge errors, tap coordinates, or partial PIN progress.
