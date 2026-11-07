@@ -209,3 +209,7 @@ Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input
   - The snapshot is held only in memory for the duration of that single operation and cannot be restored by a subsequent tool call after a human handoff.
   - If a paste prompt is pending or the target field cannot be verified, automatic submission stops and leaves the intended text on the clipboard.
   - Poki MCP **never** auto-accepts an iOS **Allow Paste** prompt. Note that a true first-time **Allow Paste** human-handoff flow remains unverified on hardware (prior successful paste checks did not trigger the system prompt).
+
+## Optional input variation
+
+See [bounds and validation limits](input-variation.md) before enabling `variation` on input calls.
