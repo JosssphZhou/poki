@@ -2,6 +2,7 @@ mod apps;
 mod ax;
 mod configuration;
 mod device_ops;
+mod display;
 mod gesture;
 mod installation;
 mod pasteboard;
@@ -25,7 +26,62 @@ use std::{io::Read, time::Duration};
 use stream::NoDisplayService;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-type Touch = UniversalHidServiceClient<Box<dyn ReadWrite>>;
+type Hid = UniversalHidServiceClient<Box<dyn ReadWrite>>;
+struct Touch {
+    client: Hid,
+    surface: u64,
+}
+impl Touch {
+    async fn connect_rsd(
+        adapter: &mut idevice::tcp::handle::AdapterHandle,
+        rsd: &mut RsdHandshake,
+    ) -> Result<Self> {
+        let display = display::active(adapter, rsd).await?;
+        let mut client = Hid::connect_rsd(adapter, rsd).await?;
+        let surface = display::touch_surface(&display, &client.list_connected_services().await?)?;
+        Ok(Self { client, surface })
+    }
+    async fn send_touchscreen(
+        &mut self,
+        state: u8,
+        x: u16,
+        y: u16,
+        timestamp: Option<u64>,
+    ) -> Result<()> {
+        self.client
+            .send_report(
+                self.surface,
+                idevice::core_device::hid::build_touchscreen_report(state, x, y, timestamp),
+            )
+            .await?;
+        Ok(())
+    }
+    async fn send_multitouch(
+        &mut self,
+        contacts: &[idevice::core_device::hid::TouchscreenContact],
+        timestamp: Option<u64>,
+    ) -> Result<()> {
+        self.client
+            .send_report(
+                self.surface,
+                idevice::core_device::hid::build_multitouch_report(contacts, timestamp)?,
+            )
+            .await?;
+        Ok(())
+    }
+}
+impl std::ops::Deref for Touch {
+    type Target = Hid;
+    fn deref(&self) -> &Hid {
+        &self.client
+    }
+}
+impl std::ops::DerefMut for Touch {
+    fn deref_mut(&mut self) -> &mut Hid {
+        &mut self.client
+    }
+}
+
 type Indigo = IndigoHidClient<Box<dyn ReadWrite>>;
 fn trace(stage: &str) {
     if std::env::var_os("POKI_MCP_NATIVE_TRACE").is_some() {
@@ -45,7 +101,8 @@ impl InputMedia {
         adapter: &mut idevice::tcp::handle::AdapterHandle,
         rsd: &mut RsdHandshake,
     ) -> Result<Self> {
-        let stream = stream::start_screen_media_stream(adapter, rsd, 1)
+        let display = display::active(adapter, rsd).await?;
+        let stream = stream::start_screen_media_stream(adapter, rsd, display.id)
             .await
             .map_err(|e| {
                 if e.is::<NoDisplayService>() {
@@ -481,11 +538,23 @@ async fn execute_connected(
         };
     }
     if let Request::Screenshot { path } = request {
-        let mut dvt =
-            idevice::dvt::remote_server::RemoteServerClient::connect_rsd(adapter, rsd).await?;
-        dvt.read_message(0).await?;
-        let mut screenshot = idevice::dvt::screenshot::ScreenshotClient::new(&mut dvt).await?;
-        let bytes = screenshot.take_screenshot().await?;
+        let display = display::active(adapter, rsd).await?;
+        let bytes = if display.primary {
+            let mut dvt =
+                idevice::dvt::remote_server::RemoteServerClient::connect_rsd(adapter, rsd).await?;
+            dvt.read_message(0).await?;
+            let mut screenshot = idevice::dvt::screenshot::ScreenshotClient::new(&mut dvt).await?;
+            screenshot.take_screenshot().await?
+        } else {
+            let mut capture =
+                idevice::core_device::ScreenCaptureServiceClient::connect_rsd(adapter, rsd).await?;
+            capture
+                .take_screenshot(
+                    Some(&display.unique_id),
+                    idevice::core_device::ImageFormat::Png,
+                )
+                .await?
+        };
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
         let mut file = std::fs::OpenOptions::new()

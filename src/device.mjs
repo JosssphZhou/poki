@@ -225,8 +225,7 @@ export class Devices {
     try {
       // Unmasked, the area around the Dynamic Island differs between frames of a still screen, which would expire refs.
       if (target.kind === 'simulator') await this.run('xcrun', ['simctl', 'io', target.id, 'screenshot', '--type=png', '--mask=black', path]);
-      else if (target.remote) await nativeRequest(target, { op: 'screenshot', path });
-      else await this.native(['screenshot', path], /Screenshot saved to:/);
+      else await nativeRequest(target, { op: 'screenshot', path });
       const original = await readFile(path), meta = await sharp(original).metadata();
       const scale = await this.scale(target);
       const width = Math.round(meta.width / scale), height = Math.round(meta.height / scale);
