@@ -17,15 +17,17 @@ documentation, without changing the production RemotePairing implementation.
   It verifies persistence of `.local` names (rather than a one-time IP), existing
   IPv4/IPv6 setup (including interface-scoped IPv6), and rejection of
   malformed/non-local names before device access.
-- `dead_remote_tunnel_reconnects_control_to_the_current_host` failed on the latest
+- `dead_bonjour_tunnel_drops_stale_control` failed on the latest
   base before the control reset, then passed after it. It uses real loopback
   sockets and a stopped tunnel adapter, not a real phone or authentication record.
-  The saved hostname is `localhost`; it proves control re-creation, not mDNS itself.
-- `fixed_ip_recovery_keeps_using_its_existing_control` failed before restricting
+  The follow-up uses an unadvertised `.local` name and asserts that the old control
+  receives no bytes. It proves invalidation, not successful mDNS or authentication.
+- `non_bonjour_recovery_keeps_using_its_existing_control` failed before restricting
   the reset to hostname mode, then passed after it. Numeric-IP/Tailscale recovery
   keeps the base implementation's control reuse.
 - `failed_remote_replacement_keeps_the_working_tunnel` verifies that an explicit
-  replacement failure does not discard an existing live tunnel.
+  replacement failure does not discard an existing live tunnel. This also passes
+  on the base: it protects the existing contract, not a newly fixed behavior.
 - Existing upstream tests cover a silent phone, a stopped adapter and a refused
   service. The patch does not change the upstream retry gate: only reads and
   inputs known not to have been sent may retry; uncertain inputs are not replayed.
@@ -80,3 +82,21 @@ multiple phones, cross-network Bonjour, and IPv6 scope migration have not been
 independently exercised. Numeric-IP/Tailscale compatibility is regression-tested,
 not revalidated over a cellular network. Simulator operation was not tested on
 hardware. Device pairing and UniqueDeviceID checks remain unchanged.
+
+## Review follow-up
+
+Explicit Bonjour reconnect now invalidates cached control before replacement,
+while retaining the existing tunnel until a new one connects. A real-socket
+regression asserts no bytes reach stale control and the old adapter remains live
+on replacement failure. Non-Bonjour hostname configurations retain control reuse.
+The physical runs above predate this follow-up; explicit reconnect after a real
+address change has not been hardware-validated on this follow-up.
+
+A real-loopback data-socket test checks that the authenticated control peer address
+is reused with the new listener port. IPv6 scope migration remains untested.
+
+Follow-up validation (2026-11-07): full Node suite 145 passed; updated setup
+regression passed separately; full Rust suite 24 passed. The two new behavior
+regressions were observed failing before their production fixes; the scoped-IPv6
+zone classification regression also failed before its guard. The data-socket
+loopback check covers its extracted connector, not full RemotePairing authentication.

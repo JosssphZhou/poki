@@ -1,8 +1,10 @@
-# iPhone over Tailscale
+# Remote iPhone over LAN or Tailscale
 
-RemotePairing lets Poki use an already paired iPhone through its Tailscale address. It uses an encrypted userspace tunnel and does not change the Mac's default route, DNS, proxy, or other VPN settings. This is an opt-in transport; the existing USB path remains available for devices without a remote configuration.
+RemotePairing lets Poki use an already paired iPhone through a LAN Bonjour name or a Tailscale address. It uses an encrypted userspace tunnel and does not change the Mac's default route, DNS, proxy, or other VPN settings. This is an opt-in transport; the existing USB path remains available for devices without a remote configuration.
 
 **Experimental cross-network support:** the Mac and iPhone no longer need to remain on the same LAN. The verified route initializes a session on Wi-Fi, then keeps it while the iPhone uses cellular data.
+
+For LAN-only use, see [LAN addresses that change with DHCP](#lan-addresses-that-change-with-dhcp). Use the trusted USB preparation below with the advertised `.local` host instead of `TAILSCALE_IP`; Tailscale installation and the cellular switch are only for cross-network use.
 
 ## Prepare
 
@@ -46,7 +48,8 @@ changing DNS answers alone never invalidates an established tunnel.
 No helper restart or new USB pairing is needed for subsequent address changes.
 Reads or inputs known not to have been sent can
 recover through the existing bounded retry; uncertain inputs are never replayed.
-A working tunnel remains usable if an explicit replacement attempt fails.
+An explicit `reconnect_device` also creates a fresh control connection to resolve
+the Bonjour name again. A working tunnel remains usable if that replacement fails.
 
 Existing numeric-IP configurations remain unchanged. To opt in, rerun setup
 with the name while the trusted phone is connected over USB, after calling
@@ -56,6 +59,8 @@ this does not discover renamed hosts, follow changed service ports, scan all
 phones automatically, or make Bonjour work across different networks. Keep an
 explicit Tailscale address for cross-network operation.
 
+### Shared transport behavior
+
 Supported paths are screenshots, accessibility observations, app listing and launch, touches and gestures, keyboard events, and verified text input through Poki's existing clipboard/field verification flow. Clipboard restoration is reported separately; an unavailable snapshot means the prior clipboard cannot be restored.
 
 The native connection helper is independent of MCP clients and the Poki daemon. Closing a client or restarting the daemon preserves an idle phone connection. The private local socket is under `/tmp/poki-remote-<uid>`; it exposes no network listener. Pairing keys remain in the state directory; ephemeral tunnel keys are not saved.
@@ -64,7 +69,7 @@ The native connection helper is independent of MCP clients and the Poki daemon. 
 
 Ordinary service errors and observation deadlines preserve a live tunnel. The helper clears a connection after its underlying adapter has stopped. After a socket error it also opens the tunnel's RSD port, and clears the connection when that fails too, because a phone that drops off Wi-Fi without a reset leaves the adapter running. If that happens before an input is written, the helper builds one replacement tunnel within the same request and tries again. A cancelled read can occupy the helper until its native deadline, so the next request may wait. Native connection setup has a 25-second limit and execution has a 90-second limit; the JavaScript request budget is 120 seconds.
 
-When hostname mode discards a dead tunnel, it also clears the cached control connection so the replacement resolves the name again. Numeric IP/Tailscale configurations keep their existing control-reuse behavior.
+When Bonjour (`.local` or `.local.`, case-insensitive) mode discards a dead tunnel, it also clears the cached control connection so the replacement resolves the name again. Numeric IP and other hostnames (including Tailscale MagicDNS) keep their existing control-reuse behavior.
 
 On iOS, Tailscale cannot run alongside another ordinary VPN. Users who need that other VPN to reach their AI client must resolve the internet-access requirement too. A suitable Tailscale exit node is a possible topology, but it has not been validated in this experiment. See [Tailscale's VPN compatibility documentation](https://tailscale.com/docs/reference/faq/other-vpns).
 
@@ -77,6 +82,8 @@ Call `disconnect_device` for the selected iPhone. In this installation's `remote
 If setup reports that the saved pairing record did not verify, reconnect the trusted and unlocked iPhone over USB. Rename `remote/DEVICE_ID/pairing.plist` within the same private state directory, then run `bin/prepare-remote.mjs` again to create a new record. Do not share the old or new pairing file.
 
 ## Verification status
+
+See [LAN Bonjour recovery checks](verification/lan-bonjour-recovery.md) for the address-change experiments and their limits.
 
 The initial transport checks used an iPhone17,1 running iOS 27.3 on 2026-11-06, before the cancellation fix:
 

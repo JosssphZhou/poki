@@ -44,4 +44,4 @@ configs.push({ id, name, config_path: configPath });
 const temporary = registry + '.tmp';
 await writeFile(temporary, JSON.stringify(configs), { mode: 0o600 });
 await rename(temporary, registry);
-console.log(JSON.stringify({ paired: true, device: id, next: 'Start Poki and call list_devices while Wi-Fi is connected. Keep the daemon running when switching to cellular.' }));
+console.log(JSON.stringify({ paired: true, device: id, next: bonjour ? 'Start Poki and call list_devices. Keep the iPhone unlocked and both devices on the same LAN; the Bonjour name must remain reachable.' : 'Start Poki and call list_devices while Wi-Fi is connected. For Tailscale, keep both devices connected and keep the daemon running when switching to cellular.' }));

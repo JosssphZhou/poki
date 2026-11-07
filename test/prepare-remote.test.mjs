@@ -35,6 +35,11 @@ else console.log(JSON.stringify([{id:'synthetic-phone',connection:'USB'}]));
     const config = JSON.parse(await readFile(join(state, 'remote/synthetic-phone/config.json'), 'utf8'));
     assert.equal(config.host, host, 'persist the name rather than a one-time IP resolution');
     assert.equal(config.port, 49152);
+    const next = JSON.parse(result.stdout).next;
+    if (/\.local\.?$/i.test(host)) {
+      assert.match(next, /same LAN/);
+      assert.doesNotMatch(next, /cellular/);
+    } else assert.match(next, /Tailscale/);
   }
   const before = await readFile(log, 'utf8');
   for (const host of ['example.com', 'phone', '-phone.local', 'phone..local', 'phone.local:1234', 'phone.local/path', 'phone.local\n']) {
