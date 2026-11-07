@@ -58,7 +58,10 @@ const server = createServer(async (name, args, extra) => {
     extra.signal.throwIfAborted();
     return await remote.callTool({ name, arguments: args, _meta: { 'poki/request_id': id } }, { timeout: 3700000, signal: extra.signal });
   } finally { extra.signal.removeEventListener('abort', cancel); }
-}, { unlockEnabled: async () => (await readEndpoint()).unlockEnabled });
+}, { unlockEnabled: async () => {
+  // Discovery stays available after the daemon stops; actions still report notRunning.
+  try { return (await readEndpoint()).unlockEnabled; } catch { return false; }
+} });
 const transport = new StdioServerTransport();
 await server.connect(transport);
 let stopping;

@@ -27,7 +27,13 @@ test('default discovery follows daemon binding for HTTP and stdio, including aft
  } finally {await client.close();}
  const args={observation_id:'none',empty_keypad_confirmed:true,digits:Array.from({length:10},()=>({x:10,y:50}))};
  assert.match((await f.call('unlock_device',args)).content[0].text,/Configure a six-digit/);
- await f.daemon.stop();daemonEnv.POKI_UNLOCK_DEVICE='';await f.startDaemon();
+ await f.daemon.stop();
+ const offline=await f.a.listTools();
+ assert.equal(offline.tools.length,29);
+ assert.ok(!offline.tools.some(x=>x.name==='unlock_device'));
+ const stopped=await f.call('wait',{seconds:0});
+ assert.equal(stopped.isError,true);assert.match(stopped.content[0].text,/not running/);
+ daemonEnv.POKI_UNLOCK_DEVICE='';await f.startDaemon();
  assert.ok(!(await f.a.listTools()).tools.some(x=>x.name==='unlock_device'));
  assert.ok((await (await f.connect('all')).listTools()).tools.some(x=>x.name==='unlock_device'));
 });
