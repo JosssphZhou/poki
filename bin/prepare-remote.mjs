@@ -8,8 +8,11 @@ import { root, stateDir, idevice } from '../src/config.mjs';
 const exec = promisify(execFile);
 const [id, host, portText = '49152'] = process.argv.slice(2);
 const port = Number(portText);
-if (!id || !/^[a-zA-Z0-9-]+$/.test(id) || !isIP(host) || !Number.isInteger(port) || port < 1 || port > 65535) {
-  throw new Error('Usage: node bin/prepare-remote.mjs DEVICE_ID TAILSCALE_IP [PORT]. Connect the trusted iPhone by USB and Wi-Fi first.');
+// Keep the Bonjour name, not a setup-time address: DHCP can change it later.
+const bonjour = typeof host === 'string' && host.length <= 254 &&
+  /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+local\.?$/i.test(host);
+if (!id || !/^[a-zA-Z0-9-]+$/.test(id) || !(isIP(host ?? '') || bonjour) || !Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error('Usage: node bin/prepare-remote.mjs DEVICE_ID IP_OR_BONJOUR_HOST [PORT]. Use an IP address or a .local host. Connect the trusted iPhone by USB and Wi-Fi first.');
 }
 const devices = JSON.parse((await exec('python3', [join(root, 'native/devices.py')])).stdout);
 if (!devices.some(d => d.id === id && d.connection === 'USB')) throw new Error('The selected iPhone must be connected over USB for initial pairing.');

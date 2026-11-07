@@ -22,6 +22,40 @@ The configured device uses RemotePairing even when a USB connection is present, 
 
 ## Operations and recovery
 
+### LAN addresses that change with DHCP
+
+For a Mac and iPhone on the same LAN, opt into Bonjour resolution by supplying
+the phone's actual `.local` host name instead of a numeric address during setup:
+
+```sh
+node bin/prepare-remote.mjs DEVICE_ID My-iPhone.local
+```
+
+Use the host advertised by that phone, not its display name or an assumed
+`iPhone.local` name. On macOS, `dns-sd -B _remotepairing._tcp local.` can browse
+advertised instances; `dns-sd -L 'INSTANCE' _remotepairing._tcp local.` reports an
+instance's host and port. Stop these browsing commands with Ctrl-C. Supply the
+advertised port as the optional third argument if it differs from `49152`.
+Advertisements identify candidates only: the saved pairing record and device ID
+are still checked when connecting.
+
+Setup saves the host name rather than resolving it once to an IP. A new control
+connection resolves that name through the system resolver, including after a
+dead tunnel is discarded. This uses the existing adapter/RSD health checks;
+changing DNS answers alone never invalidates an established tunnel.
+No helper restart or new USB pairing is needed for subsequent address changes.
+Reads or inputs known not to have been sent can
+recover through the existing bounded retry; uncertain inputs are never replayed.
+A working tunnel remains usable if an explicit replacement attempt fails.
+
+Existing numeric-IP configurations remain unchanged. To opt in, rerun setup
+with the name while the trusted phone is connected over USB, after calling
+`disconnect_device` to end the selected device's old helper. Existing valid
+pairing records are reused. The name must still be advertised and reachable:
+this does not discover renamed hosts, follow changed service ports, scan all
+phones automatically, or make Bonjour work across different networks. Keep an
+explicit Tailscale address for cross-network operation.
+
 Supported paths are screenshots, accessibility observations, app listing and launch, touches and gestures, keyboard events, and verified text input through Poki's existing clipboard/field verification flow. Clipboard restoration is reported separately; an unavailable snapshot means the prior clipboard cannot be restored.
 
 The native connection helper is independent of MCP clients and the Poki daemon. Closing a client or restarting the daemon preserves an idle phone connection. The private local socket is under `/tmp/poki-remote-<uid>`; it exposes no network listener. Pairing keys remain in the state directory; ephemeral tunnel keys are not saved.
@@ -29,6 +63,8 @@ The native connection helper is independent of MCP clients and the Poki daemon. 
 `reconnect_device` attempts a replacement tunnel before dropping a working one. It never repeats a previous input. If an operation loses its response, inspect the screen before retrying. `disconnect_device` explicitly closes the helper and phone connection. Cancelling an observation abandons only that request. The helper finishes the read and discards its response. Cancelling an input drops the in-flight operation without replaying it or closing the shared tunnel. Some input may already have reached the phone; inspect the screen before retrying. The helper processes one request at a time, so later operations cannot overtake a draining read.
 
 Ordinary service errors and observation deadlines preserve a live tunnel. The helper clears a connection after its underlying adapter has stopped. After a socket error it also opens the tunnel's RSD port, and clears the connection when that fails too, because a phone that drops off Wi-Fi without a reset leaves the adapter running. If that happens before an input is written, the helper builds one replacement tunnel within the same request and tries again. A cancelled read can occupy the helper until its native deadline, so the next request may wait. Native connection setup has a 25-second limit and execution has a 90-second limit; the JavaScript request budget is 120 seconds.
+
+When hostname mode discards a dead tunnel, it also clears the cached control connection so the replacement resolves the name again. Numeric IP/Tailscale configurations keep their existing control-reuse behavior.
 
 On iOS, Tailscale cannot run alongside another ordinary VPN. Users who need that other VPN to reach their AI client must resolve the internet-access requirement too. A suitable Tailscale exit node is a possible topology, but it has not been validated in this experiment. See [Tailscale's VPN compatibility documentation](https://tailscale.com/docs/reference/faq/other-vpns).
 
