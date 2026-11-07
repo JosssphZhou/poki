@@ -134,6 +134,9 @@ enum Request {
     },
     DeviceInfo,
     ListApps,
+    ProcessInfo {
+        pid: u32,
+    },
     InstallApp {
         ipa_path: String,
         bundle_id: String,
@@ -260,6 +263,7 @@ impl Request {
                 | Self::Screenshot { .. }
                 | Self::DeviceInfo
                 | Self::DisplayInfo
+                | Self::ProcessInfo { .. }
                 | Self::ListApps
         )
     }
@@ -507,6 +511,9 @@ async fn execute_connected(
             .collect::<std::collections::HashMap<_, _>>();
         return Ok(json!({"scale":scale,"properties":properties}));
     }
+    if let Request::ProcessInfo { pid } = request {
+        return apps::process_info(adapter, rsd, pid).await;
+    }
     if matches!(request, Request::ListApps) {
         return apps::list(adapter, rsd, provider).await;
     }
@@ -546,6 +553,7 @@ async fn execute_connected(
             Request::DisplayInfo
             | Request::DeviceInfo
             | Request::Screenshot { .. }
+            | Request::ProcessInfo { .. }
             | Request::ListApps
             | Request::InstallApp { .. }
             | Request::UninstallApp { .. }

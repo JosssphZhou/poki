@@ -102,7 +102,7 @@ await once(servers[0], 'listening');
 const actualPort = servers[0].address().port;
 for (const [index, server] of servers.entries()) if (index > 0) server.listen(actualPort, bindHosts[index]);
 await Promise.all(servers.slice(1).map(server => once(server, 'listening')));
-const entry = { url: `http://127.0.0.1:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid };
+const entry = { url: `http://127.0.0.1:${actualPort}/mcp`, port: actualPort, token, enabled: true, pid: process.pid, unlock_enabled: Boolean(process.env.POKI_UNLOCK_DEVICE) };
 const temporary = `${endpointFile}.${process.pid}.tmp`;
 await writeFile(temporary, JSON.stringify(entry, null, 2), { mode: 0o600, flag: 'wx' });
 await rename(temporary, endpointFile);

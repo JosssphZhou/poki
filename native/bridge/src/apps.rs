@@ -241,6 +241,22 @@ pub async fn app_for_pid(
         "bundle_id":app.map(|app| app.bundle_identifier.as_str()),"name":app.map(|app| app.name.as_str())}))
 }
 
+/// Resolve a foreground PID without trusting an application's accessibility label.
+pub async fn process_info(
+    adapter: &mut AdapterHandle,
+    rsd: &mut RsdHandshake,
+    pid: u32,
+) -> Result<Value> {
+    let mut service = AppServiceClient::connect_rsd(adapter, rsd).await?;
+    let process = service
+        .list_processes()
+        .await?
+        .into_iter()
+        .find(|p| p.pid == pid)
+        .ok_or("Foreground process was not found")?;
+    Ok(json!({"pid": process.pid, "executable": process.executable_url.map(|url| url.relative)}))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

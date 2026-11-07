@@ -56,6 +56,7 @@ const schemaOf = tool => {
   return strokeChecks[tool.name] ? schema.superRefine(strokeChecks[tool.name]) : schema;
 };
 export const definitions = catalog.tools.map(tool => [tool.name, [tool.description, guidance[tool.name]].filter(Boolean).join('\n\n'), schemaOf(tool), readOnly.has(tool.name)]);
+definitions.push(['unlock_device', 'Use the host-configured passcode on a freshly observed empty six-digit system keypad. Wake with press_button home and inspect take_screenshot first. Read the ten digit centers from list_elements (or observe_device) and use that call\'s observation_id; do not estimate centers from the image. Index centers 0 through 9, never supply a passcode. USB and RemotePairing use the same input transport. Verify the returned screenshot; never retry an uncertain attempt.', z.object({ device: z.string().optional(), observation_id: z.string(), empty_keypad_confirmed: z.literal(true), digits: z.array(z.object({ x: z.number(), y: z.number() }).strict()).length(10) }).strict(), false]);
 definitions.push(['disconnect_device', 'Close the selected remote device connection and its local helper. Cellular reconnection may require returning the iPhone to Wi-Fi. Does not undo input.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['reconnect_device', 'Re-establish the selected RemotePairing tunnel. Does not replay input. A new session may require Wi-Fi when iOS closes its remote pairing listener.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, approval mode for this session, and any available Poki update with release notes and the update command.', z.object({}), true]);
@@ -65,7 +66,7 @@ for (const [name, description, schema, readOnlyHint] of cua.definitions) definit
 const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
 const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
 
-export function createServer(call) {
+export function createServer(call, { unlockEnabled = () => Boolean(process.env.POKI_UNLOCK_DEVICE) } = {}) {
   const computerUse = profile() === 'cua', listed = listedFor(profile());
   const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
@@ -75,12 +76,16 @@ export function createServer(call) {
     });
   }
   if (process.env.POKI_MCP_TOOLS !== 'all') {
-    server.server.setRequestHandler('tools/list', () => ({
-      tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
-        name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
-        annotations: { readOnlyHint },
-      })),
-    }));
+    server.server.setRequestHandler('tools/list', async () => {
+      const shown = new Set(listed);
+      if (!computerUse && await unlockEnabled()) shown.add('unlock_device');
+      return {
+        tools: definitions.filter(([name]) => shown.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
+          name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
+          annotations: { readOnlyHint },
+        })),
+      };
+    });
   }
   return server;
 }
