@@ -54,8 +54,9 @@ private struct SettingsHome: View {
                         thisIPhone.padding(.top, 4)
                         GroupFootnote(text: "The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error.")
                         agents
-                        // The in-process path has no Poki Runner to start or stop (ESP-152).
-                        if model.automationPath == .runner { runner }
+                        // The in-process path has no Poki Runner to start or stop (ESP-152), only the
+                        // idle time that ends its session (ESP-161).
+                        runner
                         phone
                     }
                     .padding(.horizontal, 16).padding(.bottom, 40)
@@ -133,10 +134,11 @@ private struct SettingsHome: View {
 
     @ViewBuilder private var runner: some View {
         @Bindable var model = model
-        GroupLabel(text: "RUNNER")
+        let ownRunner = model.automationPath == .runner
+        GroupLabel(text: ownRunner ? "RUNNER" : "AUTOMATION")
         VStack(spacing: 0) {
-            WhiteRow(title: "Runner") { RowValue(text: Text(Health.runner(model).word), chevron: false) }
-            WhiteRow(title: "Stop When Idle For") {
+            if ownRunner { WhiteRow(title: "Runner") { RowValue(text: Text(Health.runner(model).word), chevron: false) } }
+            WhiteRow(title: "Stop When Idle For", divider: ownRunner) {
                 Menu {
                     Picker(selection: $model.idleStopSeconds) {
                         ForEach(Self.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
@@ -149,17 +151,23 @@ private struct SettingsHome: View {
                     .site(15, line: 18).foregroundStyle(Site.text3)
                 }
             }
-            if model.runnerPaused {
+            if ownRunner, model.runnerPaused {
                 Button { model.wakeRunner() } label: { WhiteRow(title: "Start Now", titleColor: Site.ink, divider: false) }
                     .buttonStyle(.plain)
-            } else {
+            } else if ownRunner {
                 Button { model.pauseRunner() } label: { WhiteRow(title: "Stop Runner", titleColor: model.approvals.isEmpty ? Site.danger : Site.text3, divider: false) }
                     .buttonStyle(.plain)
                     .disabled(!model.approvals.isEmpty)
             }
         }
         .whiteCard()
-        GroupFootnote(text: "iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working.")
+        if model.automationPath == .runner {
+            GroupFootnote(text: "iOS shows the automation banner only while the runner is active. Poki starts it when needed and stops it when idle. Don’t close Poki Runner while an agent is working.")
+        } else if model.idleStopSeconds == 0 {
+            GroupFootnote(text: "The automation session stays open while Poki is on, so agents can use this iPhone at any time; iOS shows the Automation Running banner meanwhile. iOS asks for the passcode once after Poki restarts.")
+        } else {
+            GroupFootnote(text: "Poki ends the automation session after this idle time, and the Automation Running banner goes with it. Opening it again more than 8 hours after the passcode was last entered asks for the iPhone passcode once, so a remote task fails while the iPhone is not with you.")
+        }
     }
 
     static let idleChoices: [(Int, LocalizedStringKey)] = [

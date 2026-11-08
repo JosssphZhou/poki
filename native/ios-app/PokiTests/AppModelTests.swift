@@ -127,7 +127,7 @@ final class AppModelTests: XCTestCase {
     func testIdleStopSetting() {
         let (model, _) = model()
         model.idleStopSeconds = 120
-        XCTAssertEqual(UserDefaults.standard.integer(forKey: "idleStopSeconds.v4"), 120)
+        XCTAssertEqual(UserDefaults.standard.integer(forKey: AppModel.idleStopDefault), 120)
         model.idleStopSeconds = 60
     }
 }

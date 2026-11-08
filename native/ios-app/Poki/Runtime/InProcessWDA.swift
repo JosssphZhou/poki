@@ -32,6 +32,10 @@ enum InProcessSession: Equatable {
     case failed(code: String, detail: String)
     /// Ended while no agent used the phone (idle, Stop or Turn off); the next request opens a new one.
     case ended
+    /// iOS is asking the owner for the passcode before it allows automation.
+    case waitingForPasscode
+    /// iOS asked for the passcode and nobody entered it before it gave up (about a minute).
+    case passcodeMissed
 
     /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
     var agentState: RunnerState {
@@ -39,6 +43,11 @@ enum InProcessSession: Equatable {
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
         case .ended: return .starting("opening the in-process session again after it stood by; it takes about a second")
+        case .waitingForPasscode:
+            return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS asks for it before it allows automation, after Poki restarts and 8 hours after the last time. Only the owner can do this; the Live Activity asks them. Call again in about 10 s")
+        case .passcodeMissed:
+            return .failed("the owner needs to enter the iPhone passcode on the phone: iOS asked for it to allow automation and nobody entered it within a minute. Nothing was sent; the next call asks again",
+                           fix: "Enter the iPhone passcode on the phone when iOS asks for it to allow automation")
         case .failed(let code, let detail):
             return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
                            fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
