@@ -132,6 +132,9 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
   (they are never written to disk). In the background Poki stops listening at once, also while
   connecting, unless a step is running or its answer is still to be said (the step brings another app
   to the front); that conversation ends as soon as that is said.
+  A conversation never waits for the server for ever: when it owes something (the end of the person's
+  speech, an answer, the end of the audio) and the server says nothing for 60 s, or 30 s after Poki went
+  to the background, it ends. A step that is running is not counted; its result starts a new wait.
 - A `poki://voice` link, from a web page or another app, only opens Voice: a link never
   changes the bridge and never turns on the microphone. The person enters the address and taps Talk
   to Poki.

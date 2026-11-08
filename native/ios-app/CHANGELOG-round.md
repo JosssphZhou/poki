@@ -20,6 +20,7 @@ Changed:
 - The hand-off card's content line is a fixed short line per kind; the agent's own note is in the alert and the issue row.
 - The chat shows the setup bubble while a step is left after pairing.
 - Voice stops after its answer: 8 s with nobody speaking ends the conversation, lets go of the microphone and turns the orange dot off; speaking within the 8 s goes on in the same conversation, and one opened within 5 minutes of the last conversation with something said in it is told the last turns. Holding the voice page's button keeps it open; in the background Poki stops listening, also while connecting, unless a step it was asked for is running or its answer is still to be said, and then ends once that is said.
+- Voice does not wait for the server for ever: an answer, the end of speech or the end of the audio that does not come (say, an error that names no request) ends the conversation after 60 s without a server event, or 30 s after Poki went to the background. A running step is not cut off.
 
 Needs the phone:
 - Chat with pi on real keys and the ChatGPT login; voice with a person speaking.
