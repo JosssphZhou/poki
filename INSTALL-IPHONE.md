@@ -18,7 +18,7 @@ You run one command. It does every step that does not need a person. At a step o
 | 1 | Get Poki Setup | agent | Nothing. The command downloads the DMG, checks its SHA-256, its Developer ID team (`Q64ZL36CJN`) and notarization, and copies the app to `~/Applications`. |
 | 2 | Start Poki Setup without a window | agent | Nothing. |
 | 3 | Choose the release channel | agent | Nothing. Alpha is the default. |
-| 4 | Sign in with the Apple Account | input | Stores the password in the Mac's keychain once, then reads out the 6-digit code Apple sends. |
+| 4 | Sign in with the Apple Account | input | Stores the password in the Mac's keychain once, then types the 6-digit code Apple sends into their own Terminal. |
 | 5 | Find the iPhone | phone | Plugs the iPhone in by USB and unlocks it. |
 | 6 | Pair, Developer Mode, sign, install | phone | Taps Trust and enters the passcode; turns on Developer Mode, restarts, taps Turn On. |
 | 7 | Trust the developer and open Poki | phone | Trusts the Apple Account in VPN & Device Management and opens Poki once. |
@@ -47,12 +47,14 @@ Without `--json`, the same events print as text, and person stops start with `‚è
 
 Several iPhones plugged in: list them with `node bin/install-iphone.mjs phones` and pass `--udid <udid>`.
 
+`node bin/install-iphone.mjs --version` prints the installer's version and build commit. `run` prints the same on its first line (`{"event":"installer",...}` with `--json`), so say which installer you used when you report a problem.
+
 ### Person stops
 
 | `wait` | What you do |
 |---|---|
-| `apple_password` | Give the user the command in `say`. They run it in their own Terminal, and macOS asks for the password without showing it. Never ask for the password in chat, and never type it for them. The command reads it from the keychain item `poki-setup-install`, signs in, and then deletes that item; Poki Setup keeps its own copy for renewals. `POKI_APPLE_ID` and `POKI_SETUP_PASSWORD` in the environment also work. |
-| `apple_code` | Ask the user for the 6-digit code. Then run `node bin/install-iphone.mjs code <digits>`. The code is single-use, so it can pass through chat. |
+| `apple_password` | Give the user the command in `say`. They run it in their own Terminal, and macOS asks for the password without showing it. Never ask for the password in chat, and never type it for them. The command reads it from the keychain item `poki-setup-install`, signs in, and then deletes that item; Poki Setup keeps its own copy for renewals. |
+| `apple_code` | Give the user the command in `say`. They run `node bin/install-iphone.mjs code` in their own Terminal and type the 6-digit code at the hidden prompt, like the password. Never ask for the code in chat, and never put it in a command line or type it for them. The command accepts no code as an argument. |
 | `phone_plug` | Tell the user `say`. The command sees the phone. |
 | `pair` | Tell the user `say`. The command sees the Trust tap. |
 | `devmode` | Tell the user `say`. The phone restarts; the command waits for it to come back with Developer Mode on. |
@@ -78,7 +80,8 @@ The command exits with code 2. The last `error` event has a `code`, the `reason`
 | `developer_mode_off` | Developer Mode is still off. | Ask the user to turn it on. Retried by itself. |
 | `apple_credentials_missing` | No Apple Account password in the environment or the keychain. | Give the user the keychain command from the `apple_password` stop. |
 | `apple_sign_in_rejected` | Apple refused the email or the password. | The keychain item is deleted; give the user the keychain command again. |
-| `apple_code_wrong` | Apple refused the code. | Ask for the newest code. |
+| `setup_app_missing` | `phones` or `diagnose` cannot find Poki Setup.app in the run's folder, `~/Applications` or `/Applications`. | Run `run`, which installs it, or pass `--app-dir` or `--bridge`. |
+| `apple_code_wrong` | Apple refused the code. | Ask the user to run the `code` command again with the newest code. |
 | `apple_server_busy` | Apple or the anisette server answered with an error. | Switches anisette servers and retries by itself. |
 | `apple_account_limit` | A free-account limit: 10 App IDs a week, 3 apps, or one certificate already held by AltStore, SideStore or Xcode. | Stop. Tell the user which limit Apple named. The way out is their decision. |
 | `network` | A request failed. | Retried by itself. Then report. |
@@ -90,13 +93,13 @@ The command exits with code 2. The last `error` event has a `code`, the `reason`
 
 ## When you cannot fix it
 
-1. Run `node bin/install-iphone.mjs diagnose`. It prints a JSON bundle: versions, macOS, Xcode, each step's result, what usbmuxd, the USB bus, `devicectl` and Bonjour each see, and the last 40 lines of Poki Setup's log. It removes UDIDs, ECIDs, serials, device names, Apple Account emails, team and bundle IDs, tokens, keys, passwords, pairing records, relay addresses, IP addresses and the macOS user name. Show the user the bundle.
+1. Run `node bin/install-iphone.mjs diagnose`. It prints a JSON bundle: the versions and build of this installer, Poki Setup and the installed Poki, macOS, Xcode, each step's result, what usbmuxd, the USB bus, `devicectl` and Bonjour each see, and the last 40 lines of Poki Setup's log. It removes UDIDs, ECIDs, serials, device names, Apple Account emails, the Apple Account holder's name (a free account's team is named after them), the Mac's name, team and bundle IDs, tokens, keys, passwords, pairing records, relay addresses, IP addresses and the macOS user name. Show the user the bundle.
 2. Run `node bin/install-iphone.mjs issue`. It writes an English issue draft that follows [the install-failure template](.github/ISSUE_TEMPLATE/install-failure.yml) and prints the `gh issue create` command. It never submits.
 3. Show the user the whole draft. Ask whether to submit it. Run the printed `gh issue create` command only after the user says yes. If the user wants changes, edit the draft file first. Never submit an issue without that yes.
 
 ## Secrets
 
-- The Apple Account password comes only from `POKI_SETUP_PASSWORD` or the keychain item `poki-setup-install`. The Cloudflare token comes only from `CLOUDFLARE_API_TOKEN` or the token Poki Setup keeps. They go to Poki Setup's helper over a pipe, never on a command line, and the command never prints them.
+- The Apple Account password comes only from the keychain item `poki-setup-install`, which the user fills in their own Terminal. The Apple code is typed to `node bin/install-iphone.mjs code` in their own Terminal. Never put either in a command you run. (`POKI_APPLE_ID` and `POKI_SETUP_PASSWORD` exist for the user's own shell, not for agents.) The Cloudflare token comes only from `CLOUDFLARE_API_TOKEN` or the token Poki Setup keeps. They go to Poki Setup's helper over a pipe, never on a command line, and the command never prints them.
 - Do not print, log or paste the user's password, tokens, model API keys or iPhone passcode.
 
 ## Dry run

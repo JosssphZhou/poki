@@ -4,7 +4,7 @@
 import { homedir, userInfo } from 'node:os';
 
 const SECRET_KEYS = /^(?:.*(?:token|secret|password|passcode|private|pkcs8|cookie|authorization|api_?key|pairing_record|certificate_der).*)$/i;
-const IDENTIFIER_KEYS = /^(?:udid|unique_chip_id|ecid|serial(?:_number)?|mux_id|apple_id|email|wifi_address|address|phone_name|name|team_id|bundle_id|app_group|relay|url)$/i;
+const IDENTIFIER_KEYS = /^(?:udid|unique_chip_id|ecid|serial(?:_number)?|mux_id|apple_id|email|wifi_address|address|phone_name|name|team_name|machine|machine_name|computer_name|hostname|team_id|bundle_id|app_group|relay|url)$/i;
 
 const patterns = [
   [/-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----/g, '[pem removed]'],
@@ -24,6 +24,18 @@ const patterns = [
   [/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]'],
   [/\b(?!127\.0\.0\.1\b)(?!10\.7\.0\.1\b)(?:\d{1,3}\.){3}\d{1,3}\b/g, '[ip]'],
   [/\b[\w-]+(?: [\w-]+)?['’]s (iPhone|iPad)\b/g, '[device name]'],
+  // Default phone names in other languages: "李雷的iPhone", "太郎のiPhone", "iPhone von Anna", "iPhone de Ana".
+  [/[\p{L}\p{M}'’.-]+(?: [\p{L}\p{M}'’.-]+)?(?:的|の|의) ?(?:iPhone|iPad)/gu, '[device name]'],
+  [/\b(?:iPhone|iPad) (?:von|de|di|van|av|af|från|fra|do|da|del|des) \p{Lu}[\p{L}\p{M}.'’-]*(?: \p{Lu}[\p{L}\p{M}.'’-]*)?/gu, '[device name]'],
+  // Poki Setup's log names the phone after "done pair:" in "<name> · iOS <version>" and "Poki <v> is on <name>".
+  [/[^\s·]+(?: [^\s·]+){0,3}(?= · iOS \d)/g, '[device name]'],
+  [/\b(Poki [\d.]+ is on ).+$/gm, '$1[device name]'],
+  // A free Apple Account's team is named after its holder: "Signing Poki for <name>", "signed for <name>",
+  // "<name> (free, 7-day signing)", "<name> (Personal Team)".
+  [/\b(Signing Poki for |signed for )(?!\d+ days?\b)[^\n(]+?(?=\s*(?:\(|$))/gm, '$1[team name]'],
+  [/(?:[\p{L}\p{M}'’.-]+ ){1,4}(?=\((?:free, 7-day signing|Personal Team)\))/gu, '[team name] '],
+  // The development certificate list names the Mac, which usually carries its owner's name.
+  [/\b(machine|computer_?name|host_?name)(\s*[=:]\s*)[^\n,;]+/gi, '$1$2[mac name]'],
 ];
 
 function escape(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }

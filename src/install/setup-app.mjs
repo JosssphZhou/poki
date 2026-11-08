@@ -87,6 +87,23 @@ async function buildOf(app) {
   return Number(stdout.trim()) || 0;
 }
 
+// Where an installed Poki Setup can be: the folder run installs into, then ~/Applications, then
+// /Applications. run, phones and diagnose all look here, so they agree.
+export function setupAppRoots(into) {
+  return [...new Set([into, join(homedir(), 'Applications'), '/Applications'].filter(Boolean))];
+}
+
+// The helper inside the Poki Setup that run used (recorded in run.json) or, failing that, the first
+// installed one. Throws setup_app_missing with every place it looked.
+export function findSetupBridge({ recorded, into, roots = setupAppRoots(into) } = {}) {
+  if (recorded && existsSync(recorded)) return recorded;
+  for (const dir of roots) {
+    const bridge = join(dir, 'Poki Setup.app', BRIDGE);
+    if (existsSync(bridge)) return bridge;
+  }
+  throw new SetupError('setup_app_missing', `Poki Setup.app is not in ${roots.join(', ')}${recorded ? ` and the helper the last run used (${recorded}) is gone` : ''}. Run \`node bin/install-iphone.mjs run\` to install it, or pass --app-dir or --bridge.`);
+}
+
 // Returns { app, bridge, build, source }. An app already in /Applications or ~/Applications is used
 // when it is at least as new as the channel's; otherwise the release is installed into `into`.
 export async function ensureSetupApp({ channel, into = join(homedir(), 'Applications'), downloads, onNote = () => {} }) {

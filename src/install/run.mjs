@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Bridge, BridgeError } from './bridge.mjs';
 import { ensureSetupApp, SetupError } from './setup-app.mjs';
+import { installerLabel, installerVersion } from './version.mjs';
 
 const exec = promisify(execFile);
 export const manifest = JSON.parse(readFileSync(new URL('./steps.json', import.meta.url), 'utf8'));
@@ -63,6 +64,7 @@ function classify(step, error) {
 
 function format(event) {
   switch (event.event) {
+    case 'installer': return `Poki installer ${installerLabel(event)}`;
     case 'step': return `\n[${event.n}/${event.of}] ${event.title}  (${event.who})`;
     case 'progress': return `      · ${event.title}${event.detail ? `: ${event.detail}` : ''}`;
     case 'note': return `      ${event.text}`;
@@ -141,12 +143,14 @@ class Run {
     return value || null;
   }
 
-  async startBridge(path, label) {
+  async startBridge(path, label, { remember = true } = {}) {
     const env = this.opts.setupHome ? { POKI_SETUP_HOME: this.opts.setupHome } : {};
     const { bridge, version } = await Bridge.start(path, { env, logFile: join(this.state, 'bridge.log') });
     this.bridge?.close();
     this.bridge = bridge;
     this.record.poki_setup = version;
+    // phones and diagnose read this, so they start the same helper this run did.
+    if (remember) this.record.setup_bridge = path;
     return `${label} ${version}`;
   }
 
@@ -183,7 +187,7 @@ class Run {
     const channels = await this.bridge.request('channels');
     const offered = channels.map(c => `${c.id}: ${c.latest ? `Poki ${c.latest.version} (${c.latest.build})` : 'nothing'}`).join(', ');
     this.emit({ event: 'note', text: `The real bridge answers: ${offered}` });
-    await this.startBridge(fakeBridgePath, '[dry run] simulated iPhone and Apple Account behind bridge');
+    await this.startBridge(fakeBridgePath, '[dry run] simulated iPhone and Apple Account behind bridge', { remember: false });
     return `${detail}; from here on the iPhone and Apple Account are simulated`;
   }
 
@@ -195,7 +199,10 @@ class Run {
 
   async apple_account() {
     const account = await this.bridge.request('account');
-    if (account.signed_in) return `already signed in (team ${account.team_id ? 'chosen' : 'to choose'})`;
+    if (account.signed_in) {
+      await this.rememberTeams();
+      return `already signed in (team ${account.team_id ? 'chosen' : 'to choose'})`;
+    }
     const attempts = { code: 0, password: 0, busy: 0 };
     for (;;) {
       const creds = await this.credentials() ?? await this.waitFor('apple_password', () => this.credentials());
@@ -216,7 +223,7 @@ class Run {
           }
         }
         if (creds.from === 'keychain') await exec('security', ['delete-generic-password', '-s', KEYCHAIN_SERVICE]).catch(() => {});
-        const teams = await this.bridge.request('teams');
+        const teams = await this.rememberTeams();
         const team = teams.find(t => !t.is_free) ?? teams[0];
         return `signed in with the password from the ${creds.from}; team ${team ? (team.is_free ? 'free (7-day signing)' : 'paid') : 'none'}`;
       } catch (error) {
@@ -238,6 +245,15 @@ class Run {
         throw failure;
       }
     }
+  }
+
+  // A free Apple Account's team is named after its holder. run.json keeps the names only so diagnose
+  // can take them out of Poki Setup's log; the diagnostics bundle never prints them.
+  async rememberTeams() {
+    const teams = await this.bridge.request('teams').catch(() => []);
+    this.record.teams = teams.map(t => ({ team_id: t.team_id, name: t.name }));
+    await this.save();
+    return teams;
   }
 
   async listPhones() {
@@ -277,6 +293,7 @@ class Run {
         for (const note of done.notes ?? []) this.emit({ event: 'note', text: note });
         if (done.handoff?.link) this.emit({ event: 'wait', wait: 'pairing_file', who: 'phone', say: `${manifest.waits.pairing_file.say} Or open ${done.handoff.link} on the iPhone.` });
         this.installed = done.record;
+        this.record.poki = `${done.record.version} (${done.record.build})`;
         return `Poki ${done.record.version} (${done.record.build}) installed, signed for ${Math.round((done.record.profile_expires_at - Date.now() / 1000) / 86400)} days`;
       } catch (error) {
         const failure = classify('install', error);
@@ -327,6 +344,7 @@ class Run {
       relay,
     };
     this.checkResult = check;
+    if (check.poki) this.record.poki = check.poki;
     const bad = Object.entries(check).filter(([key, value]) => value === null || value === false || (key === 'relay' && value === 'not answering')).map(([key]) => key);
     if (bad.length) throw new StepFailure('check_failed', `not ready: ${bad.join(', ')}`);
     return `Poki ${check.poki}, Developer Mode on, paired, developer disk image mounted, ${check.days_left} days of signing left`;
@@ -341,6 +359,9 @@ class Run {
   async go() {
     await mkdir(this.inbox, { recursive: true });
     await this.load();
+    const installer = await installerVersion();
+    this.record.installer = installer;
+    this.emit({ event: 'installer', ...installer });
     const steps = manifest.steps;
     try {
       for (const [index, step] of steps.entries()) {

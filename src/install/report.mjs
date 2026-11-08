@@ -3,19 +3,21 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { root } from '../config.mjs';
 import { Bridge } from './bridge.mjs';
 import { knownValues, redactText, redactValue } from './redact.mjs';
 import { manifest } from './run.mjs';
+import { findSetupBridge } from './setup-app.mjs';
+import { installerLabel, installerVersion, setupLabel } from './version.mjs';
 
 const exec = promisify(execFile);
 const LOG_LINES = 40;
 const quiet = async (file, args, opts = {}) => (await exec(file, args, { timeout: 8000, ...opts }).catch(error => ({ stdout: error.stdout ?? '', failed: true }))).stdout?.trim() ?? '';
 
-async function readRun(state) {
+export async function readRun(state) {
   try { return JSON.parse(await readFile(join(state, 'run.json'), 'utf8')); } catch { return null; }
 }
 
@@ -34,7 +36,6 @@ async function system() {
     arch: await quiet('uname', ['-m']),
     xcode,
     node: process.version,
-    installer_commit: await quiet('git', ['-C', root, 'rev-parse', '--short=12', 'HEAD']) || 'not a git checkout',
   };
 }
 
@@ -43,9 +44,10 @@ async function deviceView(bridgePath, setupHome) {
   const view = {};
   const usb = await quiet('ioreg', ['-p', 'IOUSB', '-w0']);
   view.usb_iphones = (usb.match(/\biPhone@/g) ?? []).length;
-  if (bridgePath && existsSync(bridgePath)) {
+  if (bridgePath.error) view.usbmuxd_error = `${bridgePath.error.code ?? 'error'}: ${bridgePath.error.message}`;
+  else {
     try {
-      const { bridge } = await Bridge.start(bridgePath, { env: setupHome ? { POKI_SETUP_HOME: setupHome } : {} });
+      const { bridge } = await Bridge.start(bridgePath.path, { env: setupHome ? { POKI_SETUP_HOME: setupHome } : {} });
       try {
         const rows = await bridge.request('phones');
         view.usbmuxd = rows.map(r => ({ udid: r.phone.udid, name: r.facts?.name, link: r.phone.link?.kind, product_type: r.facts?.product_type, ios: r.facts?.ios, build: r.facts?.build, developer_mode: r.facts?.developer_mode, paired: r.facts?.paired_with_this_computer, can_pair_on_device: r.facts?.can_pair_on_device, error: r.error }));
@@ -69,27 +71,40 @@ function logCandidates(state, record, setupHome) {
     .filter(Boolean).map(dir => join(dir, 'logs/poki-setup.log'));
 }
 
-export async function diagnose({ state, noDevice, bridge, setupHome }) {
+// The same Poki Setup run used, so the usbmuxd view is never silently missing.
+function locate({ bridge, appDir, record }) {
+  try { return { path: bridge ?? findSetupBridge({ recorded: record?.setup_bridge, into: appDir }) }; } catch (error) { return { error }; }
+}
+
+// Names that belong to the person: the Mac's names and the account holder's real name.
+async function ownerNames() {
+  const names = [hostname(), await quiet('scutil', ['--get', 'ComputerName']), await quiet('scutil', ['--get', 'LocalHostName']), await quiet('id', ['-F'])];
+  return names.filter(name => name.length >= 3);
+}
+
+export async function diagnose({ state, noDevice, bridge, appDir, setupHome }) {
   const record = await readRun(state);
   const logFile = logCandidates(state, record, setupHome).find(existsSync);
   const raw = {
     schema: 'poki.install-diagnostics/1',
     made_at: new Date().toISOString(),
+    installer: await installerVersion(),
     system: await system(),
-    poki_setup: record?.poki_setup ?? null,
+    poki_setup: setupLabel(record?.poki_setup),
+    poki: record?.poki ?? null,
     channel: record?.channel ?? null,
     dry_run: record?.dry_run ?? false,
     steps: record?.steps ?? {},
     errors: record?.errors ?? [],
     waiting: record?.waiting ?? null,
     phones: record?.phones ?? [],
-    devices: noDevice ? 'not read (--no-device)' : await deviceView(bridge ?? '/Applications/Poki Setup.app/Contents/MacOS/poki-setup-bridge', setupHome ?? record?.setup_home),
+    devices: noDevice ? 'not read (--no-device)' : await deviceView(locate({ bridge, appDir, record }), setupHome ?? record?.setup_home),
     poki_setup_log: logFile ? await tail(logFile) : null,
     installer_log: await tail(join(state, 'bridge.log')),
   };
-  const known = knownValues([record, raw.devices]);
+  const known = [...knownValues([record, raw.devices]), ...await ownerNames()];
   const bundle = redactValue(raw, known);
-  bundle.removed = 'UDIDs, ECIDs, serials, device names, Apple Account emails, team and bundle ids, tokens, keys, passwords, pairing records, relay addresses, IP addresses and the macOS user name';
+  bundle.removed = 'UDIDs, ECIDs, serials, device names, Apple Account emails, team names and ids, bundle ids, the Mac name, tokens, keys, passwords, pairing records, relay addresses, IP addresses and the macOS user name';
   const text = `${JSON.stringify(bundle, null, 2)}\n`;
   await writeFile(join(state, 'diagnostics.json'), text);
   return { bundle, text };
@@ -118,7 +133,7 @@ export async function issueDraft({ state }) {
     manifest.errors[code] ? `- The installer's fix for this code: ${manifest.errors[code].agent_fix}` : '', '',
     '### Diagnostics', '', '```json', JSON.stringify(bundle, null, 2), '```', '',
     '### Versions', '',
-    `Poki Setup ${bundle.poki_setup ?? 'unknown'} (channel ${bundle.channel ?? 'unknown'}); macOS ${bundle.system.macos} ${bundle.system.arch}; Xcode: ${bundle.system.xcode}; ${phone?.product_type ?? 'iPhone unknown'} on iOS ${phone?.ios ?? 'unknown'}${phone?.build ? ` (${phone.build})` : ''} over ${phone?.link ?? 'unknown'}; installer ${bundle.system.installer_commit}`,
+    `Poki installer ${bundle.installer ? installerLabel(bundle.installer) : 'unknown'}; Poki Setup ${bundle.poki_setup ?? 'unknown'} (channel ${bundle.channel ?? 'unknown'}); Poki ${bundle.poki ?? 'not installed'}; macOS ${bundle.system.macos} ${bundle.system.arch}; Xcode: ${bundle.system.xcode}; ${phone?.product_type ?? 'iPhone unknown'} on iOS ${phone?.ios ?? 'unknown'}${phone?.build ? ` (${phone.build})` : ''} over ${phone?.link ?? 'unknown'}`,
     '',
   ].join('\n');
   const draftFile = join(state, 'issue-draft.md');
