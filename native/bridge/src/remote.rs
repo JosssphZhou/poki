@@ -101,8 +101,8 @@ impl Session {
             Transport::Remote(config) => config,
         };
         if self.control.is_none() {
-            let socket = TcpStream::connect((config.host.as_str(), config.port)).await
-                .map_err(|_| "Remote pairing is unreachable. Keep the iPhone unlocked and check its configured address or Bonjour name; for Tailscale, keep both devices connected.")?;
+            let socket = dial(&config.host, config.port).await
+                .map_err(|attempts| format!("Remote pairing is unreachable ({attempts}). Keep the iPhone unlocked and check its configured address or Bonjour name; for Tailscale, keep both devices connected."))?;
             socket.set_nodelay(true)?;
             let peer = socket.peer_addr()?;
             let mut control = RemotePairingClient::new(RpPairingSocket::new(socket), "poki-mcp");
@@ -284,6 +284,40 @@ impl Session {
         }
         connected
     }
+}
+
+// Tries every resolved address in order, as a host-and-port connect does, but keeps
+// each address's OS error: the last error alone cannot tell routing from policy.
+async fn dial(host: &str, port: u16) -> std::result::Result<TcpStream, String> {
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|error| format!("{host} did not resolve: {error}"))?;
+    let mut attempts = Vec::new();
+    for address in addresses {
+        match TcpStream::connect(address).await {
+            Ok(socket) => return Ok(socket),
+            Err(error) => attempts.push(format!("{}: {error}", endpoint(address))),
+        }
+    }
+    if attempts.is_empty() {
+        return Err(format!("{host} resolved to no address"));
+    }
+    Err(attempts.join("; "))
+}
+
+// Names an IPv6 scope by its interface, so a link-local attempt shows which network it used.
+fn endpoint(address: SocketAddr) -> String {
+    let SocketAddr::V6(v6) = address else {
+        return address.to_string();
+    };
+    let mut name = [0 as libc::c_char; libc::IF_NAMESIZE];
+    if v6.scope_id() == 0
+        || unsafe { libc::if_indextoname(v6.scope_id(), name.as_mut_ptr()) }.is_null()
+    {
+        return address.to_string();
+    }
+    let interface = unsafe { std::ffi::CStr::from_ptr(name.as_ptr()) }.to_string_lossy();
+    format!("[{}%{interface}]:{}", v6.ip(), v6.port())
 }
 
 fn socket_failure(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
