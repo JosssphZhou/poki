@@ -2,6 +2,14 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## From poki/ios-integration (2026-11-08, onto standalone)
+
+Changed:
+- In-process path: an open of the automation session that has not answered in 5 s is waiting on iOS's passcode prompt. The Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent reads that only the owner can enter the iPhone passcode; when iOS gives up, the call fails with that reason (from #48).
+
+Needs the phone:
+- The passcode card when Automation Mode comes back on more than 8 hours after the passcode was last entered.
+
 ## Round 10 (2026-11-07, on poki/ios-integration), version 0.2.8
 
 Changed:

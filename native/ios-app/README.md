@@ -55,7 +55,11 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
   the idle time (default 60 s), from Stop on the Live Activity or in Poki, and when Poki is turned off;
   the next agent request opens a new one (a few seconds; iOS asks for the passcode only once per
   boot). If it cannot be opened, an agent's call answers at once with the reason, and the next call,
-  Poki coming to the front, or an agent connecting tries again.
+  Poki coming to the front, or an agent connecting tries again. An open that has not answered in 5 s
+  is waiting on iOS's passcode prompt (after Poki restarts, and 8 hours after the passcode was last
+  entered): the Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent
+  reads that only the owner can enter it. When iOS gives up, after about a minute, the call fails with
+  that reason.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
