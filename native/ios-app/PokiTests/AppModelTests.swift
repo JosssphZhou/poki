@@ -245,6 +245,17 @@ final class InProcessIdleTests: XCTestCase {
         let failed = model.host.currentRunner.describe
         XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
     }
+    /// Idle time Never: Poki turning on (at launch, or the owner's switch) opens the session, so iOS's
+    /// passcode prompt comes while the owner holds the phone, not with the first remote request.
+    func testWithNeverTheSessionOpensWhenPokiTurnsOn() async {
+        model.stopSession()
+        model.idleStopSeconds = 0
+        model.startSession()
+        XCTAssertFalse(model.runnerPaused, "Poki stood by until an agent asks")
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the session opens") { self.session.isOpen }
+    }
+    /// With an idle time set, a cold launch opens nothing until an agent or the owner asks.
     func testColdLaunchOpensNothing() {
         model.becameActive()
         model.runnerChanged(RunnerStatus(state: "running"))
