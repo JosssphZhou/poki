@@ -3,9 +3,47 @@ import Observation
 import PokiCore
 import UIKit
 
-/// The voice bridge on the person's Mac (`bin/voice-bridge.mjs`): it hands out short-lived OpenAI
-/// Realtime credentials, so the phone never holds an API key, and runs the voice tools that move the
-/// phone through the Mac's Poki MCP. Entered once, like the relay address.
+/// Where a conversation's one-minute Realtime key comes from.
+enum VoiceKeySource {
+    /// The OpenAI key saved on this iPhone (Poki › Model): the phone asks OpenAI itself, no Mac needed.
+    case phone
+    /// The voice bridge on the person's Mac, which keeps the key.
+    case mac
+}
+
+/// The one-minute key for a conversation, asked for with the OpenAI key saved on this iPhone. The
+/// request is the voice bridge's default one (`src/voice-session.mjs`, bundled as
+/// RealtimeSecretRequest.json), so a conversation is the same with or without the Mac. The key goes only
+/// to OpenAI and is never logged.
+enum PhoneVoiceKey {
+    static let endpoint = URL(string: "https://api.openai.com/v1/realtime/client_secrets")!
+
+    static func token(key: String) async throws -> VoiceBridge.Token {
+        guard let file = Bundle.main.url(forResource: "RealtimeSecretRequest", withExtension: "json"), let body = try? Data(contentsOf: file),
+              let session = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["session"] as? [String: Any],
+              let model = session["model"] as? String, let tools = session["tools"] as? [[String: Any]]
+        else { throw VoiceError.realtime(0, "Poki is missing its voice session") }
+        var request = URLRequest(url: endpoint, timeoutInterval: 20)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let answer = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard (200..<300).contains(status), let value = answer?["value"] as? String else {
+            // OpenAI quotes the key, in full or masked, in some errors.
+            let reason = ((answer?["error"] as? [String: Any])?["message"] as? String) ?? "client_secrets \(status)"
+            throw VoiceError.realtime(status, reason.replacingOccurrences(of: #"sk-[\w*-]+"#, with: "the API key", options: .regularExpression))
+        }
+        // The phone runs every tool of this session.
+        return VoiceBridge.Token(value: value, model: model, local_tools: tools.compactMap { $0["name"] as? String })
+    }
+}
+
+/// The voice bridge on the person's Mac (`bin/voice-bridge.mjs`): it keeps the OpenAI key and hands out
+/// short-lived Realtime credentials, for a phone with no OpenAI key of its own. Entered once, like the
+/// relay address.
 struct VoiceBridge: Equatable {
     /// http://<Mac>:47830/voice/<secret>
     let base: URL
@@ -99,7 +137,7 @@ struct VoiceBridge: Equatable {
 enum VoiceError: LocalizedError {
     case bridge(Int, String)
     case realtime(Int, String)
-    case noBridge
+    case noSource
     case timeout(String)
 
     var errorDescription: String? {
@@ -107,7 +145,7 @@ enum VoiceError: LocalizedError {
         case .bridge(404, _): "The voice bridge doesn't know this address. Copy it again from the Mac."
         case .bridge(let code, let reason): "The voice bridge answered \(code): \(reason)"
         case .realtime(let code, let reason): "OpenAI answered \(code): \(reason)"
-        case .noBridge: "Enter the voice bridge address from your Mac first."
+        case .noSource: String(localized: "Add an OpenAI key in Poki › Model, or enter your Mac’s voice bridge address in Voice and Speech.")
         case .timeout(let what): "\(what) took too long."
         }
     }
@@ -192,8 +230,8 @@ struct VoiceClock {
 }
 
 /// Talking to Poki: one Realtime session at a time over WebRTC, the calls it asked for, and what was
-/// said. The model hears the microphone and speaks through the speaker; `get_ios_version` is answered
-/// here, the other tools by the voice bridge.
+/// said. The model hears the microphone and speaks through the speaker. The phone answers the tools it
+/// was told are its own; a bridge started with `--mac-tools` answers the others.
 @MainActor
 @Observable
 final class VoiceModel {
@@ -307,6 +345,9 @@ final class VoiceModel {
 
     var isOn: Bool { link != nil }
 
+    /// This iPhone's OpenAI key when one is saved, otherwise the Mac's voice bridge; nil when neither is set.
+    var source: VoiceKeySource? { openAIKey() != nil ? .phone : bridge != nil ? .mac : nil }
+
     /// The person is holding the voice page's button: the conversation stays open for what they say.
     var held = false {
         didSet {
@@ -350,13 +391,17 @@ final class VoiceModel {
 
     func start(microphone: Bool = true) async {
         guard link == nil, phase != .connecting else { return }
-        guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
+        let key = openAIKey()
+        guard key != nil || bridge != nil else { phase = .lost(VoiceError.noSource.localizedDescription); return }
         phase = .connecting
         conversationStart = lines.count
         session += 1
         let number = session
         do {
-            let token = try await bridge.token()
+            let token: VoiceBridge.Token
+            if let key { token = try await PhoneVoiceKey.token(key: key) }
+            else if let bridge { token = try await bridge.token() }
+            else { throw VoiceError.noSource }
             // Ended (let go, the background, End conversation) while the token was on its way.
             guard number == session, phase == .connecting else { return }
             localTools = Set(token.local_tools)
@@ -367,7 +412,7 @@ final class VoiceModel {
             try await link.connect(secret: token.value, microphone: microphone)
             guard self.link === link else { return }
             link.setRemoteVolume(muted ? 0 : 1)
-            log.add("voice", "connected (\(token.model)), session \(number)")
+            log.add("voice", "connected (\(token.model), key from \(key == nil ? "the voice bridge" : "this iPhone")), session \(number)")
             if microphone { link.diagnose { [log] line in log.add("voice", line) } }
         } catch {
             // A conversation ended while connecting has nothing left to report.
@@ -708,7 +753,7 @@ final class VoiceModel {
     /// over the data channel (no microphone, Poki's voice muted), waits for the spoken result and reports
     /// the turn to the bridge.
     func runTest(_ numbers: ClosedRange<Int>) async {
-        guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
+        guard let bridge else { phase = .lost(VoiceError.noSource.localizedDescription); return }
         muted = true
         // Test runs have no microphone, so no voice-chat audio session keeps Poki running while a step
         // brings another app to the front; a silent one does, as for a Poki session.

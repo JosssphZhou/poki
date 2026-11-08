@@ -86,8 +86,21 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 
 Voice (the waveform button beside the gear on Home, a sheet) talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the
 audio track, Poki's voice plays on the speaker, and events travel on the `oai-events` data channel.
-The phone never holds an OpenAI key. The voice bridge on the person's Mac (`bin/voice-bridge.mjs`)
-keeps the key and gives the phone a client secret that expires after 60 seconds:
+Each conversation opens with a client secret that expires after 60 seconds. Voice and Speech shows
+where it comes from:
+
+- **This iPhone's OpenAI key.** When an OpenAI key is saved in Poki › Model (the key the chat uses,
+  kept in the phone's Keychain), the phone asks OpenAI for the client secret itself, for the session
+  the voice bridge asks for by default. No Mac is involved, so voice also works on cellular. The key
+  is read from the Keychain for each conversation, goes only to OpenAI, and is never logged; an
+  OpenAI error that quotes it is shown without it. The request is
+  `Poki/Voice/RealtimeSecretRequest.json`, written from `src/voice-session.mjs` by
+  `node src/voice-session.mjs`; `test/voice-session.test.mjs` fails when the two differ.
+- **The voice bridge on your Mac.** With no OpenAI key on the phone, the voice bridge
+  (`bin/voice-bridge.mjs`) keeps the key and gives the phone the client secret. The phone then needs
+  to reach the Mac over the local network.
+
+To use the voice bridge:
 
 1. Create an API key at platform.openai.com (API keys). Realtime audio is billed to that account per
    token; each test turn reports the tokens it used.
@@ -111,12 +124,12 @@ sessions on your OpenAI key and move the phone through your Mac. Run it only on 
 and pass `--host <this Mac's LAN address>` to keep it off other interfaces (for example a VPN).
 
 Enter `http://<Mac>:47830/voice/<secret>` in Voice (the secret is in `voice-bridge.json` in the
-state directory). `get_ios_version` is answered on the phone;
-the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `open_app`, `tap_text`,
-`go_home`) through the Mac's Poki MCP.
+state directory). Either way the phone runs the voice tools itself (`get_ios_version`, and `look` and
+`do` through PokiCore on this iPhone). A bridge started with `--mac-tools` offers `open_settings`,
+`read_screen`, `open_app`, `tap_text` and `go_home` instead and runs them through the Mac's Poki MCP.
 
 - Each function call runs once, keyed by its `call_id`, in the app and again in the bridge.
-- `tap_text` is held by Poki's approvals, like an agent's `do`: the bridge first says what it would tap
+- `tap_text` (`--mac-tools`) is held by Poki's approvals, like an agent's `do`: the bridge first says what it would tap
   and in which app, without tapping; the phone checks that with PokiCore's rules (payments, deleting,
   sending messages, calls) and, when they ask for it, waits up to two minutes for Allow (in the Dynamic Island, on the Live
   Activity or from the notification). Only then does the bridge tap that element, matched exactly, in that app.

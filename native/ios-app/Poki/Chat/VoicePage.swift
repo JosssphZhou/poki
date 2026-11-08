@@ -2,9 +2,9 @@ import SwiftUI
 
 /// The voice page (ESP-171 boards "V Voice ready", "V Voice listening", "V Voice working with Island"):
 /// one big line in the middle and the hold button at the bottom, on Poki's blue. It runs on VoiceModel
-/// (the Realtime voice conversation through the voice bridge): holding the button starts the
-/// conversation and Poki hears you; letting go leaves the turn to the model, which knows when you stopped;
-/// sliding up ends it.
+/// (the Realtime voice conversation, with this iPhone's OpenAI key or the Mac's voice bridge): holding
+/// the button starts the conversation and Poki hears you; letting go leaves the turn to the model, which
+/// knows when you stopped; sliding up ends it.
 struct VoicePage: View {
     @Environment(AppModel.self) private var model
     var openDetails: () -> Void
@@ -49,7 +49,7 @@ struct VoicePage: View {
             case .ready:
                 Text("Hold and say it.").font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
                 Text(readyLine).font(.system(size: 17)).foregroundStyle(.white.opacity(0.72)).multilineTextAlignment(.center)
-                    .onTapGesture { if voice.bridge == nil { openVoiceSettings() } }
+                    .onTapGesture { if voice.source == nil { openVoiceSettings() } }
             case .listening:
                 heard.font(.system(size: 40, weight: .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -80,7 +80,7 @@ struct VoicePage: View {
 
     private var readyLine: String {
         if case .lost(let why) = voice.phase { return why }
-        if voice.bridge == nil { return String(localized: "Set the voice bridge first: tap here, or Poki › Voice and Speech.") }
+        if voice.source == nil { return String(localized: "Set up voice first: tap here, or Poki › Voice and Speech.") }
         return String(localized: "“Text Mom I’m on my way.”")
     }
 
@@ -128,8 +128,9 @@ struct VoicePage: View {
                     holding = true
                     voice.held = true
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    if !voice.isOn, voice.bridge != nil { Task { await voice.start() } }
-                    if voice.bridge == nil { openVoiceSettings() }
+                    let source = voice.source
+                    if !voice.isOn, source != nil { Task { await voice.start() } }
+                    if source == nil { openVoiceSettings() }
                 }
                 cancelling = value.translation.height < -60
             }
