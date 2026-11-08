@@ -271,4 +271,71 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertTrue(idle.link.closed)
         XCTAssertEqual(idle.microphone, [true, false])
     }
+
+    /// A step's result is handed to the model and Poki goes to the background before the answer has
+    /// started: the answer still gets said, then the conversation ends.
+    func testAStepsResultHandedOverJustBeforeTheBackgroundIsStillSaid() async {
+        let h = Harness(phoneTool: { _, _ in ("Settings is open", false) })
+        await h.talk()
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        XCTAssertEqual(h.voice.calls.first?.delivered, true)
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertTrue(h.voice.isOn)
+        h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                    ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+        XCTAssertFalse(h.voice.isOn)
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    /// In the background, an error that is not about the request for the step's answer (a stale cancel,
+    /// say) does not end the conversation before that answer is said. The error that is about it does.
+    func testInTheBackgroundOnlyAnErrorForTheAnswerRequestEndsTheConversation() async {
+        for ownError in [false, true] {
+            let (step, stepDone) = AsyncStream<Void>.makeStream()
+            let h = Harness(phoneTool: { _, _ in for await _ in step { break }; return ("done", false) })
+            await h.talk()
+            h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                        ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]],
+                        ["type": "response.done", "response": ["id": "r1"]])
+            NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+            stepDone.finish()
+            await h.time.settle()
+            let request = h.link.sent.last { $0["type"] as? String == "response.create" }
+            XCTAssertNotNil(request)
+            let id = request?["event_id"] as? String
+            XCTAssertNotNil(id, "the request for the answer carries an id its error can name")
+
+            h.link.play(["type": "error", "error": ["message": "x", "event_id": ownError ? id ?? "" : "event_other"]])
+            XCTAssertEqual(h.voice.isOn, !ownError, ownError ? "the answer request failed, nothing is coming" : "an unrelated error ended it before the answer")
+            if !ownError {
+                h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                            ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+                XCTAssertFalse(h.voice.isOn)
+            }
+            NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        }
+    }
+
+    /// A conversation in which nobody said anything does not wipe what the one before it said: a third
+    /// opened within 5 minutes of that one still hears it.
+    func testASilentConversationInBetweenKeepsTheLastTurnsToCarryOver() async {
+        let h = Harness()
+        await h.talk()
+        h.turn("Open Settings.", "Settings is open.", id: "r1")
+        h.voice.stop()
+
+        await h.time.advance(30)
+        await h.talk()
+        await h.time.advance(8)
+        XCTAssertFalse(h.voice.isOn)
+
+        await h.time.advance(30)
+        await h.talk()
+        let carried = h.link.notes.joined(separator: "\n")
+        XCTAssertTrue(carried.contains("Open Settings."), carried)
+        XCTAssertTrue(carried.contains("Settings is open."), carried)
+    }
 }
