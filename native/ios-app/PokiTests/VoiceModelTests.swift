@@ -45,14 +45,20 @@ final class VoiceModelTests: XCTestCase {
     /// A conversation the person started, connected and listening. `microphone` records what Poki was
     /// told about the microphone (true: the voice session holds it).
     private func talking(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) async -> (VoiceModel, FakeConnection, () -> [Bool]) {
+        let (voice, link, microphone) = await connecting(phoneTool: phoneTool)
+        link.play(["type": "session.created"])
+        XCTAssertEqual(voice.phase, .listening)
+        return (voice, link, microphone)
+    }
+
+    /// Connected, before the server's session.created.
+    private func connecting(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) async -> (VoiceModel, FakeConnection, () -> [Bool]) {
         let link = FakeConnection()
         var microphone: [Bool] = []
         let voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { microphone.append($0) },
                                connection: { onEvent, _ in link.onEvent = onEvent; return link })
         XCTAssertTrue(voice.setBridge(BridgeStub.address))
         await voice.start()
-        link.play(["type": "session.created"])
-        XCTAssertEqual(voice.phase, .listening)
         return (voice, link, { microphone })
     }
 
@@ -66,6 +72,33 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertFalse(voice.isOn)
         XCTAssertTrue(link.closed)
         XCTAssertEqual(voice.phase, .off)
+        XCTAssertEqual(microphone(), [true, false])
+    }
+
+    /// A step that finishes while its request's answer is still out: the conversation stays until the
+    /// answer that carries the result has played.
+    func testAStepsResultIsSaidBeforeTheConversationEnds() async {
+        let (voice, link, _) = await talking(phoneTool: { _, _ in ("Settings is open", false) })
+        link.play(["type": "response.created", "response": ["id": "r1"]],
+                  ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": #"{"goal":"open Settings"}"#]])
+        for _ in 0..<1000 where voice.calls.first?.delivered != true { await Task.yield() }
+        XCTAssertEqual(voice.calls.first?.delivered, true)
+        link.play(["type": "response.done", "response": ["id": "r1"]])
+        XCTAssertTrue(voice.isOn)
+        link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                  ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+        XCTAssertFalse(voice.isOn)
+    }
+
+    /// The voice page's button let go while the conversation was still connecting: nothing was heard, so
+    /// it ends as soon as it connects instead of listening on.
+    func testLettingGoWhileConnectingEndsTheConversationOnceConnected() async {
+        let (voice, link, microphone) = await connecting()
+        voice.held = true
+        voice.held = false
+        link.play(["type": "session.created"])
+        XCTAssertFalse(voice.isOn)
+        XCTAssertTrue(link.closed)
         XCTAssertEqual(microphone(), [true, false])
     }
 
