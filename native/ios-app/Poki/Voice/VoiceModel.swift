@@ -208,8 +208,11 @@ final class VoiceModel {
     private var session = 0
     private var activeResponse: String?
     private var wantsResponse = false
-    /// The person stopped speaking and the server has not started its answer yet.
+    /// An answer is expected (the person stopped speaking, or response.create went out) and the server
+    /// has not started it yet.
     private var awaitingAnswer = false
+    /// The voice page's button was let go before the session was ready: nothing was heard.
+    private var releasedWhileConnecting = false
     private var localTools: Set<String> = []
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
@@ -253,7 +256,12 @@ final class VoiceModel {
     var isOn: Bool { link != nil }
 
     /// The person is holding the voice page's button: the conversation stays open for what they say.
-    var held = false { didSet { if !held { endIfDone() } } }
+    var held = false {
+        didSet {
+            guard !held else { return }
+            if link != nil, !ready { releasedWhileConnecting = true } else { endIfDone() }
+        }
+    }
 
     func setBridge(_ text: String) -> Bool {
         guard let bridge = VoiceBridge(text) else { return false }
@@ -287,6 +295,7 @@ final class VoiceModel {
         guard link == nil else { return }
         guard let bridge else { phase = .lost(VoiceError.noBridge.localizedDescription); return }
         phase = .connecting
+        releasedWhileConnecting = false
         session += 1
         let number = session
         do {
@@ -322,6 +331,7 @@ final class VoiceModel {
         activeResponse = nil
         wantsResponse = false
         awaitingAnswer = false
+        releasedWhileConnecting = false
         phase = .off
     }
 
@@ -372,6 +382,7 @@ final class VoiceModel {
         activeResponse = nil
         wantsResponse = false
         awaitingAnswer = false
+        releasedWhileConnecting = false
         phase = .lost("Connection lost")
         lines.append(VoiceLine(role: .note, text: "Connection lost (\(reason)). Nothing is sent again; reconnect to hear how running steps ended."))
         log.add("voice", "connection lost: \(reason)")
@@ -386,6 +397,11 @@ final class VoiceModel {
             log.add("voice", "session created, session \(number)")
             ready = true
             phase = .listening
+            if releasedWhileConnecting {
+                log.add("voice", "the button was let go while connecting: conversation ended")
+                stop()
+                return
+            }
             catchUp(link)
         case "input_audio_buffer.speech_started":
             if phase != .hearing { log.add("voice", "speech started") }
@@ -526,6 +542,7 @@ final class VoiceModel {
     private func flush() {
         guard wantsResponse, activeResponse == nil, ready, let link else { return }
         wantsResponse = false
+        awaitingAnswer = true
         link.send(["type": "response.create"])
     }
 
