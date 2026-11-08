@@ -185,6 +185,12 @@ enum VoicePhase: Equatable {
     }
 }
 
+/// The time VoiceModel reads and waits on.
+struct VoiceClock {
+    var now: @MainActor () -> Date = { Date() }
+    var sleep: @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+}
+
 /// Talking to Poki: one Realtime session at a time over WebRTC, the calls it asked for, and what was
 /// said. The model hears the microphone and speaks through the speaker; `get_ios_version` is answered
 /// here, the other tools by the voice bridge.
@@ -230,15 +236,18 @@ final class VoiceModel {
 
     /// Opens the connection for one session: events, then why it closed.
     private let connection: @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection
+    private let time: VoiceClock
 
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String) async -> (String, Bool),
          holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
-         connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) }) {
+         connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) },
+         time: VoiceClock = VoiceClock()) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
         self.holdMicrophone = holdMicrophone
         self.connection = connection
+        self.time = time
         // In the background Poki stops listening, unless a step it was asked for is running: that step
         // brings another app to the front itself, and the conversation ends once its result is said.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
