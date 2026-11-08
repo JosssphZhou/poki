@@ -946,22 +946,35 @@ final class Computer: @unchecked Sendable {
     /// The first action that needs the owner's approval, and why.
     func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
         let rules = config.sensitive
+        guard rules.enabled else { return nil }
         let secureOnScreen = lastElements.contains(where: \.isSecure)
         var typingTarget: Element?
+        // The app each action lands in, followed through launches and Home as `landsInPoki` does. After
+        // one of those the numbers and points of the last read belong to another screen.
+        var front = lastForeground
+        var read = true
         for (at, action) in actions.enumerated() {
-            if let tap = action["tap"] {
-                let e = target(tap)
-                typingTarget = e
-                if let r = rules.reason(touching: e, typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return (at, r) }
+            if let spec = action["launch"] {
+                front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
+                read = false; typingTarget = nil
+            } else if action["button"]?.text?.lowercased() == "home" {
+                front = nil
+                read = false; typingTarget = nil
+            } else if let spec = action["tap"] ?? action["long_press"] {
+                let e = read ? target(spec) : nil
+                if action["tap"] != nil { typingTarget = e }
+                if let r = rules.reason(touching: e, typing: false, app: front, secureOnScreen: secureOnScreen) { return (at, r) }
+                if !read, let bundle = front?.bundleID, rules.messagingApps.contains(bundle) {
+                    return (at, "sending a message (a tap in \(front?.describe ?? bundle) on a screen not read yet)")
+                }
             } else if action["type"] != nil {
-                let e = action["ref"].flatMap { refs[$0.int ?? -1] } ?? typingTarget
-                if let r = rules.reason(touching: e, typing: true, app: lastForeground, secureOnScreen: secureOnScreen && e == nil) { return (at, r) }
-            } else if let spec = action["long_press"] {
-                if let r = rules.reason(touching: target(spec), typing: false, app: lastForeground, secureOnScreen: secureOnScreen) { return (at, r) }
-            } else if action["key"]?.string?.lowercased() == "return", let field = typingTarget, rules.reason(touching: field, typing: true, app: lastForeground, secureOnScreen: false) != nil {
+                let e = read ? action["ref"].flatMap { refs[$0.int ?? -1] } ?? typingTarget : nil
+                if let r = rules.reason(touching: e, typing: true, app: front, secureOnScreen: read && secureOnScreen && e == nil) { return (at, r) }
+            } else if action["key"]?.string?.lowercased() == "return", let field = typingTarget, rules.reason(touching: field, typing: true, app: front, secureOnScreen: false) != nil {
                 return (at, "submitting a password field")
-            } else if let r = rules.reason(touching: nil, typing: false, app: lastForeground, secureOnScreen: false) {
-                return (at, r)
+            } else if action["key"] != nil || action["drag"] != nil, let bundle = front?.bundleID, rules.guardedApps.contains(bundle) {
+                // Waiting, handing the screen over, swipes, Home and launches are not input in a guarded app.
+                return (at, "input in \(front?.describe ?? bundle)")
             }
         }
         return nil
