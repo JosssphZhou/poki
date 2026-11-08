@@ -4,7 +4,7 @@ import PiSwiftAI
 /// The model providers the chat can use with the owner's own key or account (ESP-171 board "M Model").
 /// The wired ones run through pi (PiLoop); the others store their key and address for a later step.
 enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
-    case anthropic, openai, chatgpt, deepseek, gemini, openrouter
+    case anthropic, openai, chatgpt, grok, deepseek, gemini, openrouter
     case opencodeGo = "opencode-go"
     case custom
     var id: String { rawValue }
@@ -14,6 +14,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .anthropic: "Anthropic"
         case .openai: "OpenAI"
         case .chatgpt: "ChatGPT"
+        case .grok: "Grok"
         case .deepseek: "DeepSeek"
         case .gemini: "Gemini"
         case .openrouter: "OpenRouter"
@@ -28,6 +29,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .anthropic: "A"
         case .openai: "O"
         case .chatgpt: "C"
+        case .grok: "G"
         case .deepseek: "D"
         case .gemini: "G"
         case .openrouter: "R"
@@ -41,6 +43,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .anthropic: 0xD97757
         case .openai: 0x111111
         case .chatgpt: 0x10A37F
+        case .grok: 0x181818
         case .deepseek: 0x4D6BFE
         case .gemini: 0x4285F4
         case .openrouter: 0x6566F1
@@ -56,6 +59,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .openai: "openai"
         // Sign in with ChatGPT (OpenAI's open-source flow) runs on the OpenAI API with the plan's token.
         case .chatgpt: "openai"
+        case .grok: "xai"
         case .deepseek: "deepseek"
         case .gemini: "google"
         case .openrouter: "openrouter"
@@ -67,15 +71,15 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     /// The chat runs on this provider today (all of them, through pi).
     var wired: Bool { piProvider != nil }
 
-    /// ChatGPT is an account the owner signs in to; the others take a key.
-    var signsIn: Bool { self == .chatgpt }
+    /// These accounts use OAuth instead of a manually entered API key.
+    var signsIn: Bool { self == .chatgpt || self == .grok }
 
     /// What a key looks like, for the field's placeholder.
     var keyPrompt: String {
         switch self {
         case .anthropic: "sk-ant-…"
         case .openai, .deepseek: "sk-…"
-        case .chatgpt: ""
+        case .chatgpt, .grok: ""
         case .gemini: "AIza…"
         case .openrouter: "sk-or-…"
         case .opencodeGo: "OpenCode Go API key"
@@ -100,6 +104,10 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .chatgpt: [
             ChatModelChoice(id: "gpt-6.1-terra", name: "ChatGPT GPT-6.1 Terra"),
             ChatModelChoice(id: "gpt-6.1-sol", name: "ChatGPT GPT-6.1 Sol"),
+        ]
+        case .grok: [
+            ChatModelChoice(id: "grok-4.7", name: "Grok 4.7"),
+            ChatModelChoice(id: "grok-4.6", name: "Grok 4.6"),
         ]
         // DeepSeek's current names (api-docs.deepseek.com, 2026-11-07); deepseek-chat is retired. V4 Pro
         // reads text only, so it does not see the screenshots.
@@ -175,6 +183,11 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             }
             return model.with(baseUrl: baseURL)
         }
+        if self == .grok {
+            guard let model = getModel(provider: piProvider, modelId: id),
+                  model.baseUrl == "https://api.x.ai/v1" else { return nil }
+            return model
+        }
         if let model = getModel(provider: piProvider, modelId: id) { return model }
         // PiSwift's catalog (pi-mono, October 2026) lacks gpt-6.1-terra, which pi-ai 1.5.0 lists with the
         // same API and inputs as gpt-6.1-sol.
@@ -235,6 +248,7 @@ enum ModelKeys {
     static var hasUsableKey: Bool {
         if selectedProvider == .custom { return !customURL.isEmpty && !customModel.isEmpty }
         if selectedProvider == .chatgpt { return ChatGPTAccount.signedIn }
+        if selectedProvider == .grok { return GrokAccount.canAuthenticate }
         return selectedProvider.wired && hasKey(selectedProvider)
     }
 
@@ -269,6 +283,7 @@ enum ModelKeys {
 /// a minute before it runs out (pi's rule; `expires` is in milliseconds).
 enum ModelCredential {
     static func apiKey(for provider: ModelProvider) async -> String? {
+        if provider == .grok { return try? await GrokCredential.shared.accessToken() }
         // A custom endpoint may need no key; the request still carries one.
         guard let stored = ModelKeys.key(provider) else { return provider == .custom ? "none" : nil }
         guard provider.signsIn else { return stored }

@@ -74,7 +74,9 @@ struct ChatView: View {
                             }
                         }
                     }
-                    if VoiceDirect.apiKey != nil {
+                    if VoiceDirect.usesGrok {
+                        Label("Voice Model \(GrokVoiceLink.model)", systemImage: "waveform")
+                    } else if VoiceDirect.apiKey != nil {
                         Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
                             ForEach(ModelCatalog.voiceAvailable) { choice in
                                 Button { ModelCatalog.voiceModel = choice.id } label: {
@@ -690,7 +692,7 @@ struct ComposerInputView: View {
                     Button {
                         if voice.isOn { voice.stop() }
                         else if !voice.canTalkLive {
-                            liveNote = String(localized: "Live voice needs an OpenAI API key (tap here for Model) or the voice bridge. The microphone in the field dictates with any model.")
+                            liveNote = String(localized: "Enable Live Voice for Grok or OpenAI (tap here for Model), or use the voice bridge. The microphone in the field dictates with any model.")
                         } else { liveNote = nil; dictation.stop(model); openVoice() }
                     } label: {
                         Image(systemName: voice.isOn ? "waveform.circle.fill" : "waveform.circle")

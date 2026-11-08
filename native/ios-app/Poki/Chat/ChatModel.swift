@@ -238,9 +238,15 @@ final class ChatModel {
         lastOwnerText = text
         if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
-        guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
-            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first. Tap my picture, then Model.")
-                                       : String(localized: "Add a model key first. Tap my picture, then Model.")))
+        let key = provider.signsIn ? nil : ModelKeys.key(provider)
+        let hasCredential = provider.signsIn ? ModelKeys.hasUsableKey : key != nil || (provider == .custom && ModelKeys.hasUsableKey)
+        guard provider.wired, hasCredential else {
+            let message = switch provider {
+            case .chatgpt: String(localized: "Sign in to ChatGPT first. Tap my picture, then Model.")
+            case .grok: String(localized: "Sign in to Grok first. Tap my picture, then Model.")
+            default: String(localized: "Add a model key first. Tap my picture, then Model.")
+            }
+            add(.poki(message))
             return
         }
         let model = ModelKeys.selectedModel
@@ -255,7 +261,7 @@ final class ChatModel {
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
         let instructions = Harness.instructions(for: text)
-        if Self.direct, provider == .anthropic || provider == .openai {
+        if Self.direct, let key, provider == .anthropic || provider == .openai {
             // Another model starts a new conversation on the model's side; the chat on screen stays.
             if client?.signature != "\(provider.rawValue)/\(model)" {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)

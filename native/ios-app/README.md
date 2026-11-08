@@ -90,6 +90,12 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
 
+## Grok sign-in and live voice
+
+On the iPhone, open **Agents → Accounts and Models → Add Account → Grok**. Complete the xAI device-code sign-in in your browser. Text chat uses the Grok model selected under the account. For live voice, open **Grok → Live Voice** and turn on **Use for Live Voice**, then tap the waveform in a chat. Poki uses your existing OAuth session with `grok-voice-latest`; account eligibility is determined by xAI.
+
+Grok's voice tools run through the same on-device controls as OpenAI's direct voice. Poki pauses microphone input while it speaks to reduce echo. If the separate transcription is ambiguous, the chat shows a voice-command marker. To switch back to OpenAI, turn off Grok Live Voice or turn on Live Voice under OpenAI.
+
 ## Voice
 
 Voice (the waveform button beside the gear on Home, a sheet) talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the

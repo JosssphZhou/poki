@@ -25,7 +25,7 @@ struct VoiceView: View {
                 // for dictation). This page only says how it runs and keeps its options.
                 Section {
                     LabeledContent("Live Voice") {
-                        Text(voice.canTalkLive ? (VoiceDirect.apiKey != nil ? String(localized: "OpenAI key") : String(localized: "Voice bridge")) : String(localized: "Not Available"))
+                        Text(voice.canTalkLive ? (VoiceDirect.usesGrok ? "Grok" : VoiceDirect.apiKey != nil ? String(localized: "OpenAI key") : String(localized: "Voice bridge")) : String(localized: "Not Available"))
                             .foregroundStyle(voice.canTalkLive ? Color.secondary : Color.orange)
                     }
                     LabeledContent("Dictation", value: String(localized: "On this iPhone"))
@@ -34,7 +34,7 @@ struct VoiceView: View {
                     if voice.canTalkLive {
                         Text("In the chat, the waveform button starts a live conversation. Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. The microphone in the message field only dictates.")
                     } else {
-                        Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Poki › Model. Dictation in the message field works with every model.")
+                        Text("Enable Live Voice under your Grok or OpenAI account in Poki › Model. Dictation in the message field works with every model.")
                     }
                 }
                 if voice.lastTurnMS != nil || voice.bridge != nil || VoiceDirect.apiKey == nil {

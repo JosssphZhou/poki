@@ -11,7 +11,7 @@ import SwiftUI
 /// Accounts, as the Mail app lists mail accounts: every model account on this iPhone whatever its
 /// provider, each with what it is used for (the text chat, live voice) switched on or off inside it.
 /// What an account can power is worked out from its type: any wired provider can run the text chat;
-/// live voice needs OpenAI's Realtime API, so only an OpenAI API key can run it.
+/// live voice works with Grok sign-in or an OpenAI API key.
 struct ModelSettingsView: View {
     @State private var adding = false
     @State private var version = ModelKeys.saved
@@ -31,7 +31,7 @@ struct ModelSettingsView: View {
 
             Section {
                 LabeledContent("Text Chat", value: ModelKeys.hasUsableKey ? "\(ModelKeys.selectedProvider.name), \(ModelKeys.selectedModelName)" : String(localized: "No Account"))
-                LabeledContent("Live Voice", value: VoiceDirect.apiKey != nil ? String(localized: "OpenAI") : String(localized: "No Account"))
+                LabeledContent("Live Voice", value: VoiceDirect.usesGrok ? "Grok" : VoiceDirect.apiKey != nil ? String(localized: "OpenAI") : String(localized: "No Account"))
                 LabeledContent("Dictation", value: String(localized: "On This iPhone"))
             } header: {
                 Text("In Use")
@@ -57,17 +57,19 @@ enum ModelAccounts {
         switch provider {
         case .custom: !ModelKeys.customURL.isEmpty
         case .chatgpt: ChatGPTAccount.signedIn
+        case .grok: GrokAccount.signedIn
         default: ModelKeys.hasKey(provider)
         }
     }
 
     static func canChat(_ provider: ModelProvider) -> Bool { provider.wired }
-    /// Live voice is OpenAI's Realtime API: an OpenAI API key only (a ChatGPT sign-in can't open it).
-    static func canTalkLive(_ provider: ModelProvider) -> Bool { provider == .openai }
+    /// Live voice works with Grok sign-in or an OpenAI API key.
+    static func canTalkLive(_ provider: ModelProvider) -> Bool { provider == .openai || provider == .grok }
 
     static func method(_ provider: ModelProvider) -> String {
         switch provider {
         case .chatgpt: String(localized: "Sign in with ChatGPT")
+        case .grok: String(localized: "Sign in with Grok")
         case .custom: String(localized: "OpenAI-compatible address")
         default: String(localized: "API key")
         }
@@ -77,7 +79,10 @@ enum ModelAccounts {
     static func uses(_ provider: ModelProvider) -> String {
         var out: [String] = []
         if ModelKeys.selectedProvider == provider, ModelKeys.hasUsableKey { out.append(String(localized: "Text Chat")) }
-        if canTalkLive(provider), VoiceDirect.apiKey != nil { out.append(String(localized: "Live Voice")) }
+        if (provider == .grok && VoiceDirect.usesGrok) ||
+            (provider == .openai && !VoiceDirect.usesGrok && VoiceDirect.apiKey != nil) {
+            out.append(String(localized: "Live Voice"))
+        }
         return out.isEmpty ? String(localized: "Not in use") : out.joined(separator: ", ")
     }
 }
@@ -122,9 +127,13 @@ private struct AccountDetail: View {
                     } label: { Label("Text Chat", systemImage: "bubble.left.and.text.bubble.right") }
                 }
                 .disabled(!ModelAccounts.canChat(provider))
-                NavigationLink { LiveVoiceFeature() } label: {
+                NavigationLink { LiveVoiceFeature(provider: provider) } label: {
                     LabeledContent {
-                        Text(ModelAccounts.canTalkLive(provider) ? (VoiceDirect.enabled ? VoiceDirect.model : String(localized: "Off")) : String(localized: "Not Supported"))
+                        if provider == .grok {
+                            Text(VoiceDirect.usesGrok ? GrokVoiceLink.model : String(localized: "Off"))
+                        } else {
+                            Text(ModelAccounts.canTalkLive(provider) ? (VoiceDirect.enabled && !VoiceDirect.usesGrok ? VoiceDirect.model : String(localized: "Off")) : String(localized: "Not Supported"))
+                        }
                     } label: { Label("Live Voice", systemImage: "waveform") }
                 }
                 .disabled(!ModelAccounts.canTalkLive(provider))
@@ -134,13 +143,14 @@ private struct AccountDetail: View {
                 if !ModelAccounts.canChat(provider) {
                     Text("Poki keeps this key. Chatting with \(provider.name) comes in an update.")
                 } else if !ModelAccounts.canTalkLive(provider) {
-                    Text("Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account.")
+                    Text("Live voice works with Grok sign-in or an OpenAI API key. Dictation in the message field works with this account.")
                 }
             }
 
             Section {
                 Button(provider.signsIn ? "Sign Out" : "Delete Account", role: .destructive) {
                     if provider == .custom { ModelKeys.customURL = ""; ModelKeys.customModel = "" }
+                    if provider == .grok { VoiceDirect.grokEnabled = false }
                     ModelKeys.remove(provider)
                     if ModelKeys.selectedProvider == provider, let other = ModelProvider.allCases.first(where: { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
                         ModelKeys.selectedProvider = other
@@ -156,7 +166,9 @@ private struct AccountDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
         .sheet(isPresented: $editing, onDismiss: { version = ModelKeys.saved }) { KeyEntry(provider: provider) }
-        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved }) { ChatGPTSignIn() }
+        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved }) {
+            if provider == .grok { GrokSignIn() } else { ChatGPTSignIn() }
+        }
     }
 }
 
@@ -194,7 +206,7 @@ private struct TextChatFeature: View {
                         }
                     }
                 }
-                if provider != .chatgpt {
+                if !provider.signsIn {
                     Button(loading ? "Reading the Model List…" : "Refresh Model List") { refresh() }.disabled(loading)
                 }
             } header: {
@@ -209,7 +221,7 @@ private struct TextChatFeature: View {
         .navigationTitle("Text Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
-        .task { if ModelCatalog.listed(provider).isEmpty, provider != .chatgpt { refresh() } }
+        .task { if ModelCatalog.listed(provider).isEmpty, !provider.signsIn { refresh() } }
     }
 
     private func refresh() {
@@ -222,30 +234,43 @@ private struct TextChatFeature: View {
     }
 }
 
-/// Account › Live Voice (OpenAI only): on or off, the voice model, and which voice models to offer.
+/// Account › Live Voice: choose the provider and, for OpenAI, its available voice models.
 private struct LiveVoiceFeature: View {
+    var provider: ModelProvider
     @State private var version = ModelKeys.saved
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Use for Live Voice", isOn: Binding(get: { VoiceDirect.enabled }, set: { VoiceDirect.enabled = $0 }))
-                if VoiceDirect.enabled {
-                    Picker("Voice Model", selection: Binding(get: { ModelCatalog.voiceModel }, set: { ModelCatalog.voiceModel = $0 })) {
-                        ForEach(ModelCatalog.voiceAvailable) { Text($0.name).tag($0.id) }
+            if provider == .grok {
+                Section {
+                    Toggle("Use for Live Voice", isOn: Binding(get: { VoiceDirect.grokEnabled }, set: { VoiceDirect.grokEnabled = $0 }))
+                    LabeledContent("Voice Model", value: GrokVoiceLink.model)
+                } footer: {
+                    Text("Grok live voice uses the xAI account you signed in with.")
+                }
+            } else {
+                Section {
+                    Toggle("Use for Live Voice", isOn: Binding(get: { VoiceDirect.enabled && !VoiceDirect.usesGrok }, set: {
+                        VoiceDirect.enabled = $0
+                        if $0 { VoiceDirect.grokEnabled = false }
+                    }))
+                    if VoiceDirect.enabled, !VoiceDirect.usesGrok {
+                        Picker("Voice Model", selection: Binding(get: { ModelCatalog.voiceModel }, set: { ModelCatalog.voiceModel = $0 })) {
+                            ForEach(ModelCatalog.voiceAvailable) { Text($0.name).tag($0.id) }
+                        }
                     }
+                } footer: {
+                    Text("Live voice is a spoken conversation with OpenAI’s Realtime model. It listens, taps and types, and answers out loud.")
                 }
-            } footer: {
-                Text("Live voice is a spoken conversation with OpenAI’s Realtime model. It listens, taps and types, and answers out loud.")
-            }
-            Section {
-                ForEach(ModelCatalog.voiceAll) { choice in
-                    Toggle(choice.name, isOn: Binding(get: { ModelCatalog.voiceEnabled.contains(choice.id) }, set: { ModelCatalog.setVoice(choice.id, on: $0) }))
+                Section {
+                    ForEach(ModelCatalog.voiceAll) { choice in
+                        Toggle(choice.name, isOn: Binding(get: { ModelCatalog.voiceEnabled.contains(choice.id) }, set: { ModelCatalog.setVoice(choice.id, on: $0) }))
+                    }
+                } header: {
+                    Text("Voice Models to Choose From")
+                } footer: {
+                    Text("Refresh the model list under Text Chat to add the other Realtime models your key can use.")
                 }
-            } header: {
-                Text("Voice Models to Choose From")
-            } footer: {
-                Text("Refresh the model list under Text Chat to add the other Realtime models your key can use.")
             }
         }
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
@@ -262,14 +287,14 @@ private struct LiveVoiceFeature: View {
 private struct AddAccount: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editing: ModelProvider?
-    @State private var signingIn = false
+    @State private var signingIn: ModelProvider?
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     ForEach(ModelProvider.allCases) { provider in
-                        Button { if provider.signsIn { signingIn = true } else { editing = provider } } label: {
+                        Button { if provider.signsIn { signingIn = provider } else { editing = provider } } label: {
                             HStack(spacing: 12) {
                                 ProviderTile(provider: provider)
                                 VStack(alignment: .leading, spacing: 1) {
@@ -282,14 +307,19 @@ private struct AddAccount: View {
                         }
                     }
                 } footer: {
-                    Text("Text chat works with every account. Live voice needs an OpenAI API key.")
+                    Text("Text chat works with every account. Live voice works with Grok sign-in or an OpenAI API key.")
                 }
             }
             .navigationTitle("Add Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .sheet(item: $editing, onDismiss: { if editing == nil { dismiss() } }) { provider in KeyEntry(provider: provider) }
-            .sheet(isPresented: $signingIn, onDismiss: { if ChatGPTAccount.signedIn { dismiss() } }) { ChatGPTSignIn() }
+            .sheet(item: $signingIn, onDismiss: {
+                let provider = ModelKeys.selectedProvider
+                if provider.signsIn, ModelAccounts.isSetUp(provider) { dismiss() }
+            }) { provider in
+                if provider == .grok { GrokSignIn() } else { ChatGPTSignIn() }
+            }
         }
     }
 

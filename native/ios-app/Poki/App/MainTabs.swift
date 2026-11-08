@@ -100,7 +100,7 @@ struct AgentsView: View {
                     }
                     NavigationLink(value: AgentsRoute.voice) {
                         LabeledContent {
-                            Text(VoiceDirect.apiKey != nil ? VoiceDirect.model : String(localized: "Dictation Only"))
+                            Text(VoiceDirect.usesGrok ? GrokVoiceLink.model : VoiceDirect.apiKey != nil ? VoiceDirect.model : String(localized: "Dictation Only"))
                         } label: { Label("Voice", systemImage: "waveform") }
                     }
                     NavigationLink(value: SettingsRoute.memory) {
