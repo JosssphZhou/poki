@@ -925,57 +925,85 @@ final class Computer: @unchecked Sendable {
         return false
     }
 
-    func element(at point: (x: Double, y: Double)) -> Element? {
-        lastElements.filter { f in f.frame.x <= point.x && point.x <= f.frame.x + f.frame.width && f.frame.y <= point.y && point.y <= f.frame.y + f.frame.height }
+    func element(at point: (x: Double, y: Double), in elements: [Element]? = nil) -> Element? {
+        (elements ?? lastElements).filter { f in f.frame.x <= point.x && point.x <= f.frame.x + f.frame.width && f.frame.y <= point.y && point.y <= f.frame.y + f.frame.height }
             .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 
-    func target(_ spec: JSON?) -> Element? {
+    /// The element a spec points at: a number of the latest read, or what lies under a point (of the
+    /// latest read, or of `elements`, where numbers mean nothing).
+    func target(_ spec: JSON?, in elements: [Element]? = nil) -> Element? {
         guard let spec else { return nil }
-        if let point = spec.array, point.count >= 2, let x = point[0].double, let y = point[1].double { return element(at: (x, y)) }
+        if let point = spec.array, point.count >= 2, let x = point[0].double, let y = point[1].double { return element(at: (x, y), in: elements) }
         if case .object = spec {
-            if let ref = spec["ref"]?.int { return refs[ref] }
-            if let x = spec["x"]?.double, let y = spec["y"]?.double { return element(at: (x, y)) }
+            if let ref = spec["ref"]?.int { return elements == nil ? refs[ref] : nil }
+            if let x = spec["x"]?.double, let y = spec["y"]?.double { return element(at: (x, y), in: elements) }
             return nil
         }
-        return spec.int.flatMap { refs[$0] }
+        return elements == nil ? spec.int.flatMap { refs[$0] } : nil
     }
 
     func sensitiveReason(_ actions: [JSON]) -> String? { firstSensitive(actions)?.reason }
 
+    /// What the approval check carries from one action to the next.
+    struct SensitiveScan {
+        /// The app the action lands in, followed through launches, Home and runs.
+        var front: Foreground?
+        /// The screen is still the one `elements` were read from: after a launch, Home or a run the
+        /// numbers and points of that read belong to another screen.
+        var read = true
+        var typingTarget: Element?
+        var secureOnScreen: Bool
+        /// The elements to look under a point in; nil for the latest read (and its numbers).
+        var elements: [Element]?
+    }
+
     /// The first action that needs the owner's approval, and why.
     func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
+        guard config.sensitive.enabled else { return nil }
+        var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
+        for (at, action) in actions.enumerated() {
+            if let reason = sensitive(action, &scan) { return (at, reason) }
+        }
+        return nil
+    }
+
+    /// Why this action needs the owner's approval, or nil; `scan` moves on past it. `do` checks its
+    /// actions with it before sending any, and a routine run each step before it sends it.
+    func sensitive(_ action: JSON, _ scan: inout SensitiveScan) -> String? {
         let rules = config.sensitive
         guard rules.enabled else { return nil }
-        let secureOnScreen = lastElements.contains(where: \.isSecure)
-        var typingTarget: Element?
-        // The app each action lands in, followed through launches and Home as `landsInPoki` does. After
-        // one of those the numbers and points of the last read belong to another screen.
-        var front = lastForeground
-        var read = true
-        for (at, action) in actions.enumerated() {
-            if let spec = action["launch"] {
-                front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
-                read = false; typingTarget = nil
-            } else if action["button"]?.text?.lowercased() == "home" {
-                front = nil
-                read = false; typingTarget = nil
-            } else if let spec = action["tap"] ?? action["long_press"] {
-                let e = read ? target(spec) : nil
-                if action["tap"] != nil { typingTarget = e }
-                if let r = rules.reason(touching: e, typing: false, app: front, secureOnScreen: secureOnScreen) { return (at, r) }
-                if !read, let bundle = front?.bundleID, rules.messagingApps.contains(bundle) {
-                    return (at, "sending a message (a tap in \(front?.describe ?? bundle) on a screen not read yet)")
-                }
-            } else if action["type"] != nil {
-                let e = read ? action["ref"].flatMap { refs[$0.int ?? -1] } ?? typingTarget : nil
-                if let r = rules.reason(touching: e, typing: true, app: front, secureOnScreen: read && secureOnScreen && e == nil) { return (at, r) }
-            } else if action["key"]?.string?.lowercased() == "return", let field = typingTarget, rules.reason(touching: field, typing: true, app: front, secureOnScreen: false) != nil {
-                return (at, "submitting a password field")
-            } else if action["key"] != nil || action["drag"] != nil, let bundle = front?.bundleID, rules.guardedApps.contains(bundle) {
-                // Waiting, handing the screen over, swipes, Home and launches are not input in a guarded app.
-                return (at, "input in \(front?.describe ?? bundle)")
+        if let spec = action["launch"] {
+            scan.front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
+            scan.read = false; scan.typingTarget = nil
+        } else if action["button"]?.text?.lowercased() == "home" {
+            scan.front = nil
+            scan.read = false; scan.typingTarget = nil
+        } else if let spec = action["run"] {
+            // A routine sends its own taps and keys: in a guarded app, in front or the routine's own
+            // (launched first), running it is input there.
+            let name = spec.string ?? spec["name"]?.string ?? ""
+            let app = memory?.routine(named: name)?.app
+            for bundle in [scan.front?.bundleID, app].compactMap({ $0 }) where rules.guardedApps.contains(bundle) {
+                return "input in \(bundle == scan.front?.bundleID ? scan.front?.describe ?? bundle : bundle) (routine \"\(name)\")"
             }
+            if let app { scan.front = Foreground(bundleID: app, name: nil) }
+            scan.read = false; scan.typingTarget = nil
+        } else if let spec = action["tap"] ?? action["long_press"] {
+            let e = scan.read ? target(spec, in: scan.elements) : nil
+            if action["tap"] != nil { scan.typingTarget = e }
+            if let r = rules.reason(touching: e, typing: false, app: scan.front, secureOnScreen: scan.secureOnScreen) { return r }
+            if !scan.read, let bundle = scan.front?.bundleID, rules.messagingApps.contains(bundle) {
+                return "sending a message (a tap in \(scan.front?.describe ?? bundle) on a screen not read yet)"
+            }
+        } else if action["type"] != nil {
+            let e = scan.read ? (scan.elements == nil ? action["ref"].flatMap { refs[$0.int ?? -1] } : nil) ?? scan.typingTarget : nil
+            if let r = rules.reason(touching: e, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen && e == nil) { return r }
+        } else if action["key"]?.string?.lowercased() == "return", let field = scan.typingTarget, rules.reason(touching: field, typing: true, app: scan.front, secureOnScreen: false) != nil {
+            return "submitting a password field"
+        } else if action["key"] != nil || action["drag"] != nil, let bundle = scan.front?.bundleID, rules.guardedApps.contains(bundle) {
+            // Waiting, handing the screen over, swipes, Home and launches are not input in a guarded app.
+            return "input in \(scan.front?.describe ?? bundle)"
         }
         return nil
     }

@@ -512,11 +512,14 @@ extension Computer {
             return ActionFailure(message: "run \"\(routine.name)\" stopped at step \(index + 1) of \(routine.steps.count): \(why); \(sent). Go on by hand from the screen below; when the task is done, routines {action: \"save\", name: \"\(routine.name)\"} saves the path that worked over this one", delivery: delivery)
         }
 
+        // The app the next step lands in: a launch is not read until a later step reads the screen.
+        var front = lastForeground
         // Another app in front: the routine's app is launched first.
         if let app = routine.app, lastForeground?.bundleID != app, routine.steps.first?.action["launch"] == nil, !config.isPoki(Foreground(bundleID: app, name: nil)) {
             do {
                 _ = try await perform(["launch": .string(app)], until: until)
                 log.append("launched \(app)")
+                front = Foreground(bundleID: app, name: nil)
             } catch { throw stop(0, "\(app) could not be launched (\(error))") }
         }
 
@@ -582,6 +585,21 @@ extension Computer {
                 let ref = Self.runRef
                 refs[ref] = element
                 action = Self.replacingTarget(action, with: ref)
+                front = lastForeground
+            } else if config.sensitive.enabled, ["tap", "long_press", "type", "key", "drag"].contains(where: { action[$0] != nil }) {
+                // A step recorded without an element (a point, a key) is held by the rules a do is held
+                // by, on the screen it would land on, read now; unread, it is a screen not read yet.
+                var scan = SensitiveScan(front: front, read: false, secureOnScreen: false)
+                if let tree = try? await runner.tree(timeout: min(config.readTimeout, max(0.3, until - now() - 0.1)), format: config.treeFormat) {
+                    lastAll = tree.elements
+                    lastForeground = tree.foreground
+                    front = tree.foreground ?? front
+                    let elements = listable(tree.elements, screen)
+                    scan = SensitiveScan(front: front, secureOnScreen: elements.contains(where: \.isSecure), elements: elements)
+                }
+                if let reason = sensitive(action, &scan) {
+                    throw stop(index, "it needs the owner's approval (\(reason)); send it as an ordinary do so the owner is asked")
+                }
             }
             let began = now()
             let kind: String, text: String
@@ -594,6 +612,7 @@ extension Computer {
                 throw stop(index, "\(error)", .unknown)
             }
             refs[Self.runRef] = nil
+            if let spec = action["launch"] { front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil) }
             done = index + 1
             log.append("\(index + 1) \(text.prefix(80)) (\(Int(((now() - began) * 1000).rounded())) ms)")
             // The step is in this task's record too, so a task that goes on by hand saves whole.
