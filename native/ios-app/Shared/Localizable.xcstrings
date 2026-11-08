@@ -351,6 +351,26 @@
         }
       }
     },
+    "Add an OpenAI key in Poki › Model, or enter your Mac’s voice bridge address below." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在“Poki”›“模型”中添加 OpenAI 密钥，或在下方输入 Mac 语音桥接地址。"
+          }
+        }
+      }
+    },
+    "Add an OpenAI key in Poki › Model, or enter your Mac’s voice bridge address in Voice and Speech." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先在“Poki”›“模型”中添加 OpenAI 密钥，或在“语音与朗读”中输入 Mac 语音桥接地址。"
+          }
+        }
+      }
+    },
     "Add it to the tun inbound in your sing-box profile, then reload the profile." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -870,6 +890,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已收起"
+          }
+        }
+      }
+    },
+    "Comes from" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源"
           }
         }
       }
@@ -2242,6 +2272,16 @@
         }
       }
     },
+    "Not set up" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未设置"
+          }
+        }
+      }
+    },
     "Not started" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2936,6 +2976,16 @@
         }
       }
     },
+    "Poki uses the OpenAI key in Poki › Model to get a one-minute key from OpenAI for each conversation, so voice works without your Mac, also on cellular. The key stays in this iPhone’s Keychain and goes only to OpenAI." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次对话时，Poki 会使用“Poki”›“模型”中的 OpenAI 密钥向 OpenAI 请求有效期 1 分钟的临时凭证，无需连接 Mac，在蜂窝网络下也可使用。密钥仅保存在设备钥匙串中，且只发送给 OpenAI。"
+          }
+        }
+      }
+    },
     "Poki uses your ChatGPT plan, the way Codex does. The sign-in stays in this iPhone’s Keychain." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3183,12 +3233,12 @@
         }
       }
     },
-    "Run bin/voice-bridge.mjs on your Mac and enter the address it gives. The Mac holds your OpenAI key and gives this phone a key that works for one minute, so the phone never stores it. Audio goes straight from this phone to OpenAI." : {
+    "Run bin/voice-bridge.mjs on your Mac and enter the address it gives. Poki uses it only when this iPhone has no OpenAI key. Audio goes straight from this iPhone to OpenAI." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Mac 上运行 bin/voice-bridge.mjs 并输入生成的地址。OpenAI 密钥保存在 Mac 本地，手机仅获取有效期 1 分钟的临时凭证，不保存密钥，音频将由手机直连发送至 OpenAI。"
+            "value" : "在 Mac 上运行 bin/voice-bridge.mjs 并输入生成的地址。仅在设备未配置 OpenAI 密钥时使用此方式。音频将由设备直接发送给 OpenAI。"
           }
         }
       }
@@ -3314,12 +3364,12 @@
         }
       }
     },
-    "Set the voice bridge first: tap here, or Poki › Voice and Speech." : {
+    "Set up voice first: tap here, or Poki › Voice and Speech." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先配置语音桥接：轻点此处，或前往“Poki”›“语音与朗读”。"
+            "value" : "请先设置语音功能：轻点此处，或前往“Poki”›“语音与朗读”。"
           }
         }
       }
@@ -4164,6 +4214,16 @@
         }
       }
     },
+    "This iPhone’s OpenAI key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设备上的 OpenAI 密钥"
+          }
+        }
+      }
+    },
     "Timeout" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4462,6 +4522,16 @@
         }
       }
     },
+    "Voice key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音凭证"
+          }
+        }
+      }
+    },
     "Waiting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4569,6 +4639,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Mac"
+          }
+        }
+      }
+    },
+    "Your Mac keeps your OpenAI key and gives this iPhone a one-minute key for each conversation, so this iPhone needs to reach your Mac. To talk without your Mac, add an OpenAI key in Poki › Model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenAI 密钥保存在 Mac 上。每次对话时，Mac 会向此设备提供有效期 1 分钟的临时凭证，因此需要与 Mac 保持连接。如需在离开 Mac 时使用，请在“Poki”›“模型”中添加 OpenAI 密钥。"
+          }
+        }
+      }
+    },
+    "Your Mac’s voice bridge" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 语音桥接"
           }
         }
       }

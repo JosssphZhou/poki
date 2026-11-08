@@ -34,7 +34,7 @@ struct VoiceView: View {
                         if voice.isOn { voice.stop() } else { Task { await begin() } }
                     }
                     .buttonStyle(.glassProminent).controlSize(.large).frame(maxWidth: .infinity)
-                    .disabled(voice.bridge == nil)
+                    .disabled(voice.source == nil)
                     if voice.isOn {
                         Button("Stop talking", systemImage: "speaker.slash") { voice.stopTalking() }
                         Toggle("Mute Poki's voice", isOn: $voice.muted)
@@ -43,6 +43,7 @@ struct VoiceView: View {
                     if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(.orange) }
                     else { Text("Stop talking ends Poki's reply; a step already running on the phone still finishes and Poki tells you how it went.") }
                 }
+                sourceSection
                 bridgeSection
                 if !voice.lines.isEmpty {
                     Section("Conversation") {
@@ -57,6 +58,28 @@ struct VoiceView: View {
             .navigationTitle("Voice")
             .toolbar {
                 if let close { ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) } }
+            }
+        }
+    }
+
+    /// Which key the next conversation opens with: this iPhone's OpenAI key comes first.
+    @ViewBuilder private var sourceSection: some View {
+        let source = voice.source
+        Section {
+            LabeledContent("Comes from") {
+                switch source {
+                case .phone: Text("This iPhone’s OpenAI key")
+                case .mac: Text("Your Mac’s voice bridge")
+                case nil: Text("Not set up")
+                }
+            }
+        } header: {
+            Text("Voice key")
+        } footer: {
+            switch source {
+            case .phone: Text("Poki uses the OpenAI key in Poki › Model to get a one-minute key from OpenAI for each conversation, so voice works without your Mac, also on cellular. The key stays in this iPhone’s Keychain and goes only to OpenAI.")
+            case .mac: Text("Your Mac keeps your OpenAI key and gives this iPhone a one-minute key for each conversation, so this iPhone needs to reach your Mac. To talk without your Mac, add an OpenAI key in Poki › Model.")
+            case nil: Text("Add an OpenAI key in Poki › Model, or enter your Mac’s voice bridge address below.")
             }
         }
     }
@@ -77,7 +100,7 @@ struct VoiceView: View {
             Text("Your Mac")
         } footer: {
             if bridgeRejected { Text("That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code.").foregroundStyle(.orange) }
-            else { Text("Run bin/voice-bridge.mjs on your Mac and enter the address it gives. The Mac holds your OpenAI key and gives this phone a key that works for one minute, so the phone never stores it. Audio goes straight from this phone to OpenAI.") }
+            else { Text("Run bin/voice-bridge.mjs on your Mac and enter the address it gives. Poki uses it only when this iPhone has no OpenAI key. Audio goes straight from this iPhone to OpenAI.") }
         }
     }
 
