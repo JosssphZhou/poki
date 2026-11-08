@@ -587,11 +587,34 @@ final class ApprovalTests: XCTestCase {
             XCTAssertTrue(core.pendingApproval?.reason.hasPrefix("sending a message") == true, core.pendingApproval?.reason ?? "no request")
             XCTAssertFalse(wda.bodies("POST /wda/keys").contains { $0.serialized().contains("\\n") }, "\(actions): a return went out")
         }
-        // Return in the app's search field searches: nothing is sent to anyone.
-        let (core, _, _) = makeCore(messages("com.tencent.xin", [("SearchField", "Search")]))
-        _ = await core.call("look", [:])
-        let searched = await core.call("do", ["actions": [["tap": 1], ["type": "Mom"], ["key": "return"]]])
-        XCTAssertFalse(searched.text.contains("approval"), searched.text)
+        // Return in the app's search field searches: nothing is sent to anyone, whether the field was
+        // tapped first or typed into by its number.
+        for actions: [JSON] in [[["tap": 1], ["type": "Mom"], ["key": "return"]], [["type": "Mom", "ref": 1], ["key": "return"]]] {
+            let (core, wda, _) = makeCore(messages("com.tencent.xin", [("SearchField", "Search")]))
+            _ = await core.call("look", [:])
+            let searched = await core.call("do", ["actions": .array(actions)])
+            XCTAssertFalse(searched.text.contains("approval"), "\(actions): \(searched.text)")
+            XCTAssertTrue(wda.bodies("POST /wda/keys").contains { $0.serialized().contains("\\n") }, "\(actions): the return was not sent")
+        }
+    }
+
+    /// A routine's typing step recorded on an element (type with ref) is held by the same return rule:
+    /// in a messaging app a newline in its text sends the message, so the run stops before it; typed
+    /// into the search field it runs.
+    func testARoutinesTypedReturnInAMessagingAppIsNotSentWithoutTheOwner() async {
+        for (field, sends) in [(("TextView", "Message"), false), (("SearchField", "Search"), true)] {
+            let element = Element(type: field.0, label: field.1, value: nil, identifier: nil, frame: Rect(x: 16, y: 100, width: 358, height: 44), depth: 1)
+            let store = RoutineStore(url: nil)
+            store.save(Routine(name: "say", description: "", app: "com.tencent.xin", steps: [RoutineStep(action: ["type": "{{text_1}}", "ref": "@"], target: RoutineTarget(element), app: "com.tencent.xin", secret: nil)],
+                               params: ["text_1": "hi"], expect: [], read: [], runs: 0, ok: 0, failuresInARow: 0, lastStop: nil, lastMs: nil, savedBy: "test", created: Date(), updated: Date()))
+            let wda = messages("com.tencent.xin", [field])
+            // The fake focuses no field, so the type waits out its 2 s for one: the step gets the time for that.
+            let (core, _, _) = makeCore(wda) { $0.memory = store; $0.actionCap = 6; $0.toolDeadline = 12 }
+            _ = await core.call("look", [:])
+            let result = await core.call("do", ["actions": [["run": ["name": "say", "with": ["text_1": "on my way\n"]]]]])
+            XCTAssertEqual(wda.bodies("POST /wda/keys").contains { $0.serialized().contains("\\n") }, sends, "\(field.1): \(result.text)")
+            if !sends { XCTAssertTrue(result.text.contains("sending a message"), result.text) }
+        }
     }
 
     /// After a launch the screen is the launched app's and not read yet: a tap there is not judged by
