@@ -36,26 +36,26 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     }
 }
 
-/// Time the test moves by hand: waits finish only when it advances.
+/// Time the test moves by hand: a wait finishes once the test has advanced past its end.
 @MainActor
 final class FakeTime {
     var now = Date(timeIntervalSince1970: 1_000_000)
-    private(set) var waits: [Duration] = []
-    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var waiting: [(until: Date, done: CheckedContinuation<Void, Never>)] = []
 
     var clock: VoiceClock {
         VoiceClock(now: { self.now }, sleep: { duration in
-            self.waits.append(duration)
-            await withCheckedContinuation { self.waiting.append($0) }
+            let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+            let until = self.now.addingTimeInterval(seconds)
+            await withCheckedContinuation { self.waiting.append((until, $0)) }
         })
     }
 
     func advance(_ seconds: TimeInterval) async {
         await settle()
         now += seconds
-        let due = waiting
-        waiting = []
-        due.forEach { $0.resume() }
+        let due = waiting.filter { $0.until <= now }
+        waiting.removeAll { $0.until <= now }
+        due.forEach { $0.done.resume() }
         await settle()
     }
 
@@ -123,14 +123,34 @@ final class VoiceModelTests: XCTestCase {
         let h = Harness()
         await h.talk()
         h.turn("What iOS version is this?", "iOS 26.1.", id: "r1")
-        await h.time.settle()
+        await h.time.advance(7)
         XCTAssertTrue(h.voice.isOn)
-        XCTAssertEqual(h.time.waits, [.seconds(8)])
-        await h.time.advance(8)
+        await h.time.advance(1)
         XCTAssertFalse(h.voice.isOn)
         XCTAssertTrue(h.link.closed)
         XCTAssertEqual(h.voice.phase, .off)
         XCTAssertEqual(h.microphone, [true, false])
+    }
+
+    /// Talk to Poki and then nothing said: the same 8 s end it.
+    func testTheConversationEndsWhenNobodySpeaksForEightSecondsAfterItOpens() async {
+        let h = Harness()
+        await h.talk()
+        await h.time.advance(7)
+        XCTAssertTrue(h.voice.isOn)
+        await h.time.advance(1)
+        XCTAssertFalse(h.voice.isOn)
+        XCTAssertEqual(h.microphone, [true, false])
+    }
+
+    /// Speech the server answers only with an error: no answer is coming, so the 8 s still end it.
+    func testSpeechAnsweredOnlyWithAnErrorStillEndsAfterEightSeconds() async {
+        let h = Harness()
+        await h.talk()
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "error", "error": ["message": "Conversation already has an active response"]])
+        await h.time.advance(8)
+        XCTAssertFalse(h.voice.isOn)
     }
 
     /// Speaking again within the 8 s goes on in the same conversation: the model keeps what was said.
@@ -160,11 +180,20 @@ final class VoiceModelTests: XCTestCase {
         let carried = h.link.notes.joined(separator: "\n")
         XCTAssertTrue(carried.contains("Open Settings."), carried)
         XCTAssertTrue(carried.contains("Settings is open."), carried)
+        h.turn("Turn on Wi-Fi.", "Wi-Fi is on.", id: "r2")
+        h.voice.stop()
+
+        // Only the last conversation's lines, not the ones before it.
+        await h.time.advance(60)
+        await h.talk()
+        let again = h.link.notes.joined(separator: "\n")
+        XCTAssertTrue(again.contains("Turn on Wi-Fi."), again)
+        XCTAssertFalse(again.contains("Open Settings."), again)
         h.voice.stop()
 
         await h.time.advance(5 * 60 + 1)
         await h.talk()
-        XCTAssertFalse(h.link.notes.joined().contains("Open Settings."))
+        XCTAssertFalse(h.link.notes.joined().contains("Wi-Fi"))
     }
 
     /// A step that finishes while its request's answer is still out: the conversation stays until the
@@ -185,21 +214,39 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertFalse(h.voice.isOn)
     }
 
-    /// The voice page's button let go while the conversation was still connecting: nothing was heard, so
-    /// it ends as soon as it connects instead of listening on.
-    func testLettingGoWhileConnectingEndsTheConversationOnceConnected() async {
+    /// The voice page's button let go while the conversation was still connecting (the voice bridge's
+    /// token not back yet): nothing was heard, so it never opens the microphone.
+    func testLettingGoWhileConnectingEndsTheConversation() async {
         let h = Harness()
-        await h.connect()
         h.voice.held = true
+        let opening = Task { await h.connect() }
+        for _ in 0..<1000 where h.voice.phase != .connecting { await Task.yield() }
+        XCTAssertEqual(h.voice.phase, .connecting)
         h.voice.held = false
-        h.link.play(["type": "session.created"])
+        await opening.value
         XCTAssertFalse(h.voice.isOn)
-        XCTAssertTrue(h.link.closed)
-        XCTAssertEqual(h.microphone, [true, false])
+        XCTAssertEqual(h.voice.phase, .off)
+        XCTAssertTrue(h.links.isEmpty)
+        XCTAssertEqual(h.microphone, [])
+    }
+
+    /// Talk to Poki, then Home before it has connected: it never opens the microphone in the background.
+    func testGoingToTheBackgroundWhileConnectingEndsTheConversation() async {
+        let h = Harness()
+        let opening = Task { await h.connect() }
+        for _ in 0..<1000 where h.voice.phase != .connecting { await Task.yield() }
+        XCTAssertEqual(h.voice.phase, .connecting)
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        await opening.value
+        XCTAssertFalse(h.voice.isOn)
+        XCTAssertTrue(h.links.isEmpty)
+        XCTAssertEqual(h.microphone, [])
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
     }
 
     /// Poki in the background stops listening at once, except while a step it was asked for runs (that
-    /// step itself brings another app to the front, and its result is still to be said).
+    /// step itself brings another app to the front): then it ends as soon as the step's result is said,
+    /// with no 8 s to go on.
     func testInTheBackgroundPokiStopsListeningUnlessAStepIsRunning() async {
         let (step, stepDone) = AsyncStream<Void>.makeStream()
         let busy = Harness(phoneTool: { _, _ in for await _ in step { break }; return ("done", false) })
@@ -210,6 +257,12 @@ final class VoiceModelTests: XCTestCase {
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
         XCTAssertTrue(busy.voice.isOn)
         stepDone.finish()
+        await busy.time.settle()
+        XCTAssertEqual(busy.voice.calls.first?.delivered, true)
+        busy.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                       ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+        XCTAssertFalse(busy.voice.isOn)
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
 
         let idle = Harness()
         await idle.talk()
