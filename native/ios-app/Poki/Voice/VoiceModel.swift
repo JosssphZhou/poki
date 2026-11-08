@@ -217,10 +217,14 @@ final class VoiceModel {
     /// An answer is expected (the person stopped speaking, or response.create went out) and the server
     /// has not started it yet.
     private var awaitingAnswer = false
+    /// The event_id of the response.create Poki sent and the server has not started yet: an error naming
+    /// it means that answer is not coming.
+    private var requestedAnswer: String?
     /// Running while the conversation waits for the person to go on after an answer.
     private var endWindow: Task<Void, Never>?
-    /// When the last conversation ended and what was said in it. One opened soon after is told those
-    /// lines (kept in memory only).
+    /// When the last conversation with something said in it ended, and what the person and Poki said. One
+    /// opened soon after is told those lines (kept in memory only). A conversation nobody spoke in leaves
+    /// both as they were.
     private var lastEnd: Date?
     private var lastLines: [VoiceLine] = []
     /// Where the current conversation's lines start in `lines`.
@@ -261,15 +265,15 @@ final class VoiceModel {
         self.holdMicrophone = holdMicrophone
         self.connection = connection
         self.time = time
-        // In the background Poki stops listening, also while still connecting, unless a step it was asked
-        // for is running: that step brings another app to the front itself, and the conversation ends as
-        // soon as its result is said.
+        // In the background Poki stops listening, also while still connecting, unless an answer is still due
+        // or a step it was asked for is running: that step brings another app to the front itself, and the
+        // conversation ends as soon as its result is said.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.inBackground = true
-                guard self.isOn || self.phase == .connecting, !self.calls.contains(where: { $0.state == .running }) else { return }
-                self.log.add("voice", "Poki went to the background with no step running: conversation ended")
+                guard self.isOn || self.phase == .connecting, !self.answerDue else { return }
+                self.log.add("voice", "Poki went to the background with nothing left to say: conversation ended")
                 self.stop()
             }
         }
@@ -366,8 +370,11 @@ final class VoiceModel {
     private func endSession() {
         keepOpen()
         if ready {
-            lastEnd = time.now()
-            lastLines = Array(lines[min(conversationStart, lines.count)...])
+            let said = lines[min(conversationStart, lines.count)...].filter { $0.role == .you || $0.role == .poki }
+            if !said.isEmpty {
+                lastEnd = time.now()
+                lastLines = said
+            }
         }
         if let link {
             link.close()
@@ -380,13 +387,18 @@ final class VoiceModel {
         activeResponse = nil
         wantsResponse = false
         awaitingAnswer = false
+        requestedAnswer = nil
+    }
+
+    /// Something is still to be said or done: an answer is expected, being given or about to be asked for,
+    /// the person is speaking, or a step is running.
+    private var answerDue: Bool {
+        awaitingAnswer || activeResponse != nil || wantsResponse
+            || phase == .hearing || phase == .speaking || calls.contains { $0.state == .running }
     }
 
     /// The answer has played and nothing it asked for is still running or still to be said.
-    private var idle: Bool {
-        link != nil && ready && !held && !awaitingAnswer && activeResponse == nil && !wantsResponse
-            && phase != .hearing && phase != .speaking && !calls.contains { $0.state == .running }
-    }
+    private var idle: Bool { link != nil && ready && !held && !answerDue }
 
     /// Once idle, the conversation waits `followUp` for the person to go on; if nobody speaks it ends and
     /// lets go of the microphone. In the background (a step's result just said) it ends at once.
@@ -416,8 +428,7 @@ final class VoiceModel {
     /// A conversation opened soon after the last one hears what was said last, so it goes on from there.
     private func carryOver(_ link: VoiceConnection) {
         guard let lastEnd, time.now().timeIntervalSince(lastEnd) < Self.carryOver else { return }
-        let turns = lastLines.filter { $0.role == .you || $0.role == .poki }.suffix(Self.carriedLines)
-        guard !turns.isEmpty else { return }
+        let turns = lastLines.suffix(Self.carriedLines)
         let said = turns.map { "\($0.role == .you ? "User" : "Poki"): \($0.text)" }.joined(separator: "\n")
         link.send(Self.note("This continues a conversation from a few minutes ago. What was said, oldest first. Use it only as context for what the user says next; do not answer or repeat it.\n" + said))
     }
@@ -487,6 +498,7 @@ final class VoiceModel {
             activeResponse = (event["response"] as? [String: Any])?["id"] as? String
             keepOpen()
             awaitingAnswer = false
+            requestedAnswer = nil
         case "response.done":
             let response = event["response"] as? [String: Any]
             if let usage = response?["usage"] as? [String: Any] { clock.add(usage: usage) }
@@ -516,8 +528,14 @@ final class VoiceModel {
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? "unknown error"
             log.add("voice", "realtime error: \(message)")
-            // An error can be all the server sends after the person spoke; no answer is coming then.
-            awaitingAnswer = false
+            // An error can be all the server sends after the person spoke, or the answer to Poki's own
+            // response.create; no answer is coming then. An error about something else, while Poki's
+            // request for an answer is out, leaves that answer expected.
+            let about = (event["error"] as? [String: Any])?["event_id"] as? String
+            if requestedAnswer == nil || about == requestedAnswer {
+                awaitingAnswer = false
+                requestedAnswer = nil
+            }
             endIfDone()
         default:
             break
@@ -616,7 +634,9 @@ final class VoiceModel {
         guard wantsResponse, activeResponse == nil, ready, let link else { return }
         wantsResponse = false
         awaitingAnswer = true
-        link.send(["type": "response.create"])
+        let id = UUID().uuidString
+        requestedAnswer = id
+        link.send(["type": "response.create", "event_id": id])
     }
 
     // MARK: Test runs (development builds only)
