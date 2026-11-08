@@ -451,6 +451,75 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
 
+    /// Nobody answered and the agent sent nothing more: the request still ends when its time is up, and
+    /// says so. The app holds its Live Activity card, the idle stop and Stop Runner until it hears that.
+    func testAnUnansweredRequestEndsByItselfWhenItsTimeIsUp() async {
+        let ended = LockedBox<[String]>([])
+        let approvals = Approvals(lifetime: 0.3) { event in
+            if case .approvalEnded(let id, nil) = event { ended.update { $0.append(id) } }
+        }
+        let approval = approvals.request(app: "Photos", summary: "Tap “Delete Photo”", reason: "deleting (\"delete\")", fingerprint: "f")
+        let heard = await eventually(1.5) { ended.value == [approval.id] }
+        XCTAssertTrue(heard, "no approvalEnded for a request whose time ran out")
+    }
+
+    private func wallet() -> FakeWDA {
+        let wda = FakeWDA()
+        wda.source([("Button", "Apple Card"), ("Button", "Add Card")], app: "Wallet")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.Passbook", "name": "Wallet"]]) }
+        return wda
+    }
+
+    /// Wallet asks for every input, but waiting, handing the screen to the owner and leaving are not
+    /// input: asking for them held every Wallet run at each step, and an agent could not even go Home.
+    func testInWalletWaitingAndLeavingNeedNoApprovalButATapDoes() async {
+        let (core, wda, _) = makeCore(wallet())
+        _ = await core.call("look", [:])
+        let waited = await core.call("do", ["actions": [["wait": 10], ["wait_until": ["settled": true, "ms": 200]]]])
+        XCTAssertFalse(waited.text.contains("approval"), waited.text)
+        let tapped = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(tapped.text.contains("approval_required"), tapped.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+        let home = await core.call("do", ["actions": [["button": "home"]]])
+        XCTAssertFalse(home.text.contains("approval"), home.text)
+        XCTAssertEqual(wda.sent.filter { $0 == "POST /wda/homescreen" }.count, 1, home.text)
+    }
+
+    func testInWalletTheAgentCanHandTheScreenToTheOwnerWithoutApproval() async {
+        let (core, _, _) = makeCore(wallet())
+        _ = await core.call("look", [:])
+        let handed = await core.call("do", ["actions": [["handoff": ["kind": "payment", "text": "Confirm the payment"]]]])
+        XCTAssertFalse(handed.text.contains("approval"), handed.text)
+        XCTAssertNotNil(core.handoff, handed.text)
+    }
+
+    /// A tap in Phone can ring a contact whatever it reads, so a tap on a point with nothing readable
+    /// under it asks too.
+    func testATapOnNothingReadableInPhoneAsks() async {
+        let wda = FakeWDA()
+        wda.source([("Button", "Keypad")], app: "Phone")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilephone", "name": "Phone"]]) }
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": [200, 600]]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
+    /// The actions after a launch land in the launched app, on a screen not read yet: they are checked
+    /// against that app, the way `landsInPoki` follows launches, not against the app of the last read.
+    func testActionsAfterALaunchAreCheckedAgainstTheLaunchedApp() async {
+        for (bundle, reason) in [("com.apple.mobilephone", "a call"), ("com.apple.MobileSMS", "sending a message"), ("com.apple.Passbook", "input in")] {
+            let (core, wda, _) = makeCore()
+            _ = await core.call("look", [:])
+            let result = await core.call("do", ["actions": [["launch": .string(bundle)], ["wait": 300], ["tap": [350, 790]]]])
+            XCTAssertTrue(result.text.contains("approval_required"), "\(bundle): \(result.text)")
+            XCTAssertTrue(core.pendingApproval?.reason.hasPrefix(reason) == true, "\(bundle): \(core.pendingApproval?.reason ?? "no request")")
+            XCTAssertEqual(wda.bodies("POST /wda/apps/activate").count, 1, "the launch before it goes first")
+            XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "\(bundle): the tap was sent")
+        }
+    }
+
     func testPasswordsNeedApproval() async {
         let wda = FakeWDA()
         wda.source([("TextField", "Email"), ("SecureTextField", "Password")])
