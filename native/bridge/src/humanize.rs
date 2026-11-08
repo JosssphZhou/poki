@@ -25,13 +25,24 @@ const DOUBLE_TAP_GAP_MEDIAN_MS: f64 = 110.0;
 const DOUBLE_TAP_GAP_SIGMA: f64 = 0.30;
 const DOUBLE_TAP_GAP_MIN_MS: u64 = 70;
 const DOUBLE_TAP_GAP_MAX_MS: u64 = 240;
+/// Nominal press times used when a request carries no duration and shaping is
+/// off, or as the median for a long press with no requested time.
+const DEFAULT_TAP_MS: u64 = 50;
+const DEFAULT_LONG_PRESS_MS: u64 = 600;
+const SAMPLED_LONG_PRESS_MEDIAN_MS: f64 = 1000.0;
+const SAMPLED_LONG_PRESS_SIGMA: f64 = 0.20;
+const SAMPLED_LONG_PRESS_MIN_MS: u64 = 400;
+const SAMPLED_LONG_PRESS_MAX_MS: u64 = 5000;
+/// No-duration drags get a distance-based nominal movement time.
+const DRAG_NOMINAL_BASE_MS: f64 = 240.0;
+const DRAG_NOMINAL_PER_UNIT_MS: f64 = 1.0 / 60.0;
+const DRAG_NOMINAL_MIN_MS: f64 = 260.0;
+const DRAG_NOMINAL_MAX_MS: f64 = 1000.0;
+/// No-duration pinches keep the historical nominal.
+const PINCH_NOMINAL_MS: u64 = 500;
 
 const DRAG_TOTAL_MIN_FACTOR: f64 = 0.88;
 const DRAG_TOTAL_MAX_FACTOR: f64 = 1.18;
-const DRAG_HOLD_MIN_FACTOR: f64 = 0.9;
-const DRAG_HOLD_MAX_FACTOR: f64 = 1.15;
-const DRAG_END_HOLD_MIN_FACTOR: f64 = 0.85;
-const DRAG_END_HOLD_MAX_FACTOR: f64 = 1.3;
 const DRAG_START_SIGMA_UNITS: f64 = 80.0;
 const DRAG_FRAME_DT_MIN_FACTOR: f64 = 0.65;
 const DRAG_FRAME_DT_MAX_FACTOR: f64 = 1.35;
@@ -131,12 +142,14 @@ impl Humanize {
         if let Some(spare) = self.spare_normal.take() {
             return spare;
         }
-        // Box-Muller; u1 must be > 0 to avoid log(0).
+        // Box-Muller; u1 must be > 0 to avoid log(0). The spare partner uses
+        // the same angle: sin(angle) is symmetric, while sin(angle / 2) over
+        // [0, 2*pi) is never negative and would shift every sampled median up.
         let u1 = self.uniform().max(f64::MIN_POSITIVE);
         let u2 = self.uniform();
         let magnitude = (-2.0 * u1.ln()).sqrt();
         let angle = std::f64::consts::TAU * u2;
-        self.spare_normal = Some(magnitude * (angle * 0.5).sin());
+        self.spare_normal = Some(magnitude * angle.sin());
         magnitude * angle.cos()
     }
 
@@ -181,29 +194,57 @@ pub(crate) struct TapPlan {
 }
 
 /// A tap or long press: scatter the contact point around the target, hold for
-/// a sampled duration, and drift a little before releasing.
-pub(crate) fn tap_plan(h: &mut Humanize, x: u16, y: u16, requested_ms: u64, long_press: bool) -> TapPlan {
+/// the requested press time or a sampled one, and drift slightly before release.
+/// An explicit duration is used exactly; shaping only fills in a missing one.
+pub(crate) fn tap_plan(
+    h: &mut Humanize,
+    x: u16,
+    y: u16,
+    requested_ms: Option<u64>,
+    long_press: bool,
+) -> TapPlan {
+    let fallback = if long_press { DEFAULT_LONG_PRESS_MS } else { DEFAULT_TAP_MS };
     if !h.enabled {
-        return TapPlan { contact: (x, y), release: (x, y), press_ms: requested_ms };
+        let press_ms = requested_ms.unwrap_or(fallback);
+        return TapPlan { contact: (x, y), release: (x, y), press_ms };
     }
     let contact = h.jitter_point(x, y, TAP_START_SIGMA_UNITS, TAP_START_MAX_UNITS);
     let drift_angle = h.uniform() * std::f64::consts::TAU;
     let drift = h.uniform_range(TAP_DRIFT_MIN_UNITS, TAP_DRIFT_MAX_UNITS);
     let release = clamp_coord(contact.0 as f64 + drift * drift_angle.cos());
     let release = (release, clamp_coord(contact.1 as f64 + drift * drift_angle.sin()));
-    let press_ms = if long_press {
-        scale_duration(h, requested_ms, 0.92, 1.10)
-    } else {
-        h.lognormal_ms(TAP_PRESS_MEDIAN_MS, TAP_PRESS_SIGMA, TAP_PRESS_MIN_MS, TAP_PRESS_MAX_MS)
+    let press_ms = match requested_ms {
+        Some(ms) => ms,
+        None if long_press => h.lognormal_ms(
+            SAMPLED_LONG_PRESS_MEDIAN_MS,
+            SAMPLED_LONG_PRESS_SIGMA,
+            SAMPLED_LONG_PRESS_MIN_MS,
+            SAMPLED_LONG_PRESS_MAX_MS,
+        ),
+        None => h.lognormal_ms(
+            TAP_PRESS_MEDIAN_MS,
+            TAP_PRESS_SIGMA,
+            TAP_PRESS_MIN_MS,
+            TAP_PRESS_MAX_MS,
+        ),
     };
     h.record(json!({
         "op": if long_press { "long_press" } else { "tap" },
         "request": [x, y, requested_ms],
+        "exact": requested_ms.is_some(),
         "contact": [contact.0, contact.1],
         "release": [release.0, release.1],
         "press_ms": press_ms,
     }));
     TapPlan { contact, release, press_ms }
+}
+
+/// Movement time for a drag with no requested duration: a short reach plus a
+/// distance term, clamped so long swipes stay under a second.
+pub(crate) fn drag_nominal_ms(distance_units: f64) -> u64 {
+    (DRAG_NOMINAL_BASE_MS + distance_units * DRAG_NOMINAL_PER_UNIT_MS)
+        .clamp(DRAG_NOMINAL_MIN_MS, DRAG_NOMINAL_MAX_MS)
+        .round() as u64
 }
 
 pub(crate) struct DragPlan {
@@ -224,10 +265,13 @@ pub(crate) fn drag_plan(
     y1: u16,
     x2: u16,
     y2: u16,
-    duration_ms: u64,
+    duration_ms: Option<u64>,
     hold_ms: u64,
     end_hold_ms: u64,
 ) -> DragPlan {
+    let dx = f64::from(x2) - f64::from(x1);
+    let dy = f64::from(y2) - f64::from(y1);
+    let distance = dx.hypot(dy).max(1.0);
     if !h.enabled {
         return DragPlan {
             contact: (x1, y1),
@@ -237,14 +281,20 @@ pub(crate) fn drag_plan(
             frames: Vec::new(),
         };
     }
-    let total_ms = scale_duration(h, duration_ms, DRAG_TOTAL_MIN_FACTOR, DRAG_TOTAL_MAX_FACTOR);
-    let hold = scale_duration(h, hold_ms, DRAG_HOLD_MIN_FACTOR, DRAG_HOLD_MAX_FACTOR);
-    let end_hold = scale_duration(h, end_hold_ms, DRAG_END_HOLD_MIN_FACTOR, DRAG_END_HOLD_MAX_FACTOR);
+    // A requested duration is used exactly; only a missing one is shaped.
+    let total_ms = match duration_ms {
+        Some(ms) => ms,
+        None => scale_duration(
+            h,
+            drag_nominal_ms(distance),
+            DRAG_TOTAL_MIN_FACTOR,
+            DRAG_TOTAL_MAX_FACTOR,
+        ),
+    };
+    // Holds are explicit fields; they are never stretched.
+    let hold = hold_ms;
+    let end_hold = end_hold_ms;
     let contact = h.jitter_point(x1, y1, DRAG_START_SIGMA_UNITS, TAP_START_MAX_UNITS);
-
-    let dx = f64::from(x2) - f64::from(x1);
-    let dy = f64::from(y2) - f64::from(y1);
-    let distance = dx.hypot(dy).max(1.0);
     let steps = total_ms.div_ceil(16).max(1) as usize;
     // Per-frame cadence jitter, then renormalized so the last deadline stays total_ms.
     let mut deadlines = Vec::with_capacity(steps);
@@ -328,12 +378,20 @@ pub(crate) fn pinch_plan(
     h: &mut Humanize,
     start_distance: f64,
     end_distance: f64,
-    duration_ms: u64,
+    duration_ms: Option<u64>,
 ) -> PinchPlan {
     if !h.enabled {
         return PinchPlan { frames: Vec::new() };
     }
-    let total_ms = scale_duration(h, duration_ms, PINCH_TOTAL_MIN_FACTOR, PINCH_TOTAL_MAX_FACTOR);
+    let total_ms = match duration_ms {
+        Some(ms) => ms,
+        None => scale_duration(
+            h,
+            PINCH_NOMINAL_MS,
+            PINCH_TOTAL_MIN_FACTOR,
+            PINCH_TOTAL_MAX_FACTOR,
+        ),
+    };
     let steps = total_ms.div_ceil(16).max(1) as usize;
     let mut deadlines = Vec::with_capacity(steps);
     let mut sum = 0.0;
@@ -433,28 +491,49 @@ mod tests {
     #[test]
     fn disabled_plan_is_exact_legacy_passthrough() {
         let mut h = Humanize::off();
-        let tap = tap_plan(&mut h, 100, 200, 50, false);
+        let tap = tap_plan(&mut h, 100, 200, Some(50), false);
         assert_eq!((tap.contact, tap.release, tap.press_ms), ((100, 200), (100, 200), 50));
-        let drag = drag_plan(&mut h, 1, 2, 3, 4, 500, 20, 30);
+        let drag = drag_plan(&mut h, 1, 2, 3, 4, Some(500), 20, 30);
         assert_eq!(
             (drag.contact, drag.release, drag.hold_ms, drag.end_hold_ms, drag.frames.is_empty()),
             ((1, 2), (3, 4), 20, 30, true)
         );
-        let pinch = pinch_plan(&mut h, 100.0, 500.0, 500);
+        let pinch = pinch_plan(&mut h, 100.0, 500.0, Some(500));
         assert_eq!(pinch.frames.is_empty(), true);
         assert_eq!(key_hold_ms(&mut h), 50);
         assert_eq!(double_tap_gap_ms(&mut h), 80);
     }
 
     #[test]
+    fn normal_samples_are_symmetric_around_zero() {
+        // Guards the Box-Muller spare pairing: a one-sided spare such as
+        // sin(angle / 2) shifts every log-normal median upward.
+        let mut h = Humanize::seeded(97);
+        let mut values = Vec::new();
+        for _ in 0..4000 {
+            values.push(h.normal());
+        }
+        values.sort_by(f64::total_cmp);
+        let median = values[values.len() / 2];
+        assert!(median.abs() < 0.08, "normal median {median} not centered on zero");
+        let mean: f64 = values.iter().sum::<f64>() / values.len() as f64;
+        assert!(mean.abs() < 0.08, "normal mean {mean} not centered on zero");
+        let positive = values.iter().filter(|&&v| v > 0.0).count();
+        assert!(
+            (1800..=2200).contains(&positive),
+            "positive share {positive}/4000 not balanced"
+        );
+    }
+
+    #[test]
     fn seeded_generation_is_deterministic() {
         let plan_a = {
             let mut h = Humanize::seeded(7);
-            tap_plan(&mut h, 5000, 5000, 50, false)
+            tap_plan(&mut h, 5000, 5000, Some(50), false)
         };
         let plan_b = {
             let mut h = Humanize::seeded(7);
-            tap_plan(&mut h, 5000, 5000, 50, false)
+            tap_plan(&mut h, 5000, 5000, Some(50), false)
         };
         assert_eq!(plan_a.contact, plan_b.contact);
         assert_eq!(plan_a.release, plan_b.release);
@@ -465,7 +544,8 @@ mod tests {
     fn tap_press_ms_stays_in_human_range_and_scatter_stays_bounded() {
         let mut h = Humanize::seeded(11);
         for _ in 0..200 {
-            let plan = tap_plan(&mut h, 32768, 32768, 50, false);
+            // No requested duration: the press time is sampled.
+            let plan = tap_plan(&mut h, 32768, 32768, None, false);
             assert_between(plan.press_ms, TAP_PRESS_MIN_MS, TAP_PRESS_MAX_MS, "tap press_ms");
             let offset = (f64::from(plan.contact.0) - 32768.0).hypot(f64::from(plan.contact.1) - 32768.0);
             assert!(offset <= TAP_START_MAX_UNITS * 2.0f64.sqrt(), "scatter {offset} too large");
@@ -473,22 +553,71 @@ mod tests {
                 .hypot(f64::from(plan.release.1) - f64::from(plan.contact.1));
             assert!(drift <= TAP_DRIFT_MAX_UNITS + 2.0, "drift {drift} too large");
         }
-        // A long press keeps the requested magnitude but is never exact.
-        let mut seen_varied = false;
+        // A sampled long press stays in its own range and varies between taps.
         let mut durations = std::collections::HashSet::new();
         for _ in 0..20 {
-            let plan = tap_plan(&mut h, 100, 100, 1000, true);
-            assert_between(plan.press_ms, 900, 1120, "long press_ms");
+            let plan = tap_plan(&mut h, 100, 100, None, true);
+            assert_between(
+                plan.press_ms,
+                SAMPLED_LONG_PRESS_MIN_MS,
+                SAMPLED_LONG_PRESS_MAX_MS,
+                "long press_ms",
+            );
             durations.insert(plan.press_ms);
-            seen_varied |= durations.len() > 1;
         }
-        assert!(seen_varied, "long press durations never vary");
+        assert!(durations.len() > 1, "sampled long presses never vary");
+    }
+
+    #[test]
+    fn requested_durations_are_used_exactly() {
+        let mut h = Humanize::seeded(13);
+        // Taps and long presses: exact press time, every time.
+        for ms in [1u64, 50, 137, 600, 2000, 60000] {
+            for long_press in [false, true] {
+                let plan = tap_plan(&mut h, 5000, 5000, Some(ms), long_press);
+                assert_eq!(plan.press_ms, ms, "tap duration {ms} was not exact");
+            }
+        }
+        // Drags end exactly at the requested duration (last frame deadline).
+        for ms in [120u64, 300, 800, 2500] {
+            let plan = drag_plan(&mut h, 0, 5000, 30000, 5000, Some(ms), 0, 0);
+            let last = plan.frames.last().expect("frames").2;
+            assert_eq!(last, ms, "drag duration {ms} ended at {last}");
+            assert_eq!(plan.hold_ms, 0);
+        }
+        // Holds are explicit fields and are never stretched.
+        let plan = drag_plan(&mut h, 0, 5000, 30000, 5000, Some(800), 600, 700);
+        assert_eq!((plan.hold_ms, plan.end_hold_ms), (600, 700));
+        // Pinches end exactly at the requested duration.
+        for ms in [150u64, 500, 2000] {
+            let plan = pinch_plan(&mut h, 400.0, 1600.0, Some(ms));
+            assert_eq!(plan.frames.last().expect("frames").1, ms);
+        }
+    }
+
+    #[test]
+    fn missing_durations_are_shaped_around_distance() {
+        let mut h = Humanize::seeded(17);
+        // A short reach gets a shorter nominal than a long one.
+        let short = drag_plan(&mut h, 0, 5000, 2000, 5000, None, 0, 0);
+        let long = drag_plan(&mut h, 0, 5000, 45000, 5000, None, 0, 0);
+        let short_total = short.frames.last().expect("frames").2;
+        let long_total = long.frames.last().expect("frames").2;
+        assert!(
+            long_total > short_total,
+            "distance-based nominal did not grow: {short_total} vs {long_total}"
+        );
+        assert_between(short_total, 200, 400, "short nominal");
+        assert_between(long_total, 850, 1200, "long nominal");
+        // Pinch falls back to its nominal band.
+        let pinch = pinch_plan(&mut h, 400.0, 1600.0, None);
+        assert_between(pinch.frames.last().expect("frames").1, 440, 590, "pinch nominal");
     }
 
     #[test]
     fn drag_frames_follow_s_curve_with_monotonic_deadlines() {
         let mut h = Humanize::seeded(23);
-        let plan = drag_plan(&mut h, 1000, 5000, 20000, 5000, 800, 20, 30);
+        let plan = drag_plan(&mut h, 1000, 5000, 20000, 5000, Some(800), 20, 30);
         assert!(plan.frames.len() >= 40, "too few frames: {}", plan.frames.len());
         // Deadlines are strictly increasing and end near the jittered total.
         let mut last = 0;
@@ -520,7 +649,7 @@ mod tests {
         // ~10.4% (10*0.25^3 - 15*0.25^4 + 6*0.25^5 = 0.1035). Assert the
         // sampled early progress stays clearly below the linear share.
         let mut h = Humanize::seeded(31);
-        let plan = drag_plan(&mut h, 0, 5000, 30000, 5000, 800, 0, 0);
+        let plan = drag_plan(&mut h, 0, 5000, 30000, 5000, Some(800), 0, 0);
         let quarter_index = plan.frames.len() / 4;
         let (x, _, _) = plan.frames[quarter_index];
         let progress = f64::from(x) / 30000.0;
@@ -533,7 +662,7 @@ mod tests {
     #[test]
     fn pinch_plan_produces_monotonic_deadlines_and_bounded_noise() {
         let mut h = Humanize::seeded(41);
-        let plan = pinch_plan(&mut h, 400.0, 1600.0, 500);
+        let plan = pinch_plan(&mut h, 400.0, 1600.0, Some(500));
         let mut last = 0;
         let mut min_distance = f64::INFINITY;
         let mut max_distance = f64::NEG_INFINITY;
@@ -576,7 +705,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("debug.jsonl");
         let mut h = Humanize { enabled: true, state: 99, spare_normal: None, debug_path: Some(path.to_string_lossy().into_owned()) };
-        let _ = tap_plan(&mut h, 100, 100, 50, false);
+        let _ = tap_plan(&mut h, 100, 100, Some(50), false);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("\"op\":\"tap\""), "missing tap record: {content}");
         std::fs::remove_dir_all(&dir).unwrap();

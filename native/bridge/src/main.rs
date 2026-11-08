@@ -166,28 +166,30 @@ enum Request {
     Tap {
         x: u16,
         y: u16,
-        #[serde(default = "tap_duration")]
-        duration_ms: u64,
+        /// An explicit duration is used exactly; when absent the press time is
+        /// shaped after human movement.
+        #[serde(default)]
+        duration_ms: Option<u64>,
     },
     DoubleTap {
         x: u16,
         y: u16,
-        #[serde(default = "tap_duration")]
-        duration_ms: u64,
+        #[serde(default)]
+        duration_ms: Option<u64>,
     },
     LongPress {
         x: u16,
         y: u16,
-        #[serde(default = "long_duration")]
-        duration_ms: u64,
+        #[serde(default)]
+        duration_ms: Option<u64>,
     },
     Drag {
         x1: u16,
         y1: u16,
         x2: u16,
         y2: u16,
-        #[serde(default = "drag_duration")]
-        duration_ms: u64,
+        #[serde(default)]
+        duration_ms: Option<u64>,
         #[serde(default)]
         hold_ms: u64,
         #[serde(default)]
@@ -200,8 +202,8 @@ enum Request {
         end_distance: f64,
         #[serde(default)]
         angle: f64,
-        #[serde(default = "drag_duration")]
-        duration_ms: u64,
+        #[serde(default)]
+        duration_ms: Option<u64>,
     },
     DrawStrokes {
         strokes: Strokes,
@@ -235,15 +237,6 @@ enum Request {
         #[serde(default)]
         clear: bool,
     },
-}
-fn tap_duration() -> u64 {
-    50
-}
-fn long_duration() -> u64 {
-    600
-}
-fn drag_duration() -> u64 {
-    500
 }
 fn one() -> usize {
     1
@@ -284,7 +277,7 @@ impl Request {
             | Self::LongPress { duration_ms, .. }
             | Self::Drag { duration_ms, .. }
             | Self::Pinch { duration_ms, .. }
-                if !(1..=60000).contains(duration_ms) =>
+                if duration_ms.is_some_and(|ms| !(1..=60000).contains(&ms)) =>
             {
                 return Err("duration_ms must be 1..60000".into());
             }
@@ -686,7 +679,7 @@ async fn execute_connected(
             }
             Request::TypeKeys { text, clear } => {
                 let mut keyboard = Keyboard::connect(adapter, rsd).await?;
-                let outcome = type_keys(&mut keyboard, &text, clear).await;
+                let outcome = type_keys(&mut keyboard, &text, clear, &mut humanize).await;
                 let cleanup = keyboard.close().await;
                 outcome?;
                 cleanup?;
@@ -727,7 +720,7 @@ async fn held_tap(
     hid: &mut Touch,
     x: u16,
     y: u16,
-    ms: u64,
+    ms: Option<u64>,
     long_press: bool,
     h: &mut humanize::Humanize,
 ) -> Result<()> {
@@ -841,10 +834,15 @@ fn char_usage(c: char) -> Result<(u64, bool)> {
 
 /// Presses the keys for `text` back to back on one keyboard session (POKI_TYPE_KEY_MS between
 /// reports, default 12), after Command-A and Delete when `clear` is set. No settle per character.
-async fn type_keys(keyboard: &mut Keyboard, text: &str, clear: bool) -> Result<()> {
+async fn type_keys(
+    keyboard: &mut Keyboard,
+    text: &str,
+    clear: bool,
+    h: &mut humanize::Humanize,
+) -> Result<()> {
     if clear {
-        chord(keyboard, 0x04, &[0xe3]).await?;
-        chord(keyboard, 0x2a, &[]).await?;
+        chord(keyboard, 0x04, &[0xe3], h).await?;
+        chord(keyboard, 0x2a, &[], h).await?;
     }
     let gap = hid_wait("POKI_TYPE_KEY_MS", 12);
     let shift = KeyboardUsage::new(0xe1)?;

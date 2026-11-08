@@ -40,7 +40,7 @@ pub async fn paste_text(
         // This request has pasted nothing yet, so Allow would paste whatever the clipboard holds now.
         if let Some((x, y)) = left_over.deny {
             tokio::time::sleep(ALERT_ACCEPTS_TOUCHES_AFTER).await;
-            super::held_tap(&mut keyboard.hid, x, y, 50, false, h).await?;
+            super::held_tap(&mut keyboard.hid, x, y, None, false, h).await?;
             tokio::time::sleep(ALERT_ACCEPTS_TOUCHES_AFTER).await;
             match observe(adapter, rsd).await {
                 Ok(tree) => initial = tree,
@@ -195,7 +195,7 @@ pub async fn paste_text(
         };
         super::trace("paste permission: tapping allow");
         tokio::time::sleep(ALERT_ACCEPTS_TOUCHES_AFTER).await;
-        if super::held_tap(&mut keyboard.hid, x, y, 50, false, h).await.is_err() {
+        if super::held_tap(&mut keyboard.hid, x, y, None, false, h).await.is_err() {
             break;
         }
         answered = true;

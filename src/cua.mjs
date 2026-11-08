@@ -225,7 +225,7 @@ async function scrollTo(ctx, spec, size, until) {
   const hit = elements => elements.find(e => (wanted ? keyOf(e) === wanted : shows(e, target.text)) && onScreen(e, size));
   let elements = [...state(ctx).refs.values()], swipes = 0, last;
   while (!hit(elements) && swipes < max && until - performance.now() > 900) {
-    await send(ctx, { op: 'drag', ...swipePath(area, finger[target.direction ?? 'down']), duration_ms: 250, hold_ms: 0, end_hold_ms: 100 });
+    await send(ctx, { op: 'drag', ...swipePath(area, finger[target.direction ?? 'down']), hold_ms: 0, end_hold_ms: 100 });
     swipes++;
     await pause(250);
     let seen;
@@ -241,9 +241,9 @@ async function scrollTo(ctx, spec, size, until) {
 }
 
 async function perform(ctx, action, size, until) {
-  if ('tap' in action) { const p = pointOf(ctx, action.tap); await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 }); return ['tap', `tap ${JSON.stringify(action.tap)}`]; }
+  if ('tap' in action) { const p = pointOf(ctx, action.tap); await send(ctx, { op: 'tap', x: p.x, y: p.y }); return ['tap', `tap ${JSON.stringify(action.tap)}`]; }
   if ('type' in action) {
-    if (action.ref !== undefined) { const p = pointOf(ctx, action.ref); await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 }); await pause(250); }
+    if (action.ref !== undefined) { const p = pointOf(ctx, action.ref); await send(ctx, { op: 'tap', x: p.x, y: p.y }); await pause(250); }
     const how = await typeText(ctx, String(action.type), Boolean(action.clear));
     return ['type', `type ${JSON.stringify(action.type)} (${how})`];
   }
@@ -251,7 +251,7 @@ async function perform(ctx, action, size, until) {
   if ('swipe' in action) {
     const spec = typeof action.swipe === 'string' ? { direction: action.swipe } : action.swipe ?? {};
     const path = swipePath(areaOf(ctx, spec.in ?? action.in, size), spec.direction, spec.distance);
-    await send(ctx, { op: 'drag', ...path, duration_ms: 300 }); return ['swipe', `swipe ${spec.direction}${spec.in ?? action.in ? ` in ${spec.in ?? action.in}` : ''}`];
+    await send(ctx, { op: 'drag', ...path }); return ['swipe', `swipe ${spec.direction}${spec.in ?? action.in ? ` in ${spec.in ?? action.in}` : ''}`];
   }
   if ('scroll_to' in action) return ['scroll_to', `scroll_to ${JSON.stringify(action.scroll_to)}: ${await scrollTo(ctx, action.scroll_to, size, until)}`];
   if ('long_press' in action) {

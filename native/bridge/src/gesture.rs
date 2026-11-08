@@ -27,7 +27,8 @@ pub(crate) struct Drag {
     pub y1: u16,
     pub x2: u16,
     pub y2: u16,
-    pub duration_ms: u64,
+    /// An explicit duration is sent exactly; `None` lets shaping choose one.
+    pub duration_ms: Option<u64>,
     pub hold_ms: u64,
     pub end_hold_ms: u64,
 }
@@ -44,6 +45,8 @@ impl Drag {
             end_hold_ms,
         } = *self;
         if !h.enabled() {
+            let distance = (f64::from(x2) - f64::from(x1)).hypot(f64::from(y2) - f64::from(y1));
+            let duration_ms = duration_ms.unwrap_or_else(|| humanize::drag_nominal_ms(distance));
             hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x1, y1)
                 .await?;
             tokio::time::sleep(Duration::from_millis(hold_ms)).await;
@@ -174,7 +177,7 @@ pub(crate) struct Pinch {
     pub start_distance: f64,
     pub end_distance: f64,
     pub angle: f64,
-    pub duration_ms: u64,
+    pub duration_ms: Option<u64>,
 }
 
 impl Pinch {
@@ -188,6 +191,7 @@ impl Pinch {
             duration_ms,
         } = *self;
         if !h.enabled() {
+            let duration_ms = duration_ms.unwrap_or(500);
             let steps = duration_ms.div_ceil(16).max(1) as u32;
             let start = Instant::now();
             let duration = Duration::from_millis(duration_ms);
@@ -404,7 +408,7 @@ mod tests {
                             start_distance: 200.0,
                             end_distance: 600.0,
                             angle: 0.0,
-                            duration_ms,
+                            duration_ms: Some(duration_ms),
                         }
                         .send(&mut transport, &mut Humanize::off())
                         .await
@@ -414,7 +418,7 @@ mod tests {
                             y1: 500,
                             x2: 500,
                             y2: 500,
-                            duration_ms,
+                            duration_ms: Some(duration_ms),
                             hold_ms: 20,
                             end_hold_ms: 30,
                         }
@@ -626,7 +630,7 @@ mod tests {
             y1: 5000,
             x2: 30000,
             y2: 5000,
-            duration_ms: 800,
+            duration_ms: Some(800),
             hold_ms: 20,
             end_hold_ms: 30,
         }
