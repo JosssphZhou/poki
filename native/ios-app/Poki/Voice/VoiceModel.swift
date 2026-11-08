@@ -188,6 +188,12 @@ enum VoicePhase: Equatable {
     }
 }
 
+/// The time VoiceModel reads and waits on.
+struct VoiceClock {
+    var now: @MainActor () -> Date = { Date() }
+    var sleep: @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+}
+
 /// Talking to Poki: one Realtime session at a time over WebRTC, the calls it asked for, and what was
 /// said. The model hears the microphone and speaks through the speaker; `get_ios_version` is answered
 /// here, the other tools by the voice bridge.
@@ -207,12 +213,28 @@ final class VoiceModel {
     /// Timestamps of the current turn, from the end of the person's speech.
     private(set) var clock = TurnClock()
 
-    private var link: VoiceLink?
+    private var link: VoiceConnection?
     /// session.created arrived on the current link: it takes events now.
     private var ready = false
     private var session = 0
     private var activeResponse: String?
     private var wantsResponse = false
+    /// An answer is expected (the person stopped speaking, or response.create went out) and the server
+    /// has not started it yet.
+    private var awaitingAnswer = false
+    /// Running while the conversation waits for the person to go on after an answer.
+    private var endWindow: Task<Void, Never>?
+    /// When the last live conversation ended and what was said in it. One opened soon after is told
+    /// those lines (kept in memory only).
+    private var lastEnd: Date?
+    private var lastLines: [VoiceLine] = []
+    private var inBackground = UIApplication.shared.applicationState == .background
+
+    /// How long the conversation waits after an answer for the person to go on before it ends.
+    static let followUp: Duration = .seconds(8)
+    /// A conversation opened this soon after the last one ended is told the last turns.
+    static let carryOver: TimeInterval = 5 * 60
+    static let carriedLines = 6
     private var localTools: Set<String> = []
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
@@ -228,12 +250,35 @@ final class VoiceModel {
     /// (its .playback session cannot record), and the voice-chat session keeps Poki running instead.
     private let holdMicrophone: @MainActor (Bool) -> Void
 
+    /// Opens the connection for one session: events, then why it closed.
+    private let connection: @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection
+    private let time: VoiceClock
+
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String) async -> (String, Bool),
-         holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in }) {
+         holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
+         connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) },
+         time: VoiceClock = VoiceClock()) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
         self.holdMicrophone = holdMicrophone
+        self.connection = connection
+        self.time = time
+        // In the background Poki stops listening, also while still connecting, unless a step it was asked
+        // for is running: that step brings another app to the front itself, and the conversation ends as
+        // soon as its result is said.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.inBackground = true
+                guard self.isOn, !self.calls.contains(where: { $0.state == .running }) else { return }
+                self.log.add("voice", "Poki went to the background with no step running: conversation ended")
+                self.stop()
+            }
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.inBackground = false }
+        }
     }
     private var holdingMicrophone = false {
         didSet { if holdingMicrophone != oldValue { holdMicrophone(holdingMicrophone) } }
@@ -311,13 +356,13 @@ final class VoiceModel {
             // Ended (End, or the button again) while the key was exchanged.
             guard number == session else { return }
             localTools = Set(token.local_tools)
-            var link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
-                                 onClosed: { [weak self] reason in self?.closed(reason, session: number) })
+            var link = connection({ [weak self] event in self?.handle(event, session: number) },
+                                  { [weak self] reason in self?.closed(reason, session: number) })
             self.link = link
             transcript = ("voice-\(UUID().uuidString.prefix(8).lowercased())", Date(), lines.count)
             if microphone { holdingMicrophone = true }
             do {
-                try await link.connect(secret: token.value, microphone: microphone)
+                try await link.connect(secret: token.value, microphone: microphone, direct: false)
             } catch VoiceError.noPath(let ice) {
                 // No path opened (ICE \(ice)): once more, off VPN interfaces (Poki's loopback, a proxy
                 // app) and with a fresh key, before telling the owner.
@@ -327,8 +372,8 @@ final class VoiceModel {
                 let retry: VoiceBridge.Token
                 if let key { retry = try await VoiceDirect.token(apiKey: key) } else { retry = try await bridge!.token() }
                 guard number == session else { return }
-                link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
-                                 onClosed: { [weak self] reason in self?.closed(reason, session: number) })
+                link = connection({ [weak self] event in self?.handle(event, session: number) },
+                                  { [weak self] reason in self?.closed(reason, session: number) })
                 self.link = link
                 try await link.connect(secret: retry.value, microphone: microphone, direct: true)
             }
@@ -377,16 +422,72 @@ final class VoiceModel {
             Task { _ = await dictation.finish() }
             self.dictation = nil
         }
-        link?.close()
-        link = nil
+        endSession()
         // A start still connecting sees this and stops where it is.
         session += 1
+        phase = .off
+        endTranscript()
+    }
+
+    /// Drops the connection and the state of its turns; calls already running keep running. The lines of
+    /// the conversation are kept for one opened soon after, before the chat takes them.
+    private func endSession() {
+        keepOpen()
+        if ready, let from = transcript?.from {
+            lastEnd = time.now()
+            lastLines = Array(lines[min(from, lines.count)...])
+        }
+        if let link {
+            link.close()
+            // Whether the shared audio session let go of the microphone after WebRTC closed.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [log] in log.add("voice", "1 s after the end: \(VoiceLink.audioSession())") }
+        }
+        link = nil
         holdingMicrophone = false
         ready = false
         activeResponse = nil
         wantsResponse = false
-        phase = .off
-        endTranscript()
+        awaitingAnswer = false
+    }
+
+    /// The answer has played and nothing it asked for is still running or still to be said.
+    private var idle: Bool {
+        link != nil && ready && !awaitingAnswer && activeResponse == nil && !wantsResponse
+            && phase != .hearing && phase != .speaking && !calls.contains { $0.state == .running }
+    }
+
+    /// Once idle, the conversation waits `followUp` for the person to go on; if nobody speaks it ends and
+    /// lets go of the microphone. In the background (a step's result just said) it ends at once.
+    private func endIfDone() {
+        guard idle else { return }
+        if inBackground {
+            log.add("voice", "the answer has played in the background: conversation ended")
+            stop()
+            return
+        }
+        guard endWindow == nil else { return }
+        endWindow = Task { [weak self, time] in
+            await time.sleep(Self.followUp)
+            guard let self, !Task.isCancelled else { return }
+            endWindow = nil
+            guard idle else { return }
+            log.add("voice", "nobody spoke for \(Self.followUp) after the answer: conversation ended")
+            stop()
+        }
+    }
+
+    private func keepOpen() {
+        endWindow?.cancel()
+        endWindow = nil
+    }
+
+    /// A conversation opened soon after the last one hears what was said last, so it goes on from there.
+    private func carryOver(_ link: VoiceConnection) {
+        guard let lastEnd, time.now().timeIntervalSince(lastEnd) < Self.carryOver else { return }
+        let turns = lastLines.filter { $0.role == .you || $0.role == .poki }.suffix(Self.carriedLines)
+        guard !turns.isEmpty else { return }
+        let said = turns.map { "\($0.role == .you ? "User" : "Poki"): \($0.text)" }.joined(separator: "\n")
+        link.send(Self.note("This continues a conversation from a few minutes ago. What was said, oldest first. Use it only as context for what the user says next; do not answer or repeat it.\n" + said))
     }
 
     // MARK: Dictation
@@ -478,12 +579,7 @@ final class VoiceModel {
 
     private func closed(_ reason: String, session number: Int) {
         guard number == session, link != nil else { return }
-        link?.close()
-        link = nil
-        holdingMicrophone = false
-        ready = false
-        activeResponse = nil
-        wantsResponse = false
+        endSession()
         phase = .lost("Connection lost")
         lines.append(VoiceLine(role: .note, text: "Connection lost (\(reason)). Nothing is sent again; reconnect to hear how running steps ended."))
         endTranscript()
@@ -499,12 +595,16 @@ final class VoiceModel {
             log.add("voice", "session created, session \(number)")
             ready = true
             phase = .listening
+            carryOver(link)
             catchUp(link)
+            endIfDone()
         case "input_audio_buffer.speech_started":
+            keepOpen()
             if phase != .hearing { log.add("voice", "speech started") }
             phase = .hearing
         case "input_audio_buffer.speech_stopped":
             phase = .thinking
+            awaitingAnswer = true
             clock = TurnClock(said: Date())
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
@@ -512,11 +612,14 @@ final class VoiceModel {
             if let text = event["transcript"] as? String, !text.isEmpty { lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines))) }
         case "response.created":
             activeResponse = (event["response"] as? [String: Any])?["id"] as? String
+            keepOpen()
+            awaitingAnswer = false
         case "response.done":
             let response = event["response"] as? [String: Any]
             if let usage = response?["usage"] as? [String: Any] { clock.add(usage: usage) }
             if response?["id"] as? String == activeResponse { activeResponse = nil }
             flush()
+            endIfDone()
         case "response.output_audio_transcript.done":
             if let text = event["transcript"] as? String, !text.isEmpty {
                 lines.append(VoiceLine(role: .poki, text: text))
@@ -530,7 +633,9 @@ final class VoiceModel {
                 log.add("voice", "turn: end of speech to spoken result \(lastTurnMS!) ms (tool result in \(Int(delivered.timeIntervalSince(said) * 1000)) ms)")
             }
         case "output_audio_buffer.stopped", "output_audio_buffer.cleared":
-            phase = calls.contains { $0.state == .running } ? .thinking : .listening
+            // Cleared because the person started speaking over the answer: they are still being heard.
+            if phase != .hearing { phase = calls.contains { $0.state == .running } ? .thinking : .listening }
+            endIfDone()
         case "response.output_item.done":
             guard let item = event["item"] as? [String: Any], item["type"] as? String == "function_call",
                   let id = item["call_id"] as? String, let name = item["name"] as? String else { return }
@@ -538,6 +643,9 @@ final class VoiceModel {
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? "unknown error"
             log.add("voice", "realtime error: \(message)")
+            // An error can be all the server sends after the person spoke; no answer is coming then.
+            awaitingAnswer = false
+            endIfDone()
         default:
             break
         }
@@ -622,7 +730,7 @@ final class VoiceModel {
     }
 
     /// A new session after a drop: say what already ran, so the model reports it instead of asking again.
-    private func catchUp(_ link: VoiceLink) {
+    private func catchUp(_ link: VoiceConnection) {
         let running = calls.filter { $0.state == .running }
         if !running.isEmpty {
             link.send(Self.note("Before the connection dropped, these were started and are still running; their results will follow. Do not start them again: " + running.map { "\($0.name) \($0.arguments)" }.joined(separator: "; ")))
@@ -634,6 +742,7 @@ final class VoiceModel {
     private func flush() {
         guard wantsResponse, activeResponse == nil, ready, let link else { return }
         wantsResponse = false
+        awaitingAnswer = true
         link.send(["type": "response.create"])
     }
 
