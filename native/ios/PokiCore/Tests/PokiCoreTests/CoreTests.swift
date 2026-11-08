@@ -579,8 +579,12 @@ final class ApprovalTests: XCTestCase {
     /// Return sends in a messaging app: typed text is not sent by a return key, or a newline in the
     /// text, before the owner approves.
     func testInAMessagingAppReturnAfterTypingAsks() async {
-        for actions: [JSON] in [[["tap": 1], ["type": "on my way"], ["key": "return"]], [["tap": 1], ["type": "on my way\n"]]] {
-            let (core, wda, _) = makeCore(messages("com.tencent.xin", [("TextView", "Message")]))
+        let composer = [("TextView", "Message")], list = [("SearchField", "Search"), ("Cell", "Mom")]
+        // A tap on a conversation opens it: the search field's number belongs to the list read before,
+        // and the text goes to the composer.
+        for (rows, actions): ([(String, String)], [JSON]) in [(composer, [["tap": 1], ["type": "on my way"], ["key": "return"]]), (composer, [["tap": 1], ["type": "on my way\n"]]),
+                                                             (list, [["tap": 2], ["type": "on my way", "ref": 1], ["key": "return"]]), (list, [["tap": 2], ["type": "on my way\n", "ref": 1]])] {
+            let (core, wda, _) = makeCore(messages("com.tencent.xin", rows))
             _ = await core.call("look", [:])
             let result = await core.call("do", ["actions": .array(actions)])
             XCTAssertTrue(result.text.contains("approval_required"), "\(actions): \(result.text)")
