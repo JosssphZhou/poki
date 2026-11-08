@@ -121,6 +121,7 @@ struct VoicePage: View {
             .onChanged { value in
                 if !holding {
                     holding = true
+                    voice.held = true
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     if !voice.isOn, voice.bridge != nil { Task { await voice.start() } }
                     if voice.bridge == nil { openVoiceSettings() }
@@ -130,6 +131,7 @@ struct VoicePage: View {
             .onEnded { _ in
                 if cancelling { voice.stop() }
                 holding = false
+                voice.held = false
                 cancelling = false
             }
     }
