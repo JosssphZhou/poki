@@ -90,6 +90,9 @@ result and the time next to each line.
 - [ ] With Poki in front while an agent's approval waits (the Dynamic Island hides Poki's own Live Activity then): the chat shows Allow this step? with Allow and Don't Allow; Allow runs the step and the phone goes back to the app the agent was in.
 - [ ] Leave an approval unanswered and send nothing more: after 2 minutes the Live Activity leaves Approval, Poki says the approval ran out, and the idle stop works again.
 - [ ] In Wallet: the agent can wait, hand the screen to you and press Home without being asked; a tap asks.
+- [ ] In Wallet, `do {run: name}` of a saved routine asks before anything is tapped.
+- [ ] In WeChat: tap the message field, type, then `{key: "return"}`: it asks before the return, and nothing is sent. In WeChat's search field the same return searches without asking.
+- [ ] `do [{launch: "com.apple.mobileslideshow"}, {wait: 500}, {tap: [x, y]}]`: Photos opens, then it asks before the tap.
 
 ## 6. Live Activity
 
