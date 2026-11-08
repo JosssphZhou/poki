@@ -2,18 +2,50 @@ import PokiCore
 import XCTest
 @testable import Poki
 
-/// The voice bridge's token answer, served to URLSession.shared without a Mac.
-final class BridgeStub: URLProtocol {
-    static let address = "http://voice-bridge.test/voice/0123456789abcdef"
-    override class func canInit(with request: URLRequest) -> Bool { request.url?.host() == "voice-bridge.test" }
+/// The voice bridge and OpenAI's client_secrets endpoint, served to URLSession.shared without a Mac or
+/// OpenAI. Every request is kept, so a test sees whom the phone asked for a key.
+final class NetworkStub: URLProtocol {
+    static let bridgeAddress = "http://voice-bridge.test/voice/0123456789abcdef"
+    static let clientSecrets = "https://api.openai.com/v1/realtime/client_secrets"
+    struct Asked { let url: String; let method: String; let authorization: String?; let body: Data }
+    nonisolated(unsafe) private static var asked: [Asked] = []
+    /// OpenAI's answer to client_secrets: status and body.
+    nonisolated(unsafe) static var openAI = (200, #"{"value":"ek_direct","expires_at":1000060}"#)
+    private static let lock = NSLock()
+
+    static var taken: [Asked] { lock.withLock { asked } }
+    static func reset() {
+        lock.withLock { asked = [] }
+        openAI = (200, #"{"value":"ek_direct","expires_at":1000060}"#)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { ["voice-bridge.test", "api.openai.com"].contains(request.url?.host() ?? "") }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        let url = request.url!
+        Self.lock.withLock { Self.asked.append(Asked(url: url.absoluteString, method: request.httpMethod ?? "GET", authorization: request.value(forHTTPHeaderField: "Authorization"), body: Self.body(request))) }
+        let (status, body) = url.host() == "api.openai.com" ? Self.openAI : (200, #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+
+    /// A POST's body reaches a URLProtocol as a stream.
+    private static func body(_ request: URLRequest) -> Data {
+        if let data = request.httpBody { return data }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = stream.read(&buffer, maxLength: buffer.count)
+            if n <= 0 { break }
+            data.append(buffer, count: n)
+        }
+        return data
+    }
 }
 
 /// The Realtime connection: the test plays the server's events in and sees what was sent and whether it was closed.
@@ -21,7 +53,9 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     var onEvent: (@MainActor ([String: Any]) -> Void)?
     private(set) var closed = false
     private(set) var sent: [[String: Any]] = []
-    func connect(secret: String, microphone: Bool) async throws {}
+    /// The client secret the connection was opened with.
+    private(set) var secret: String?
+    func connect(secret: String, microphone: Bool) async throws { self.secret = secret }
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
@@ -69,11 +103,12 @@ final class VoiceModelTests: XCTestCase {
 
     override func setUp() {
         savedBridge = UserDefaults.standard.string(forKey: "voiceBridge")
-        URLProtocol.registerClass(BridgeStub.self)
+        NetworkStub.reset()
+        URLProtocol.registerClass(NetworkStub.self)
     }
 
     override func tearDown() {
-        URLProtocol.unregisterClass(BridgeStub.self)
+        URLProtocol.unregisterClass(NetworkStub.self)
         UserDefaults.standard.set(savedBridge, forKey: "voiceBridge")
     }
 
@@ -86,16 +121,19 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
+        /// `openAIKey`: the OpenAI key saved on the phone; none unless a test says so.
+        @MainActor init(openAIKey: @escaping @MainActor () -> String? = { nil },
+                        phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
             let time = FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
-                               connection: { onEvent, _ in let link = made(); link.onEvent = onEvent; return link }, time: time.clock)
+                               connection: { onEvent, _ in let link = made(); link.onEvent = onEvent; return link }, time: time.clock,
+                               openAIKey: openAIKey)
             made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
-            _ = voice.setBridge(BridgeStub.address)
+            _ = voice.setBridge(NetworkStub.bridgeAddress)
         }
 
         /// Connected, before the server's session.created.
@@ -408,5 +446,76 @@ final class VoiceModelTests: XCTestCase {
                     ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
         XCTAssertFalse(h.voice.isOn)
         NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    /// With an OpenAI key saved on this iPhone, voice asks OpenAI itself for the one-minute key, for the
+    /// session the voice bridge asks for (src/voice-session.mjs), and never reaches the Mac, also not for
+    /// a step: so it works away from the Mac's network. Once the key is gone, the next conversation asks
+    /// the Mac's voice bridge again.
+    func testWithAnOpenAIKeyOnThePhoneVoiceNeverAsksTheMac() async throws {
+        var key: String? = "sk-test-phone-key"
+        let h = Harness(openAIKey: { key }, phoneTool: { _, _ in ("Settings is open", false) })
+        await h.talk()
+        let asked = NetworkStub.taken
+        XCTAssertEqual(asked.map(\.url), [NetworkStub.clientSecrets])
+        let request = try XCTUnwrap(asked.first)
+        XCTAssertEqual(request.method, "POST")
+        XCTAssertEqual(request.authorization, "Bearer sk-test-phone-key")
+        XCTAssertEqual(h.link.secret, "ek_direct")
+
+        // The body bin/voice-bridge.mjs sends by default.
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: request.body) as? [String: Any])
+        let expires = body["expires_after"] as? [String: Any]
+        XCTAssertEqual(expires?["anchor"] as? String, "created_at")
+        XCTAssertEqual(expires?["seconds"] as? Int, 60)
+        let session = try XCTUnwrap(body["session"] as? [String: Any])
+        XCTAssertEqual(session["type"] as? String, "realtime")
+        XCTAssertEqual(session["model"] as? String, "gpt-realtime-2.1")
+        XCTAssertEqual(session["output_modalities"] as? [String], ["audio"])
+        XCTAssertEqual((session["tools"] as? [[String: Any]])?.compactMap { $0["name"] as? String }, ["get_ios_version", "look", "do"])
+        XCTAssertEqual(session["tool_choice"] as? String, "auto")
+        XCTAssertEqual(session["parallel_tool_calls"] as? Bool, false)
+        XCTAssertEqual((session["reasoning"] as? [String: Any])?["effort"] as? String, "low")
+        let instructions = try XCTUnwrap(session["instructions"] as? String)
+        XCTAssertTrue(instructions.hasPrefix("You are Poki, a voice assistant that operates the user's iPhone with tools."), instructions)
+        XCTAssertTrue(instructions.contains("With do, open an app by its bundle id"), instructions)
+        let audio = session["audio"] as? [String: Any]
+        let input = audio?["input"] as? [String: Any]
+        let turn = input?["turn_detection"] as? [String: Any]
+        XCTAssertEqual(turn?["type"] as? String, "server_vad")
+        XCTAssertEqual(turn?["silence_duration_ms"] as? Int, 450)
+        XCTAssertEqual((input?["transcription"] as? [String: Any])?["model"] as? String, "gpt-4o-mini-transcribe")
+        XCTAssertEqual((audio?["output"] as? [String: Any])?["voice"] as? String, "marin")
+
+        // A step runs on the phone.
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": #"{"actions":[{"launch":"com.apple.Preferences"}]}"#]])
+        await h.time.settle()
+        XCTAssertEqual(h.voice.calls.first?.state, .done)
+        XCTAssertEqual(h.voice.calls.first?.output, "Settings is open")
+        XCTAssertEqual(NetworkStub.taken.map(\.url), [NetworkStub.clientSecrets])
+        h.voice.stop()
+
+        key = nil
+        await h.talk()
+        XCTAssertEqual(NetworkStub.taken.map(\.url), [NetworkStub.clientSecrets, NetworkStub.bridgeAddress + "/token"])
+        XCTAssertEqual(NetworkStub.taken.last?.authorization, nil)
+        XCTAssertEqual(h.link.secret, "ek_test")
+    }
+
+    /// OpenAI turns the phone's key down and its answer quotes the key, in full and masked: the voice page
+    /// and Poki's log say what went wrong without any of it.
+    func testOpenAIRefusingThePhonesKeyNeverShowsTheKey() async {
+        NetworkStub.openAI = (401, #"{"error":{"message":"Incorrect API key provided: sk-test-phone-key. You can find your API key at https://platform.openai.com/account/api-keys (sk-proj-ab12****cd34).","type":"invalid_request_error"}}"#)
+        let h = Harness(openAIKey: { "sk-test-phone-key" })
+        await h.connect()
+        guard case .lost(let why) = h.voice.phase else { return XCTFail("still \(h.voice.phase)") }
+        XCTAssertTrue(why.contains("401"), why)
+        XCTAssertTrue(why.contains("Incorrect API key"), why)
+        for text in [why] + AppLog.shared.lines {
+            XCTAssertFalse(text.contains("test-phone-key") || text.contains("ab12****cd34"), text)
+        }
+        XCTAssertTrue(h.links.isEmpty)
+        XCTAssertEqual(h.microphone, [])
     }
 }

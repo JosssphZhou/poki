@@ -264,17 +264,21 @@ final class VoiceModel {
     /// Opens the connection for one session: events, then why it closed.
     private let connection: @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection
     private let time: VoiceClock
+    /// The OpenAI key saved on this iPhone (Poki › Model), read from the keychain each time it is needed.
+    private let openAIKey: @MainActor () -> String?
 
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String) async -> (String, Bool),
          holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
          connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) },
-         time: VoiceClock = VoiceClock()) {
+         time: VoiceClock = VoiceClock(),
+         openAIKey: @escaping @MainActor () -> String? = { ModelKeys.key(.openai) }) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
         self.holdMicrophone = holdMicrophone
         self.connection = connection
         self.time = time
+        self.openAIKey = openAIKey
         // In the background Poki stops listening, also while still connecting, unless an answer is still due
         // or a step it was asked for is running: that step brings another app to the front itself, and the
         // conversation ends as soon as its result is said.
