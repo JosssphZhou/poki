@@ -222,6 +222,11 @@ final class VoiceModel {
     private var requestedAnswer: String?
     /// Running while the conversation waits for the person to go on after an answer.
     private var endWindow: Task<Void, Never>?
+    /// Running while a conversation is open: ends it when the server owes something and says nothing.
+    private var stallWatch: Task<Void, Never>?
+    /// The last time the server said anything, a request went out to it, a step's result was handed over, or
+    /// Poki went to the background: the wait for the server counts from here.
+    private var lastActivity = Date()
     /// When the last conversation with something said in it ended, and what the person and Poki said. One
     /// opened soon after is told those lines (kept in memory only). A conversation nobody spoke in leaves
     /// both as they were.
@@ -236,6 +241,11 @@ final class VoiceModel {
     /// A conversation opened this soon after the last one ended is told the last turns.
     static let carryOver: TimeInterval = 5 * 60
     static let carriedLines = 6
+    /// How long the conversation waits for something it is owed (the end of the person's speech, an answer,
+    /// the end of the audio) while the server says nothing, before it ends. Shorter in the background, where
+    /// the microphone should not stay on for an event that never comes.
+    static let stall: Duration = .seconds(60)
+    static let backgroundStall: Duration = .seconds(30)
     private var localTools: Set<String> = []
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
@@ -272,7 +282,13 @@ final class VoiceModel {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.inBackground = true
-                guard self.isOn || self.phase == .connecting, !self.answerDue else { return }
+                guard self.isOn || self.phase == .connecting else { return }
+                guard !self.answerDue else {
+                    // Kept for what is still due, but not for ever: the wait for the server now has 30 s.
+                    self.lastActivity = self.time.now()
+                    if self.ready { self.watchForStall(session: self.session) }
+                    return
+                }
                 self.log.add("voice", "Poki went to the background with nothing left to say: conversation ended")
                 self.stop()
             }
@@ -369,6 +385,8 @@ final class VoiceModel {
     /// Drops the connection and the state of its turns; calls already running keep running.
     private func endSession() {
         keepOpen()
+        stallWatch?.cancel()
+        stallWatch = nil
         if ready {
             let said = lines[min(conversationStart, lines.count)...].filter { $0.role == .you || $0.role == .poki }
             if !said.isEmpty {
@@ -397,11 +415,47 @@ final class VoiceModel {
             || phase == .hearing || phase == .speaking || calls.contains { $0.state == .running }
     }
 
+    /// The server owes something: the end of the person's speech, an answer, the end of the audio. A step
+    /// that is running is not the server's to answer for, and it has its own time limits.
+    private var waitingOnServer: Bool {
+        (awaitingAnswer || activeResponse != nil || wantsResponse || phase == .hearing || phase == .speaking)
+            && !calls.contains { $0.state == .running }
+    }
+
+    /// Ends the conversation when the server owes something and has said nothing for `stall` (30 s in the
+    /// background). A lost event, or an error that names no request, would otherwise leave the microphone on.
+    private func watchForStall(session number: Int) {
+        stallWatch?.cancel()
+        stallWatch = Task { [weak self, time] in
+            var wait = self?.stallLeft() ?? .zero
+            while true {
+                await time.sleep(wait)
+                guard !Task.isCancelled, let self, number == session, isOn else { return }
+                let left = stallLeft()
+                if left > .zero { wait = left; continue }
+                if waitingOnServer {
+                    log.add("voice", "the server said nothing for \(inBackground ? Self.backgroundStall : Self.stall) while Poki waited on it: conversation ended")
+                    lines.append(VoiceLine(role: .note, text: "Poki stopped waiting: the server did not answer."))
+                    stop()
+                    return
+                }
+                wait = inBackground ? Self.backgroundStall : Self.stall
+            }
+        }
+    }
+
+    /// How much longer the wait for the server may last, counted from the last activity.
+    private func stallLeft() -> Duration {
+        let limit = inBackground ? Self.backgroundStall : Self.stall
+        let passed = time.now().timeIntervalSince(lastActivity)
+        return max(.zero, limit - .seconds(passed))
+    }
+
     /// The answer has played and nothing it asked for is still running or still to be said.
     private var idle: Bool { link != nil && ready && !held && !answerDue }
 
     /// Once idle, the conversation waits `followUp` for the person to go on; if nobody speaks it ends and
-    /// lets go of the microphone. In the background (a step's result just said) it ends at once.
+    /// lets go of the microphone. In the background (an answer just said) it ends at once.
     private func endIfDone() {
         guard idle else { return }
         if inBackground {
@@ -474,10 +528,12 @@ final class VoiceModel {
 
     private func handle(_ event: [String: Any], session number: Int) {
         guard number == session, let link, let type = event["type"] as? String else { return }
+        lastActivity = time.now()
         switch type {
         case "session.created":
             log.add("voice", "session created, session \(number)")
             ready = true
+            watchForStall(session: number)
             phase = .listening
             carryOver(link)
             catchUp(link)
@@ -615,6 +671,7 @@ final class VoiceModel {
             : link.send(Self.note("While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(call.output)"))
         guard sent else { return }
         calls[index].delivered = true
+        lastActivity = time.now()
         clock.delivered = Date()
         wantsResponse = true
         flush()
@@ -636,6 +693,7 @@ final class VoiceModel {
         awaitingAnswer = true
         let id = UUID().uuidString
         requestedAnswer = id
+        lastActivity = time.now()
         link.send(["type": "response.create", "event_id": id])
     }
 
