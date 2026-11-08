@@ -19,7 +19,7 @@ Changed:
 - A type that fails or times out is checked against the focused field before anything is sent again; the log keeps the failed step's error line without the typed text.
 - The hand-off card's content line is a fixed short line per kind; the agent's own note is in the alert and the issue row.
 - The chat shows the setup bubble while a step is left after pairing.
-- Voice stops after its answer: 8 s with nobody speaking ends the conversation, lets go of the microphone and turns the orange dot off; speaking within the 8 s goes on in the same conversation, and one opened within 5 minutes is told the last turns. Holding the voice page's button keeps it open; in the background Poki stops listening, also while connecting, unless a step it was asked for is running, and then ends once the step's result is said.
+- Voice stops after its answer: 8 s with nobody speaking ends the conversation, lets go of the microphone and turns the orange dot off; speaking within the 8 s goes on in the same conversation, and one opened within 5 minutes of the last conversation with something said in it is told the last turns. Holding the voice page's button keeps it open; in the background Poki stops listening, also while connecting, unless a step it was asked for is running or its answer is still to be said, and then ends once that is said.
 
 Needs the phone:
 - Chat with pi on real keys and the ChatGPT login; voice with a person speaking.

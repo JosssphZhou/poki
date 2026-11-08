@@ -127,10 +127,11 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
   person to go on in the same session. After 8 s of silence it ends and lets go of the microphone, so
   iOS's orange dot goes off; a conversation opened with nothing said ends the same way. Holding the
   voice page's button keeps it open, and letting go while it is still connecting ends it. A
-  conversation opened within 5 minutes of the last end is told up to 6 lines said in that last
-  conversation, from memory only (they are never written to disk). In the background Poki stops
-  listening at once, also while connecting, unless a step is running (the step brings another app to
-  the front); that conversation ends as soon as the step's result is said.
+  conversation opened within 5 minutes of the last end of a conversation with something said in it is
+  told up to 6 lines said there (a conversation nobody spoke in changes nothing), from memory only
+  (they are never written to disk). In the background Poki stops listening at once, also while
+  connecting, unless a step is running or its answer is still to be said (the step brings another app
+  to the front); that conversation ends as soon as that is said.
 - A `poki://voice` link, from a web page or another app, only opens Voice: a link never
   changes the bridge and never turns on the microphone. The person enters the address and taps Talk
   to Poki.
