@@ -786,6 +786,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unreachable_control_reports_each_address_and_its_os_error() {
+        use tokio::net::TcpListener;
+        for (host, address) in [("127.0.0.1", "127.0.0.1"), ("fe80::1%lo0", "[fe80::1%lo0]")] {
+            let listener = TcpListener::bind((host, 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let mut session = Session {
+                transport: Transport::Remote(Config {
+                    id: "synthetic-phone".into(),
+                    host: host.into(),
+                    port,
+                    pairing_file: "/not-a-real-pairing-file".into(),
+                }),
+                control: None,
+                connection: None,
+            };
+            let error = session
+                .request(json!({"op":"connect"}))
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.starts_with("Remote pairing is unreachable"),
+                "{error}"
+            );
+            assert!(
+                error.contains(&format!(
+                    "{address}:{port}: Connection refused (os error 61)"
+                )),
+                "{error}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn failed_remote_replacement_keeps_the_working_tunnel() {
         use tokio::net::TcpListener;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
