@@ -329,4 +329,75 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertTrue(carried.contains("Open Settings."), carried)
         XCTAssertTrue(carried.contains("Settings is open."), carried)
     }
+
+    /// A step's result is handed over and the server's answer to the request never comes (its error names
+    /// no request, so Poki cannot tell it is about this one): the conversation does not wait for ever.
+    /// 60 s without a word from the server in the foreground ends it.
+    func testAnAnswerThatNeverComesEndsTheConversationAfterSixtySecondsInTheForeground() async {
+        let h = Harness(phoneTool: { _, _ in ("Settings is open", false) })
+        await h.talk()
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        h.link.play(["type": "error", "error": ["message": "x"]])
+        await h.time.advance(59)
+        XCTAssertTrue(h.voice.isOn)
+        await h.time.advance(1)
+        XCTAssertFalse(h.voice.isOn)
+        XCTAssertEqual(h.microphone, [true, false])
+    }
+
+    /// The same in the background, and the person's microphone is off 30 s after Poki went there, counted
+    /// from going there and not from the start of the conversation. Speech whose end never arrives is the
+    /// same wait.
+    func testAnAnswerThatNeverComesEndsTheConversationThirtySecondsAfterTheBackground() async {
+        let h = Harness(phoneTool: { _, _ in ("Settings is open", false) })
+        await h.talk()
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        h.link.play(["type": "error", "error": ["message": "x"]])
+        await h.time.advance(20)
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        await h.time.advance(29)
+        XCTAssertTrue(h.voice.isOn)
+        await h.time.advance(1)
+        XCTAssertFalse(h.voice.isOn)
+        XCTAssertEqual(h.microphone, [true, false])
+
+        let hearing = Harness()
+        await hearing.talk()
+        hearing.link.play(["type": "input_audio_buffer.speech_started"])
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        await hearing.time.advance(29)
+        XCTAssertTrue(hearing.voice.isOn)
+        await hearing.time.advance(1)
+        XCTAssertFalse(hearing.voice.isOn)
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    /// The cap is for waiting on the server. A step that runs for minutes in the background is not cut
+    /// off, and its result is still said.
+    func testAStepRunningLongerThanTheCapInTheBackgroundIsNotCutOff() async {
+        let (step, stepDone) = AsyncStream<Void>.makeStream()
+        let h = Harness(phoneTool: { _, _ in for await _ in step { break }; return ("done", false) })
+        await h.talk()
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        await h.time.advance(100)
+        XCTAssertTrue(h.voice.isOn)
+        stepDone.finish()
+        await h.time.settle()
+        XCTAssertEqual(h.voice.calls.first?.delivered, true)
+        await h.time.advance(29)
+        XCTAssertTrue(h.voice.isOn, "the wait for the answer starts when the result is handed over")
+        h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                    ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+        XCTAssertFalse(h.voice.isOn)
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
 }
