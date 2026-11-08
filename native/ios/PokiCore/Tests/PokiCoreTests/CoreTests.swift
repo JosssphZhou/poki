@@ -520,6 +520,84 @@ final class ApprovalTests: XCTestCase {
         }
     }
 
+    private func store(routine name: String, app: String, steps: [JSON]) -> RoutineStore {
+        let store = RoutineStore(url: nil)
+        store.save(Routine(name: name, description: "", app: app, steps: steps.map { RoutineStep(action: $0, target: nil, app: app, secret: nil) }, params: [:], expect: [], read: [],
+                           runs: 0, ok: 0, failuresInARow: 0, lastStop: nil, lastMs: nil, savedBy: "test", created: Date(), updated: Date()))
+        return store
+    }
+
+    /// A routine run in Wallet is input in Wallet: its point tap (recorded without an element) is not
+    /// sent before the owner approves, whether Wallet is in front or the run launches it.
+    func testARoutineRunInWalletAsksBeforeItsPointTap() async {
+        for front in ["com.apple.Passbook", "com.apple.Preferences"] {
+            let wda = wallet()
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(front), "name": "X"]]) }
+            let (core, _, _) = makeCore(wda) { $0.memory = self.store(routine: "card", app: "com.apple.Passbook", steps: [["tap": [200, 400]]]) }
+            _ = await core.call("look", [:])
+            let result = await core.call("do", ["actions": [["run": "card"]]])
+            XCTAssertTrue(result.text.contains("approval_required"), "\(front): \(result.text)")
+            XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "\(front): the routine's tap was sent")
+        }
+    }
+
+    /// The same rules hold inside a run: a routine's point tap in Phone rings whatever is there, so the
+    /// run stops before it; the same routine in Settings taps.
+    func testARoutinesPointTapInPhoneIsNotSentWithoutTheOwner() async {
+        for (bundle, name, sends) in [("com.apple.mobilephone", "Phone", false), ("com.apple.Preferences", "Settings", true)] {
+            let wda = FakeWDA()
+            wda.source([("Button", "Keypad")], app: name)
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle), "name": .string(name)]]) }
+            let (core, _, _) = makeCore(wda) { $0.memory = self.store(routine: "ring", app: bundle, steps: [["tap": [200, 600]]]) }
+            _ = await core.call("look", [:])
+            let result = await core.call("do", ["actions": [["run": "ring"]]])
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, sends ? 1 : 0, "\(name): \(result.text)")
+            if !sends { XCTAssertTrue(result.text.contains("approval"), result.text) }
+        }
+    }
+
+    private func messages(_ bundle: String = "com.apple.MobileSMS", _ rows: [(String, String)] = [("Cell", "Mom"), ("Cell", "Work")]) -> FakeWDA {
+        let wda = FakeWDA()
+        wda.source(rows, app: "Messages")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle), "name": "Messages"]]) }
+        return wda
+    }
+
+    /// A tap in Messages opens another screen, so a point tapped after it in the same do is checked as
+    /// a screen not read yet, not against the conversation list it was read on.
+    func testInMessagesAPointTappedAfterATapAsks() async {
+        let (core, wda, _) = makeCore(messages())
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1], ["wait": 300], ["tap": [350, 790]]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertTrue(core.pendingApproval?.reason.hasPrefix("sending a message") == true, core.pendingApproval?.reason ?? "no request")
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the conversation tap goes first, the point after it waits")
+    }
+
+    /// Return sends in a messaging app: typed text is not sent by a return key, or a newline in the
+    /// text, before the owner approves.
+    func testInAMessagingAppReturnAfterTypingAsks() async {
+        for actions: [JSON] in [[["tap": 1], ["type": "on my way"], ["key": "return"]], [["tap": 1], ["type": "on my way\n"]]] {
+            let (core, wda, _) = makeCore(messages("com.tencent.xin", [("TextView", "Message")]))
+            _ = await core.call("look", [:])
+            let result = await core.call("do", ["actions": .array(actions)])
+            XCTAssertTrue(result.text.contains("approval_required"), "\(actions): \(result.text)")
+            XCTAssertTrue(core.pendingApproval?.reason.hasPrefix("sending a message") == true, core.pendingApproval?.reason ?? "no request")
+            XCTAssertFalse(wda.bodies("POST /wda/keys").contains { $0.serialized().contains("\\n") }, "\(actions): a return went out")
+        }
+    }
+
+    /// After a launch the screen is the launched app's and not read yet: a tap there is not judged by
+    /// the last read's labels (a point on Photos' Delete read as nothing), so it asks in any app.
+    func testATapAfterALaunchAsksInAnAppOnNoList() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["launch": "com.apple.mobileslideshow"], ["wait": 300], ["tap": [200, 790]]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/apps/activate").count, 1, "the launch before it goes first")
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "the tap was sent")
+    }
+
     func testPasswordsNeedApproval() async {
         let wda = FakeWDA()
         wda.source([("TextField", "Email"), ("SecureTextField", "Password")])
