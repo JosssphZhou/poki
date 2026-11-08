@@ -18,7 +18,7 @@ final class LiveCore: CoreSession {
         var config = CoreConfig()
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
-        // Sensitive steps wait for the owner unless they turned asking off in Settings › Approvals; the
+        // Sensitive steps wait for the owner unless they turned asking off in Agents › Approvals; the
         // auto-classifier (Diagnostics › Testing) answers in their place when it is on.
         config.sensitive.enabled = Self.asksBeforeSensitiveSteps || ApprovalClassifier.isOn
         core = PokiCore(config: config, host: host, transport: transport)
@@ -30,7 +30,7 @@ final class LiveCore: CoreSession {
         core.onSession { signal in continuation.yield(.session(signal)) }
     }
 
-    /// Settings › Approvals › Ask Before Sensitive Steps. Read when Poki starts.
+    /// Agents › Approvals › Ask Before Sensitive Steps. Read when Poki starts.
     static let askKey = "approvals.ask"
     /// On unless the owner turned it off: a phone that never chose asks.
     static var asksBeforeSensitiveSteps: Bool { UserDefaults.standard.object(forKey: askKey) as? Bool ?? true }

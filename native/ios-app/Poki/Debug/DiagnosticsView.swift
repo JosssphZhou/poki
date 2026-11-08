@@ -134,7 +134,7 @@ struct LogView: View {
     }
 }
 
-/// Switches being tried, all off by default. Ask Before Sensitive Steps is in Settings › Approvals.
+/// Switches being tried, all off by default. Ask Before Sensitive Steps is in Agents › Approvals.
 private struct ApprovalTestingSection: View {
     @Environment(AppModel.self) private var model
     var body: some View {

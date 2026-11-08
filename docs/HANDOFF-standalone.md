@@ -199,7 +199,7 @@ Zhehan's call for 501 (Nov 8, 5:14 am ET) was to approve everything by default, 
 down and the in-app prompt could not be answered while an agent drove the phone. `fix/ask-before-default` turns
 Ask Before Sensitive Steps back on by default and fixes what made it hard to use:
 
-- The switch is in Settings › Approvals again and is on unless the owner turned it off (`approvals.ask` unset reads as on).
+- The switch is in Agents › Approvals again and is on unless the owner turned it off (`approvals.ask` unset reads as on).
 - An unanswered request ends by itself after its 120 s, so the Live Activity, the idle stop and Stop Runner no longer
   wait for the agent's next call.
 - Wallet asks for taps, typing, keys and drags only; waiting, handing the screen to the owner and leaving go without asking.

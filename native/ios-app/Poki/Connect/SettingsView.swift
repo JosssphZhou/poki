@@ -102,13 +102,6 @@ struct SettingsHome: View {
                 if model.relayAddress == nil { Text("Set your relay address first: each agent’s address is on your relay.") }
             }
 
-            Section {
-                Toggle("Ask Before Sensitive Steps", isOn: $model.askBeforeSensitiveSteps)
-            } header: {
-                Text("Approvals")
-            } footer: {
-                Text("Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens.")
-            }
             if model.automationPath == .inProcess {
                 Section {
                     Toggle("Hide Banner When Idle", isOn: $model.closeSessionWhenIdle)
