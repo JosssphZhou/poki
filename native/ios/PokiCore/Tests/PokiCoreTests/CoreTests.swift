@@ -563,15 +563,17 @@ final class ApprovalTests: XCTestCase {
         return wda
     }
 
-    /// A tap in Messages opens another screen, so a point tapped after it in the same do is checked as
-    /// a screen not read yet, not against the conversation list it was read on.
-    func testInMessagesAPointTappedAfterATapAsks() async {
-        let (core, wda, _) = makeCore(messages())
-        _ = await core.call("look", [:])
-        let result = await core.call("do", ["actions": [["tap": 1], ["wait": 300], ["tap": [350, 790]]]])
-        XCTAssertTrue(result.text.contains("approval_required"), result.text)
-        XCTAssertTrue(core.pendingApproval?.reason.hasPrefix("sending a message") == true, core.pendingApproval?.reason ?? "no request")
-        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the conversation tap goes first, the point after it waits")
+    /// A tap can open another screen (a conversation, a photo), so a point tapped after it in the same
+    /// do is not judged by the read before it, where nothing was there.
+    func testAPointTappedAfterATapInTheSameDoAsks() async {
+        for (bundle, reason) in [("com.apple.MobileSMS", "sending a message"), ("com.apple.mobileslideshow", "a tap at a point")] {
+            let (core, wda, _) = makeCore(messages(bundle))
+            _ = await core.call("look", [:])
+            let result = await core.call("do", ["actions": [["tap": 1], ["wait": 300], ["tap": [350, 790]]]])
+            XCTAssertTrue(result.text.contains("approval_required"), "\(bundle): \(result.text)")
+            XCTAssertTrue(core.pendingApproval?.reason.hasPrefix(reason) == true, "\(bundle): \(core.pendingApproval?.reason ?? "no request")")
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "\(bundle): the first tap goes first, the point after it waits")
+        }
     }
 
     /// Return sends in a messaging app: typed text is not sent by a return key, or a newline in the
