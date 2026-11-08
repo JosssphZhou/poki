@@ -207,7 +207,7 @@ Ask Before Sensitive Steps back on by default and fixes what made it hard to use
   Dynamic Island while Poki is in front.
 - Actions after a `launch`, Home or `run` in the same `do` are checked against the launched app, and a tap after a `launch` or `run` asks;
   any tap in Phone asks. A point tapped after a tap in the same `do` asks, and in a messaging app any such tap.
-- Return in a messaging app asks (WeChat, WhatsApp and Telegram send on it), except in a search field (the one tapped, or typed into by its number, in that `do`).
+- Return in a messaging app asks (WeChat, WhatsApp and Telegram send on it), except in a search field (the one tapped, or typed into by its number, in that `do` before any action in it may have changed the screen).
 - A routine run checks each step it sends by the same rules, a typing step on an element included, and stops before one that needs approval.
 
 The Auto-Classifier stays under Diagnostics › Testing (off by default) and answers in the owner's place when it is on.
