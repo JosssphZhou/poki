@@ -532,6 +532,9 @@ extension Computer {
                 o["type"] = .string(text.replacingParams(params))
                 action = .object(o)
             }
+            // Each step is held by the rules a do is held by, on the screen it lands on: a step the owner
+            // must approve is theirs, and the run hands it back rather than send it.
+            var scan: SensitiveScan?
             if let target = step.target {
                 // Wait for the target, alone, on screen; after a step that changed nothing yet, give the
                 // screen a moment to move on so the same label on the old screen is not taken for it.
@@ -576,20 +579,14 @@ extension Computer {
                     await sleep(seconds: 0.12)
                 }
                 guard let element = found else { throw stop(index, why + " (\(reads) reads in \(Int(((now() - readStart) * 1000).rounded())) ms)") }
-                // A step the owner must approve is theirs: the run hands it back rather than send it.
-                let typing = action["type"] != nil
-                let secure = tree_secure(lastAll)
-                if let reason = config.sensitive.reason(touching: element, typing: typing, app: lastForeground, secureOnScreen: secure && typing) {
-                    throw stop(index, "it needs the owner's approval (\(reason)); send it as an ordinary do so the owner is asked")
-                }
-                let ref = Self.runRef
-                refs[ref] = element
-                action = Self.replacingTarget(action, with: ref)
+                refs[Self.runRef] = element
+                action = Self.replacingTarget(action, with: Self.runRef)
                 front = lastForeground
+                scan = SensitiveScan(front: lastForeground, secureOnScreen: lastAll.contains(where: \.isSecure))
             } else if config.sensitive.enabled, ["tap", "long_press", "type", "key", "drag"].contains(where: { action[$0] != nil }) {
-                // A step recorded without an element (a point, a key) is held by the rules a do is held
-                // by, on the screen it would land on, read now; unread, it is a screen not read yet.
-                var scan = SensitiveScan(front: front, read: false, secureOnScreen: false)
+                // A step recorded without an element (a point, a key) is judged on the screen read now;
+                // unread, it is a screen not read yet.
+                scan = SensitiveScan(front: front, read: false, secureOnScreen: false)
                 if let tree = try? await runner.tree(timeout: min(config.readTimeout, max(0.3, until - now() - 0.1)), format: config.treeFormat) {
                     lastAll = tree.elements
                     lastForeground = tree.foreground
@@ -597,9 +594,10 @@ extension Computer {
                     let elements = listable(tree.elements, screen)
                     scan = SensitiveScan(front: front, secureOnScreen: elements.contains(where: \.isSecure), elements: elements)
                 }
-                if let reason = sensitive(action, &scan) {
-                    throw stop(index, "it needs the owner's approval (\(reason)); send it as an ordinary do so the owner is asked")
-                }
+            }
+            if var scan, let reason = sensitive(action, &scan) {
+                refs[Self.runRef] = nil
+                throw stop(index, "it needs the owner's approval (\(reason)); send it as an ordinary do so the owner is asked")
             }
             let began = now()
             let kind: String, text: String
@@ -670,8 +668,6 @@ extension Computer {
         if o["ref"]?.string == "@" { o["ref"] = .number(Double(ref)) }
         return .object(o)
     }
-
-    func tree_secure(_ elements: [Element]) -> Bool { elements.contains(where: \.isSecure) }
 
     /// A new task: its recording starts empty.
     func beginRecording() {

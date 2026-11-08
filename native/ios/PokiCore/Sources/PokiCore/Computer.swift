@@ -1011,8 +1011,9 @@ final class Computer: @unchecked Sendable {
             }
         } else if let text = action["type"]?.text {
             let e = scan.read ? (scan.elements == nil ? action["ref"].flatMap { refs[$0.int ?? -1] } : nil) ?? scan.typingTarget : nil
+            scan.typingTarget = e
             if let r = rules.reason(touching: e, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen && e == nil) { return r }
-            if messaging, text.contains(where: \.isNewline), !Self.isSearch(e ?? scan.typingTarget) { return "sending a message (a return typed in \(scan.front?.describe ?? "unknown"))" }
+            if messaging, text.contains(where: \.isNewline), !Self.isSearch(e) { return "sending a message (a return typed in \(scan.front?.describe ?? "unknown"))" }
         } else if action["key"]?.string?.lowercased() == "return", let field = scan.typingTarget, rules.reason(touching: field, typing: true, app: scan.front, secureOnScreen: false) != nil {
             return "submitting a password field"
         } else if messaging, let key = action["key"]?.text, (Self.keyText[key.lowercased()] ?? key).contains(where: \.isNewline), !Self.isSearch(scan.typingTarget) {
