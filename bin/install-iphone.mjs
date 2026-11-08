@@ -2,14 +2,13 @@
 // Installs Poki on an iPhone through Poki Setup without its window. Read INSTALL-IPHONE.md first.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Bridge } from '../src/install/bridge.mjs';
 import { findSetupBridge, SetupError } from '../src/install/setup-app.mjs';
 import { installerLabel, installerVersion } from '../src/install/version.mjs';
 import { diagnose, issueDraft, readRun } from '../src/install/report.mjs';
-import { manifest, run } from '../src/install/run.mjs';
+import { codeCommand, defaultStateDir, manifest, run } from '../src/install/run.mjs';
 
 const usage = `Usage: node bin/install-iphone.mjs <command> [options]
 
@@ -63,7 +62,7 @@ if (opts.version) {
 }
 const [command, arg] = positionals;
 const dryRun = opts['dry-run'];
-const state = resolve(opts.state ?? join(homedir(), 'Library/Application Support/PokiInstall', dryRun ? 'dry-run' : ''));
+const state = resolve(opts.state ?? join(defaultStateDir(), dryRun ? 'dry-run' : ''));
 const appDir = opts['app-dir'] ? resolve(opts['app-dir']) : dryRun ? join(state, 'app') : undefined;
 const setupHome = opts['setup-home'] ? resolve(opts['setup-home']) : dryRun ? join(state, 'setup-home') : undefined;
 await mkdir(join(state, 'inbox'), { recursive: true });
@@ -111,7 +110,7 @@ switch (opts.help ? 'help' : command) {
     process.exitCode = await run({ state, setupHome, channel: opts.channel, udid: opts.udid, dryRun, json: opts.json, bridge: opts.bridge && resolve(opts.bridge), appDir, reinstall: opts.reinstall });
     break;
   case 'code':
-    if (arg !== undefined) { console.error('Do not put the Apple code on the command line. Run: node bin/install-iphone.mjs code (and type it at the hidden prompt).'); process.exitCode = 1; break; }
+    if (arg !== undefined) { console.error(`Do not put the Apple code on the command line. Run: ${codeCommand(state)} (and type it at the hidden prompt).`); process.exitCode = 1; break; }
     {
       const digits = await readSecret('Apple code (6 digits, not shown): ');
       if (!/^\d{6}$/.test(digits)) { console.error('The Apple code has 6 digits.'); process.exitCode = 1; break; }

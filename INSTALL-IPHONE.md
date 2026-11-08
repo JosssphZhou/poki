@@ -54,7 +54,7 @@ Several iPhones plugged in: list them with `node bin/install-iphone.mjs phones` 
 | `wait` | What you do |
 |---|---|
 | `apple_password` | Give the user the command in `say`. They run it in their own Terminal, and macOS asks for the password without showing it. Never ask for the password in chat, and never type it for them. The command reads it from the keychain item `poki-setup-install`, signs in, and then deletes that item; Poki Setup keeps its own copy for renewals. |
-| `apple_code` | Give the user the command in `say`. They run `node bin/install-iphone.mjs code` in their own Terminal and type the 6-digit code at the hidden prompt, like the password. Never ask for the code in chat, and never put it in a command line or type it for them. The command accepts no code as an argument. |
+| `apple_code` | Give the user the command in `say` exactly as printed: it has the absolute path of this checkout's installer (and `--state` when the run uses a non-default folder), because a new Terminal starts in their home folder, not here. They paste it into their own Terminal and type the 6-digit code at the hidden prompt, like the password. Never ask for the code in chat, and never put it in a command line or type it for them. The command accepts no code as an argument. |
 | `phone_plug` | Tell the user `say`. The command sees the phone. |
 | `pair` | Tell the user `say`. The command sees the Trust tap. |
 | `devmode` | Tell the user `say`. The phone restarts; the command waits for it to come back with Developer Mode on. |
@@ -99,7 +99,7 @@ The command exits with code 2. The last `error` event has a `code`, the `reason`
 
 ## Secrets
 
-- The Apple Account password comes only from the keychain item `poki-setup-install`, which the user fills in their own Terminal. The Apple code is typed to `node bin/install-iphone.mjs code` in their own Terminal. Never put either in a command you run. (`POKI_APPLE_ID` and `POKI_SETUP_PASSWORD` exist for the user's own shell, not for agents.) The Cloudflare token comes only from `CLOUDFLARE_API_TOKEN` or the token Poki Setup keeps. They go to Poki Setup's helper over a pipe, never on a command line, and the command never prints them.
+- The Apple Account password comes only from the keychain item `poki-setup-install`, which the user fills in their own Terminal. The Apple code is typed to the `code` command from the `apple_code` prompt, pasted as printed into their own Terminal. Never put either in a command you run. (`POKI_APPLE_ID` and `POKI_SETUP_PASSWORD` exist for the user's own shell, not for agents.) The Cloudflare token comes only from `CLOUDFLARE_API_TOKEN` or the token Poki Setup keeps. They go to Poki Setup's helper over a pipe, never on a command line, and the command never prints them.
 - Do not print, log or paste the user's password, tokens, model API keys or iPhone passcode.
 
 ## Dry run

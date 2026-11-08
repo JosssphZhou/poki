@@ -4,7 +4,8 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Bridge, BridgeError } from './bridge.mjs';
@@ -14,6 +15,15 @@ import { installerLabel, installerVersion } from './version.mjs';
 const exec = promisify(execFile);
 export const manifest = JSON.parse(readFileSync(new URL('./steps.json', import.meta.url), 'utf8'));
 const fakeBridgePath = fileURLToPath(new URL('./fake-bridge.mjs', import.meta.url));
+export const defaultStateDir = () => join(homedir(), 'Library/Application Support/PokiInstall');
+const cliPath = fileURLToPath(new URL('../../bin/install-iphone.mjs', import.meta.url));
+const shellQuote = text => (/^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`);
+// What the person pastes into a new Terminal (which starts in their home folder, not in the checkout):
+// the installer's absolute path, and --state when this run does not use the default folder.
+export function codeCommand(state) {
+  const stateArg = resolve(state) === defaultStateDir() ? '' : ` --state ${shellQuote(resolve(state))}`;
+  return `node ${shellQuote(cliPath)} code${stateArg}`;
+}
 const KEYCHAIN_SERVICE = 'poki-setup-install';
 const pollMs = () => Number(process.env.POKI_INSTALL_POLL_MS ?? 2000);
 const retryMs = () => Number(process.env.POKI_INSTALL_RETRY_MS ?? 3000);
@@ -211,7 +221,7 @@ class Run {
         if (started.needs_code) {
           const via = started.via === 'sms' ? 'a text message' : 'your Apple devices';
           for (;;) {
-            const code = await this.waitFor('apple_code', () => this.takeInbox('apple-code'), { via });
+            const code = await this.waitFor('apple_code', () => this.takeInbox('apple-code'), { via, codeCommand: codeCommand(this.state) });
             try {
               await this.bridge.request('finish_sign_in', { code });
               break;

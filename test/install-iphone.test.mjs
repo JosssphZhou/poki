@@ -21,8 +21,8 @@ async function stateDir(t) {
 
 // Runs the installer the way an agent does: reads its JSON lines and answers each person stop
 // with the same subcommands the guide tells the agent to use.
-function runInstaller(state, { scenario = 'happy', env = {}, answer = {} } = {}) {
-  const child = spawn(process.execPath, [cli, 'run', '--json', '--bridge', fakeBridge, '--state', state], {
+function runInstaller(state, { scenario = 'happy', env = {}, answer = {}, stateArgs = ['--state', state] } = {}) {
+  const child = spawn(process.execPath, [cli, 'run', '--json', '--bridge', fakeBridge, ...stateArgs], {
     env: { ...process.env, ...fastEnv, POKI_FAKE_SCENARIO: scenario, POKI_APPLE_ID: 'tester@example.com', POKI_SETUP_PASSWORD: 'correct horse', ...env },
   });
   const events = [];
@@ -31,7 +31,7 @@ function runInstaller(state, { scenario = 'happy', env = {}, answer = {} } = {})
   createInterface({ input: child.stdout }).on('line', async line => {
     const event = JSON.parse(line);
     events.push(event);
-    if (event.event === 'wait' && answer[event.wait]) await answer[event.wait]();
+    if (event.event === 'wait' && answer[event.wait]) await answer[event.wait](event);
   });
   return new Promise(resolve => child.on('close', code => resolve({ code, events, stderr })));
 }
@@ -262,6 +262,33 @@ test('the Apple code never goes on a command line: it is typed to stdin, and a c
   assert.doesNotMatch(manifest, /code 123456|Tell me the code/, 'the person stop does not ask for the code in chat or in arguments');
   const guide = await readFile(join(root, 'INSTALL-IPHONE.md'), 'utf8');
   assert.doesNotMatch(guide, /code <digits>|pass through chat/);
+});
+
+// The person opens a fresh Terminal (it starts in their home folder, not in the checkout) and pastes
+// the command exactly as the installer printed it.
+function pasteIntoNewTerminal(say, { cwd, env = {} }) {
+  const command = say.match(/run: (.+?) \(it asks/s)?.[1];
+  assert.ok(command, `the prompt carries a command: ${say}`);
+  const child = spawn('/bin/sh', ['-c', command], { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+  child.stdin.end('123456\n');
+  return new Promise(resolve => child.on('close', code => resolve(code)));
+}
+
+test('the Apple code command in the prompt works pasted into a new Terminal outside the checkout, and reaches the install that is waiting, with or without --state', async t => {
+  const home = await stateDir(t);
+  const elsewhere = await stateDir(t);
+  // A non-default --state, with a space in the path: the command has to carry it, quoted.
+  const state = join(await stateDir(t), 'agent state');
+  await mkdir(state);
+  const withState = await runInstaller(state, { answer: { ...personAnswers(state), apple_code: async event => assert.equal(await pasteIntoNewTerminal(event.say, { cwd: elsewhere, env: { HOME: home } }), 0) } });
+  assert.equal(withState.code, 0, withState.stderr);
+  // The default state: no --state was given, so the command needs none, and finds the same folder from HOME.
+  const defaultState = join(home, 'Library/Application Support/PokiInstall');
+  const withDefault = await runInstaller(defaultState, { stateArgs: [], env: { HOME: home }, answer: { ...personAnswers(defaultState), apple_code: async event => {
+    assert.doesNotMatch(event.say, /--state/);
+    assert.equal(await pasteIntoNewTerminal(event.say, { cwd: elsewhere, env: { HOME: home } }), 0);
+  } } });
+  assert.equal(withDefault.code, 0, withDefault.stderr);
 });
 
 test('the installer shows its own version and build, and diagnose and the issue draft carry the versions of the installer, Poki Setup and the installed Poki', async t => {
