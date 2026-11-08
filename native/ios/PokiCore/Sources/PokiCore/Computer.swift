@@ -978,6 +978,10 @@ final class Computer: @unchecked Sendable {
         guard rules.enabled else { return nil }
         defer { if ["tap", "long_press", "type", "key", "swipe", "drag", "pinch", "scroll_to", "back"].contains(where: { action[$0] != nil }) { scan.moved = true } }
         let messaging = scan.front?.bundleID.map(rules.messagingApps.contains) ?? false
+        // In a messaging app, after an action that may have opened another screen, that screen is not
+        // read yet: the composer's Send sits where the list had nothing, and the search field's number
+        // from the list no longer says where typed text goes.
+        let unread = !scan.read || (scan.moved && messaging)
         if let spec = action["launch"] {
             scan.front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
             scan.read = false; scan.typingTarget = nil
@@ -995,9 +999,6 @@ final class Computer: @unchecked Sendable {
             if let app { scan.front = Foreground(bundleID: app, name: nil) }
             scan.read = false; scan.typingTarget = nil
         } else if let spec = action["tap"] ?? action["long_press"] {
-            // In a messaging app any tap after one that may have opened another screen is on a screen
-            // not read yet: the composer's Send sits where the list had nothing.
-            let unread = !scan.read || (scan.moved && messaging)
             let e = unread ? nil : target(spec, in: scan.elements)
             if action["tap"] != nil { scan.typingTarget = e }
             if let r = rules.reason(touching: e, typing: false, app: scan.front, secureOnScreen: scan.secureOnScreen) { return r }
@@ -1010,7 +1011,11 @@ final class Computer: @unchecked Sendable {
                 return "a tap at a point on a screen that may have changed since it was read (in \(app))"
             }
         } else if let text = action["type"]?.text {
-            let e = scan.read ? (scan.elements == nil ? action["ref"].flatMap { refs[$0.int ?? -1] } : nil) ?? scan.typingTarget : nil
+            let e = if let ref = action["ref"] {
+                unread ? nil : (scan.elements == nil ? refs[ref.int ?? -1] : nil) ?? scan.typingTarget
+            } else {
+                scan.read ? scan.typingTarget : nil
+            }
             scan.typingTarget = e
             if let r = rules.reason(touching: e, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen && e == nil) { return r }
             if messaging, text.contains(where: \.isNewline), !Self.isSearch(e) { return "sending a message (a return typed in \(scan.front?.describe ?? "unknown"))" }
