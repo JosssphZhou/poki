@@ -1003,6 +1003,9 @@ final class Computer: @unchecked Sendable {
             if let r = rules.reason(touching: e, typing: false, app: scan.front, secureOnScreen: scan.secureOnScreen) { return r }
             let app = scan.front?.describe ?? "unknown"
             if unread, messaging { return "sending a message (a tap in \(app) on a screen not read yet)" }
+            // After a launch or a run nothing of the app's screen was read: a Delete there reads as nothing.
+            // The home screen after Home opens apps, which ask for themselves.
+            if !scan.read, scan.front != nil { return "a tap on a screen not read yet (in \(app))" }
             if scan.moved, spec.array != nil || spec["x"] != nil {
                 return "a tap at a point on a screen that may have changed since it was read (in \(app))"
             }
