@@ -587,6 +587,11 @@ final class ApprovalTests: XCTestCase {
             XCTAssertTrue(core.pendingApproval?.reason.hasPrefix("sending a message") == true, core.pendingApproval?.reason ?? "no request")
             XCTAssertFalse(wda.bodies("POST /wda/keys").contains { $0.serialized().contains("\\n") }, "\(actions): a return went out")
         }
+        // Return in the app's search field searches: nothing is sent to anyone.
+        let (core, _, _) = makeCore(messages("com.tencent.xin", [("SearchField", "Search")]))
+        _ = await core.call("look", [:])
+        let searched = await core.call("do", ["actions": [["tap": 1], ["type": "Mom"], ["key": "return"]]])
+        XCTAssertFalse(searched.text.contains("approval"), searched.text)
     }
 
     /// After a launch the screen is the launched app's and not read yet: a tap there is not judged by

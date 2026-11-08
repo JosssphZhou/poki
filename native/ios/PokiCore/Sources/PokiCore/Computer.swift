@@ -1006,16 +1006,26 @@ final class Computer: @unchecked Sendable {
             if scan.moved, spec.array != nil || spec["x"] != nil {
                 return "a tap at a point on a screen that may have changed since it was read (in \(app))"
             }
-        } else if action["type"] != nil {
+        } else if let text = action["type"]?.text {
             let e = scan.read ? (scan.elements == nil ? action["ref"].flatMap { refs[$0.int ?? -1] } : nil) ?? scan.typingTarget : nil
             if let r = rules.reason(touching: e, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen && e == nil) { return r }
+            if messaging, text.contains(where: \.isNewline), !Self.isSearch(e ?? scan.typingTarget) { return "sending a message (a return typed in \(scan.front?.describe ?? "unknown"))" }
         } else if action["key"]?.string?.lowercased() == "return", let field = scan.typingTarget, rules.reason(touching: field, typing: true, app: scan.front, secureOnScreen: false) != nil {
             return "submitting a password field"
+        } else if messaging, let key = action["key"]?.text, (Self.keyText[key.lowercased()] ?? key).contains(where: \.isNewline), !Self.isSearch(scan.typingTarget) {
+            // Return is the send key in WeChat, WhatsApp and Telegram: typed text goes out on it.
+            return "sending a message (return in \(scan.front?.describe ?? "unknown"))"
         } else if action["key"] != nil || action["drag"] != nil, let bundle = scan.front?.bundleID, rules.guardedApps.contains(bundle) {
             // Waiting, handing the screen over, swipes, Home and launches are not input in a guarded app.
             return "input in \(scan.front?.describe ?? bundle)"
         }
         return nil
+    }
+
+    /// A search field: return there searches, it sends nothing.
+    static func isSearch(_ field: Element?) -> Bool {
+        guard let field else { return false }
+        return field.type == "SearchField" || [field.text, field.identifier ?? ""].contains { $0.localizedCaseInsensitiveContains("search") || $0.contains("搜索") }
     }
 
     func describe(_ action: JSON) -> String {
