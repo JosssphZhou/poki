@@ -12,6 +12,9 @@ struct VoicePage: View {
     var select: (RootPage) -> Void
     @State private var holding = false
     @State private var cancelling = false
+    /// Resets when the touch ends or iOS cancels it (onEnded does not run then), so the conversation is
+    /// never left held.
+    @GestureState private var pressing = false
 
     private var voice: VoiceModel { model.voice }
 
@@ -24,6 +27,7 @@ struct VoicePage: View {
             stage(face).frame(maxHeight: .infinity)
             HoldButton(listening: face == .listening, hint: hint(face))
                 .gesture(hold)
+                .onChange(of: pressing) { _, pressing in if !pressing { letGo() } }
                 .padding(.bottom, 22)
             ModeLabels(page: .voice, dark: true, select: select)
         }
@@ -118,6 +122,7 @@ struct VoicePage: View {
 
     private var hold: some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($pressing) { _, pressing, _ in pressing = true }
             .onChanged { value in
                 if !holding {
                     holding = true
@@ -128,12 +133,16 @@ struct VoicePage: View {
                 }
                 cancelling = value.translation.height < -60
             }
-            .onEnded { _ in
-                if cancelling { voice.stop() }
-                holding = false
-                voice.held = false
-                cancelling = false
-            }
+            .onEnded { _ in letGo() }
+    }
+
+    /// The touch ended or iOS cancelled it; whichever comes first ends the hold.
+    private func letGo() {
+        guard holding else { return }
+        if cancelling { voice.stop() }
+        holding = false
+        voice.held = false
+        cancelling = false
     }
 
     // MARK: Screenshots
