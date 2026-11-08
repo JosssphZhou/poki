@@ -219,6 +219,16 @@ final class VoiceModel {
     private var awaitingAnswer = false
     /// The voice page's button was let go before the session was ready: nothing was heard.
     private var releasedWhileConnecting = false
+    /// Running while the conversation waits for the person to go on after an answer.
+    private var endWindow: Task<Void, Never>?
+    /// When the last conversation ended. One opened soon after is told its last turns (kept in memory only).
+    private var lastEnd: Date?
+
+    /// How long the conversation waits after an answer for the person to go on before it ends.
+    static let followUp: Duration = .seconds(8)
+    /// A conversation opened this soon after the last one ended is told the last turns.
+    static let carryOver: TimeInterval = 5 * 60
+    static let carriedLines = 6
     private var localTools: Set<String> = []
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
@@ -267,7 +277,7 @@ final class VoiceModel {
     /// The person is holding the voice page's button: the conversation stays open for what they say.
     var held = false {
         didSet {
-            guard !held else { return }
+            guard !held else { keepOpen(); return }
             if link != nil, !ready { releasedWhileConnecting = true } else { endIfDone() }
         }
     }
@@ -329,7 +339,9 @@ final class VoiceModel {
 
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
+        keepOpen()
         if let link {
+            lastEnd = time.now()
             link.close()
             // Whether the shared audio session let go of the microphone after WebRTC closed.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [log] in log.add("voice", "1 s after the end: \(VoiceLink.audioSession())") }
@@ -344,13 +356,38 @@ final class VoiceModel {
         phase = .off
     }
 
-    /// One request, one answer: once the answer has played and nothing it asked for is still running or
-    /// still to be said, the conversation ends and the microphone is let go.
+    /// The answer has played and nothing it asked for is still running or still to be said.
+    private var idle: Bool {
+        link != nil && ready && !held && !awaitingAnswer && activeResponse == nil && !wantsResponse
+            && phase != .hearing && phase != .speaking && !calls.contains { $0.state == .running }
+    }
+
+    /// Once idle, the conversation waits `followUp` for the person to go on; if nobody speaks it ends and
+    /// lets go of the microphone.
     private func endIfDone() {
-        guard link != nil, ready, !held, !awaitingAnswer, activeResponse == nil, !wantsResponse,
-              phase != .hearing, phase != .speaking, !calls.contains(where: { $0.state == .running }) else { return }
-        log.add("voice", "the answer has played and no step is running: conversation ended")
-        stop()
+        guard idle, endWindow == nil else { return }
+        endWindow = Task { [weak self, time] in
+            await time.sleep(Self.followUp)
+            guard let self, !Task.isCancelled else { return }
+            endWindow = nil
+            guard idle else { return }
+            log.add("voice", "nobody spoke for \(Self.followUp) after the answer: conversation ended")
+            stop()
+        }
+    }
+
+    private func keepOpen() {
+        endWindow?.cancel()
+        endWindow = nil
+    }
+
+    /// A conversation opened soon after the last one hears what was said last, so it goes on from there.
+    private func carryOver(_ link: VoiceConnection) {
+        guard let lastEnd, time.now().timeIntervalSince(lastEnd) < Self.carryOver else { return }
+        let turns = lines.filter { $0.role == .you || $0.role == .poki }.suffix(Self.carriedLines)
+        guard !turns.isEmpty else { return }
+        let said = turns.map { "\($0.role == .you ? "User" : "Poki"): \($0.text)" }.joined(separator: "\n")
+        link.send(Self.note("This continues a conversation from a few minutes ago. What was said, oldest first. Use it only as context for what the user says next; do not answer or repeat it.\n" + said))
     }
 
     /// Stops Poki's voice reply. Anything running on the phone keeps running.
@@ -384,6 +421,8 @@ final class VoiceModel {
 
     private func closed(_ reason: String, session number: Int) {
         guard number == session, link != nil else { return }
+        keepOpen()
+        lastEnd = time.now()
         link?.close()
         link = nil
         holdingMicrophone = false
@@ -411,8 +450,10 @@ final class VoiceModel {
                 stop()
                 return
             }
+            carryOver(link)
             catchUp(link)
         case "input_audio_buffer.speech_started":
+            keepOpen()
             if phase != .hearing { log.add("voice", "speech started") }
             phase = .hearing
         case "input_audio_buffer.speech_stopped":
@@ -425,6 +466,7 @@ final class VoiceModel {
             if let text = event["transcript"] as? String, !text.isEmpty { lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines))) }
         case "response.created":
             activeResponse = (event["response"] as? [String: Any])?["id"] as? String
+            keepOpen()
             awaitingAnswer = false
         case "response.done":
             let response = event["response"] as? [String: Any]
