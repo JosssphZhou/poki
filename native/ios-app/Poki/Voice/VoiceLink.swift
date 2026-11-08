@@ -2,10 +2,19 @@ import AVFoundation
 import Foundation
 import WebRTC
 
+/// What VoiceModel talks through: a VoiceLink in the app, a recorded conversation in tests.
+protocol VoiceConnection: AnyObject, Sendable {
+    func connect(secret: String, microphone: Bool) async throws
+    @discardableResult func send(_ event: [String: Any]) -> Bool
+    func setRemoteVolume(_ value: Double)
+    func diagnose(_ write: @escaping @MainActor (String) -> Void)
+    func close()
+}
+
 /// One WebRTC connection to the OpenAI Realtime API: the microphone as the audio track, the model's
 /// voice on the speaker, and the `oai-events` data channel for events. Opened with a short-lived client
 /// secret; it never sees an API key. Callbacks arrive on the main actor.
-final class VoiceLink: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
+final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private static let factory: RTCPeerConnectionFactory = {
         // Voice chat: echo cancellation on, so Poki's own voice from the speaker doesn't interrupt it.
         let audio = RTCAudioSessionConfiguration.webRTC()

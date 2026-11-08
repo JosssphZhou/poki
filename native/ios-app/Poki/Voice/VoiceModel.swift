@@ -202,7 +202,7 @@ final class VoiceModel {
     /// Timestamps of the current turn, from the end of the person's speech.
     private(set) var clock = TurnClock()
 
-    private var link: VoiceLink?
+    private var link: VoiceConnection?
     /// session.created arrived on the current link: it takes events now.
     private var ready = false
     private var session = 0
@@ -223,12 +223,17 @@ final class VoiceModel {
     /// (its .playback session cannot record), and the voice-chat session keeps Poki running instead.
     private let holdMicrophone: @MainActor (Bool) -> Void
 
+    /// Opens the connection for one session: events, then why it closed.
+    private let connection: @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection
+
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String) async -> (String, Bool),
-         holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in }) {
+         holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
+         connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) }) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
         self.holdMicrophone = holdMicrophone
+        self.connection = connection
     }
     private var holdingMicrophone = false {
         didSet { if holdingMicrophone != oldValue { holdMicrophone(holdingMicrophone) } }
@@ -273,8 +278,8 @@ final class VoiceModel {
         do {
             let token = try await bridge.token()
             localTools = Set(token.local_tools)
-            let link = VoiceLink(onEvent: { [weak self] event in self?.handle(event, session: number) },
-                                 onClosed: { [weak self] reason in self?.closed(reason, session: number) })
+            let link = connection({ [weak self] event in self?.handle(event, session: number) },
+                                  { [weak self] reason in self?.closed(reason, session: number) })
             self.link = link
             if microphone { holdingMicrophone = true }
             try await link.connect(secret: token.value, microphone: microphone)
@@ -475,7 +480,7 @@ final class VoiceModel {
     }
 
     /// A new session after a drop: say what already ran, so the model reports it instead of asking again.
-    private func catchUp(_ link: VoiceLink) {
+    private func catchUp(_ link: VoiceConnection) {
         let running = calls.filter { $0.state == .running }
         if !running.isEmpty {
             link.send(Self.note("Before the connection dropped, these were started and are still running; their results will follow. Do not start them again: " + running.map { "\($0.name) \($0.arguments)" }.joined(separator: "; ")))
