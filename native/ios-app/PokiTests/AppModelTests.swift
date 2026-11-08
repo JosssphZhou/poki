@@ -17,10 +17,20 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private let lock = NSLock()
     private var open = false
     private var opened = 0
+    private var gate: DispatchSemaphore?
+    private var answer: [String: Any]?
     var isOpen: Bool { lock.withLock { open } }
     var timesOpened: Int { lock.withLock { opened } }
+    /// The next open waits, as one does while iOS asks for the passcode, until `answer(_:)`.
+    func holdNextOpen() { lock.withLock { gate = DispatchSemaphore(value: 0) } }
+    /// Lets a held open go on, with this answer instead of opening (nil opens).
+    func answer(_ result: [String: Any]?) { lock.withLock { answer = result; gate?.signal(); gate = nil } }
     func prepare() -> [String: Any] {
-        lock.withLock {
+        if let held = lock.withLock({ gate }) {
+            held.wait()
+            if let given = lock.withLock({ () -> [String: Any]? in defer { answer = nil }; return answer }) { return given }
+        }
+        return lock.withLock {
             let reused = open
             if !open { open = true; opened += 1 }
             return ["ok": true, "generation": opened, "reused": reused, "seconds": 0.0]
@@ -166,6 +176,7 @@ final class InProcessIdleTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        session?.answer(nil)
         guard let saved, let model else { return }
         model.stopSession()
         model.idleStopSeconds = saved.idle
@@ -212,6 +223,28 @@ final class InProcessIdleTests: XCTestCase {
         XCTAssertEqual(session.timesOpened, 2)
     }
 
+    /// Remote use at any time comes first (ESP-161): an owner who never chose an idle time, or chose
+    /// one before the in-process path honoured it, keeps the session open.
+    func testByDefaultTheSessionIsNeverEndedForIdle() {
+        for version in 1...9 { UserDefaults.standard.removeObject(forKey: "idleStopSeconds.v\(version)") }
+        UserDefaults.standard.setValuesForKeys(["idleStopSeconds.v4": 60])
+        let fresh = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
+        XCTAssertEqual(fresh.idleStopSeconds, 0)
+    }
+    func testAPasscodeWaitAsksTheOwnerAndTellsTheAgentWhoMustEnterIt() async {
+        session.holdNextOpen()
+        model.host.warmUp()
+        await waitFor("the agent's connection wakes Poki") { !self.model.runnerPaused }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        model.checkIdle(now: Date().addingTimeInterval(6))
+        XCTAssertTrue(model.passcodeHint, "Poki's home asks the owner for the passcode")
+        let waiting = model.host.runnerState().describe
+        XCTAssertTrue(waiting.contains("owner to enter the iPhone passcode"), waiting)
+        session.answer(["ok": false, "code": "com.apple.dt.XCTest.XCTFuture 1000", "detail": "Timed out while enabling automation mode.", "seconds": 60.0])
+        await waitFor("iOS gave up on the passcode") { !self.model.passcodeHint && !self.model.host.currentRunner.describe.hasPrefix("starting") }
+        let failed = model.host.currentRunner.describe
+        XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
+    }
     func testColdLaunchOpensNothing() {
         model.becameActive()
         model.runnerChanged(RunnerStatus(state: "running"))
