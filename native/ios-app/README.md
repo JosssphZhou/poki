@@ -123,11 +123,12 @@ the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `
 - A dropped connection sends nothing again. A call outlives the session that asked for it; the next
   session is told how it ended instead of asking for it again.
 - Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
-- A conversation is one request and its answer. Once the answer has played and no step it asked for
-  is running, the conversation ends and lets go of the microphone, so iOS's orange dot goes off.
-  Holding the voice page's button keeps it open. In the background Poki stops listening, unless a
-  step is running (the step brings another app to the front); that conversation ends once the step's
-  result is said.
+- Once an answer has played and no step it asked for is running, the conversation waits 8 s for the
+  person to go on in the same session. After 8 s of silence it ends and lets go of the microphone, so
+  iOS's orange dot goes off. Holding the voice page's button keeps it open. A conversation opened
+  within 5 minutes of the last end is told the last 6 lines that were said, from memory only (they
+  are never written to disk). In the background Poki stops listening at once, unless a step is
+  running (the step brings another app to the front); that conversation ends after its result is said.
 - A `poki://voice` link, from a web page or another app, only opens Voice: a link never
   changes the bridge and never turns on the microphone. The person enters the address and taps Talk
   to Poki.
