@@ -952,6 +952,9 @@ final class Computer: @unchecked Sendable {
         /// The screen is still the one `elements` were read from: after a launch, Home or a run the
         /// numbers and points of that read belong to another screen.
         var read = true
+        /// An action before this one may have changed the screen (a tap opens a conversation or a
+        /// photo): a point is not judged by what the read had under it.
+        var moved = false
         var typingTarget: Element?
         var secureOnScreen: Bool
         /// The elements to look under a point in; nil for the latest read (and its numbers).
@@ -973,6 +976,8 @@ final class Computer: @unchecked Sendable {
     func sensitive(_ action: JSON, _ scan: inout SensitiveScan) -> String? {
         let rules = config.sensitive
         guard rules.enabled else { return nil }
+        defer { if ["tap", "long_press", "type", "key", "swipe", "drag", "pinch", "scroll_to", "back"].contains(where: { action[$0] != nil }) { scan.moved = true } }
+        let messaging = scan.front?.bundleID.map(rules.messagingApps.contains) ?? false
         if let spec = action["launch"] {
             scan.front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil)
             scan.read = false; scan.typingTarget = nil
@@ -990,11 +995,16 @@ final class Computer: @unchecked Sendable {
             if let app { scan.front = Foreground(bundleID: app, name: nil) }
             scan.read = false; scan.typingTarget = nil
         } else if let spec = action["tap"] ?? action["long_press"] {
-            let e = scan.read ? target(spec, in: scan.elements) : nil
+            // In a messaging app any tap after one that may have opened another screen is on a screen
+            // not read yet: the composer's Send sits where the list had nothing.
+            let unread = !scan.read || (scan.moved && messaging)
+            let e = unread ? nil : target(spec, in: scan.elements)
             if action["tap"] != nil { scan.typingTarget = e }
             if let r = rules.reason(touching: e, typing: false, app: scan.front, secureOnScreen: scan.secureOnScreen) { return r }
-            if !scan.read, let bundle = scan.front?.bundleID, rules.messagingApps.contains(bundle) {
-                return "sending a message (a tap in \(scan.front?.describe ?? bundle) on a screen not read yet)"
+            let app = scan.front?.describe ?? "unknown"
+            if unread, messaging { return "sending a message (a tap in \(app) on a screen not read yet)" }
+            if scan.moved, spec.array != nil || spec["x"] != nil {
+                return "a tap at a point on a screen that may have changed since it was read (in \(app))"
             }
         } else if action["type"] != nil {
             let e = scan.read ? (scan.elements == nil ? action["ref"].flatMap { refs[$0.int ?? -1] } : nil) ?? scan.typingTarget : nil
