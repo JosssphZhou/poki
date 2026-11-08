@@ -28,6 +28,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { root, stateDir } from '../src/config.mjs';
 import { matching } from '../src/interaction.mjs';
+import { clientSecretRequest, defaultModel, sessionConfig, voiceTools } from '../src/voice-session.mjs';
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i < 0 ? fallback : process.argv[i + 1]; };
 const port = Number(arg('port', '47830'));
@@ -38,52 +39,7 @@ const macTools = process.argv.includes('--mac-tools');
 const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) { console.error('Set OPENAI_API_KEY (for example from the keychain) before starting the voice bridge.'); process.exit(1); }
 
-const model = process.env.POKI_VOICE_MODEL ?? 'gpt-realtime-2.1';
-const instructions = `You are Poki, a voice assistant that operates the user's iPhone with tools.
-Speak briefly: one short sentence per reply, in the user's language.
-When a tool can answer or do what the user asks, call it at once, without speaking first. Never guess facts about the phone; use a tool.
-A request can take several steps (open an app, tap, type): call one tool after another until it is done, then say in one short sentence that it is done. Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
-Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
-Only the user approves, with their own finger: never open Poki to tap Allow, Deny or anything else in it.
-If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
-To read a page, open it first, then read the screen.${macTools ? '' : `
-With do, open an app by its bundle id (Notes com.apple.mobilenotes, Weather com.apple.weather, Settings com.apple.Preferences, Messages com.apple.MobileSMS, Calculator com.apple.calculator, Clock com.apple.mobiletimer) and put several actions in one do when you know them; tap elements by the numbers from the latest look or do.`}`;
-
-// The voice tools. `local` tools are answered by the phone itself; the bridge runs the others through Poki MCP.
-const phoneTools = [
-  { name: 'get_ios_version', local: true, description: 'Read the iPhone model and its iOS version. Changes nothing on the phone.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'look', local: true, description: 'Read the iPhone screen now: the app in front and its numbered elements (role, label, frame in points).', parameters: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'do', local: true, description: 'Run actions on the iPhone in order, then read the screen once. Actions: {launch: "bundle id"}; {tap: n} or {tap: [x, y]}; {type: "text", ref?: n} (taps n first, then types); {key: "return"}; {scroll_to: "text"}; {swipe: "up"|"down"|"left"|"right"}; {button: "home"}; {wait_until: "text"}; {wait: ms}. The answer says what each action did and what is new on screen.', parameters: { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' } } }, required: ['actions'], additionalProperties: false } },
-];
-const macVoiceTools = [
-  { name: 'get_ios_version', local: true, description: 'Read the iPhone model and its iOS version. Changes nothing on the phone.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'open_settings', description: 'Open the Settings app on the iPhone, or one of its pages (about, general, software_update, battery, wifi, display, and so on). Leave out page to open Settings itself.', parameters: { type: 'object', properties: { page: { type: 'string', enum: ['about', 'general', 'software_update', 'battery', 'wifi', 'bluetooth', 'display', 'sounds', 'notifications', 'privacy', 'screen_time'] } }, additionalProperties: false } },
-  { name: 'read_screen', description: 'Read the text and controls on the iPhone screen now.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'open_app', description: 'Open an app on the iPhone by its name, for example Calculator, Clock, Weather.', parameters: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'], additionalProperties: false } },
-  { name: 'tap_text', description: 'Tap the visible button or row whose text matches.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false } },
-  { name: 'go_home', description: 'Go to the Home Screen.', parameters: { type: 'object', properties: {}, additionalProperties: false } },
-];
-const voiceTools = macTools ? macVoiceTools : phoneTools;
-
-function sessionConfig({ effort = 'low', vad = 'server_vad', voice = 'marin' } = {}) {
-  const turn = vad === 'semantic_vad'
-    ? { type: 'semantic_vad', eagerness: 'high', create_response: true, interrupt_response: true }
-    : { type: 'server_vad', silence_duration_ms: 450, prefix_padding_ms: 300, threshold: 0.5, create_response: true, interrupt_response: true };
-  return {
-    type: 'realtime',
-    model,
-    instructions,
-    output_modalities: ['audio'],
-    audio: {
-      input: { turn_detection: turn, noise_reduction: { type: 'near_field' }, transcription: { model: 'gpt-4o-mini-transcribe' } },
-      output: { voice },
-    },
-    tools: voiceTools.map(({ name, description, parameters }) => ({ type: 'function', name, description, parameters })),
-    tool_choice: 'auto',
-    parallel_tool_calls: false,
-    reasoning: { effort },
-  };
-}
+const model = process.env.POKI_VOICE_MODEL ?? defaultModel;
 
 const text = result => result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
 const clip = (s, n = 1800) => s.length > n ? `${s.slice(0, n)}…` : s;
@@ -188,17 +144,17 @@ async function runTool(mcp, { call_id, name, arguments: args = {}, checked }) {
 }
 
 async function mintToken(options) {
-  const session = sessionConfig(options);
+  const session = sessionConfig({ ...options, macTools, model });
   const response = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expires_after: { anchor: 'created_at', seconds: 60 }, session }),
+    body: JSON.stringify(clientSecretRequest(session)),
   });
   const body = await response.json();
   // OpenAI echoes a masked key in some errors; keep even that out of logs and replies.
   const reason = (body.error?.message ?? `client_secrets ${response.status}`).replace(/sk-[\w*-]+/g, 'the API key');
   if (!response.ok) throw Object.assign(new Error(reason), { status: response.status });
-  return { value: body.value, expires_at: body.expires_at, model, local_tools: voiceTools.filter(t => t.local).map(t => t.name) };
+  return { value: body.value, expires_at: body.expires_at, model, local_tools: voiceTools(macTools).filter(t => t.local).map(t => t.name) };
 }
 
 // A body that is not JSON is the caller's mistake: 400, not 500.
