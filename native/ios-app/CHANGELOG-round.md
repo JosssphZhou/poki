@@ -6,7 +6,7 @@ What changed in each round, and what still needs the phone. Newest first.
 
 Changed:
 - In-process path: an open of the automation session that has not answered in 5 s is waiting on iOS's passcode prompt. The Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent reads that only the owner can enter the iPhone passcode; when iOS gives up, the call fails with that reason (from #48).
-- Live voice stops after its answer: 8 s with nobody speaking ends the conversation, lets go of the microphone and turns the orange dot off; speaking within the 8 s goes on in the same conversation, and one opened within 5 minutes is told the last turns. In the background Poki stops listening, also while connecting, unless a step it was asked for is running, and then ends once the step's result is said (from #50).
+- Live voice stops after its answer: 8 s with nobody speaking ends the conversation, lets go of the microphone and turns the orange dot off; speaking within the 8 s goes on in the same conversation, and one opened within 5 minutes of the last conversation with something said in it is told the last turns. In the background Poki stops listening, also while connecting, unless a step it was asked for is running or its answer is still to be said, and then ends once that is said (from #50, #51).
 
 Needs the phone:
 - The passcode card when Automation Mode comes back on more than 8 hours after the passcode was last entered.
