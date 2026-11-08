@@ -768,7 +768,12 @@ PR #11 for HID input; this is its counterpart for the phone's own XCTest path.
 | Tapping an element whose label starts with a payment word, or is a short label (four words or fewer) holding one (Pay, Buy, Purchase, Subscribe, Transfer, Send money, 支付, 付款, 购买, 转账, …); a name inside a longer text is not an action (`Contact photo for Best Buy`) | approval |
 | Deleting (Delete, Remove, Erase, Reset, 删除, 移除, 抹掉, …) | approval |
 | Sending a message or mail (Send, 发送 in Messages, Mail, WeChat, WhatsApp, Telegram, …) | approval |
-| Apps on a list (banking, wallets; by bundle id) | approval for every input |
+| Apps on a list (banking, wallets; by bundle id) | approval for every tap, long press, typing, key and drag; waiting, handing the screen to the owner, swipes, Home and launches go without asking |
+| Any tap in Phone or FaceTime, also on a point with nothing readable under it | approval |
+
+The app each action lands in is followed through the `launch` and Home actions before it in the same `do`, as for the Poki check; the actions after one of them are checked against the launched app, and a tap there in a messaging app (whose screen PokiCore has not read yet) asks. An unanswered request ends by itself when its 120 s are up (`approvalEnded` with no answer), whether or not another call comes.
+
+The app turns these rules on unless the owner switched off Settings › Approvals › Ask Before Sensitive Steps (on by default; before this, alpha builds had it off). The auto-classifier (Diagnostics › Testing, off) answers in the owner's place when it is on.
 
 When an action matches, the plain actions before it in that `do` are sent first (seen on the phone:
 a last selection tap held back with the Delete after it meant the Delete, once approved, would have
