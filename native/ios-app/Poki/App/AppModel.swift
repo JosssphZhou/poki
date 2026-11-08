@@ -40,7 +40,11 @@ final class AppModel {
     /// runner runs it answers on port 8100 to the whole network. v5: before ESP-161 the in-process path
     /// ignored this setting, so a choice saved then did not mean what it means now.
     var idleStopSeconds: Int = UserDefaults.standard.object(forKey: AppModel.idleStopDefault) != nil ? UserDefaults.standard.integer(forKey: AppModel.idleStopDefault) : (AutomationPath.current == .inProcess ? 0 : 60) {
-        didSet { UserDefaults.standard.set(idleStopSeconds, forKey: Self.idleStopDefault); log.add("runner", "idle stop set to \(idleStopSeconds) s") }
+        didSet {
+            UserDefaults.standard.set(idleStopSeconds, forKey: Self.idleStopDefault)
+            log.add("runner", "idle stop set to \(idleStopSeconds) s")
+            openWhileTheOwnerHoldsThePhone("the owner chose Never")
+        }
     }
     static let idleStopDefault = "idleStopSeconds.v5"
     /// Poki was on when it last ran; it turns itself on again at launch.
@@ -422,6 +426,16 @@ final class AppModel {
         standBy(reason: nil)
         if let relay { core.start(relay: relay) }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.checkIdle() } }
+        openWhileTheOwnerHoldsThePhone("Poki turned on")
+    }
+
+    /// Idle time Never (ESP-161): the in-process session stays open anyway, so it opens as Poki turns on
+    /// (at launch too) or the owner picks Never, while the owner holds the phone. iOS's passcode prompt
+    /// then comes now, not with the first remote request after a restart. With an idle time set, Poki
+    /// waits for an agent or for coming back to the front.
+    private func openWhileTheOwnerHoldsThePhone(_ why: String) {
+        guard automationPath == .inProcess, idleStopSeconds == 0, sessionOn, runnerPaused else { return }
+        wakeRunner(why: "\(why), and the session is never ended for idle")
     }
 
     func stopSession() {
