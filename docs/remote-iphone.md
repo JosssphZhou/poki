@@ -68,9 +68,9 @@ for IPv6 link-local addresses, and the error macOS returned for it:
 
 - `Connection refused`: the address answered, but nothing accepted the port.
   Check the advertised port with `dns-sd -L`.
-- `No route to host` or `did not resolve` for a LAN address or `.local` name:
-  the Mac sent the connection through an interface that cannot reach the phone,
-  or macOS Local Network privacy blocked the helper. macOS 15 and later grant
+- `No route to host` or `did not resolve` for a LAN address or `.local` name
+  can mean that the Mac sent the connection through an interface that cannot
+  reach the phone, or that macOS Local Network privacy blocked the helper. macOS 15 and later grant
   local network access automatically only to programs started from Terminal or
   over SSH and the programs they start. When another app starts Poki, such as an
   editor's terminal or a desktop AI client, that app needs
