@@ -136,6 +136,11 @@ Commit ids are this branch's.
   CI simulator's runner for 19 s; the focus wait still uses tree reads. The read after a failure has
   its own 3 s limit. Whether to move it to tree reads too is still to decide.
 - The in-process session's `placeholderValue` answer (7dae05a) has not been tried on a phone.
+- iOS allows UI automation for 8 hours after the owner's passcode (`automationmode-writer` logs
+  "Credential timeout: 28800"). The in-process session therefore stays open by default (ESP-161).
+  With the optional idle time, the first session more than 8 hours after the last passcode asks for
+  it again, also when no one is at the phone; Poki shows the wait on the Live Activity and its home
+  after 5 s, and the agent's call fails after about a minute without it.
 - When the owner cancels the passcode prompt for the in-process session, the prompt can come back
   within a moment instead of at the next call.
 - The runner path can only be chosen at launch from the Mac (`-automationPath runner`) or with the

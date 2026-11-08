@@ -20,6 +20,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)isCurrent:(id)session generation:(uint64_t)generation;
 - (uint64_t)generation;
 - (BOOL)enableWasReused;
+// Closes the session's connection to testmanagerd, which ends Automation Mode. The next prepare opens a
+// new session (a new generation). YES when a session was open.
+- (BOOL)end;
 @end
 
 // Inserts into the CURRENTLY FOCUSED field. Does not focus, clear, paste or verify.

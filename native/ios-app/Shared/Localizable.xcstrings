@@ -291,6 +291,16 @@
         }
       }
     },
+    "AUTOMATION" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动化"
+          }
+        }
+      }
+    },
     "About 5 minutes. Everything stays on this iPhone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -2825,6 +2835,16 @@
         }
       }
     },
+    "Poki ends the automation session after this idle time, and the Automation Running banner goes with it. Opening it again more than 8 hours after the passcode was last entered asks for the iPhone passcode once, so a remote task fails while the iPhone is not with you." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空闲超过这个时长，Poki 会结束自动化会话，Automation Running 横幅随之消失。距上次输入密码超过 8 小时后再打开会话，要输入一次 iPhone 密码；手机不在身边时，远程任务会失败。"
+          }
+        }
+      }
+    },
     "Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3800,6 +3820,16 @@
         }
       }
     },
+    "The automation session stays open while Poki is on, so agents can use this iPhone at any time; iOS shows the Automation Running banner meanwhile. iOS asks for the passcode once after Poki restarts." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 开着时，自动化会话一直保持，智能体随时都能操作这台 iPhone，iOS 也会一直显示 Automation Running 横幅。Poki 重启后，iOS 会要你输入一次密码。"
+          }
+        }
+      }
+    },
     "The built-in connection runs on a physical iPhone. External connection options are shown below." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4620,6 +4650,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki Runner 被强制退出或 iPhone 重新启动后，iOS 会先要求输入锁屏密码，再允许 UI 自动化。只需输入一次，Poki 会自动继续。"
+          }
+        }
+      }
+    },
+    "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 重启后，或距上次输入密码超过 8 小时，iOS 会要求输入密码以允许 UI 自动化。输入一次即可，Poki 会自己继续。"
           }
         }
       }

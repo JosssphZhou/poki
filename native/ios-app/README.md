@@ -49,11 +49,23 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 
 ## How it runs
 
-- Poki stays on once turned on, and turns on again at launch. Once the launcher has mounted the
-  disk image, Poki opens its automation session (the log says `in-process session ready`), so the
-  first look does not wait for it. The session, and with it iOS's automation banner, stays open until
-  Poki exits; it is not stopped for idle. If it cannot be opened, an agent's call answers at once with
-  the reason, and the next call, Poki coming to the front, or an agent connecting tries again.
+- Poki stays on once turned on, and turns on again at launch. By default (Settings > Automation >
+  Stop When Idle For: Never) its automation session opens as Poki turns on, at launch too, and
+  stays open, and with it iOS's Automation Running banner, so agents reach the phone at any time.
+  iOS asks for the passcode once after Poki restarts, while the owner holds the phone. If the owner
+  picks an idle time (30 s to 5 min), the session opens only when an agent connects or calls, or when
+  Poki comes back to the front from the background (a cold launch and the background open nothing),
+  and Poki ends it after that long with no agent activity, and the banner goes; the disk image stays
+  mounted, so the next call only opens a new session. The log says `in-process session ready` when
+  it opens. Stop on the Live Activity or in Poki and Turn off end it
+  too. If it cannot be opened, an agent's call answers at once with the reason, and the next call,
+  Poki coming to the front, or an agent connecting tries again.
+- iOS asks the owner for the passcode before it allows UI automation, and the permission lasts 8
+  hours (`automationmode-writer`: credential timeout 28800 s). With an idle time set, a session that
+  opens more than 8 hours after the last passcode waits up to a minute for it: after 5 s Poki asks
+  the owner on the Live Activity and its home, and an agent's call reads that the owner has to enter
+  the passcode on the phone. Without it the call fails with that reason, so a remote task fails while
+  the phone is not with the owner. Settings says so under the idle time.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
@@ -196,7 +208,9 @@ Setup
 - [ ] Let Poki stay on: Allow location shows iOS's prompt; Live Activities show as on.
 
 Turned on
-- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; once the session opens, the log says `in-process session ready` and the automation banner shows.
+- [ ] Turn on with the default idle time (Never): the session opens at once (iOS asks for the passcode here after a restart), the log says `in-process session ready`, and the banner shows and stays. With an idle time set, a cold launch shows no banner until an agent connects or calls.
+- [ ] Idle time 30 s: after it with no calls the log says `in-process session ended` and the banner goes, with Poki in front and in the background; the next call opens a new session and answers with the screen. Settings shows the 8-hour passcode note under the idle time.
+- [ ] A session opened more than 8 hours after the last passcode: the Live Activity shows "Passcode for automation" and Poki's home asks for it; the agent reads that the owner must enter it; entering it opens the session.
 - [ ] An agent's first call finds the session open; its steps show on the Lock Screen and in the chat.
 - [ ] No banner flicker during a run; a slow swipe or drag does not reopen the session.
 - [ ] Runner path only: no banner until an agent's first call starts the runner; opening Poki Runner while in use shows "Poki is using this iPhone"; Stop on the Live Activity or in Poki takes the banner away within seconds and the next call starts it again; after the idle time with no calls, the banner goes away by itself.
