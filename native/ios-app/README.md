@@ -49,14 +49,15 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 
 ## How it runs
 
-- Poki stays on once turned on, and turns on again at launch. Its automation session opens when an
-  agent connects or calls, and when Poki comes back to the front from the background (the log says
-  `in-process session ready`), so the first look does not wait for it; a cold launch and the
-  background open nothing. By default (Settings > Stop When Idle For: Never) it then stays open, and
-  with it iOS's Automation Running banner, so agents reach the phone at any time; iOS asks for the
-  passcode once after Poki restarts. If the owner picks an idle time (30 s to 5 min), Poki ends the
-  session after that long with no agent activity, and the banner goes; the disk image stays mounted,
-  so the next call only opens a new session. Stop on the Live Activity or in Poki and Turn off end it
+- Poki stays on once turned on, and turns on again at launch. By default (Settings > Automation >
+  Stop When Idle For: Never) its automation session opens as Poki turns on, at launch too, and
+  stays open, and with it iOS's Automation Running banner, so agents reach the phone at any time.
+  iOS asks for the passcode once after Poki restarts, while the owner holds the phone. If the owner
+  picks an idle time (30 s to 5 min), the session opens only when an agent connects or calls, or when
+  Poki comes back to the front from the background (a cold launch and the background open nothing),
+  and Poki ends it after that long with no agent activity, and the banner goes; the disk image stays
+  mounted, so the next call only opens a new session. The log says `in-process session ready` when
+  it opens. Stop on the Live Activity or in Poki and Turn off end it
   too. If it cannot be opened, an agent's call answers at once with the reason, and the next call,
   Poki coming to the front, or an agent connecting tries again.
 - iOS asks the owner for the passcode before it allows UI automation, and the permission lasts 8
@@ -207,7 +208,7 @@ Setup
 - [ ] Let Poki stay on: Allow location shows iOS's prompt; Live Activities show as on.
 
 Turned on
-- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; no automation banner until an agent connects or calls, then the log says `in-process session ready` and the banner shows. With the default idle time (Never) it stays.
+- [ ] Turn on with the default idle time (Never): the session opens at once (iOS asks for the passcode here after a restart), the log says `in-process session ready`, and the banner shows and stays. With an idle time set, a cold launch shows no banner until an agent connects or calls.
 - [ ] Idle time 30 s: after it with no calls the log says `in-process session ended` and the banner goes, with Poki in front and in the background; the next call opens a new session and answers with the screen. Settings shows the 8-hour passcode note under the idle time.
 - [ ] A session opened more than 8 hours after the last passcode: the Live Activity shows "Passcode for automation" and Poki's home asks for it; the agent reads that the owner must enter it; entering it opens the session.
 - [ ] An agent's first call finds the session open; its steps show on the Lock Screen and in the chat.
