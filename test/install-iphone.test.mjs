@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile, chmod } from 'node:fs/promises
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { root } from '../src/config.mjs';
+import { redactText } from '../src/install/redact.mjs';
 
 const exec = promisify(execFile);
 const cli = join(root, 'bin/install-iphone.mjs');
@@ -445,6 +446,30 @@ test('diagnose reads Poki Setup\'s own log where Poki Setup keeps it on macOS', 
   const env = { ...process.env, HOME: home, POKI_FAKE_UNPLUGGED_CALLS: '0' };
   const bundle = JSON.parse((await exec(process.execPath, [cli, 'diagnose', '--no-device', '--state', state], { env })).stdout);
   assert.ok(bundle.poki_setup_log?.some(line => line.includes('iOS refused the install')), 'the bundle carries Poki Setup\'s log');
+});
+
+test('diagnose drops the Apple team id and certificate ids from Poki Setup\'s log', async t => {
+  const home = await fakeHome(t);
+  const state = await stateDir(t);
+  const setupHome = join(home, 'Library/Application Support/nz.Poki.Poki-Setup');
+  await mkdir(join(setupHome, 'logs'), { recursive: true });
+  await mkdir(join(setupHome, 'state'), { recursive: true });
+  // The two lines as Poki Setup writes them while signing and installing, with made-up values.
+  await writeFile(join(setupHome, 'logs/poki-setup.log'), [
+    '2026-11-09T03:45:38.992476Z  INFO poki_setup_core::apple::portal: certificate request accepted certificate_id=QWERTY7788 cert_request_id=ZXCVB65432 serial=6F1A2B3C4D5E6F7A8B9C0D1E2F3A4B',
+    `2026-11-09T03:45:46.325548Z  INFO poki_setup_core::device::install: uploading and installing the app upgrade=false bytes=22817612 ipa=${setupHome}/cache/Poki-ABCDE12345-00008140-001A2B3C4D5E6F70.ipa`,
+    '',
+  ].join('\n'));
+  await writeFile(join(setupHome, 'state/phones.json'), JSON.stringify([{ udid: '00008140-001A2B3C4D5E6F70', team_id: 'ABCDE12345', team_is_free: true }]));
+  const env = { ...process.env, HOME: home, POKI_FAKE_UNPLUGGED_CALLS: '0' };
+  const { stdout } = await exec(process.execPath, [cli, 'diagnose', '--no-device', '--state', state], { env });
+  assert.ok(JSON.parse(stdout).poki_setup_log?.some(line => line.includes('uploading and installing the app')), 'the install line is still there');
+  assert.doesNotMatch(stdout, /ABCDE12345/, 'the team id from phones.json is removed');
+  assert.doesNotMatch(stdout, /QWERTY7788|ZXCVB65432/, 'the certificate ids are removed');
+  // A team that phones.json no longer names, such as an earlier Apple Account's, goes by the file name.
+  const line = redactText('ipa=/tmp/cache/Poki-KLMNO67890-00008140-001A2B3C4D5E6F70.ipa');
+  assert.doesNotMatch(line, /KLMNO67890/, 'the team id in the ipa file name is removed');
+  assert.match(line, /Poki-.+\.ipa/, 'the file name keeps its shape');
 });
 
 test('a phone that is already paired is not a person stop: the Trust reminder becomes a note', async t => {
