@@ -614,6 +614,37 @@ test('the install-poki skill walks the same steps and person stops as the instal
   assert.match(skill, /node bin\/install-iphone\.mjs run/, 'the skill runs the installer instead of repeating it');
 });
 
+test('expired signing is renewed on rerun and an expired final record is rejected', async t => {
+  for (const staysExpired of [false, true]) await t.test(String(staysExpired), async t => {
+    const state = await stateDir(t);
+    const bridge = join(state, 'expired.mjs');
+    const expired = { udid: '00008999-000A11B22C33D44E', bundle_id: 'nz.zheha.poki.TEAMID1234', version: '0.2.8', build: '501', profile_expires_at: 1 };
+    await writeFile(bridge, `
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+const child = spawn(process.execPath, [${JSON.stringify(fakeBridge)}], { stdio: ['pipe', 'pipe', 'inherit'] });
+const commands = new Map();
+let installed = false;
+createInterface({ input: process.stdin }).on('line', line => {
+  const req = JSON.parse(line); commands.set(req.id, req.cmd);
+  if (req.cmd === 'install') installed = true;
+  child.stdin.write(line + '\\n');
+}).on('close', () => child.stdin.end());
+createInterface({ input: child.stdout }).on('line', line => {
+  const res = JSON.parse(line);
+  if (commands.get(res.id) === 'records' && (!installed || ${staysExpired})) res.ok = [${JSON.stringify(expired)}];
+  process.stdout.write(JSON.stringify(res) + '\\n');
+});
+`);
+    await writeFile(join(state, 'run.json'), JSON.stringify({ channel: 'alpha', dry_run: false, steps: { install: { status: 'ok' }, open_poki: { status: 'ok' } } }));
+    const result = await runInstaller(state, { args: ['--bridge', bridge], answer: personAnswers(state) });
+    assert.ok(result.events.some(e => e.event === 'done' && e.step === 'install'), 'expired signing is installed again');
+    assert.equal(result.code, staysExpired ? 2 : 0, result.stderr);
+    assert.equal(result.events.at(-1).ok, !staysExpired);
+    if (staysExpired) assert.equal(result.events.at(-1).code, 'check_failed');
+  });
+});
+
 test('a Poki too old to write its hello still counts as open once devicectl sees it running', async t => {
   const state = await stateDir(t);
   const mac = await fakePhoneAndMac(t, { devicectl: true });
