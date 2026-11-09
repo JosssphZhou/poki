@@ -5,6 +5,11 @@
 import SwiftUI
 import MarkdownUI
 
+enum ChatLayout {
+    /// All message kinds share the transcript's available width, capped on wider screens.
+    static let maximumMessageWidth: CGFloat = 640
+}
+
 struct MessageBubble: View {
     enum Direction { case incoming, outgoing }
     var direction: Direction
@@ -17,13 +22,13 @@ struct MessageBubble: View {
         if direction == .incoming {
             AssistantMarkdown(text: text).equatable()
                 .tint(Site.blue)
-                .frame(maxWidth: 640, alignment: .leading)
+                .frame(maxWidth: ChatLayout.maximumMessageWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
                 .contextMenu { copyButton { UIPasteboard.general.string = text } }
         } else {
-            HStack {
-                Spacer(minLength: .messageInsetPadding)
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
                 Text(verbatim: text)
                     .font(.system(size: 16))
                     .tint(.white)
@@ -34,8 +39,9 @@ struct MessageBubble: View {
                     .background(Site.blue, in: shape)
                     .contentShape(.contextMenuPreview, shape)
                     .contextMenu { copyButton { UIPasteboard.general.string = text } }
-                    .frame(maxWidth: 280, alignment: .trailing)
             }
+            .frame(maxWidth: ChatLayout.maximumMessageWidth, alignment: .trailing)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 

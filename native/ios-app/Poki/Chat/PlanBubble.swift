@@ -14,9 +14,9 @@ struct PlanBubble: View {
         .animation(PlanMotion.enter, value: steps)
         .padding(.vertical, 10)
         .padding(.leading, 14).padding(.trailing, 12)
-        .frame(maxWidth: 320, alignment: .leading)
         .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: tail ? .tailRadius : .cornerRadius,
                                                                     bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
+        .frame(maxWidth: ChatLayout.maximumMessageWidth, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 }

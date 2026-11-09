@@ -171,7 +171,6 @@ struct ChatTranscript<Footer: View>: View {
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
             PlanBubble(steps: steps, tail: isLast(i, poki: true))
-                .padding(.trailing, 20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(PlanMotion.stepTransition)

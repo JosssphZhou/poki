@@ -56,6 +56,73 @@ final class ChatPresentationTests: XCTestCase {
         XCTAssertTrue(html.contains("<strong>总花费：R$50.00（巴西雷亚尔）</strong>"), html)
     }
 
+    func testMessageWidthsExpandTogetherAndShortBubblesStayCompact() throws {
+        let longText = String(repeating: "请查看当前页面并整理可见内容。", count: 12)
+        for screenWidth: CGFloat in [320, 393, 768] {
+            let available = screenWidth - 32
+            let maximum = min(available, ChatLayout.maximumMessageWidth)
+            let outgoing = MessageBubble(direction: .outgoing, text: longText, tail: true)
+            let plan = PlanBubble(steps: [PlanStep(longText, state: .done)], tail: true)
+            let userBounds = try paintedBounds(of: outgoing, width: available)
+            let planBounds = try paintedBounds(of: plan, width: available)
+            // Text can shrink to its longest wrapped line by up to one glyph. Both kinds
+            // must reach the common limit rather than retain the old 280/320-point caps.
+            XCTAssertGreaterThan(userBounds.width, maximum - 17)
+            XCTAssertLessThanOrEqual(userBounds.width, maximum + 1)
+            XCTAssertGreaterThan(planBounds.width, maximum - 16)
+            XCTAssertLessThanOrEqual(planBounds.width, maximum + 1)
+            XCTAssertEqual(userBounds.maxX, available, accuracy: 1)
+            XCTAssertEqual(planBounds.minX, 0, accuracy: 1)
+
+            let shortUser = try paintedBounds(of: MessageBubble(direction: .outgoing, text: "好的", tail: true), width: available)
+            let shortPlan = try paintedBounds(of: PlanBubble(steps: [PlanStep("已完成", state: .done)], tail: true), width: available)
+            XCTAssertLessThan(shortUser.width, 100)
+            XCTAssertLessThan(shortPlan.width, 150)
+            XCTAssertEqual(shortUser.maxX, available, accuracy: 1)
+            XCTAssertEqual(shortPlan.minX, 0, accuracy: 1)
+
+            let assistant = MessageBubble(direction: .incoming, text: longText, tail: true)
+            let size = UIHostingController(rootView: assistant).sizeThatFits(in: CGSize(width: available, height: 10_000))
+            XCTAssertEqual(size.width, available, accuracy: 1)
+            let preview = VStack(alignment: .leading, spacing: 16) {
+                outgoing
+                MessageBubble(direction: .outgoing, text: "好的", tail: true)
+                assistant
+                plan.frame(maxWidth: .infinity, alignment: .leading)
+                PlanBubble(steps: [PlanStep("已完成", state: .done)], tail: true)
+            }.padding(16).frame(width: screenWidth).background(Color.white).environment(\.colorScheme, .light)
+            let attachment = XCTAttachment(image: try XCTUnwrap(ImageRenderer(content: preview).uiImage))
+            attachment.name = "unified-message-widths-\(Int(screenWidth))pt"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func paintedBounds<V: View>(of content: V, width: CGFloat) throws -> CGRect {
+        let renderer = ImageRenderer(content: content.frame(width: width, alignment: .leading)
+            .background(Color.white).environment(\.colorScheme, .light))
+        renderer.scale = 2
+        let cg = try XCTUnwrap(renderer.uiImage?.cgImage)
+        var pixels = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+        let context = try XCTUnwrap(CGContext(data: &pixels, width: cg.width, height: cg.height,
+            bitsPerComponent: 8, bytesPerRow: cg.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        var left = cg.width, right = -1
+        for y in 0..<cg.height {
+            for x in 0..<cg.width {
+                let i = (y * cg.width + x) * 4
+                if min(pixels[i], pixels[i + 1], pixels[i + 2]) < 245 {
+                    left = min(left, x)
+                    right = max(right, x)
+                }
+            }
+        }
+        XCTAssertGreaterThanOrEqual(right, left)
+        return CGRect(x: CGFloat(left) / renderer.scale, y: 0,
+            width: CGFloat(right - left + 1) / renderer.scale, height: CGFloat(cg.height) / renderer.scale)
+    }
+
     func testWideTableStaysInsideNarrowChatBubble() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         for width: CGFloat in [320, 393] {
@@ -151,7 +218,6 @@ final class ChatPresentationTests: XCTestCase {
 
             let root = VStack(alignment: .leading, spacing: 18) {
                 PlanBubble(steps: [PlanStep("已打开活动页面", state: .done), PlanStep(text)], tail: true)
-                    .padding(.trailing, 20)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 PlanTypingLabel(text: text, cursorVisible: true, font: .system(size: 15), color: .primary)
                     .frame(width: 150, alignment: .leading)
