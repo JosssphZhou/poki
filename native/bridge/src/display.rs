@@ -14,12 +14,20 @@ pub struct Display {
     pub orientation: Option<u64>,
 }
 
-pub async fn active(adapter: &mut AdapterHandle, rsd: &RsdHandshake) -> Result<Display> {
-    let port = rsd
-        .services
-        .get("com.apple.coredevice.deviceinfo")
-        .ok_or("CoreDevice display information is unavailable")?
-        .port;
+/// The active integrated display, or `None` when the phone does not advertise CoreDevice device
+/// information. Callers then keep the single-display defaults: display 1, the main touchscreen HID
+/// service, the DVT screenshot and the cached AX subscription.
+pub async fn active(adapter: &mut AdapterHandle, rsd: &RsdHandshake) -> Result<Option<Display>> {
+    // Boxed so the query does not enlarge every input and read future that awaits it; inline, the
+    // tap path overflowed the 2 MiB stack of a debug test thread.
+    Box::pin(query(adapter, rsd)).await
+}
+
+async fn query(adapter: &mut AdapterHandle, rsd: &RsdHandshake) -> Result<Option<Display>> {
+    let Some(service) = rsd.services.get("com.apple.coredevice.deviceinfo") else {
+        return Ok(None);
+    };
+    let port = service.port;
     let mut client = CoreDeviceServiceClient::new(adapter.connect(port).await?).await?;
     let info = client
         .invoke_with_plist(
@@ -27,7 +35,7 @@ pub async fn active(adapter: &mut AdapterHandle, rsd: &RsdHandshake) -> Result<D
             plist::Dictionary::new(),
         )
         .await?;
-    select(&serde_json::to_value(info)?)
+    select(&serde_json::to_value(info)?).map(Some)
 }
 
 fn select(info: &Value) -> Result<Display> {

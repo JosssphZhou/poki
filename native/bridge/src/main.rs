@@ -38,7 +38,12 @@ impl Touch {
     ) -> Result<Self> {
         let display = display::active(adapter, rsd).await?;
         let mut client = Hid::connect_rsd(adapter, rsd).await?;
-        let surface = display::touch_surface(&display, &client.list_connected_services().await?)?;
+        let surface = match display {
+            Some(display) => {
+                display::touch_surface(&display, &client.list_connected_services().await?)?
+            }
+            None => idevice::core_device::hid::DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+        };
         Ok(Self { client, surface })
     }
     async fn send_touchscreen(
@@ -101,8 +106,8 @@ impl InputMedia {
         adapter: &mut idevice::tcp::handle::AdapterHandle,
         rsd: &mut RsdHandshake,
     ) -> Result<Self> {
-        let display = display::active(adapter, rsd).await?;
-        let stream = stream::start_screen_media_stream(adapter, rsd, display.id)
+        let display_id = display::active(adapter, rsd).await?.map_or(1, |d| d.id);
+        let stream = stream::start_screen_media_stream(adapter, rsd, display_id)
             .await
             .map_err(|e| {
                 if e.is::<NoDisplayService>() {
@@ -538,14 +543,10 @@ async fn execute_connected(
         };
     }
     if let Request::Screenshot { path } = request {
-        let display = display::active(adapter, rsd).await?;
-        let bytes = if display.primary {
-            let mut dvt =
-                idevice::dvt::remote_server::RemoteServerClient::connect_rsd(adapter, rsd).await?;
-            dvt.read_message(0).await?;
-            let mut screenshot = idevice::dvt::screenshot::ScreenshotClient::new(&mut dvt).await?;
-            screenshot.take_screenshot().await?
-        } else {
+        let secondary = display::active(adapter, rsd)
+            .await?
+            .filter(|display| !display.primary);
+        let bytes = if let Some(display) = secondary {
             let mut capture =
                 idevice::core_device::ScreenCaptureServiceClient::connect_rsd(adapter, rsd).await?;
             capture
@@ -554,6 +555,12 @@ async fn execute_connected(
                     idevice::core_device::ImageFormat::Png,
                 )
                 .await?
+        } else {
+            let mut dvt =
+                idevice::dvt::remote_server::RemoteServerClient::connect_rsd(adapter, rsd).await?;
+            dvt.read_message(0).await?;
+            let mut screenshot = idevice::dvt::screenshot::ScreenshotClient::new(&mut dvt).await?;
+            screenshot.take_screenshot().await?
         };
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;

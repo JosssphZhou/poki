@@ -17,7 +17,7 @@ test('observe_device omits PNG only when requested', async t => {
   assert.equal(second.prompt.status, 'checked');
   assert.ok(second.elements.length > 0);
   assert.ok(second.elements.every(element => /^e\d+$/.test(element.ref)));
-  const screenshots = (await f.events()).filter(event => event.args?.includes('screenshot'));
+  const screenshots = (await f.events()).filter(event => event.op === 'screenshot');
   assert.equal(screenshots.length, 2, 'Internal capture still occurs for structured-only responses');
 });
 test('missing prompt OCR remains explicit without an image attachment', async t => {
