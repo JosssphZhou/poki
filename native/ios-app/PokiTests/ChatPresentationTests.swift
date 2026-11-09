@@ -99,6 +99,41 @@ final class ChatPresentationTests: XCTestCase {
         }
     }
 
+    func testPlanCursorInkIsCenteredWithChineseAndLatinCapitals() throws {
+        for sample in ["国", "H"] {
+            let content = PlanTypingLabel(text: sample, cursorVisible: true,
+                font: .system(size: 15), color: .black)
+                .padding(20).background(Color.white)
+            let renderer = ImageRenderer(content: content)
+            renderer.scale = 3
+            let cg = try XCTUnwrap(renderer.uiImage?.cgImage)
+            var pixels = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+            let context = try XCTUnwrap(CGContext(data: &pixels, width: cg.width, height: cg.height,
+                bitsPerComponent: 8, bytesPerRow: cg.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+            var rowsByColumn: [Int: [Int]] = [:]
+            for y in 0..<cg.height {
+                for x in 0..<cg.width {
+                    let offset = (y * cg.width + x) * 4
+                    if pixels[offset] < 150 && pixels[offset + 1] < 150 && pixels[offset + 2] < 150 {
+                        rowsByColumn[x, default: []].append(y)
+                    }
+                }
+            }
+            let columns = rowsByColumn.keys.sorted()
+            let last = try XCTUnwrap(columns.last)
+            var cursorStart = last
+            while rowsByColumn[cursorStart - 1] != nil { cursorStart -= 1 }
+            let cursorRows = columns.filter { $0 >= cursorStart }.flatMap { rowsByColumn[$0]! }
+            let letterRows = columns.filter { $0 < cursorStart }.flatMap { rowsByColumn[$0]! }
+            let cursorMid = Double(try XCTUnwrap(cursorRows.min()) + XCTUnwrap(cursorRows.max())) / 2
+            let letterMid = Double(try XCTUnwrap(letterRows.min()) + XCTUnwrap(letterRows.max())) / 2
+            XCTAssertEqual(cursorMid / renderer.scale, letterMid / renderer.scale, accuracy: 1,
+                "cursor ink must be centred with \(sample), not merely share its baseline")
+        }
+    }
+
     func testPlanCursorWrapsWithTextWithoutBlinkLayoutChanges() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let text = "正在查看餐厅菜单与今日优惠活动"

@@ -152,7 +152,9 @@ struct PlanTypingLabel: View {
 
     var body: some View {
         (Text(verbatim: text).foregroundColor(color)
-         + Text(verbatim: "\u{2009}|").foregroundColor(cursorVisible ? color : .clear))
+         + Text(verbatim: "\u{2009}|")
+            // SF's bar extends below the baseline; centre its ink with the text's cap height.
+            .baselineOffset(1.5).foregroundColor(cursorVisible ? color : .clear))
             .font(font)
     }
 }
