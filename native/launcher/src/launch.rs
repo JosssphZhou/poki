@@ -70,11 +70,7 @@ pub async fn wait_ready(session: &mut Session, wda: SocketAddr, limit: Duration,
         }
         if session.is_finished() {
             let result = session.await.map_err(|e| Failure::new(e.to_string()))?;
-            let detail = match result {
-                Ok(()) => "the runner's test session ended before WebDriverAgent answered".to_string(),
-                Err(e) => format!("the runner did not start: {e}"),
-            };
-            return Err(Failure::new(detail).fix(format!("{DEVELOPER_MODE_FIX} If it is on: in Settings → General → VPN & Device Management, trust the developer of Poki Runner.")));
+            return Err(ended_before_ready(result));
         }
         if status(wda, Duration::from_secs(2)).await {
             return Ok(());
@@ -85,6 +81,15 @@ pub async fn wait_ready(session: &mut Session, wda: SocketAddr, limit: Duration,
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
+}
+
+/// The runner's test session ended before WebDriverAgent answered.
+pub(crate) fn ended_before_ready(result: std::result::Result<(), idevice::IdeviceError>) -> Failure {
+    let detail = match result {
+        Ok(()) => "the runner's test session ended before WebDriverAgent answered".to_string(),
+        Err(e) => format!("the runner did not start: {e}"),
+    };
+    Failure::new(detail).fix(format!("{DEVELOPER_MODE_FIX} If it is on: in Settings → General → VPN & Device Management, trust the developer of Poki Runner."))
 }
 
 /// One GET /status; true when WebDriverAgent answers 200.

@@ -102,6 +102,17 @@ impl Pairing {
     }
 }
 
+/// What a failed remote pairing connection tells the owner to do.
+pub(crate) fn remote_failure(error: remote::RemoteError) -> Failure {
+    let fix = match error.stage {
+        remote::Stage::Connect => LOOPBACK_FIX,
+        remote::Stage::Handshake => HANDSHAKE_FIX,
+        remote::Stage::PairVerify => PAIRING_FIX,
+        _ => DEVELOPER_MODE_FIX,
+    };
+    Failure::new(error.to_string()).fix(fix)
+}
+
 /// An open tunnel. Dropping it closes everything that runs through it, the runner's session included.
 pub struct Device {
     pub adapter: AdapterHandle,
@@ -120,15 +131,7 @@ impl Device {
     async fn open_inner(address: IpAddr, pairing: &mut Pairing) -> Result<Self> {
         match pairing {
             Pairing::Remote { file, host_name } => {
-                let (adapter, rsd, control) = remote::connect(address, file, host_name, |_| {}).await.map_err(|e| {
-                    let fix = match e.stage {
-                        remote::Stage::Connect => LOOPBACK_FIX,
-                        remote::Stage::Handshake => HANDSHAKE_FIX,
-                        remote::Stage::PairVerify => PAIRING_FIX,
-                        _ => DEVELOPER_MODE_FIX,
-                    };
-                    Failure::new(e.to_string()).fix(fix)
-                })?;
+                let (adapter, rsd, control) = remote::connect(address, file, host_name, |_| {}).await.map_err(remote_failure)?;
                 Ok(Self { adapter, rsd, _control: Some(control) })
             }
             Pairing::Lockdown(file) => {
