@@ -76,6 +76,8 @@ npm ci --no-audit --no-fund
 npm start
 ```
 
+Mac MCP now lists four tools by default: `look`, `do`, `status`, and `mac`. Use `mac {tool, describe:true}` to inspect a Mac capability and `mac {tool, arguments}` to execute it. Old names still work for one release with a migration notice. All existing capabilities remain available. App routines and phone-side approvals are not implemented on Mac. Payments, deleting and sending messages through Mac input have no approval protection. See [platform differences and the migration table](docs/mcp-app-tools.md).
+
 The package includes the native bridge and idevice tools. You do not need Rust or `./bin/setup`. You still need macOS on Apple Silicon, full Xcode, Node.js 24+, Python 3, and ffmpeg. Register your MCP client and install the optional Agent as described below.
 
 In another terminal, from the same directory, register the MCP server:
@@ -125,7 +127,7 @@ Physical iPhone support has been verified only on iPhones using the Chinese inte
 | --- | --- |
 | Installation, other MCP clients, and troubleshooting | [Install guide](docs/install.md) |
 | Poki Agent, models, iMessage, and Telegram | [Run Poki Agent](agent/README.md) |
-| MCP tool reference | [Tool behavior](docs/tools.md) |
+| MCP tool reference | [Tool behavior](docs/tools.md) and [App-aligned tool migration](docs/mcp-app-tools.md) |
 | Environment variables and sessions | [Configuration](docs/configuration.md) |
 | USB pairing, Developer Mode, and Wi-Fi | [Physical iPhone setup](docs/physical-iphone.md) |
 | Test results, known limits, and disclaimers | [Verification](docs/verification.md) |
