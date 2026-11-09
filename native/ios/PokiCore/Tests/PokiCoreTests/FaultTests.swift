@@ -1519,6 +1519,31 @@ final class GymTests: XCTestCase {
         }
     }
 
+    func testLaunchFallsBackToBundleSyntaxOnlyWhenDirectoryFails() async {
+        let (core, wda, host) = makeCore()
+        _ = await core.call("look", [:])
+        wda.set("GET /wda/activeAppInfo") { _ in
+            (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]])
+        }
+        let bundle = "com.apple.mobilesafari"
+        host.apps.value = []
+        let absent = await core.call("do", ["actions": [["launch": .string(bundle)]]])
+        XCTAssertTrue(absent.text.contains("No installed app matches"), absent.text)
+        XCTAssertTrue(wda.bodies("POST /wda/apps/activate").isEmpty)
+
+        host.apps.value = nil
+        let fallback = await core.call("do", ["actions": [["launch": .string(bundle)]]])
+        XCTAssertTrue(fallback.text.contains("did: launch \(bundle)"), fallback.text)
+        let names: [JSON] = ["Safari", ["name": "Booking.com"]]
+        for launch in names {
+            let before = wda.sent.count
+            let rejected = await core.call("do", ["actions": [["tap": 1], ["launch": launch]]])
+            XCTAssertTrue(rejected.isError, rejected.text)
+            XCTAssertTrue(rejected.text.contains("directory is unavailable"), rejected.text)
+            XCTAssertFalse(wda.sent.dropFirst(before).contains { $0.hasPrefix("POST ") }, rejected.text)
+        }
+    }
+
     func testLaunchingPokiByNameCannotBypassOwnAppProtection() async {
         let (core, wda, host) = makeCore()
         host.apps.value = [InstalledApp(bundleID: "nz.zheha.poki", displayName: "Poki")]
@@ -1549,7 +1574,7 @@ final class GymTests: XCTestCase {
             XCTAssertFalse(result.isError, result.text)
             XCTAssertTrue(result.text.contains("launch com.apple.mobilesafari"), result.text)
         }
-        host.apps.value.append(InstalledApp(bundleID: "local.safari", displayName: "Safari"))
+        host.apps.value?.append(InstalledApp(bundleID: "local.safari", displayName: "Safari"))
         for name in ["Safari", "Missing"] {
             let before = wda.bodies("POST /wda/apps/activate").count
             let result = await core.call("do", ["actions": [["launch": .string(name)]]])

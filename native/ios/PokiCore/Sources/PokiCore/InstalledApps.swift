@@ -19,7 +19,7 @@ public struct AppDirectoryUnavailable: Error, LocalizedError {
 
 extension Computer {
     func resolveLaunches(_ actions: [JSON]) async throws -> [JSON] {
-        var directory: [InstalledApp]?
+        var directory: Result<[InstalledApp], Error>?
         func normalized(_ name: String) -> String {
             name.lowercased().filter { !$0.isWhitespace }
         }
@@ -30,13 +30,22 @@ extension Computer {
             guard let query = spec.string ?? spec["name"]?.string, !normalized(query).isEmpty else {
                 throw ActionFailure(message: "launch takes an app name or bundle id", delivery: .notSent)
             }
-            if spec.string != nil, query.range(of: "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$", options: .regularExpression) != nil { continue }
-            if directory == nil { directory = try await host.installedApps() }
-            let key = normalized(query)
-            let exact = directory!.filter { app in
-                app.bundleID == query || ([app.displayName] + app.aliases).contains { normalized($0) == key }
+            if directory == nil {
+                do { directory = .success(try await host.installedApps()) }
+                catch { directory = .failure(error) }
             }
-            let matches = exact.isEmpty ? directory!.filter { app in
+            let apps: [InstalledApp]
+            do { apps = try directory!.get() }
+            catch {
+                if spec.string != nil, query.range(of: "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$", options: .regularExpression) != nil { continue }
+                throw error
+            }
+            if spec.string != nil, apps.contains(where: { $0.bundleID == query }) { continue }
+            let key = normalized(query)
+            let exact = apps.filter { app in
+                ([app.displayName] + app.aliases).contains { normalized($0) == key }
+            }
+            let matches = exact.isEmpty ? apps.filter { app in
                 ([app.displayName] + app.aliases).contains { normalized($0).contains(key) }
             } : exact
             guard matches.count == 1 else {
