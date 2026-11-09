@@ -262,6 +262,7 @@ extension ModelProvider {
         case .gemini: "Provider-googlegemini"
         case .deepseek: "Provider-deepseek"
         case .openrouter: "Provider-openrouter"
+        case .opencodeGo: nil // Neutral server icon; do not borrow another provider's trademark.
         case .custom: nil
         }
     }
