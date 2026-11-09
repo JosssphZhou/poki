@@ -98,13 +98,11 @@ struct TypewriterText: View {
     static let blink: Double = 0.5
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(verbatim: shown).font(font).foregroundStyle(color)
-            TimelineView(.periodic(from: .now, by: Self.blink / 2)) { context in
-                // The cursor holds still while typing and blinks once done (opacity [1, 1, 0, 0]).
-                let on = typing || Int(context.date.timeIntervalSinceReferenceDate / (Self.blink / 2)) % 2 == 0
-                Rectangle().fill(color).frame(width: 2, height: 15).opacity(on ? 1 : 0).padding(.leading, 3)
-            }
+        TimelineView(.periodic(from: .now, by: Self.blink / 2)) { context in
+            // Keep the cursor in the text flow: it shares the font's baseline and follows the
+            // final character onto a wrapped line. A clear glyph preserves layout while blinking.
+            let on = typing || Int(context.date.timeIntervalSinceReferenceDate / (Self.blink / 2)) % 2 == 0
+            PlanTypingLabel(text: shown, cursorVisible: on, font: font, color: color)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: text))
@@ -142,5 +140,19 @@ struct TypewriterText: View {
         if needsBackspace(current, full) { return interval * backspaceFactor }
         guard let last = current.last else { return interval }
         return ",.，。".contains(last) ? interval + pause : interval
+    }
+}
+
+/// A typographic cursor shares the text baseline rather than aligning a rectangle's bottom to it.
+struct PlanTypingLabel: View {
+    var text: String
+    var cursorVisible: Bool
+    var font: Font
+    var color: Color
+
+    var body: some View {
+        (Text(verbatim: text).foregroundColor(color)
+         + Text(verbatim: "\u{2009}|").foregroundColor(cursorVisible ? color : .clear))
+            .font(font)
     }
 }

@@ -170,10 +170,9 @@ struct ChatTranscript<Footer: View>: View {
                 .padding(.top, startsRun(i) ? 10 : 0)
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
-            HStack {
-                PlanBubble(steps: steps, tail: isLast(i, poki: true))
-                Spacer(minLength: .messageInsetPadding)
-            }
+            PlanBubble(steps: steps, tail: isLast(i, poki: true))
+                .padding(.trailing, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(PlanMotion.stepTransition)
         case .note(let note):
@@ -297,59 +296,6 @@ struct PokiAvatar: View {
 }
 
 // MARK: Plan
-
-/// The steps of a task in one Poki bubble: done steps ticked, the step under way typing its words.
-struct PlanBubble: View {
-    var steps: [PlanStep]
-    var tail: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(steps) { step in
-                PlanRow(step: step).transition(PlanMotion.stepTransition)
-            }
-        }
-        .animation(PlanMotion.enter, value: steps)
-        .padding(.vertical, 10).padding(.horizontal, 14)
-        .frame(width: 250, alignment: .leading)
-        .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: tail ? .tailRadius : .cornerRadius,
-                                                                    bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct PlanRow: View {
-    var step: PlanStep
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            ZStack {
-                switch step.state {
-                case .done:
-                    DrawingCheck(color: ChatColor.green).frame(width: 12, height: 12).transition(PlanMotion.swapTransition)
-                case .failed:
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(.systemRed)).transition(PlanMotion.swapTransition)
-                case .current, .waiting:
-                    Circle().strokeBorder(ChatColor.secondary.opacity(0.6), lineWidth: 1).frame(width: 13, height: 13).transition(PlanMotion.swapTransition)
-                }
-            }
-            .frame(width: 13)
-            .animation(PlanMotion.swap, value: step.state)
-            Group {
-                switch step.state {
-                case .current, .waiting:
-                    TypewriterText(text: step.state == .waiting ? String(localized: "\(step.text), waiting for you") : step.text,
-                                   font: .system(size: 15), color: ChatColor.pending)
-                case .done, .failed:
-                    Text(step.text).font(.system(size: 15)).foregroundStyle(Color(.label))
-                        .transition(PlanMotion.swapTransition.animation(PlanMotion.swap.delay(PlanMotion.stagger)))
-                }
-            }
-            .animation(PlanMotion.complete, value: step.state)
-        }
-        .lineLimit(2)
-    }
-}
 
 // MARK: Notes
 

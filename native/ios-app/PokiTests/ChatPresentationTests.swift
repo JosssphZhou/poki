@@ -99,6 +99,50 @@ final class ChatPresentationTests: XCTestCase {
         }
     }
 
+    func testPlanCursorWrapsWithTextWithoutBlinkLayoutChanges() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let text = "正在查看餐厅菜单与今日优惠活动"
+        for width: CGFloat in [320, 393] {
+            let visible = UIHostingController(rootView: PlanTypingLabel(text: text,
+                cursorVisible: true, font: .system(size: 15), color: .primary))
+            let hidden = UIHostingController(rootView: PlanTypingLabel(text: text,
+                cursorVisible: false, font: .system(size: 15), color: .primary))
+            let constraint = CGSize(width: 150, height: 1_000)
+            let on = visible.sizeThatFits(in: constraint)
+            let off = hidden.sizeThatFits(in: constraint)
+            XCTAssertEqual(on.width, off.width, accuracy: 0.5)
+            XCTAssertEqual(on.height, off.height, accuracy: 0.5)
+            XCTAssertGreaterThan(on.height, 30, "exercise a wrapped final line")
+
+            let root = VStack(alignment: .leading, spacing: 18) {
+                PlanBubble(steps: [PlanStep("已打开活动页面", state: .done), PlanStep(text)], tail: true)
+                    .padding(.trailing, 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                PlanTypingLabel(text: text, cursorVisible: true, font: .system(size: 15), color: .primary)
+                    .frame(width: 150, alignment: .leading)
+                PlanTypingLabel(text: "正在查看", cursorVisible: true, font: .system(size: 15), color: .primary)
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.top, 24)
+            let host = UIHostingController(rootView: root)
+            let window = UIWindow(windowScene: scene)
+            window.overrideUserInterfaceStyle = .light
+            window.frame = CGRect(x: 0, y: 0, width: width, height: 300)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            try await Task.sleep(for: .seconds(2))
+            host.view.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in
+                host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "plan-cursor-\(Int(width))pt"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
     private func scrollViews(in view: UIView) -> [UIScrollView] {
         ((view as? UIScrollView).map { [$0] } ?? []) + view.subviews.flatMap { scrollViews(in: $0) }
     }
