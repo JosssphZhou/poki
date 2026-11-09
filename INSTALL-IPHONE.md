@@ -60,7 +60,7 @@ Several iPhones plugged in: list them with `node bin/install-iphone.mjs phones` 
 | `apple_password` | Only without the windows (`POKI_INSTALL_DIALOGS=0`, or a Mac session with no screen, such as SSH). Give the user the command in `say`. They run it in their own Terminal, and macOS asks for the password without showing it. Never ask for the password in chat, and never type it for them. The command reads it from the keychain item `poki-setup-install`, signs in, and then deletes that item; Poki Setup keeps its own copy for renewals. |
 | `apple_code` | Only without the windows, like `apple_password`. Give the user the command in `say` exactly as printed: it has the absolute path of this checkout's installer (and `--state` when the run uses a non-default folder), because a new Terminal starts in their home folder, not here. They paste it into their own Terminal and type the 6-digit code at the hidden prompt, like the password. Never ask for the code in chat, and never put it in a command line or type it for them. The command accepts no code as an argument. |
 | `phone_plug` | Tell the user `say`. The command sees the phone. |
-| `pair` | Tell the user `say`. The command sees the Trust tap. |
+| `pair` | Tell the user `say`. The command sees the Trust tap. A phone already paired with this Mac gets no `pair` stop, only a `note`. |
 | `devmode` | Tell the user `say`. The phone restarts; the command waits for it to come back with Developer Mode on. |
 | `pairing_file` | Tell the user `say`. This happens only when Poki Setup could not write the pairing file into Poki itself. |
 | `open_poki` | Tell the user `say`. The command cannot see this step. When the user says Poki is open, run `node bin/install-iphone.mjs done open_poki`. |
@@ -83,12 +83,12 @@ The command exits with code 2. The last `error` event has a `code`, the `reason`
 | `trust_not_answered` | Nobody tapped Trust in time, or someone tapped Don't Trust. | Ask the user to tap Trust. Retried by itself. |
 | `developer_mode_off` | Developer Mode is still off. | Ask the user to turn it on. Retried by itself. |
 | `apple_credentials_missing` | No Apple Account to reuse, and the user closed the Poki Setup window. | Ask the user whether to sign in now, then run the command again; the window opens again. |
-| `apple_sign_in_rejected` | Apple refused the email or the password. | The keychain item is deleted; give the user the keychain command again. |
+| `apple_sign_in_rejected` | Apple refused the email or the password. | The Poki Setup window opens again (without the windows, the keychain item is deleted; give the user the keychain command again). |
 | `setup_app_missing` | `phones` or `diagnose` cannot find Poki Setup.app in the run's folder, `~/Applications` or `/Applications`. | Run `run`, which installs it, or pass `--app-dir` or `--bridge`. |
 | `apple_code_wrong` | Apple refused the code. | Ask the user to run the `code` command again with the newest code. |
 | `apple_server_busy` | Apple or the anisette server answered with an error. | Switches anisette servers and retries by itself. |
 | `apple_account_limit` | A free-account limit: 10 App IDs a week, 3 apps, or one certificate already held by AltStore, SideStore or Xcode. | Stop. Tell the user which limit Apple named. The way out is their decision. |
-| `network` | A request failed. | Retried by itself. Then report. |
+| `network` | A request failed, also while signing in to Apple. | Retried by itself, with what the user already typed. Then report. |
 | `sign_failed` | Signing failed. | Stop and run `diagnose`. |
 | `install_failed` | iOS refused the install. | Retried once. Then run `diagnose`. |
 | `relay_failed` | The relay deploy or check failed. Poki still works on the phone. | Report it. The user can deploy from Poki Setup's Relay page. |
