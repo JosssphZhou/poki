@@ -1496,6 +1496,29 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("\"Continue\"): back does not dismiss sheets, tap one of its buttons or drag it down"), result.text)
     }
 
+    func testLaunchResolvesDottedDisplayNamesBeforeAssumingBundleIDs() async {
+        let (core, wda, host) = makeCore()
+        host.apps.value = [
+            InstalledApp(bundleID: "com.booking.BookingApp", displayName: "Booking.com"),
+            InstalledApp(bundleID: "ctrip.english", displayName: "Trip.com"),
+            InstalledApp(bundleID: "local.other", displayName: "com.booking.BookingApp"),
+        ]
+        _ = await core.call("look", [:])
+        for (query, bundle) in [("Booking.com", "com.booking.BookingApp"), ("Trip.com", "ctrip.english"), ("com.booking.BookingApp", "com.booking.BookingApp")] {
+            wda.set("POST /wda/apps/activate") { body in
+                guard body?["bundleId"]?.string == bundle else {
+                    return (500, ["value": ["error": "unknown error", "message": "Application is not installed"]])
+                }
+                return (200, ["value": .null])
+            }
+            wda.set("GET /wda/activeAppInfo") { _ in
+                (200, ["value": ["bundleId": .string(bundle), "name": .string(query)]])
+            }
+            let result = await core.call("do", ["actions": [["launch": .string(query)]]])
+            XCTAssertTrue(result.text.contains("did: launch \(bundle)"), result.text)
+        }
+    }
+
     func testLaunchingPokiByNameCannotBypassOwnAppProtection() async {
         let (core, wda, host) = makeCore()
         host.apps.value = [InstalledApp(bundleID: "nz.zheha.poki", displayName: "Poki")]
