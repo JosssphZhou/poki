@@ -51,18 +51,27 @@ function viaDevicectl(udid, bundleId) {
       await writeFile(join(dir, name), bytes, { mode: 0o600 });
       await exec('xcrun', [...base, 'to', ...where, '--source', join(dir, name), '--destination', `Documents/PokiSetup/${name}`]);
     }),
+    // Any Poki, also one too old to write a hello: a running process from Poki's install folder.
+    running: () => scratch(async dir => {
+      const json = async (what, ...more) => {
+        const out = join(dir, `${what}.json`);
+        await exec('xcrun', ['devicectl', 'device', 'info', what, '--device', udid, ...more, '--json-output', out]);
+        return readFile(out, 'utf8');
+      };
+      const app = /file:\/\/\/[^"]+?\.app(?=\/?")/.exec(await json('apps', '--bundle-id', bundleId))?.[0];
+      return !!app && (await json('processes')).includes(`${app}/`);
+    }).catch(() => false),
   };
 }
 
 // The first way that works on this Mac, or null. The helper is asked once: an older one answers
-// that it does not know the command.
+// that it does not know the command, and any other answer means it does.
 export async function containerAccess({ bridge, udid, bundleId }) {
   try {
     await bridge.request('container_read', { udid, name: HELLO });
     return viaBridge(bridge, udid);
   } catch (error) {
-    if (missing(error.message)) return viaBridge(bridge, udid);
-    if (!/unknown command/i.test(error.message)) throw error;
+    if (!/unknown command/i.test(error.message)) return viaBridge(bridge, udid);
   }
   if (!bundleId) return null;
   try {

@@ -510,6 +510,11 @@ if (a.slice(0, 4).join(' ') === 'devicectl device copy from') {
 } else if (a.slice(0, 4).join(' ') === 'devicectl device copy to') {
   mkdirSync(dirname(inside(arg('--destination'))), { recursive: true });
   copyFileSync(arg('--source'), inside(arg('--destination')));
+} else if (a.slice(0, 3).join(' ') === 'devicectl device info') {
+  const app = 'file:///private/var/containers/Bundle/Application/0F1E2D3C/Poki.app';
+  const running = existsSync(join(${JSON.stringify(container)}, '.running'));
+  const result = a[3] === 'apps' ? { apps: [{ bundleIdentifier: arg('--bundle-id'), url: app + '/' }] } : { runningProcesses: running ? [{ executable: app + '/Poki' }] : [] };
+  require('node:fs').writeFileSync(arg('--json-output'), JSON.stringify({ result }));
 } else process.exit(64);
 `);
   for (const tool of ['security', 'xcrun']) await chmod(join(bin, tool), 0o755);
@@ -604,4 +609,15 @@ test('the install-poki skill walks the same steps and person stops as the instal
   assert.deepEqual(listed, manifest.steps.map(s => s.id), 'one numbered line per installer step, in the installer\'s order');
   for (const wait of Object.keys(manifest.waits)) assert.ok(skill.includes(`\`${wait}\``), `the skill says what to do at ${wait}`);
   assert.match(skill, /node bin\/install-iphone\.mjs run/, 'the skill runs the installer instead of repeating it');
+});
+
+test('a Poki too old to write its hello still counts as open once devicectl sees it running', async t => {
+  const state = await stateDir(t);
+  const mac = await fakePhoneAndMac(t, { devicectl: true });
+  const { code, events, stderr } = await runInstaller(state, { scenario: 'old-bridge,old-poki', env: mac.env, args: ['--model-key', 'openai'], answer: { apple_code: () => typeCode(state, '123456\n') } });
+  assert.equal(code, 0, stderr);
+  assert.match(events.find(e => e.event === 'done' && e.step === 'open_poki').detail, /running/);
+  assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Accounts and Models/);
+  assert.match(events.find(e => e.event === 'skipped' && e.step === 'loopback').reason, /10\.7\.0\.1/);
+  assert.doesNotMatch(await mac.securityLog(), /api-key/, 'a Poki that cannot take the key does not make the installer read it');
 });

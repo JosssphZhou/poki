@@ -45,7 +45,7 @@ The installer runs these in order. Most need nobody.
 5. **`phone`** Waits for the iPhone. Stop `phone_plug`.
 6. **`install`** Pairs, turns on Developer Mode, signs and installs Poki, gives it its pairing file and disk image. Stops `pair` and `devmode` on a phone that needs them, `pairing_file` rarely.
 7. **`open_poki`** The user trusts the developer and opens Poki. Stop `open_poki`, and the installer sees Poki open by itself. Stop `open_poki_tell` only when this Mac cannot read Poki's files. Then the user tells you, and you run `node bin/install-iphone.mjs done open_poki`.
-8. **`model_key`** Only with `--model-key`. Gives Poki the key, sealed to a key only that iPhone holds, and waits until Poki says it took it. Nobody acts.
+8. **`model_key`** Only with `--model-key`. Gives Poki the key, sealed to a key only that iPhone holds, and waits until Poki says it took it. The first time, macOS may ask on the Mac whether node can use the keychain item; tell the user to click Allow. Poki takes the key while it is in front.
 9. **`loopback`** Checks that Poki's local connection (10.7.0.1) answers. Stop `loopback` when it does not, with Poki's own sentence for the VPN app on the phone.
 10. **`relay`** Deploys the relay when `CLOUDFLARE_API_TOKEN` is set or Poki Setup keeps a token. Skipped otherwise. Poki and its own chat work without it; agents on other computers need it.
 11. **`check`** Self-check: the install record, Developer Mode, pairing, disk image and relay.
@@ -64,7 +64,7 @@ Poki turns itself on after this install, and ticks Developer Mode and UI Automat
 | `pair` | Tell the user `say`. A phone already paired with this Mac gets only a `note`. |
 | `devmode` | Tell the user `say`. The phone restarts; the installer waits for it. |
 | `pairing_file` | Tell the user `say`. Rare: Poki Setup could not write the pairing file into Poki. |
-| `open_poki` | Tell the user `say`. Nothing else: the installer sees Poki open. |
+| `open_poki` | Tell the user `say`. The installer sees Poki open. If the user says Poki is open and the installer has not moved on within a minute (an older Poki writes no hello), run `node bin/install-iphone.mjs done open_poki`. |
 | `open_poki_tell` | Tell the user `say`. When they say Poki is open, run `node bin/install-iphone.mjs done open_poki`. |
 | `loopback` | Tell the user `say`. It names their VPN app and the one thing to set. The installer sees when it answers. |
 

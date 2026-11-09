@@ -10,6 +10,9 @@ import { dirname, join } from 'node:path';
 import { KEM, keyId, open } from './model-key.mjs';
 
 const scenario = process.env.POKI_FAKE_SCENARIO || 'happy';
+// old-bridge (Poki Setup 0.2.1, no container commands) and old-poki (Poki 0.2.8, which writes no
+// hello) combine with the others: POKI_FAKE_SCENARIO=old-bridge,old-poki.
+const has = name => scenario.split(',').includes(name);
 const delay = Number(process.env.POKI_FAKE_DELAY_MS ?? 300);
 const udid = '00008999-000A11B22C33D44E';
 const phoneName = 'Test iPhone';
@@ -69,9 +72,11 @@ async function install() {
 // The person trusts the developer and opens Poki: Poki writes its hello with a key it made, takes a
 // sealed model key it finds (into .keychain/, the test's view of its Keychain), and says so.
 function simulatePoki() {
+  writeFile(join(container, '.running'), record.bundle_id);
+  if (has('old-poki')) return;
   const me = createECDH('prime256v1');
   me.generateKeys();
-  const loopbackAt = Date.now() + (scenario === 'loopback-off' ? delay * 3 : 0);
+  const loopbackAt = Date.now() + (has('loopback-off') ? delay * 3 : 0);
   let imported = null;
   const hello = () => writeFile(handoff('poki-hello.json'), JSON.stringify({
     schema: 'poki.hello/1', version: '0.2.9', build: '510', at: new Date().toISOString(),
@@ -97,7 +102,7 @@ const allowed = name => {
   if (!['poki-hello.json', 'model-key.json'].includes(name)) fail('bad_request', `not a Poki hand-off file: ${name}`);
   return handoff(name);
 };
-const containerCommands = scenario === 'old-bridge' ? {} : {
+const containerCommands = has('old-bridge') ? {} : {
   container_read: ({ name }) => {
     const path = allowed(name);
     if (!existsSync(path)) fail('device', `${name}: kAFCObjectNotFound`);

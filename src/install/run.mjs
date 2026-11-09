@@ -442,9 +442,11 @@ class Run {
     const seen = await this.waitFor('open_poki', async () => {
       const hello = await readHello(access);
       if (hello && hello.at !== before) return hello;
+      if (await access.running?.()) return { running: true };
       return (await this.takeInbox('open_poki')) ? { told: true } : null;
     });
     if (seen.told) return 'the person said Poki is open';
+    if (seen.running) return 'Poki is running on the iPhone (a version that does not write its hello yet)';
     this.hello = seen;
     return `Poki ${seen.version} (${seen.build}) is open on the iPhone`;
   }
