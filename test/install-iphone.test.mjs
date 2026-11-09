@@ -434,3 +434,15 @@ test('a network error while signing in is retried with what the person already t
   assert.equal((await mac.shown()).length, 3, 'email, password and code are asked once each');
   assert.doesNotMatch(JSON.stringify(events) + stderr + await readFile(join(state, 'run.json'), 'utf8'), /correct horse/);
 });
+
+test('diagnose reads Poki Setup\'s own log where Poki Setup keeps it on macOS', async t => {
+  const home = await fakeHome(t);
+  const state = await stateDir(t);
+  // directories::ProjectDirs::from("nz", "Poki", "Poki Setup") on macOS (desktop/core/src/paths.rs).
+  const logs = join(home, 'Library/Application Support/nz.Poki.Poki-Setup/logs');
+  await mkdir(logs, { recursive: true });
+  await writeFile(join(logs, 'poki-setup.log'), 'INFO install step failed: iOS refused the install.\n');
+  const env = { ...process.env, HOME: home, POKI_FAKE_UNPLUGGED_CALLS: '0' };
+  const bundle = JSON.parse((await exec(process.execPath, [cli, 'diagnose', '--no-device', '--state', state], { env })).stdout);
+  assert.ok(bundle.poki_setup_log?.some(line => line.includes('iOS refused the install')), 'the bundle carries Poki Setup\'s log');
+});

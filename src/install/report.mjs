@@ -67,7 +67,7 @@ async function deviceView(bridgePath, setupHome) {
 }
 
 function logCandidates(state, record, setupHome) {
-  return [setupHome, record?.setup_home, join(state, 'setup-home'), join(homedir(), 'Library/Application Support/Poki Setup')]
+  return [setupHome, record?.setup_home, join(state, 'setup-home'), join(homedir(), 'Library/Application Support/nz.Poki.Poki-Setup')]
     .filter(Boolean).map(dir => join(dir, 'logs/poki-setup.log'));
 }
 
