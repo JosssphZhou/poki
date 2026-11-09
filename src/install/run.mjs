@@ -12,6 +12,7 @@ import { Bridge, BridgeError } from './bridge.mjs';
 import { ensureSetupApp, SetupError } from './setup-app.mjs';
 import { containerAccess, readHello, SEALED_KEY } from './container.mjs';
 import { phoneKey, readKeychainKey, seal } from './model-key.mjs';
+import { clearRenew, installSchedule, LAUNCH_AGENT_LABEL, readRenew } from './renew.mjs';
 import { installerLabel, installerVersion } from './version.mjs';
 
 const exec = promisify(execFile);
@@ -247,7 +248,7 @@ class Run {
 
   async apple_account() {
     const account = await this.bridge.request('account');
-    if (account.signed_in) {
+    if (account.signed_in && this.lastRenew?.code !== 'apple_account') {
       await this.rememberTeams();
       return `already signed in (team ${account.team_id ? 'chosen' : 'to choose'})`;
     }
@@ -376,10 +377,10 @@ class Run {
   }
 
   async install() {
-    if (this.doneBefore('install') && !this.opts.reinstall) {
+    if (this.doneBefore('install') && !this.opts.reinstall && !this.lastRenew?.needs_person) {
       const records = await this.bridge.request('records');
       const installed = records.find(r => r.udid === this.udid);
-      if (installed) {
+      if (installed && (installed.profile_expires_at - Date.now() / 1000) / 86400 > 2) {
         this.bundleId = installed.bundle_id;
         return { skipped: 'Poki is already installed from this computer (pass --reinstall to sign and install again)' };
       }
@@ -529,6 +530,23 @@ class Run {
     return `Poki ${check.poki}, Developer Mode on, paired, developer disk image mounted, ${check.days_left} days of signing left`;
   }
 
+  async renew() {
+    if (process.platform !== 'darwin') return { skipped: 'daily launchd schedule is macOS-only' };
+    try {
+      const scheduled = await installSchedule({
+        state: this.state,
+        setupHome: this.opts.setupHome,
+        appDir: this.opts.appDir,
+        bridge: this.opts.bridge,
+        dryRun: this.opts.dryRun,
+      });
+      this.record.renew_schedule = { label: LAUNCH_AGENT_LABEL, time: scheduled.time };
+      return `${scheduled.dryRun ? '[dry run] ' : ''}daily at ${scheduled.time} (${LAUNCH_AGENT_LABEL}; remove with node bin/install-iphone.mjs renew --uninstall-schedule)`;
+    } catch (error) {
+      throw new StepFailure('schedule_failed', error.stderr?.trim() || error.message);
+    }
+  }
+
   reportError(failure, retrying) {
     const spec = manifest.errors[failure.code];
     (this.record.errors ??= []).push({ code: failure.code, reason: failure.reason, retrying, at: new Date().toISOString() });
@@ -538,9 +556,11 @@ class Run {
   async go() {
     await mkdir(this.inbox, { recursive: true });
     await this.load();
+    this.lastRenew = await readRenew(this.state);
     const installer = await installerVersion();
     this.record.installer = installer;
     this.emit({ event: 'installer', ...installer });
+    if (this.lastRenew?.needs_person) this.emit({ event: 'note', text: this.lastRenew.summary });
     const steps = manifest.steps;
     try {
       for (const [index, step] of steps.entries()) {
@@ -569,6 +589,7 @@ class Run {
       }
       this.record.finished_at = new Date().toISOString();
       await this.save();
+      if (this.lastRenew?.needs_person) await clearRenew(this.state);
       this.emit({ event: 'result', ok: true, check: this.checkResult, dry_run: !!this.opts.dryRun });
       return 0;
     } finally {

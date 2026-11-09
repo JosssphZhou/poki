@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { root } from '../config.mjs';
 import { Bridge } from './bridge.mjs';
 import { knownValues, redactText, redactValue, setupKnownValues } from './redact.mjs';
+import { readRenew } from './renew.mjs';
 import { manifest } from './run.mjs';
 import { findSetupBridge } from './setup-app.mjs';
 import { installerLabel, installerVersion, setupLabel } from './version.mjs';
@@ -101,6 +102,8 @@ export async function diagnose({ state, noDevice, bridge, appDir, setupHome }) {
     devices: noDevice ? 'not read (--no-device)' : await deviceView(locate({ bridge, appDir, record }), setupHome ?? record?.setup_home),
     poki_setup_log: logFile ? await tail(logFile) : null,
     installer_log: await tail(join(state, 'bridge.log')),
+    renew: await readRenew(state),
+    renew_log: await tail(join(state, 'renew.log')),
   };
   const known = [...knownValues([record, raw.devices]), ...await setupKnownValues(homes), ...await ownerNames()];
   const bundle = redactValue(raw, known);
@@ -118,7 +121,7 @@ export async function issueDraft({ state }) {
   const step = manifest.steps.find(s => s.id === stepId);
   const title = `Install stops at ${step?.title ?? stepId}: ${code}`;
   const phone = bundle.phones?.[0];
-  const stepLabel = { setup_app: 'Get Poki Setup', bridge: 'Start Poki Setup', channel: 'Start Poki Setup', apple_account: 'Sign in with the Apple Account', phone: 'Find the iPhone', open_poki: 'Trust the developer and open Poki', relay: 'Relay', check: 'Self-check' }[stepId]
+  const stepLabel = { setup_app: 'Get Poki Setup', bridge: 'Start Poki Setup', channel: 'Start Poki Setup', apple_account: 'Sign in with the Apple Account', phone: 'Find the iPhone', open_poki: 'Trust the developer and open Poki', relay: 'Relay', check: 'Self-check', renew: 'Schedule daily renewal' }[stepId]
     ?? (stepId === 'install' ? { trust_not_answered: 'Pair (Trust This Computer)', developer_mode_off: 'Developer Mode' }[code] ?? 'Sign and install Poki' : "Don't know");
   // Headings are the install-failure template's labels, so the draft reads like a form submission.
   const body = [

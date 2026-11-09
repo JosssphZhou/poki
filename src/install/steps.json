@@ -11,7 +11,8 @@
     { "id": "model_key", "who": "agent", "title": "Give Poki the model key (only when asked)", "does": "With --model-key <provider>, reads the key from the Mac's login keychain (item <provider>-api-key, or --model-key-item) into memory, seals it to the key Poki made on the phone, writes only the sealed file into Poki, and waits until Poki says it took it. Skipped without --model-key." },
     { "id": "loopback", "who": "phone", "title": "Connect Poki to this iPhone", "does": "Reads from Poki whether its local connection (10.7.0.1) answers. When it does not, says the one sentence Poki gives for the VPN app on the phone, and waits until Poki says it answers." },
     { "id": "relay", "who": "input", "title": "Deploy the relay (optional)", "does": "Deploys the relay Worker with a Cloudflare token from CLOUDFLARE_API_TOKEN or the token Poki Setup already keeps. Skipped without one." },
-    { "id": "check", "who": "agent", "title": "Self-check", "does": "Reads the install record, the phone's Developer Mode and pairing state, mounts the developer disk image and checks the relay." }
+    { "id": "check", "who": "agent", "title": "Self-check", "does": "Reads the install record, the phone's Developer Mode and pairing state, mounts the developer disk image and checks the relay." },
+    { "id": "renew", "who": "agent", "title": "Schedule daily renewal on this Mac", "does": "Installs a user LaunchAgent (~/Library/LaunchAgents/nz.zheha.poki.renew.plist) that runs node bin/install-iphone.mjs renew once a day at a random time with no window, so Poki is re-signed before its 7-day profile expires. Remove it with node bin/install-iphone.mjs renew --uninstall-schedule." }
   ],
   "waits": {
     "apple_dialog": { "who": "input", "say": "A Poki Setup window opens on this Mac. Type your Apple Account email, click Continue, then type its password in the next window. Poki Setup keeps the password in this Mac's keychain; do not type it here in the chat. I continue by myself once you click Continue." },
@@ -49,6 +50,7 @@
     "check_failed": { "reason": "Poki is installed but the self-check found something not ready.", "agent_fix": "Read the check fields in the result, fix what the matching code says, and run again.", "retry": 0 },
     "model_key_missing": { "reason": "--model-key was given, but the Mac's login keychain has no item with that name, or it is empty.", "agent_fix": "Tell the person which keychain item was looked for. They can add it in their own Terminal with security add-generic-password -U -s <item> -a \"$USER\" -w, or type the key in Poki (Agents > Accounts and Models). Never ask for the key in chat.", "retry": 0 },
     "model_key_not_taken": { "reason": "The sealed key is in Poki, but Poki did not say it took it in time (it reads the file while it is in front).", "agent_fix": "Ask the person to bring Poki to the front, then run the command again; the key is sealed again for the phone's new key.", "person": "Open Poki and keep it in front for a moment.", "retry": 0 },
+    "schedule_failed": { "reason": "macOS launchctl did not load the daily renewal LaunchAgent.", "agent_fix": "Check ~/Library/LaunchAgents/nz.zheha.poki.renew.plist with plutil -lint and run again.", "retry": 0 },
     "unknown": { "reason": "An error the installer does not recognise.", "agent_fix": "Run diagnose and issue, show the draft to the person, and submit it only after they agree.", "retry": 0 }
   }
 }

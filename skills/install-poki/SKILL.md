@@ -49,6 +49,7 @@ The installer runs these in order. Most need nobody.
 9. **`loopback`** Checks that Poki's local connection (10.7.0.1) answers. Stop `loopback` when it does not, with Poki's own sentence for the VPN app on the phone.
 10. **`relay`** Deploys the relay when `CLOUDFLARE_API_TOKEN` is set or Poki Setup keeps a token. Skipped otherwise. Poki and its own chat work without it; agents on other computers need it.
 11. **`check`** Self-check: the install record, Developer Mode, pairing, disk image and relay.
+12. **`renew`** Installs a user `launchd` job (`~/Library/LaunchAgents/nz.zheha.poki.renew.plist`) that runs `node bin/install-iphone.mjs renew` once a day with a random time offset. It never opens a window in the background; when a person is needed, it writes only to `<state>/renew.log` and the next `node bin/install-iphone.mjs run` output. Remove the schedule with `node bin/install-iphone.mjs renew --uninstall-schedule`.
 
 Poki turns itself on after this install, and ticks Developer Mode and UI Automation in its Setup once it runs. The iPhone's own switch for UI Automation (Settings > Developer > Enable UI Automation) is still the user's to turn on; Poki's Setup page says so.
 
@@ -98,7 +99,12 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 | `check_failed` | Installed, but the self-check found something not ready. | Read the `check` fields, fix what the matching code says, run again. |
 | `model_key_missing` | `--model-key` was given, but the keychain item is missing or empty. | Tell the user the item name. They add it in their own Terminal (`security add-generic-password -U -s <item> -a "$USER" -w`) or type the key in Poki: Agents > Accounts and Models. |
 | `model_key_not_taken` | Poki did not take the sealed key in time. | Ask the user to bring Poki to the front, then run again. |
+| `schedule_failed` | `launchctl` did not load the daily renewal LaunchAgent. | Check `~/Library/LaunchAgents/nz.zheha.poki.renew.plist` with `plutil -lint` and run again. |
 | `unknown` | Not recognised. | Run `diagnose` and `issue`. |
+
+## Automatic renewal on the Mac
+
+`node bin/install-iphone.mjs renew` calls Poki Setup's `renew_due` to re-sign and reinstall Poki on any iPhone whose profile is within the renewal window (2 days left on a 7-day free-account profile). When the iPhone is locked, not reachable, or the Apple Account needs a fresh sign-in, it prints one readable line, writes it to `<state>/renew.log` and `<state>/renew.json` (with team IDs, UDIDs, device names and Apple Accounts removed), and exits 0 so the next scheduled run tries again. It never opens a window or waits for a person; if a person is needed, the next `node bin/install-iphone.mjs run` prints that note at startup. To remove the daily `launchd` job installed by step 12, run `node bin/install-iphone.mjs renew --uninstall-schedule`.
 
 ## Read Poki's records on the Mac
 

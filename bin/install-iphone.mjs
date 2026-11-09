@@ -9,6 +9,7 @@ import { findSetupBridge, SetupError } from '../src/install/setup-app.mjs';
 import { installerLabel, installerVersion } from '../src/install/version.mjs';
 import { diagnose, issueDraft, readRun } from '../src/install/report.mjs';
 import { codeCommand, defaultStateDir, manifest, run } from '../src/install/run.mjs';
+import { renew } from '../src/install/renew.mjs';
 import { PROVIDERS } from '../src/install/model-key.mjs';
 import { readRecords } from '../src/install/records.mjs';
 
@@ -16,6 +17,7 @@ const usage = `Usage: node bin/install-iphone.mjs <command> [options]
 
 Commands:
   run                 Install Poki on the iPhone, stopping only where a person has to act.
+  renew               Re-sign and reinstall Poki on any iPhone due for renewal (no window, no wait).
   code                Hand the running install the Apple two-factor code. The person runs this in their own
                       Terminal and types the code at the hidden prompt (or pipes it in). Never as an argument.
   done <step>         Tell the running install that the person finished a step it cannot see (open_poki).
@@ -46,6 +48,7 @@ Options:
   --version           Print the installer's version and build commit.
   --out <file>        records only: write the text here instead.
   --bundle <id>       records only: Poki's bundle id, when iOS does not list it as Poki.
+  --uninstall-schedule  renew only: unload and remove the daily launchd renewal agent.
   --no-device         diagnose only: do not ask usbmuxd, devicectl or Bonjour about devices.
 
 Exit codes: 0 done, 1 bad usage, 2 a step failed (see the code), 3 a person step is still open (run again).`;
@@ -65,6 +68,7 @@ const { values: opts, positionals } = parseArgs({
     'model-key': { type: 'string' },
     'model-key-item': { type: 'string' },
     'no-device': { type: 'boolean', default: false },
+    'uninstall-schedule': { type: 'boolean', default: false },
     out: { type: 'string' },
     bundle: { type: 'string' },
     version: { type: 'boolean', short: 'v', default: false },
@@ -124,6 +128,9 @@ switch (opts.help ? 'help' : command) {
   case 'run':
     if (opts['model-key'] !== undefined && !PROVIDERS.includes(opts['model-key'])) { console.error(`--model-key is one of ${PROVIDERS.join(', ')}.`); process.exitCode = 1; break; }
     process.exitCode = await run({ modelKey: opts['model-key'], modelKeyItem: opts['model-key-item'], state, setupHome, channel: opts.channel, udid: opts.udid, dryRun, json: opts.json, bridge: opts.bridge && resolve(opts.bridge), appDir, reinstall: opts.reinstall });
+    break;
+  case 'renew':
+    process.exitCode = await renew({ state, setupHome, bridge: opts.bridge && resolve(opts.bridge), appDir, json: opts.json, uninstallSchedule: opts['uninstall-schedule'] });
     break;
   case 'code':
     if (arg !== undefined) { console.error(`Do not put the Apple code on the command line. Run: ${codeCommand(state)} (and type it at the hidden prompt).`); process.exitCode = 1; break; }

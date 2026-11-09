@@ -37,7 +37,8 @@ const patterns = [
   [/\b(Poki [\d.]+ is on ).+$/gm, '$1[device name]'],
   // A free Apple Account's team is named after its holder: "Signing Poki for <name>", "signed for <name>",
   // "<name> (free, 7-day signing)", "<name> (Personal Team)".
-  [/\b(Signing Poki for |signed for )(?!\d+ days?\b)[^\n(]+?(?=\s*(?:\(|$))/gm, '$1[team name]'],
+  [/\b(Signing Poki for |signed for )(?!\d+ (?:more )?days?\b)[^\n(]+?(?=\s*(?:\(|$))/gm, '$1[team name]'],
+  [/\b(not on team ).+?(?= any more\b)/gi, '$1[team name]'],
   [/(?:[\p{L}\p{M}'’.-]+ ){1,4}(?=\((?:free, 7-day signing|Personal Team)\))/gu, '[team name] '],
   // The development certificate list names the Mac, which usually carries its owner's name.
   [/\b(machine|computer_?name|host_?name)(\s*[=:]\s*)[^\n,;]+/gi, '$1$2[mac name]'],
