@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { Bridge, BridgeError } from './bridge.mjs';
-import { ensureSetupApp, SetupError } from './setup-app.mjs';
+import { ensureSetupApp, downloadIpa, SetupError } from './setup-app.mjs';
 import { containerAccess, readHello, SEALED_KEY } from './container.mjs';
 import { phoneKey, readKeychainKey, seal } from './model-key.mjs';
 import { installerLabel, installerVersion } from './version.mjs';
@@ -243,6 +243,8 @@ class Run {
   async channel() {
     const rows = await this.bridge.request('set_channel', { channel: this.opts.channel });
     const chosen = rows.find(r => r.selected) ?? rows[0];
+    this.releaseTag = chosen?.latest?.tag;
+    this.releaseIpaName = chosen?.latest?.ipa_name;
     return `${this.opts.channel}: Poki ${chosen?.latest?.version ?? '?'} (${chosen?.latest?.build ?? '?'})`;
   }
 
@@ -386,6 +388,7 @@ class Run {
       }
     }
     const retries = {};
+    let localIpa;
     for (;;) {
       try {
         const onProgress = data => {
@@ -399,7 +402,7 @@ class Run {
           else if (data.kind === 'note') this.emit({ event: 'note', text: data.text });
           else if (data.kind === 'done' && !['all', 'phone'].includes(data.id)) this.emit({ event: 'progress', id: data.id, title: `${data.id} done`, detail: data.detail });
         };
-        const done = await this.bridge.request('install', { udid: this.udid, seed_ddi: true }, { onProgress });
+        const done = await this.bridge.request('install', { udid: this.udid, seed_ddi: true, ...(localIpa ? { ipa: localIpa } : {}) }, { onProgress });
         for (const note of done.notes ?? []) this.emit({ event: 'note', text: note });
         if (done.handoff?.link) this.emit({ event: 'wait', wait: 'pairing_file', who: 'phone', say: `${manifest.waits.pairing_file.say} Or open ${done.handoff.link} on the iPhone.` });
         this.installed = done.record;
@@ -408,6 +411,11 @@ class Run {
         return `Poki ${done.record.version} (${done.record.build}) installed, signed for ${Math.round((done.record.profile_expires_at - Date.now() / 1000) / 86400)} days`;
       } catch (error) {
         const failure = classify('install', error);
+        if (!localIpa && error.kind === 'http' && this.releaseTag) {
+          this.emit({ event: 'note', text: 'Poki Setup could not download the release. Downloading and verifying a local IPA with its matching signing archive.' });
+          localIpa = await downloadIpa(this.releaseTag, join(this.state, 'downloads'), this.releaseIpaName);
+          continue;
+        }
         const limit = manifest.errors[failure.code].retry;
         retries[failure.code] = (retries[failure.code] ?? 0) + 1;
         if (!['trust_not_answered', 'developer_mode_off', 'phone_locked', 'install_failed', 'network'].includes(failure.code) || retries[failure.code] > limit) throw failure;
