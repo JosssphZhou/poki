@@ -2,6 +2,15 @@
 
 What changed in each round, and what still needs the phone. Newest first.
 
+## Remote pairing that does not answer (2026-11-09, on standalone)
+
+Changed:
+- When the loopback takes the connection but the phone's remote pairing service does not answer, Poki no longer says to turn on Developer Mode. It says to reconnect the local connection on Wi-Fi, then restart the phone, then pair again; Home offers Try Again and the Live Activity says Reconnect the local connection (#69).
+- That failure names the I/O error under "device socket io failed" and how long the connection was held, and the pairing check and the first runner failure log the loopback kind, the local VPN state, Wi-Fi and the network path.
+
+Needs the phone:
+- The failure in #69 itself: automation that stops after about 25 minutes idle with a proxy app carrying the loopback. Its cause is not known yet.
+
 ## From poki/ios-integration (2026-11-08, onto standalone)
 
 Changed:

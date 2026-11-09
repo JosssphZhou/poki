@@ -53,6 +53,9 @@ pub const DDI_TIMEOUT_FIX: &str = "Mounting the developer disk image timed out. 
 pub const DDI_REFUSED_FIX: &str = "This iOS version needs a newer developer disk image. Open Poki's setup to download the latest image, or update Poki.";
 pub const DDI_BAD_FIX: &str = "The developer disk image did not install. Poki downloads it again by itself.";
 pub const PAIRING_FIX: &str = "Pair again in Poki's setup.";
+/// The loopback took the connection, then the phone's remote pairing service did not answer, before
+/// the pairing was checked. Seen with Developer Mode on (GitHub issue 69): the path to the phone is the fix.
+pub const HANDSHAKE_FIX: &str = "Reconnect the local connection: turn Poki's VPN, LocalDevVPN or your proxy app off and on again, with the iPhone on Wi-Fi. If the phone still does not answer, restart it; if that does not help, pair this iPhone again.";
 pub const DEVELOPER_MODE_FIX: &str = "Turn on Developer Mode: Settings → Privacy & Security → Developer Mode, then restart the phone.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +122,7 @@ impl Device {
                 let (adapter, rsd, control) = remote::connect(address, file, host_name, |_| {}).await.map_err(|e| {
                     let fix = match e.stage {
                         remote::Stage::Connect => LOOPBACK_FIX,
+                        remote::Stage::Handshake => HANDSHAKE_FIX,
                         remote::Stage::PairVerify => PAIRING_FIX,
                         _ => DEVELOPER_MODE_FIX,
                     };

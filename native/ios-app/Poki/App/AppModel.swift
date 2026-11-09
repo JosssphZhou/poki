@@ -612,6 +612,12 @@ final class AppModel {
         return dict["HostID"] != nil
     }
 
+    /// The way to the phone's developer services when a check or the runner fails, for the log:
+    /// whether Wi-Fi is up (iOS refuses the loopback on cellular) and which loopback carries it.
+    private var networkNote: String {
+        "loopback \(setup.loopback.rawValue), local VPN \(tunnel.state), Wi-Fi \(loopback.onWiFi ? "on" : "off")\(loopback.cellularOnly ? ", cellular only" : ""), path \(loopback.pathSummary)"
+    }
+
     @discardableResult
     func verifyPairing(force: Bool = false) async -> Bool {
         if Self.onSimulator { return true }
@@ -642,7 +648,7 @@ final class AppModel {
                     self.pairingTrouble = String(localized: "the pairing file from a computer does not work over the loopback on this iOS version. Pair this iPhone here once; the pairing stays.")
                     return false
                 }
-                self.log.add("pairing", "check could not finish: \(text)")
+                self.log.add("pairing", "check could not finish: \(text) [\(self.networkNote)]")
                 return true
             }
         }
@@ -998,7 +1004,7 @@ final class AppModel {
     private static let clock: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
 
     func runnerChanged(_ status: RunnerStatus) {
-        if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")") }
+        if status != runner { log.add("runner", "\(status.state)\(status.detail.map { ": \($0)" } ?? "")\(status.state == "failed" && runner.state != "failed" ? " [\(networkNote)]" : "")") }
         // Events from a launcher that was stopped for idle are old news.
         guard !runnerPaused else { return }
         switch status.state {

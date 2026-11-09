@@ -3048,6 +3048,17 @@
         }
       }
     },
+    "Reconnect the local connection: turn Poki's VPN, LocalDevVPN or your proxy app off and on again, with the iPhone on Wi-Fi. If the phone still does not answer, restart it; if that does not help, pair this iPhone again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新连接本地连接：在 iPhone 连着无线局域网时，把 Poki 的 VPN、LocalDevVPN 或代理 App 关掉再打开。如果手机仍然没有响应，请重启手机；仍然不行时，重新配对这台 iPhone。"
+          }
+        }
+      }
+    },
     "Reflected RemotePairing" : {
       "extractionState" : "manual",
       "localizations" : {

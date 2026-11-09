@@ -749,6 +749,17 @@
         }
       }
     },
+    "Reconnect the local connection" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重连本地连接"
+          }
+        }
+      }
+    },
     "Runner Stopped" : {
       "extractionState" : "manual",
       "localizations" : {
