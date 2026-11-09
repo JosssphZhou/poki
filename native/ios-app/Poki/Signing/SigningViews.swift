@@ -214,11 +214,11 @@ struct SigningOptionsPage: View {
                     if let latest = signer.latest {
                         Text(verbatim: "\(latest.version) (\(latest.build))")
                     } else {
-                        Text(checked ? "Not Found" : "Checking…").foregroundStyle(Color(.secondaryLabel))
+                        (checked ? Text("Not Found") : Text("Checking…")).foregroundStyle(Color(.secondaryLabel))
                     }
                 }
                 if let latest = signer.latest {
-                    LabeledContent("Status") { Text(signer.isNewer(latest) ? "Update Available" : "Up to Date") }
+                    LabeledContent("Status") { signer.isNewer(latest) ? Text("Update Available") : Text("Up to Date") }
                 }
             } header: {
                 Text("Version")
