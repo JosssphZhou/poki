@@ -1496,6 +1496,19 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("\"Continue\"): back does not dismiss sheets, tap one of its buttons or drag it down"), result.text)
     }
 
+    func testLaunchAcceptsAnInstalledAppDisplayName() async {
+        let (core, wda, _) = makeCore()
+        _ = await core.call("look", [:])
+        wda.set("POST /wda/apps/activate") { body in
+            if body?["bundleId"]?.string == "com.apple.mobilesafari" {
+                return (200, ["value": .null])
+            }
+            return (500, ["value": ["error": "unknown error", "message": "Application is not installed"]])
+        }
+        let result = await core.call("do", ["actions": [["launch": "Safari"]]])
+        XCTAssertTrue(result.text.contains("launch com.apple.mobilesafari"), result.text)
+    }
+
     /// Notes is not on the CI simulator: the launch answered with the system's whole error dump.
     /// Now one line.
     func testALaunchOfAnAppThatIsNotInstalledIsOneLine() async {

@@ -928,13 +928,21 @@ test('a target read on one device is never tapped on another',async t=>{
  assert.deepEqual((await f.events()).filter(e=>e.op==='hid').map(e=>e.device),['fixture-sim-2']);
 });
 
+test('simulator launch accepts a display name with mixed case and spaces', async t => {
+ const f=await fixture(t,{approvalMode:'allow'});
+ await f.set({simulatorOnly:true,simulatorBooted:true});
+ const launched=await f.call('launch_app',{device:'fixture-sim',name:' fIx TuRe '});
+ assert.notEqual(launched.isError,true,JSON.stringify(launched));
+ assert.equal(value(launched).bundle_id,'local.fixture');
+});
+
 test('application names reuse a per-device directory across sessions and refresh after mutations', async t => {
  const f=await fixture(t,{approvalMode:'allow'}), second=await f.connect();
  const catalog=[{name:'携程旅行',bundle_id:'ctrip.com',system:false},{name:'Travel',bundle_id:'local.travel',system:false},{name:'Travel Pro',bundle_id:'local.pro',system:false},{name:'Settings',bundle_id:'com.apple.Preferences',system:true,aliases:['设置']},{name:'WeChat',bundle_id:'com.tencent.xin',system:false,aliases:['微信']}];
  const call=(client,name,args={})=>client.callTool({name,arguments:{device:'fixture-phone',...args}});
  await f.set({twoPhones:true,apps:catalog});
  const listed=await call(f.a,'list_apps');assert.equal(value(listed).apps.length,4);
- for(const [client,query,bundle] of [[second,'携程','ctrip.com'],[f.a,'Travel','local.travel'],[second,'设置','com.apple.Preferences'],[second,'微信','com.tencent.xin']]){
+ for(const [client,query,bundle] of [[second,'携程','ctrip.com'],[f.a,'Travel','local.travel'],[second,'设置','com.apple.Preferences'],[second,'微信','com.tencent.xin'],[second,'  wE cHaT  ','com.tencent.xin']]){
   const launched=await call(client,'launch_app',{name:query});
   assert.ok(!launched.isError,JSON.stringify(launched));assert.equal(value(launched).bundle_id,bundle);
   assert.equal(launched._meta.app_lookup.cache_hit,true);
@@ -948,6 +956,10 @@ test('application names reuse a per-device directory across sessions and refresh
   const before=(await f.events()).filter(e=>e.op==='launch_app').length;
   const rejected=await call(second,'launch_app',{name:query});
   assert.equal(rejected.isError,true);assert.equal(value(rejected).outcome,'not_sent');
+  if(query==='Trav'){
+   assert.match(value(rejected).error,/Travel \(local\.travel\)/);
+   assert.match(value(rejected).error,/Travel Pro \(local\.pro\)/);
+  }
   assert.equal((await f.events()).filter(e=>e.op==='launch_app').length,before);
  }
  const beforeDirect=(await f.events()).filter(e=>e.op==='list_apps').length;
