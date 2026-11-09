@@ -93,7 +93,7 @@ Install https://github.com/JosssphZhou/poki following its root AGENTS.md, includ
 
 [AGENTS.md](../AGENTS.md) covers prerequisites, source setup, the background daemon, registration in your own client, skill installation, iPhone pairing, Poki Agent, optional iMessage, and verification. It names each user-only stop, including Xcode setup, Trust This Computer, Developer Mode, UI Automation, and model login.
 
-The default MCP `tools/list` exposes the tools for phone tasks. `poki_mcp_status.total_tools` reports the size of the complete catalog. Set `POKI_MCP_TOOLS=all` in the client's environment and reconnect to discover the complete catalog. Read and report the actual values. Neither count proves that the phone is ready.
+The default MCP `tools/list` exposes `look`, `do`, `status`, and `mac`. Use `mac {tool, describe:true}` to inspect a legacy capability's parameters, then `mac {tool, arguments}` to execute it. `status` reports `total_tools`, the size of the complete catalog. Old names such as `poki_mcp_status` remain directly callable for one release with migration notices; they are not in default discovery. See the [migration table](mcp-app-tools.md) for all capabilities and Mac platform differences. Set `POKI_MCP_TOOLS=all` in the client's environment and reconnect to discover the complete catalog. Read and report the actual values. Neither count proves that the phone is ready.
 
 ## 3. Verify from the Terminal
 
