@@ -62,3 +62,37 @@ runtime fixes or new phone experiments were made while preparing this handoff.
 Only synthetic display identifiers and synthetic AX reference fixtures are
 included. Raw logs, captures, pairing records, runtime settings, device UDIDs,
 account labels, network names, credentials, and local filesystem paths are omitted.
+
+## Rebase onto main and hardware acceptance
+
+The three commits above are unchanged apart from conflict resolution. Three
+later commits rebase them onto `8b780c2` and fix what that exposed:
+
+- `display::active()` returns no display when the phone does not advertise
+  CoreDevice device information. Callers then keep the single-display defaults:
+  display 1, the main touchscreen HID service, the DVT screenshot and the
+  cached AX subscription.
+- Touch coordinates are rotated into the active panel's native axes, using the
+  panel's `currentOrientation`.
+- The AX read before text input gets 10 s instead of 4 s.
+
+Hardware: iPhone19,4 running iOS 27.1, connected over RemotePairing on Wi-Fi,
+with the inner panel unfolded in landscape (951 by 669 points, `rot90`).
+
+- Taps landed on the intended controls in a third-party app's sidebar and
+  switched its views. Before the rotation fix, the same taps landed elsewhere.
+- In Settings, `type_text` into the search field confirmed the text by reading
+  the field back, and the clipboard was restored. `tap_text` on the field's
+  close button cleared it.
+- An accessibility read of the Settings tree took 4.4 to 4.9 s warm and 22.6 s
+  on the first read after the tunnel came up.
+
+Still open:
+
+- The first read after the tunnel comes up can take longer than the 10 s
+  budget, so the first text input in a session can still fail before sending
+  anything. A retry succeeds.
+- `launch_app` on the inner panel reported that it could not confirm the
+  launch, although the app opened.
+- Rotations of 180 and 270 degrees and folding or unfolding during a session
+  have not been tried on hardware.
