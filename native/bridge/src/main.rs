@@ -30,6 +30,7 @@ type Hid = UniversalHidServiceClient<Box<dyn ReadWrite>>;
 struct Touch {
     client: Hid,
     surface: u64,
+    rotation: u16,
 }
 impl Touch {
     async fn connect_rsd(
@@ -38,13 +39,18 @@ impl Touch {
     ) -> Result<Self> {
         let display = display::active(adapter, rsd).await?;
         let mut client = Hid::connect_rsd(adapter, rsd).await?;
-        let surface = match display {
-            Some(display) => {
-                display::touch_surface(&display, &client.list_connected_services().await?)?
-            }
-            None => idevice::core_device::hid::DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+        let (surface, rotation) = match display {
+            Some(display) => (
+                display::touch_surface(&display, &client.list_connected_services().await?)?,
+                display.rotation,
+            ),
+            None => (idevice::core_device::hid::DIGITIZER_SURFACE_MAIN_TOUCHSCREEN, 0),
         };
-        Ok(Self { client, surface })
+        Ok(Self {
+            client,
+            surface,
+            rotation,
+        })
     }
     async fn send_touchscreen(
         &mut self,
@@ -53,6 +59,7 @@ impl Touch {
         y: u16,
         timestamp: Option<u64>,
     ) -> Result<()> {
+        let (x, y) = display::to_panel(self.rotation, x, y);
         self.client
             .send_report(
                 self.surface,
@@ -66,10 +73,22 @@ impl Touch {
         contacts: &[idevice::core_device::hid::TouchscreenContact],
         timestamp: Option<u64>,
     ) -> Result<()> {
+        let contacts: Vec<_> = contacts
+            .iter()
+            .map(|c| {
+                let (x, y) = display::to_panel(self.rotation, c.x, c.y);
+                idevice::core_device::hid::TouchscreenContact {
+                    identity: c.identity,
+                    touching: c.touching,
+                    x,
+                    y,
+                }
+            })
+            .collect();
         self.client
             .send_report(
                 self.surface,
-                idevice::core_device::hid::build_multitouch_report(contacts, timestamp)?,
+                idevice::core_device::hid::build_multitouch_report(&contacts, timestamp)?,
             )
             .await?;
         Ok(())
