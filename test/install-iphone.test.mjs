@@ -423,3 +423,14 @@ test('a sign-in Poki Setup already keeps, or a password already in the keychain,
     if (scenario === 'signed-in') assert.equal(shown.length, 0, 'a kept sign-in needs no window at all');
   });
 });
+
+test('a network error while signing in is retried with what the person already typed, without asking again', async t => {
+  const state = await stateDir(t);
+  const mac = await fakeMac(t);
+  const { code, events, stderr } = await runInstaller(state, { scenario: 'gsa-network', env: mac.env, answer: { open_poki: () => sub(state, 'done', 'open_poki') } });
+  assert.equal(code, 0, stderr);
+  const errors = events.filter(e => e.event === 'error');
+  assert.deepEqual(errors.map(e => [e.code, e.retrying]), [['network', true]]);
+  assert.equal((await mac.shown()).length, 3, 'email, password and code are asked once each');
+  assert.doesNotMatch(JSON.stringify(events) + stderr + await readFile(join(state, 'run.json'), 'utf8'), /correct horse/);
+});

@@ -11,6 +11,7 @@ const phoneName = 'Test iPhone';
 let signedIn = scenario === 'signed-in';
 let pending = null;
 let phoneCalls = 0;
+let signInCalls = 0;
 let installCalls = 0;
 let record = null;
 
@@ -59,6 +60,7 @@ const commands = {
   sign_in: ({ apple_id, password }) => {
     if (!apple_id || !password) fail('bad_request', 'apple_id and password are required');
     if (password === 'wrong') fail('apple', 'Your Apple ID or password was incorrect. (-22406)');
+    if (scenario === 'gsa-network' && ++signInCalls === 1) fail('http', 'network: error sending request for url (https://gsa.apple.com/grandslam/GsService2)');
     pending = 'trusted_device';
     return { needs_code: true, via: 'trusted_device' };
   },

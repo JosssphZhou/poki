@@ -246,9 +246,11 @@ class Run {
       await this.rememberTeams();
       return `already signed in (team ${account.team_id ? 'chosen' : 'to choose'})`;
     }
-    const attempts = { code: 0, password: 0, busy: 0 };
+    const attempts = { code: 0, password: 0, busy: 0, network: 0 };
+    // Kept across retries that are not about the password, so the person types it once.
+    let creds = null;
     for (;;) {
-      const creds = await this.credentials() ?? await this.askCredentials(account.apple_id, attempts.password > 0) ?? await this.waitFor('apple_password', () => this.credentials());
+      creds ??= await this.credentials() ?? await this.askCredentials(account.apple_id, attempts.password > 0) ?? await this.waitFor('apple_password', () => this.credentials());
       try {
         const started = await this.bridge.request('sign_in', { apple_id: creds.appleId, password: creds.password, keep_password: true });
         if (started.needs_code) {
@@ -274,7 +276,13 @@ class Run {
         const failure = classify('apple_account', error);
         if (failure.code === 'apple_sign_in_rejected' && creds.from !== 'environment' && ++attempts.password <= manifest.errors.apple_sign_in_rejected.retry) {
           this.reportError(failure, true);
-          await exec('security', ['delete-generic-password', '-s', KEYCHAIN_SERVICE]).catch(() => {});
+          if (creds.from === 'keychain') await exec('security', ['delete-generic-password', '-s', KEYCHAIN_SERVICE]).catch(() => {});
+          creds = null;
+          continue;
+        }
+        if (failure.code === 'network' && ++attempts.network <= manifest.errors.network.retry) {
+          this.reportError(failure, true);
+          await sleep(retryMs() * attempts.network);
           continue;
         }
         if (failure.code === 'apple_server_busy' && ++attempts.busy <= manifest.errors.apple_server_busy.retry) {
