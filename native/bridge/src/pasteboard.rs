@@ -253,8 +253,8 @@ pub async fn paste_text(
 
 async fn observe(adapter: &mut AdapterHandle, rsd: &RsdHandshake) -> Result<serde_json::Value> {
     tokio::time::timeout(
-        Duration::from_secs(4),
-        super::ax::read_tree_with_timeout(adapter, rsd, false, Duration::from_secs(4)),
+        Duration::from_secs(10),
+        super::ax::read_tree_with_timeout(adapter, rsd, false, Duration::from_secs(10)),
     )
     .await
     .map_err(|_| "AX observation connection or handshake timed out")?
