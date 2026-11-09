@@ -178,6 +178,10 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.setupComplete, "left: \(SetupStep.shown.filter { !model.isDone($0) })")
         XCTAssertFalse(model.setupStepsLeft)
         XCTAssertTrue(model.canStartFromHome)
+
+        model.loopback.simulate(.checking)
+        XCTAssertFalse(model.setupComplete)
+        XCTAssertTrue(model.canStartFromHome(localDDIAvailable: false), "Home keeps the chosen connection available during its first check")
     }
 
     func testHomeCanStartWithPreparedLocalAutomationWhileTheLoopbackIsDown() throws {
@@ -383,6 +387,18 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertEqual(model.runner.state, "connecting")
     }
 
+    func testLocalDDIOpenDeferredByThePasscodeGateDoesNotRestart() async {
+        await holdLocalDDIOpen()
+        let initialRestarts = launcher.restarts
+        model.loopback.simulate(.working(ms: 9))
+        session.answer(["ok": false, "code": "open_poki_first", "detail": "The owner needs to open Poki first."])
+        await waitFor("the deferral is reported") {
+            self.model.host.currentRunner.describe.contains("open_poki_first")
+        }
+        XCTAssertEqual(launcher.restarts, initialRestarts)
+        XCTAssertFalse(InProcessWDA.automationDeclined)
+    }
+
     func testRestoredLoopbackLeavesPasscodeWaitAndOpenSessionAlone() async {
         await holdLocalDDIOpen()
         let initialRestarts = launcher.restarts
@@ -425,6 +441,8 @@ final class InProcessPasscodeTests: XCTestCase {
         session.answer(["ok": false, "code": "com.apple.dt.XCTest.XCTFuture 1000", "detail": "Timed out while enabling automation mode.", "seconds": 60.0])
         await waitFor("iOS gave up on the passcode") { !self.model.passcodeHint && !self.model.host.currentRunner.describe.hasPrefix("starting") }
         let failed = model.host.currentRunner.describe
-        XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
+        XCTAssertTrue(InProcessWDA.automationDeclined)
+        XCTAssertTrue(failed.contains("does not ask again by itself"), failed)
+        XCTAssertTrue(failed.contains("Turn Poki off and on"), failed)
     }
 }

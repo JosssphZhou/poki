@@ -23,7 +23,7 @@ struct SessionsView: View {
 
     var body: some View {
         let canStart = model.canStartFromHome
-        let setupLeft = canStart ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count
+        let setupLeft = canStart ? 0 : SetupStep.shown.filter { !model.looksDone($0) }.count
         List {
             // What matters before any conversation: whether Poki is on, whether agents can reach it,
             // and what setup still needs.

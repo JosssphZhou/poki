@@ -327,17 +327,34 @@ final class SelfSigner {
     /// Poki to the Home Screen, as the person swiping up would: iOS finishes the upgrade only once the
     /// app it replaces is no longer in front. Once per install.
     private func stepAside() {
-        guard !steppedAside, UIApplication.shared.applicationState == .active else { return }
+        guard !steppedAside else { return }
+        log.add("signing", "the install's last step: asking the owner to close Poki and swipe it away")
         steppedAside = true
-        working = String(localized: "Finishing the update: Poki closes and the notice reopens it")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        working = String(localized: "Finishing the update: close Poki and swipe it away in the app switcher")
+        // The last step: the owner is told Poki must exit, and how to finish (the alert's OK steps
+        // aside); the notice says it again in case the alert was missed.
+        finishNotice = true
+        notify(title: String(localized: "Close Poki to Finish the Update"),
+               body: String(localized: "Swipe up to the app switcher and swipe Poki away, then open it again."))
+    }
+    /// The last install step's alert: Poki has to exit for the update to finish.
+    var finishNotice = false
+    /// OK on that alert: Poki leaves for the Home Screen.
+    func finishNoticeAnswered() {
+        finishNotice = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             UIApplication.shared.perform(NSSelectorFromString("suspend"))
         }
     }
 
     private func show(_ progress: [String: Any]) {
         switch progress["kind"] as? String {
-        case "step": working = progress["title"] as? String ?? working; fraction = nil
+        case "step":
+            working = progress["title"] as? String ?? working; fraction = nil
+            // The install itself has begun (the build is on the phone): the last step, where Poki
+            // must exit for iOS to finish. The owner is told now rather than at a percentage that a
+            // fast or stalled install may never report.
+            if progress["id"] as? String == "install" { stepAside() }
         case "part":
             fraction = progress["fraction"] as? Double
             if progress["id"] as? String == "install" { installFraction = fraction }

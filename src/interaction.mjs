@@ -12,13 +12,23 @@ const patienceMs = 5000, ocrAfterMs = 1000, ocrEveryMs = 2000, pollMs = 100, qui
 // cannot read at all is given this much more time before the search is called off.
 const ocrAllowanceMs = 12000;
 const strings = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(v => typeof v === 'string');
-const normalize = v => v.normalize('NFKC').toLocaleLowerCase().trim();
+// Join recognizer-spaced CJK characters without removing English word boundaries
+// or the spaces between CJK and other text.
+const cjk = '\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff';
+const betweenCjk = new RegExp(`(?<=[${cjk}])\\s+(?=[${cjk}])`, 'gu');
+const normalize = v => v.normalize('NFKC').toLocaleLowerCase().trim().replace(betweenCjk, '');
 const visible = e => flagOn(e.visible);
-const alertText = v => v.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase().trim().replace(/’/g, "'");
+// Alert and prompt text is compared against the Chinese entries in data/interaction.json, and
+// a recognizer writes spaces between those characters, so it needs the same normalisation as
+// every other comparison. Without it "允 许" never matched "允许", and a purchase prompt could
+// go unrecognised.
+const alertText = v => normalize(v.normalize('NFD').replace(/\p{M}/gu, '').replace(/’/g, "'"));
 
 export function promptWarning(elements) {
-  const texts = elements.flatMap(strings).map(t => t.toLocaleLowerCase().trim());
-  const rule = behavior.prompt_detector.find(rule => texts.some(t => rule.exact.includes(t) || rule.contains.some(part => t.includes(part))));
+  const texts = elements.flatMap(strings).map(t => normalize(t));
+  // The patterns in data/interaction.json are written the way a person writes them, so they go
+  // through the same normalisation as the text they are compared with.
+  const rule = behavior.prompt_detector.find(rule => texts.some(t => rule.exact.some(e => normalize(e) === t) || rule.contains.some(part => t.includes(normalize(part)))));
   return rule ? { kind: rule.name } : null;
 }
 
