@@ -38,8 +38,10 @@ pub async fn read_tree_with_timeout(
     include_offscreen: bool,
     wait: Duration,
 ) -> Result<Json> {
-    let display = super::display::active(adapter, rsd).await?;
-    if display.multiple_integrated {
+    if let Some(display) = super::display::active(adapter, rsd)
+        .await?
+        .filter(|display| display.multiple_integrated)
+    {
         return read_live(adapter, rsd, include_offscreen, wait, &display).await;
     }
     let deadline = tokio::time::Instant::now() + wait;
@@ -918,7 +920,9 @@ async fn read_live(
         if live_application(&mut socket, &mut id, display).await? != pid {
             return Err("AX app changed during read".into());
         }
-        let after = super::display::active(adapter, rsd).await?;
+        let after = super::display::active(adapter, rsd)
+            .await?
+            .ok_or("Active display information disappeared during AX read")?;
         if after.id != display.id || after.width != display.width || after.height != display.height
         {
             return Err("Active display changed during AX read".into());

@@ -1006,7 +1006,8 @@ test('verify:false omits action verification and batches observe once after all 
  assert.equal(summary.verified,false);
  assert.ok(summary.screen.text.includes('Button: First'));
  const operations=(await f.events()).slice(before).filter(event=>event.op).map(event=>event.op);
- assert.deepEqual(operations,['tap','tap','ax_tree']);
+ // The capture before the batch also goes through the native helper now, so it is listed as an op.
+ assert.deepEqual(operations,['screenshot','tap','tap','ax_tree']);
  await f.set({inputError:true});
  const failedBefore=(await f.events()).length;
  const failed=await f.call('batch_commands',{verify:false,stop_on_error:false,commands:[
