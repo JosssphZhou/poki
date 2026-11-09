@@ -25,6 +25,30 @@ struct SavedSession: Codable, Identifiable, Equatable {
     /// sha256 of the connector secret an outside agent's session came through (the relay says).
     var connector: String? = nil
 
+    static func isIMessageID(_ id: String) -> Bool { id.hasPrefix("imessage-") }
+    var isIMessage: Bool { kind == .handoff && Self.isIMessageID(id) }
+
+    /// Older versions showed the entire bridge prompt. Render those saved turns as a transcript
+    /// without rewriting the old files, whose IDs did not identify an iMessage conversation.
+    var transcript: [ChatEntry] {
+        guard kind == .handoff, !isIMessage,
+              let request = entries.first(where: { if case .request = $0.kind { true } else { false } }),
+              case .request(let prompt, _) = request.kind,
+              prompt.hasPrefix("这是机主授权的一对一 iMessage 对话。"),
+              let marker = prompt.range(of: "\n机主的新消息：", options: .backwards),
+              let message = try? JSONDecoder().decode(String.self, from: Data(prompt[marker.upperBound...].utf8)) else {
+            return entries
+        }
+        var user = request
+        user.kind = .you(message, delivered: true)
+        let lastReply = entries.last { entry in
+            if case .poki = entry.kind { return true }
+            if case .note(.problem) = entry.kind { return true }
+            return false
+        }
+        return [user] + (lastReply.map { [$0] } ?? [])
+    }
+
     /// The row's second line: the last thing that happened, as plain text (markdown neither drawn nor
     /// shown as its marks).
     var lastLine: String { Self.plain(rawLastLine) }
@@ -65,6 +89,7 @@ struct SavedSession: Codable, Identifiable, Equatable {
     /// "Claude → Poki" for a hand-off, the agent's name for its own session, "Poki" for a chat.
     var name: String {
         if let customName, !customName.isEmpty { return customName }
+        if isIMessage { return String(localized: "Poki · iMessage") }
         switch kind {
         case .poki: return autoName ?? (title == String(localized: "New conversation") ? "Poki" : String(title.prefix(40)))
         case .agent: return client ?? String(localized: "An agent")
@@ -189,6 +214,35 @@ final class SessionStore {
         session.outcome = stopped ? .stopped : success == false ? .failed : .done
         session.updated = Date()
         put(session)
+    }
+
+    func connector(for agentSession: String?) -> String? {
+        agentSession.flatMap { connectors[$0] }
+    }
+
+    func beginIMessage(_ id: String, connector: String, message: String) {
+        let now = Date()
+        var thread = session(id) ?? SavedSession(id: id, kind: .handoff, client: "iMessage", title: message,
+                                                  started: now, updated: now, live: false, outcome: nil,
+                                                  entries: [], calls: [], connector: connector)
+        if thread.entries.last.map({ now.timeIntervalSince($0.at) > 1800 }) ?? true {
+            thread.entries.append(ChatEntry(.time(now)))
+        }
+        thread.entries.append(ChatEntry(.you(message, delivered: true)))
+        thread.updated = now
+        thread.live = true
+        thread.outcome = nil
+        put(thread)
+    }
+
+    func finishIMessage(_ id: String, reply: String, calls: [CallRecord], success: Bool?, stopped: Bool) {
+        guard var thread = session(id) else { return }
+        thread.entries.append(ChatEntry(.poki(reply)))
+        thread.calls.append(contentsOf: calls)
+        thread.updated = Date()
+        thread.live = false
+        thread.outcome = stopped ? .stopped : success == false ? .failed : .done
+        put(thread)
     }
 
     /// Outside agents' sessions that came through a connector, newest first. The relay names the
