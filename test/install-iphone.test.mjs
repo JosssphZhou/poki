@@ -584,7 +584,10 @@ test('with no way into Poki\'s files (Poki Setup 0.2.1, no Xcode), the install f
   const state = await stateDir(t);
   const mac = await fakePhoneAndMac(t, { devicectl: false });
   const { code, events, stderr } = await runInstaller(state, { scenario: 'old-bridge', env: mac.env, args: ['--model-key', 'openai'], answer: personAnswers(state) });
-  assert.equal(code, 0, stderr);
+  assert.equal(code, 3, stderr);
+  assert.equal(events.at(-1).ok, false);
+  assert.deepEqual(events.at(-1).unverified.map(s => s.step), ['model_key', 'loopback']);
+  assert.ok(events.some(e => e.event === 'note' && /Accounts and Models/.test(e.text)));
   assert.ok(events.some(e => e.event === 'wait' && e.wait === 'open_poki_tell' && /Tell me/.test(e.say)), 'the agent confirms Poki is open with done');
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Accounts and Models/);
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'loopback').reason, /10\.7\.0\.1/);
@@ -615,7 +618,9 @@ test('a Poki too old to write its hello still counts as open once devicectl sees
   const state = await stateDir(t);
   const mac = await fakePhoneAndMac(t, { devicectl: true });
   const { code, events, stderr } = await runInstaller(state, { scenario: 'old-bridge,old-poki', env: mac.env, args: ['--model-key', 'openai'], answer: { apple_code: () => typeCode(state, '123456\n') } });
-  assert.equal(code, 0, stderr);
+  assert.equal(code, 3, stderr);
+  assert.equal(events.at(-1).ok, false);
+  assert.deepEqual(events.at(-1).unverified.map(s => s.step), ['model_key', 'loopback']);
   assert.match(events.find(e => e.event === 'done' && e.step === 'open_poki').detail, /running/);
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Accounts and Models/);
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'loopback').reason, /10\.7\.0\.1/);
