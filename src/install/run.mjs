@@ -129,6 +129,7 @@ class Run {
     this.opts = opts;
     this.state = opts.state;
     this.inbox = join(opts.state, 'inbox');
+    this.unverified = [];
     this.record = { started_at: new Date().toISOString(), channel: opts.channel, dry_run: !!opts.dryRun, setup_home: opts.setupHome ?? null, steps: {} };
   }
 
@@ -458,9 +459,9 @@ class Run {
     if (!provider) return { skipped: 'not asked to give Poki a model key (pass --model-key openai to carry the Mac keychain item openai-api-key)' };
     const typeIt = `ask the person to type the key in Poki: Agents > Accounts and Models`;
     const access = await this.access();
-    if (!access) return { skipped: `this Mac cannot reach Poki's files (this Poki Setup has no container commands and Xcode's devicectl is not installed); ${typeIt}` };
+    if (!access) return { manual: true, skipped: `this Mac cannot reach Poki's files (this Poki Setup has no container commands and Xcode's devicectl is not installed); ${typeIt}` };
     const phone = phoneKey((await readHello(access)) ?? this.hello);
-    if (!phone) return { skipped: `this Poki takes no key from the Mac yet; ${typeIt}` };
+    if (!phone) return { manual: true, skipped: `this Poki takes no key from the Mac yet; ${typeIt}` };
     const item = this.opts.modelKeyItem ?? `${provider}-api-key`;
     let secret = await readKeychainKey(item);
     if (!secret) throw new StepFailure('model_key_missing', `the login keychain has no key in the item ${item}`);
@@ -480,9 +481,9 @@ class Run {
   async loopback() {
     const tell = manifest.waits.loopback.say.replace(/ I see by myself when it works\.$/, '');
     const access = await this.access();
-    if (!access) return { skipped: `this Mac cannot read Poki's state; tell the person: ${tell}` };
+    if (!access) return { manual: true, skipped: `this Mac cannot read Poki's state; tell the person: ${tell}` };
     const hello = (await readHello(access)) ?? this.hello;
-    if (!hello?.loopback) return { skipped: `this Poki does not say whether its connection answers; tell the person: ${tell}` };
+    if (!hello?.loopback) return { manual: true, skipped: `this Poki does not say whether its connection answers; tell the person: ${tell}` };
     if (hello.loopback.working) return 'Poki\'s local connection (10.7.0.1) answers';
     // Poki's own sentence for the VPN app it found; device text is kept to one plain line.
     const fromPoki = String(hello.loopback.say ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 400);
@@ -549,7 +550,11 @@ class Run {
           const out = await (step.id === 'bridge' ? this.bridge_step() : this[step.id]());
           if (out && typeof out === 'object' && out.skipped) {
             this.emit({ event: 'skipped', step: step.id, reason: out.skipped });
-            await this.mark(step.id, this.previous?.steps?.[step.id]?.status === 'ok' ? 'ok' : 'skipped', { detail: out.skipped });
+            if (out.manual) {
+              this.unverified.push({ step: step.id, say: out.skipped });
+              this.emit({ event: 'note', text: `Action required: ${out.skipped}` });
+            }
+            await this.mark(step.id, out.manual ? 'manual' : 'skipped', { detail: out.skipped });
           } else {
             this.emit({ event: 'done', step: step.id, detail: out });
             await this.mark(step.id, 'ok', { detail: out });
@@ -569,8 +574,8 @@ class Run {
       }
       this.record.finished_at = new Date().toISOString();
       await this.save();
-      this.emit({ event: 'result', ok: true, check: this.checkResult, dry_run: !!this.opts.dryRun });
-      return 0;
+      this.emit({ event: 'result', ok: this.unverified.length === 0, check: this.checkResult, dry_run: !!this.opts.dryRun, ...(this.unverified.length ? { unverified: this.unverified } : {}) });
+      return this.unverified.length ? 3 : 0;
     } finally {
       this.bridge?.close();
     }
