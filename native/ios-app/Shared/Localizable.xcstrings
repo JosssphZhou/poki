@@ -1174,6 +1174,54 @@
         }
       }
     },
+    "Automation Status" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动化状态"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動化狀態"
+          }
+        }
+      }
+    },
+    "Automation is ready. You can turn cellular data on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动化已就绪，可以打开蜂窝数据"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動化已就緒，可以開啟行動數據。"
+          }
+        }
+      }
+    },
+    "Available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可用"
+          }
+        }
+      }
+    },
     "BACKGROUND HOLD" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1330,6 +1378,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法讀取 Poki 的 VPN 配置。請重試，或選擇外部連線。"
+          }
+        }
+      }
+    },
+    "Cellular Startup" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "纯蜂窝启动"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "行動網路啟動"
           }
         }
       }
@@ -2851,6 +2915,22 @@
         }
       }
     },
+    "Keep the loopback proxy connected and turn off Wi-Fi and cellular data. When loopback is responding, turn Poki on and tap Prepare 5G Automation. Turn cellular data on once automation is ready. The prepared session stays open when idle, so iOS may keep showing its automation banner." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持回环代理连接，关闭 Wi-Fi 和蜂窝数据。回环可用后开启 Poki，点「准备 5G 自动化」。等自动化就绪后再打开蜂窝数据。已准备的会话在闲置时会保持开启，iOS 可能继续显示自动化横幅。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持迴環代理連線，關閉 Wi-Fi 和行動數據。迴環可用後開啟 Poki，點一下「準備 5G 自動化」。等自動化就緒後再開啟行動數據。已準備的工作階段在閒置時會保持開啟，iOS 可能繼續顯示自動化橫幅。"
+          }
+        }
+      }
+    },
     "Keep your existing VPN connected. Poki uses its loopback and leaves its own VPN off." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3296,6 +3376,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "迴環"
+          }
+        }
+      }
+    },
+    "Loopback Not Responding" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回环探测未响应"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "迴環無回應"
           }
         }
       }
@@ -4739,6 +4835,22 @@
         }
       }
     },
+    "Pauses automation and keeps the session" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停自动化并保留会话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暫停自動化並保留工作階段"
+          }
+        }
+      }
+    },
     "Poki" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4893,6 +5005,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet. You answer on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens."
+          }
+        }
+      }
+    },
+    "Poki can reuse its current automation session. Pairing and mounting the developer image still need the local connection." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 可以复用当前的自动化会话。配对和挂载开发者映像仍需要本地连接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 可以沿用目前的自動化工作階段。配對與掛載開發者映像仍需要本機連線。"
           }
         }
       }
@@ -5312,6 +5440,22 @@
         }
       }
     },
+    "Prepare 5G Automation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备 5G 自动化"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備 5G 自動化"
+          }
+        }
+      }
+    },
     "Preparing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5405,6 +5549,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待AI 代理的下一步。"
+          }
+        }
+      }
+    },
+    "Ready to Resume" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待机，可唤醒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可恢復"
           }
         }
       }
@@ -5602,6 +5762,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "繼續"
+          }
+        }
+      }
+    },
+    "Resumes automation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复自动化"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢復自動化"
+          }
+        }
+      }
+    },
+    "Resuming…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在恢复…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在恢復…"
           }
         }
       }
@@ -5815,6 +6007,22 @@
         }
       }
     },
+    "Session Available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会话可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作階段可用"
+          }
+        }
+      }
+    },
     "Set Up Poki" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5913,6 +6121,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配置"
+          }
+        }
+      }
+    },
+    "Setup Needed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要設定"
           }
         }
       }
@@ -6825,6 +7049,22 @@
         }
       }
     },
+    "Poki can use the current automation session. Check the local connection if you need to pair again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 可以使用当前的自动化会话。如需重新配对，请检查本地连接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 可以使用目前的自動化工作階段。如需重新配對，請檢查本機連線。"
+          }
+        }
+      }
+    },
     "The developer disk image did not install. Poki downloads it again by itself." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7463,6 +7703,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟迴環"
+          }
+        }
+      }
+    },
+    "Turn Poki Off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉 Poki"
           }
         }
       }

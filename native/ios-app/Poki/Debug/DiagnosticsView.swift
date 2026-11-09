@@ -11,6 +11,22 @@ struct DiagnosticsView: View {
 
     var body: some View {
         Form {
+            if model.automationPath == .inProcess {
+                Section {
+                    Button("Prepare 5G Automation", action: model.prepareAutomationBeforeCellular)
+                        .disabled(!model.canPrepareAutomationBeforeCellular)
+                    if model.cellularPreparationReady && !model.loopback.cellularUp {
+                        Label("Automation is ready. You can turn cellular data on.", systemImage: "checkmark.circle")
+                            .foregroundStyle(.green)
+                    } else {
+                        LabeledContent("Automation Status", value: Health.automation(model).word)
+                    }
+                } header: {
+                    Text("Cellular Startup")
+                } footer: {
+                    Text("Keep the loopback proxy connected and turn off Wi-Fi and cellular data. When loopback is responding, turn Poki on and tap Prepare 5G Automation. Turn cellular data on once automation is ready. The prepared session stays open when idle, so iOS may keep showing its automation banner.")
+                }
+            }
             Section {
                 if let loop = loopbackInterface(addresses) {
                     Text(verbatim: "\(loop.interface)  \(loop.address)").font(.body.monospaced().weight(.semibold))

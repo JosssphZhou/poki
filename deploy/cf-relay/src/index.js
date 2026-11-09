@@ -99,11 +99,13 @@ export const RPC_ERRORS = {
   timeout: [504, -32002, 'The phone did not answer in time.'],
   limited: [429, -32003, 'Too many requests: wait a little and try again.'],
 };
-function rpcError(kind, body) {
+function rpcError(kind, body, stage) {
   let id = null;
   try { const parsed = JSON.parse(body); if (parsed && !Array.isArray(parsed) && 'id' in parsed) id = parsed.id; } catch { /* not JSON */ }
   const [status, code, message] = RPC_ERRORS[kind];
-  return json(status, { jsonrpc: '2.0', id, error: { code, message } }, kind === 'limited' ? { 'Retry-After': '10' } : {});
+  const headers = kind === 'limited' ? { 'Retry-After': '10' } : {};
+  if (stage) headers['X-Poki-Relay-Stage'] = stage;
+  return json(status, { jsonrpc: '2.0', id, error: { code, message } }, headers);
 }
 
 // ---------- OAuth: a minimal authorization server per connector URL ----------
@@ -329,7 +331,7 @@ export class DeviceRelay extends DurableObject {
   }
 
   phone() {
-    return this.ctx.getWebSockets('phone').find(ws => ws.deserializeAttachment()?.ready);
+    return this.ctx.getWebSockets('phone').find(ws => ws.readyState === WebSocket.OPEN && ws.deserializeAttachment()?.ready);
   }
 
   async fetch(request) {
@@ -400,10 +402,13 @@ export class DeviceRelay extends DurableObject {
 
   webSocketClose(ws) {
     for (const [id, waiter] of this.pending) if (waiter.ws === ws) waiter.resolve('dropped');
+    // Older compatibility dates require the server to complete the close handshake.
+    if (ws.readyState === WebSocket.CLOSING) ws.close();
   }
 
   webSocketError(ws) {
     this.webSocketClose(ws);
+    if (ws.readyState === WebSocket.OPEN) ws.close(1011, 'relay socket error');
   }
 
   // Per-label minute window and concurrency here; daily caps through the Budget object.
@@ -443,11 +448,15 @@ export class DeviceRelay extends DurableObject {
 
   async mcp(request) {
     const { method, headers, body, secretHash } = await request.json();
-    const phone = this.phone();
-    if (!phone) return rpcError('offline', body);
+    let phone = this.phone();
+    if (!phone) return rpcError('offline', body, 'no-open-socket');
     // Unknown secret and unknown label look the same.
     if (!phone.deserializeAttachment().access.includes(secretHash)) return notFound();
     if (!(await this.admit())) return rpcError('limited', body);
+    // A phone can reconnect while the budget request is in flight.
+    phone = this.phone();
+    if (!phone) return rpcError('offline', body, 'socket-closed-before-dispatch');
+    if (!phone.deserializeAttachment().access.includes(secretHash)) return notFound();
     const id = `r${++this.next}`;
     const started = Date.now();
     // Awake time: the request itself, plus about 10 s before an idle object hibernates.
@@ -462,7 +471,12 @@ export class DeviceRelay extends DurableObject {
       });
       // s: which connector URL this came through (sha256 of its secret, which the phone already holds),
       // so the phone can show the session under its connector.
-      try { phone.send(JSON.stringify({ t: 'req', id, method, headers, body, s: secretHash })); } catch { finish(undefined); }
+      try {
+        phone.send(JSON.stringify({ t: 'req', id, method, headers, body, s: secretHash }));
+      } catch {
+        finish('send-failed');
+        phone.close(1011, 'relay send failed');
+      }
     });
     this.lastEnd = Date.now();
     this.spentMs += this.lastEnd - started;
@@ -472,7 +486,7 @@ export class DeviceRelay extends DurableObject {
     }
     if (reply === 'cancelled') return new Response(null, { status: 499 });
     if (reply === 'dropped') return rpcError('dropped', body);
-    if (!reply) return rpcError('offline', body);
+    if (reply === 'send-failed') return rpcError('offline', body, 'socket-send-failed');
     const out = { ...CORS };
     for (const name of RETURNED_HEADERS) if (typeof reply.headers?.[name] === 'string') out[name] = reply.headers[name];
     const status = Number.isInteger(reply.status) && reply.status >= 200 && reply.status <= 599 ? reply.status : 502;

@@ -93,6 +93,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var runner: RunnerState = .starting("not started")
     private var restart: (@Sendable () -> Void)?
     private var paused = false
+    private var pausedByOwner = false
     private var wake: (@Sendable () -> Void)?
     private var warm: (@Sendable () -> Void)?
     private var retry: (@Sendable () -> Void)?
@@ -112,7 +113,12 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
         lock.withLock { warm }?()
     }
     /// The runner was stopped while idle (or by the owner): the next tool call starts it again.
-    func setPaused(_ value: Bool) { lock.withLock { paused = value } }
+    func setPaused(_ value: Bool, byOwner: Bool = false) {
+        lock.withLock {
+            paused = value
+            pausedByOwner = value && byOwner
+        }
+    }
 
     func signingKey() throws -> RelayKey {
         guard let key = lock.withLock({ self.key }) else { throw NSError(domain: "Poki", code: 1, userInfo: [NSLocalizedDescriptionKey: "no relay key in the keychain"]) }
@@ -131,6 +137,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     /// is asked to try again for the next call.
     func runnerState() -> RunnerState {
         let (state, then) = lock.withLock { () -> (RunnerState, (@Sendable () -> Void)?) in
+            if pausedByOwner { return (.failed("Poki automation is paused", fix: "Tap Paused on the Poki home screen to resume"), nil) }
             guard paused else {
                 // Failed, or still starting: the app is asked to (re)open its session. Opening is
                 // idempotent and the app ignores the ask while an open is under way, so a call that
@@ -148,6 +155,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     }
     func restartRunner() {
         let (wasPaused, wake, restart) = lock.withLock { () -> (Bool, (@Sendable () -> Void)?, (@Sendable () -> Void)?) in
+            if pausedByOwner { return (false, nil, nil) }
             let was = paused; paused = false
             return (was, self.wake, self.restart)
         }

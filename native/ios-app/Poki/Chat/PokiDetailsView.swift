@@ -25,16 +25,16 @@ struct PokiDetailsView: View {
                 Section {
                     let issues = Issue.current(model)
                     Toggle("Poki", isOn: Binding(get: { model.sessionOn }, set: { $0 ? model.startSession() : model.stopSession() }))
-                    // The in-process path has no Poki Runner (ESP-152): its row is hidden, the code kept.
                     HealthRow(title: "Relay", health: Health.relay(model))
                     if model.automationPath == .runner { HealthRow(title: "Runner", health: Health.runner(model)) }
+                    else { HealthRow(title: "Automation", health: Health.automation(model)) }
                     if model.recentSteps.last != nil {
                         NavigationLink(value: DetailsRoute.history) { LabeledContent("Last Action", value: lastRun) }
                     }
                     if model.sessionOn && !model.runnerPaused || chat.running {
                         Button("Pause", systemImage: "pause.fill") { chat.stop(); model.pauseRunner() }
                     } else if model.sessionOn {
-                        Button("Resume", systemImage: "play.fill") { model.wakeRunner() }
+                        Button("Resume", systemImage: "play.fill") { model.resumeAutomation() }
                     }
                     ForEach(issues) { issue in
                         IssueRow(issue: issue, openSetup: openSetup)
@@ -63,7 +63,7 @@ struct PokiDetailsView: View {
                     NavigationLink(value: SettingsRoute.memory) { Label("Memory", systemImage: "brain") }
                     NavigationLink(value: DetailsRoute.setup) {
                         LabeledContent {
-                            Text(model.setupComplete ? String(localized: "Done") : String(localized: "\(SetupStep.shown.filter { !model.isDone($0) }.count) Needed"))
+                            Text(model.setupComplete ? String(localized: "Done") : String(localized: "\(model.setupPendingCount) Needed"))
                                 .foregroundStyle(model.setupComplete ? Color.secondary : Color.orange)
                         } label: { Label("Setup", systemImage: "checklist") }
                     }

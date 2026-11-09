@@ -96,7 +96,7 @@ var RPC_ERRORS = {
   timeout: [504, -32002, "The phone did not answer in time."],
   limited: [429, -32003, "Too many requests: wait a little and try again."]
 };
-function rpcError(kind, body) {
+function rpcError(kind, body, stage) {
   let id = null;
   try {
     const parsed = JSON.parse(body);
@@ -104,7 +104,9 @@ function rpcError(kind, body) {
   } catch {
   }
   const [status, code, message] = RPC_ERRORS[kind];
-  return json(status, { jsonrpc: "2.0", id, error: { code, message } }, kind === "limited" ? { "Retry-After": "10" } : {});
+  const headers = kind === "limited" ? { "Retry-After": "10" } : {};
+  if (stage) headers["X-Poki-Relay-Stage"] = stage;
+  return json(status, { jsonrpc: "2.0", id, error: { code, message } }, headers);
 }
 __name(rpcError, "rpcError");
 function bases(url, label, secret) {
@@ -390,7 +392,7 @@ var DeviceRelay = class extends DurableObject {
     this.lastEnd = 0;
   }
   phone() {
-    return this.ctx.getWebSockets("phone").find((ws) => ws.deserializeAttachment()?.ready);
+    return this.ctx.getWebSockets("phone").find((ws) => ws.readyState === WebSocket.OPEN && ws.deserializeAttachment()?.ready);
   }
   async fetch(request) {
     const url = new URL(request.url);
@@ -465,9 +467,11 @@ var DeviceRelay = class extends DurableObject {
   }
   webSocketClose(ws) {
     for (const [id, waiter] of this.pending) if (waiter.ws === ws) waiter.resolve("dropped");
+    if (ws.readyState === WebSocket.CLOSING) ws.close();
   }
   webSocketError(ws) {
     this.webSocketClose(ws);
+    if (ws.readyState === WebSocket.OPEN) ws.close(1011, "relay socket error");
   }
   // Per-label minute window and concurrency here; daily caps through the Budget object.
   async admit() {
@@ -512,10 +516,13 @@ var DeviceRelay = class extends DurableObject {
   }
   async mcp(request) {
     const { method, headers, body, secretHash } = await request.json();
-    const phone = this.phone();
-    if (!phone) return rpcError("offline", body);
+    let phone = this.phone();
+    if (!phone) return rpcError("offline", body, "no-open-socket");
     if (!phone.deserializeAttachment().access.includes(secretHash)) return notFound();
     if (!await this.admit()) return rpcError("limited", body);
+    phone = this.phone();
+    if (!phone) return rpcError("offline", body, "socket-closed-before-dispatch");
+    if (!phone.deserializeAttachment().access.includes(secretHash)) return notFound();
     const id = `r${++this.next}`;
     const started = Date.now();
     if (started - this.lastEnd > 1e4) this.spentMs += 1e4;
@@ -537,7 +544,8 @@ var DeviceRelay = class extends DurableObject {
       try {
         phone.send(JSON.stringify({ t: "req", id, method, headers, body, s: secretHash }));
       } catch {
-        finish(void 0);
+        finish("send-failed");
+        phone.close(1011, "relay send failed");
       }
     });
     this.lastEnd = Date.now();
@@ -551,7 +559,7 @@ var DeviceRelay = class extends DurableObject {
     }
     if (reply === "cancelled") return new Response(null, { status: 499 });
     if (reply === "dropped") return rpcError("dropped", body);
-    if (!reply) return rpcError("offline", body);
+    if (reply === "send-failed") return rpcError("offline", body, "socket-send-failed");
     const out = { ...CORS };
     for (const name of RETURNED_HEADERS) if (typeof reply.headers?.[name] === "string") out[name] = reply.headers[name];
     const status = Number.isInteger(reply.status) && reply.status >= 200 && reply.status <= 599 ? reply.status : 502;

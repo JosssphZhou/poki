@@ -214,6 +214,7 @@ describe('OAuth and MCP', () => {
     await new Promise(resolve => setTimeout(resolve, 50));
     const offline = await call(quiet.mcp, quiet.token, { jsonrpc: '2.0', id: 'a', method: 'tools/list' });
     expect(offline.status).toBe(503);
+    expect(offline.headers.get('X-Poki-Relay-Stage')).toBe('no-open-socket');
     expect(await offline.json()).toMatchObject({ jsonrpc: '2.0', id: 'a', error: { code: -32001 } });
 
     const busy = await connected();

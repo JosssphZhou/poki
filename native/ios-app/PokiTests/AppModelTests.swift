@@ -289,6 +289,51 @@ final class InProcessPasscodeTests: XCTestCase {
         await fulfillment(of: [done], timeout: 5)
     }
 
+    func testOwnerCanResumeTheKeptSessionWithoutLoopback() async {
+        model.wakeRunner()
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the session opened") { self.model.canReuseInProcessSession }
+        model.loopback.simulate(.off)
+
+        model.pauseKeptAutomation()
+        model.host.warmUp()
+        model.wakeRunner()
+        XCTAssertTrue(model.automationPausedByOwner)
+        XCTAssertTrue(model.runnerPaused)
+        XCTAssertTrue(model.host.runnerState().describe.contains("automation is paused"))
+        XCTAssertTrue(model.looksDone(.loopback), "Home can use the kept session")
+        XCTAssertFalse(model.isDone(.loopback), "the probe remains down")
+
+        model.resumeAutomation()
+        await waitFor("the kept session resumed") { self.model.host.currentRunner.isRunning }
+        XCTAssertFalse(model.runnerPaused)
+        XCTAssertTrue(model.canReuseInProcessSession)
+        XCTAssertFalse(model.loopback.isWorking)
+    }
+
+    func testCellularPreparationKeepsTheSessionThroughIdle() async {
+        let saved = UserDefaults.standard.object(forKey: "inProcess.closeWhenIdle")
+        defer { UserDefaults.standard.set(saved, forKey: "inProcess.closeWhenIdle") }
+        model.closeSessionWhenIdle = true
+        model.loopback.simulate(.working(ms: 9), wifiUp: false, cellularUp: false)
+        model.prepareAutomationBeforeCellular()
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the session was prepared") { self.model.cellularPreparationReady }
+
+        model.loopback.simulate(.noAnswer, cellularUp: true)
+        model.pauseRunner(reason: "Idle")
+        XCTAssertTrue(model.runnerPaused)
+        XCTAssertFalse(model.automationPausedByOwner, "idle can still be woken by an agent")
+        XCTAssertTrue(model.canReuseInProcessSession)
+
+        _ = model.host.runnerState()
+        await waitFor("an agent reused the prepared session") { self.model.host.currentRunner.isRunning }
+        XCTAssertTrue(model.cellularPreparationReady)
+        XCTAssertFalse(model.loopback.isWorking)
+    }
+
     func testAPasscodeWaitAsksTheOwnerAndTellsTheAgentWhoMustEnterIt() async {
         session.holdNextOpen()
         model.wakeRunner()
@@ -302,6 +347,8 @@ final class InProcessPasscodeTests: XCTestCase {
         session.answer(["ok": false, "code": "com.apple.dt.XCTest.XCTFuture 1000", "detail": "Timed out while enabling automation mode.", "seconds": 60.0])
         await waitFor("iOS gave up on the passcode") { !self.model.passcodeHint && !self.model.host.currentRunner.describe.hasPrefix("starting") }
         let failed = model.host.currentRunner.describe
-        XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
+        XCTAssertTrue(failed.contains("the owner did not enter the iPhone passcode"), failed)
+        model.warmInProcess("an agent asked again")
+        XCTAssertEqual(model.host.currentRunner.describe, failed, "the owner must turn Poki on again after declining")
     }
 }

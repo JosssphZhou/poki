@@ -312,14 +312,21 @@ private struct LoopbackPage: View {
 
     var body: some View {
         let monitor = model.loopback
+        let canReuse = model.canReuseInProcessSession
+        let loopbackUnavailable = !monitor.isWorking && monitor.state != .checking
         Section {
+            if canReuse {
+                LabeledContent("Automation", value: Health.automation(model).word)
+            }
             LabeledContent {
                 if monitor.state == .checking { ProgressView() }
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(headline(monitor))
-                        Text(monitor.isWorking || monitor.state == .noAnswer ? LocalizedStringKey(monitor.detail) : "Checking 10.7.0.1 every few seconds…")
+                        Text(canReuse && loopbackUnavailable ? "Loopback Not Responding" : headline(monitor))
+                        Text(canReuse && loopbackUnavailable
+                             ? "Poki can reuse its current automation session. Pairing and mounting the developer image still need the local connection."
+                             : monitor.isWorking || monitor.state == .noAnswer ? LocalizedStringKey(monitor.detail) : "Checking 10.7.0.1 every few seconds…")
                             .font(.footnote).foregroundStyle(Color(.secondaryLabel))
                     }
                 } icon: {
@@ -344,7 +351,7 @@ private struct LoopbackPage: View {
         } header: {
             Text("Use Your Proxy App")
         } footer: {
-            if let chosen = model.setup.proxyApp, !monitor.isWorking, model.setup.loopback == .proxy {
+            if let chosen = model.setup.proxyApp, !monitor.isWorking, !canReuse, model.setup.loopback == .proxy {
                 let name = ProxyApps.all.first { $0.id == chosen }?.name ?? "LocalDevVPN"
                 Text("\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back. This page updates by itself.")
             }
@@ -785,7 +792,9 @@ struct SetupChecklist: View {
             } header: {
                 Text("Checklist")
             } footer: {
-                Text(model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
+                Text(model.canReuseInProcessSession && !model.loopback.isWorking
+                     ? "Poki can use the current automation session. Check the local connection if you need to pair again."
+                     : model.setupComplete ? "Everything Poki needs is in place." : "Poki needs every item ticked before an agent or the chat can use this iPhone. Items tick themselves when the phone can check them.")
             }
             ContributeSection()
             SigningSection()
@@ -882,6 +891,8 @@ struct SetupStepRow: View {
         LabeledContent {
             if done {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel(Text("Done"))
+            } else if step == .loopback, model.canReuseInProcessSession {
+                Text("Session Available").foregroundStyle(.secondary)
             } else {
                 Text(problem).foregroundStyle(.orange)
             }

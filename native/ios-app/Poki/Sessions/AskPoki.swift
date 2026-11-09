@@ -54,6 +54,9 @@ enum AskPoki {
             return PokiCore.ToolAnswer(text: "error: task is empty; nothing was done", jpeg: nil, isError: true)
         }
         guard let app else { return PokiCore.ToolAnswer(text: "error: Poki is not ready", jpeg: nil, isError: true) }
+        guard !app.automationPausedByOwner else {
+            return PokiCore.ToolAnswer(text: "Poki automation is paused. Tap Paused on the Poki home screen to resume.", jpeg: nil, isError: true)
+        }
         if chat?.running == true || ChatModel.delegatedBusy != nil || !running.isEmpty {
             return PokiCore.ToolAnswer(text: "busy: Poki's agent is already working on a task on this iPhone; nothing was done. Try again in a minute, or use look and do.", jpeg: nil, isError: true)
         }
@@ -93,6 +96,9 @@ enum AskPoki {
 
     /// The hand-off running in this session, for its live transcript.
     static func live(_ id: String) -> ChatModel? { running[id] }
+    static func stopRunning() {
+        for chat in running.values { chat.stop() }
+    }
 }
 
 /// Resumes a continuation once; later answers are dropped.
