@@ -93,6 +93,18 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(text.contains("does not reflect 10.7.0.1"), text)
     }
 
+    /// ESP-225: a local interface with no answer at 10.7.0.1 is the loopback first, then the pairing.
+    /// Developer Mode, which only goes off with a restart, comes last.
+    func testTunnelWithoutAnswerPutsDeveloperModeLast() throws {
+        let (model, _) = model()
+        model.loopback.simulate(.noAnswer)
+        let text = model.loopback.detail
+        let reconnect = try XCTUnwrap(text.range(of: "Reconnect"), text)
+        let pairing = try XCTUnwrap(text.range(of: "Setup › Pairing"), text)
+        let developerMode = try XCTUnwrap(text.range(of: "Developer Mode"), text)
+        XCTAssertTrue(reconnect.lowerBound < pairing.lowerBound && pairing.lowerBound < developerMode.lowerBound, text)
+    }
+
     /// With the loopback up, the launcher's own words stand.
     func testLoopbackUpKeepsTheLauncherState() {
         let (model, _) = model()
