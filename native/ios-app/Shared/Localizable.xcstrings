@@ -221,6 +221,17 @@
         }
       }
     },
+    "10.7.0.1 takes the connection, but the phone's remote pairing service does not answer through it, so this page can show Working while Poki cannot connect. Reconnect your proxy app or LocalDevVPN, then pair again in Setup › Pairing." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10.7.0.1 接受了连接，但手机的远程配对服务没有通过它回应，所以本页可能显示“正常”而 Poki 仍连不上。请重新连接代理 App 或 LocalDevVPN，然后到“设置引导 › 配对”重新配对。"
+          }
+        }
+      }
+    },
     "2 minutes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2459,6 +2470,17 @@
         }
       }
     },
+    "Open Setup › Loopback and check the loopback, then pair this iPhone again in Setup › Pairing with the loopback on." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开“设置引导 › 回环”检查回环，然后在回环开着时到“设置引导 › 配对”重新配对这台 iPhone。"
+          }
+        }
+      }
+    },
     "Open Shadowrocket." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3044,17 +3066,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在等待智能体的下一步。"
-          }
-        }
-      }
-    },
-    "Reconnect the local connection: turn Poki's VPN, LocalDevVPN or your proxy app off and on again, with the iPhone on Wi-Fi. If the phone still does not answer, restart it; if that does not help, pair this iPhone again." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新连接本地连接：在 iPhone 连着无线局域网时，把 Poki 的 VPN、LocalDevVPN 或代理 App 关掉再打开。如果手机仍然没有响应，请重启手机；仍然不行时，重新配对这台 iPhone。"
           }
         }
       }

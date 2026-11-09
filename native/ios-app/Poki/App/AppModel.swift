@@ -113,6 +113,10 @@ final class AppModel {
     private(set) var pairingTrouble: String?
     /// When the phone last accepted the pairing (the runner got past the pairing step).
     private(set) var pairingVerifiedAt: Date?
+    /// The loopback took the connection, but the phone's remote pairing service did not answer through
+    /// it (GitHub issue 69). The loopback probe only connects, so it still reads Working; the
+    /// Loopback page says so. false once the phone answers again.
+    private(set) var servicesSilent = false
     /// The runner has been launching for a while: iOS may be asking for the passcode.
     private(set) var passcodeHint = false
     /// Turning on now will probably bring up iOS's passcode screen (no automation has started since
@@ -631,6 +635,7 @@ final class AppModel {
                 _ = try await SignerBridge.call(["op": "udid", "device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"])
                 if self.pairingTrouble != nil { self.log.add("pairing", "check: accepted again") }
                 self.pairingTrouble = nil
+                self.servicesSilent = false
                 self.pairingVerifiedAt = Date()
                 return true
             } catch {
@@ -649,6 +654,7 @@ final class AppModel {
                     return false
                 }
                 self.log.add("pairing", "check could not finish: \(text) [\(self.networkNote)]")
+                if text.contains("remote pairing handshake failed") { self.servicesSilent = true }
                 return true
             }
         }
@@ -1012,6 +1018,7 @@ final class AppModel {
             // The phone accepted the pairing.
             if pairingTrouble != nil { log.add("pairing", "accepted again") }
             pairingTrouble = nil
+            servicesSilent = false
             pairingVerifiedAt = Date()
             // The disk image mounted and the runner is starting, so Developer Mode is on; a running
             // runner means UI Automation is on too. Setup's confirm steps tick themselves (a pairing
@@ -1020,6 +1027,8 @@ final class AppModel {
             if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
             if status.state == "running", automationPath == .runner { automationStarted() }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
+        case "failed" where status.detail?.hasPrefix("remote pairing handshake failed") == true:
+            servicesSilent = true
         case "failed" where status.fix?.contains("Pair again") == true:
             if pairingTrouble == nil { log.add("pairing", "refused: \(status.detail ?? "")") }
             pairingTrouble = status.detail ?? "The phone refused the pairing."
@@ -1278,6 +1287,7 @@ final class AppModel {
             ("This iOS version needs a newer", "Disk Image Outdated"),
             ("The developer disk image did not install", "Fetching Disk Image"),
             ("Pair again", "Pairing Refused"),
+            ("Open Setup › Loopback", "Loopback or Pairing"),
             ("Turn on Developer Mode", "Developer Mode Off"),
             ("Install Poki Runner", "Poki Runner Missing"),
         ]

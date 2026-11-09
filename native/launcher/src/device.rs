@@ -54,8 +54,9 @@ pub const DDI_REFUSED_FIX: &str = "This iOS version needs a newer developer disk
 pub const DDI_BAD_FIX: &str = "The developer disk image did not install. Poki downloads it again by itself.";
 pub const PAIRING_FIX: &str = "Pair again in Poki's setup.";
 /// The loopback took the connection, then the phone's remote pairing service did not answer, before
-/// the pairing was checked. Seen with Developer Mode on (GitHub issue 69): the path to the phone is the fix.
-pub const HANDSHAKE_FIX: &str = "Reconnect the local connection: turn Poki's VPN, LocalDevVPN or your proxy app off and on again, with the iPhone on Wi-Fi. If the phone still does not answer, restart it; if that does not help, pair this iPhone again.";
+/// the pairing was checked. Seen with Developer Mode on (GitHub issue 69): the loopback, or a new
+/// pairing made over it, is the fix. The app reads "Setup ›" as a step in its own Setup.
+pub const HANDSHAKE_FIX: &str = "Open Setup › Loopback and check the loopback, then pair this iPhone again in Setup › Pairing with the loopback on.";
 pub const DEVELOPER_MODE_FIX: &str = "Turn on Developer Mode: Settings → Privacy & Security → Developer Mode, then restart the phone.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
