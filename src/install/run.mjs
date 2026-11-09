@@ -380,7 +380,7 @@ class Run {
     if (this.doneBefore('install') && !this.opts.reinstall) {
       const records = await this.bridge.request('records');
       const installed = records.find(r => r.udid === this.udid);
-      if (installed) {
+      if (installed && installed.profile_expires_at > Date.now() / 1000) {
         this.bundleId = installed.bundle_id;
         return { skipped: 'Poki is already installed from this computer (pass --reinstall to sign and install again)' };
       }
@@ -433,7 +433,7 @@ class Run {
 
   // Poki writes Documents/PokiSetup/poki-hello.json each time it starts, so a new one is Poki open.
   async open_poki() {
-    if (this.doneBefore('open_poki') && !this.opts.reinstall) return { skipped: 'Poki was opened on an earlier run' };
+    if (this.doneBefore('open_poki') && !this.opts.reinstall && !this.installed) return { skipped: 'Poki was opened on an earlier run' };
     const access = await this.access();
     if (!access) {
       await this.waitFor('open_poki_tell', () => this.takeInbox('open_poki'));
@@ -526,6 +526,7 @@ class Run {
     this.checkResult = check;
     if (check.poki) this.record.poki = check.poki;
     const bad = Object.entries(check).filter(([key, value]) => value === null || value === false || (key === 'relay' && value === 'not answering')).map(([key]) => key);
+    if (!(record?.profile_expires_at > Date.now() / 1000)) bad.push('signing_expired');
     if (bad.length) throw new StepFailure('check_failed', `not ready: ${bad.join(', ')}`);
     return `Poki ${check.poki}, Developer Mode on, paired, developer disk image mounted, ${check.days_left} days of signing left`;
   }
@@ -554,7 +555,7 @@ class Run {
               this.unverified.push({ step: step.id, say: out.skipped });
               this.emit({ event: 'note', text: `Action required: ${out.skipped}` });
             }
-            await this.mark(step.id, out.manual ? 'manual' : 'skipped', { detail: out.skipped });
+            await this.mark(step.id, out.manual ? 'manual' : this.previous?.steps?.[step.id]?.status === 'ok' ? 'ok' : 'skipped', { detail: out.skipped });
           } else {
             this.emit({ event: 'done', step: step.id, detail: out });
             await this.mark(step.id, 'ok', { detail: out });
