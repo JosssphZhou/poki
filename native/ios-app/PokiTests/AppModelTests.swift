@@ -17,13 +17,18 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private let lock = NSLock()
     private var open = false
     private var gate: DispatchSemaphore?
+    private var heldOpenStarted = false
     private var answer: [String: Any]?
     /// The next open waits until `answer(_:)`.
-    func holdNextOpen() { lock.withLock { gate = DispatchSemaphore(value: 0) } }
+    func holdNextOpen() { lock.withLock { gate = DispatchSemaphore(value: 0); heldOpenStarted = false } }
+    var isHoldingOpen: Bool { lock.withLock { gate != nil && heldOpenStarted } }
     /// Lets a held open go on, with this answer instead of opening (nil opens).
     func answer(_ result: [String: Any]?) { lock.withLock { answer = result; gate?.signal(); gate = nil } }
     func prepare() -> [String: Any] {
-        if let held = lock.withLock({ gate }) {
+        if let held = lock.withLock({
+            heldOpenStarted = gate != nil
+            return gate
+        }) {
             held.wait()
             if let given = lock.withLock({ () -> [String: Any]? in defer { answer = nil }; return answer }) { return given }
         }
@@ -248,12 +253,14 @@ final class InProcessPasscodeTests: XCTestCase {
     private var saved: (relay: String?, relayEnabled: Any?, setup: SetupState)!
     private var model: AppModel!
     private var session: FakeAutomation!
+    private var launcher: FakeLauncher!
 
     override func setUp() async throws {
         try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
         saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load())
         session = FakeAutomation()
-        model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: session)
+        launcher = FakeLauncher()
+        model = AppModel(launcher: launcher, pairer: FakePairing(), automation: session)
         model.loopback.simulate(.working(ms: 9))
         model.setup.loopback = .proxy
         XCTAssertTrue(model.setRelay("https://relay.invalid"))
@@ -274,6 +281,89 @@ final class InProcessPasscodeTests: XCTestCase {
         let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
         done.expectationDescription = what
         await fulfillment(of: [done], timeout: 5)
+    }
+
+    private func holdLocalDDIOpen() async {
+        model.wakeRunner()
+        // Let the simulator's regular WDA probe finish before feeding the test launcher state.
+        await waitFor("the simulator's runner check answered") {
+            self.model.runner.state == "failed" || self.model.hasOpenInProcessSession
+        }
+        if model.hasOpenInProcessSession {
+            await withCheckedContinuation { continuation in
+                model.closeInProcess("testing local DDI recovery") { continuation.resume() }
+            }
+        }
+        model.loopback.simulate(.noAnswer)
+        model.setup.developerMode = false
+        model.setup.uiAutomation = false
+        let lastPairingCheck = model.pairingVerifiedAt
+        session.holdNextOpen()
+        model.runnerChanged(RunnerStatus(state: "running", code: "local_ddi"))
+        XCTAssertEqual(model.pairingVerifiedAt, lastPairingCheck)
+        XCTAssertFalse(model.setup.developerMode)
+        XCTAssertFalse(model.setup.uiAutomation)
+        await waitFor("the local open is held") { self.session.isHoldingOpen }
+    }
+
+    func testFailedLocalDDIOpenRestartsWhenLoopbackReturns() async {
+        await holdLocalDDIOpen()
+        let initialRestarts = launcher.restarts
+        session.answer(["ok": false, "code": "missing_framework"])
+        await waitFor("the local failure is reported") {
+            self.model.host.currentRunner.describe.contains("missing_framework")
+        }
+        XCTAssertEqual(launcher.restarts, initialRestarts)
+        model.loopback.simulate(.working(ms: 9))
+        XCTAssertEqual(launcher.restarts, initialRestarts + 1)
+
+        session.holdNextOpen()
+        model.runnerChanged(RunnerStatus(state: "running", code: "local_ddi"))
+        await waitFor("the next local open is held") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "code": "missing_framework"])
+        await waitFor("the second local failure is reported") {
+            self.model.host.currentRunner.describe.contains("missing_framework")
+        }
+        XCTAssertEqual(launcher.restarts, initialRestarts + 1, "one automatic retry per working loopback period")
+    }
+
+    func testLocalDDIFailureCanRecoverAfterLoopbackReturnsDuringOpen() async {
+        await holdLocalDDIOpen()
+        let initialRestarts = launcher.restarts
+        model.loopback.simulate(.working(ms: 9))
+        XCTAssertEqual(launcher.restarts, initialRestarts, "let the pending open finish first")
+        session.answer(["ok": false, "code": "missing_framework"])
+        await waitFor("the launcher restarts over the restored loopback") { self.launcher.restarts == initialRestarts + 1 }
+        XCTAssertEqual(model.runner.state, "connecting")
+    }
+
+    func testRestoredLoopbackLeavesPasscodeWaitAndOpenSessionAlone() async {
+        await holdLocalDDIOpen()
+        let initialRestarts = launcher.restarts
+        model.checkIdle(now: Date().addingTimeInterval(6))
+        XCTAssertTrue(model.passcodeHint)
+        model.loopback.simulate(.working(ms: 9))
+        XCTAssertEqual(launcher.restarts, initialRestarts)
+        XCTAssertTrue(model.passcodeHint)
+        session.answer(nil)
+        await waitFor("the local session opens") { self.model.hasOpenInProcessSession }
+        model.loopback.simulate(.noAnswer)
+        model.loopback.simulate(.working(ms: 9))
+        XCTAssertTrue(model.hasOpenInProcessSession)
+        XCTAssertEqual(launcher.restarts, initialRestarts)
+    }
+
+    func testOpenLocalSessionSatisfiesSetupWithoutNetworkLoopback() async {
+        await holdLocalDDIOpen()
+        XCTAssertFalse(model.isDone(.loopback))
+        session.answer(nil)
+        await waitFor("the local session opens") { self.model.hasOpenInProcessSession }
+        XCTAssertTrue(model.isDone(.loopback))
+        XCTAssertFalse(model.loopback.isWorking)
+        XCTAssertTrue(model.setup.developerMode)
+        XCTAssertTrue(model.setup.uiAutomation)
+        model.stopSession()
+        XCTAssertFalse(model.isDone(.loopback))
     }
 
     func testAPasscodeWaitAsksTheOwnerAndTellsTheAgentWhoMustEnterIt() async {

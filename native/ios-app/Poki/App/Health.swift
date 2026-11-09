@@ -26,6 +26,9 @@ struct Health {
 
     @MainActor static func loopback(_ model: AppModel) -> Health {
         let monitor = model.loopback
+        if !monitor.isWorking && model.hasOpenInProcessSession {
+            return Health(word: String(localized: "Local automation ready"), color: off)
+        }
         switch monitor.state {
         case .working: return Health(word: String(localized: "On"), color: Site.ok)
         case .checking: return Health(word: String(localized: "Checking…"), color: .white)
@@ -81,10 +84,10 @@ struct Issue: Identifiable {
                 out.append(Issue(id: "network", title: String(localized: "Waiting for the internet"), text: local(fix), fix: .none))
             } else if model.loopback.cellularRefused {
                 // A session already running keeps going on cellular; only a start from cellular is refused.
-                if !runner.isRunning {
+                if !runner.isRunning && !model.hasOpenInProcessSession {
                     out.append(Issue(id: "cellular", title: String(localized: "Connect to Wi-Fi first"), text: LoopbackMonitor.cellularHint, fix: .none))
                 }
-            } else if runner.state == "waiting_network" || !model.loopback.isWorking && model.loopback.state != .checking {
+            } else if !model.hasOpenInProcessSession && (runner.state == "waiting_network" || !model.loopback.isWorking && model.loopback.state != .checking) {
                 out.append(Issue(id: "loopback", title: String(localized: "Loopback is off"),
                                  text: String(localized: "Turn on your proxy app with the Poki module, or connect LocalDevVPN."), fix: .setup))
             }

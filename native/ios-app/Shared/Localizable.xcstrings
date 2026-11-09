@@ -1918,6 +1918,16 @@
         }
       }
     },
+    "Local automation ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机自动化可用"
+          }
+        }
+      }
+    },
     "Local VPN connected. The check above confirms developer access." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4154,6 +4164,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型无法处理此请求。"
+          }
+        }
+      }
+    },
+    "The network loopback is unavailable." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络回环当前不可用。"
           }
         }
       }
