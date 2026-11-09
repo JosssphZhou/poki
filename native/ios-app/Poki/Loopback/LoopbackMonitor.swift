@@ -68,7 +68,7 @@ final class LoopbackMonitor {
         if only != cellularOnly { cellularOnly = only; check() }
     }
 
-    /// `-pokiLoopback cellular` or `working`: a simulator has no cellular and no 10.7.0.x, so a screenshot sets the state by hand.
+    /// `-pokiLoopback cellular`, `working` or `noanswer`: a simulator has no cellular and no 10.7.0.x, so a screenshot sets the state by hand.
     nonisolated private static var forced: String? {
         #if targetEnvironment(simulator)
         UserDefaults.standard.string(forKey: "pokiLoopback")
@@ -112,7 +112,7 @@ final class LoopbackMonitor {
             }
             running = false
             let probed: State = result.outcome == "connected" ? .working(ms: result.milliseconds) : loopbackInterface() == nil ? .off : .noAnswer
-            let next = Self.forcedCellular ? State.noAnswer : Self.forced == "working" ? State.working(ms: 5) : probed
+            let next = Self.forcedCellular || Self.forced == "noanswer" ? State.noAnswer : Self.forced == "working" ? State.working(ms: 5) : probed
             // Only a change is published, so the screens are not redrawn every 3 s (a redraw while
             // the person drags a list makes scrolling stutter).
             if !Self.same(next, state) {
