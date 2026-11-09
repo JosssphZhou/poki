@@ -446,3 +446,11 @@ test('diagnose reads Poki Setup\'s own log where Poki Setup keeps it on macOS', 
   const bundle = JSON.parse((await exec(process.execPath, [cli, 'diagnose', '--no-device', '--state', state], { env })).stdout);
   assert.ok(bundle.poki_setup_log?.some(line => line.includes('iOS refused the install')), 'the bundle carries Poki Setup\'s log');
 });
+
+test('a phone that is already paired is not a person stop: the Trust reminder becomes a note', async t => {
+  const state = await stateDir(t);
+  const { code, events, stderr } = await runInstaller(state, { scenario: 'paired', answer: personAnswers(state) });
+  assert.equal(code, 0, stderr);
+  assert.ok(!events.some(e => e.event === 'wait' && e.wait === 'pair'), 'no pair stop for a paired phone');
+  assert.ok(events.some(e => e.event === 'note' && /tap Trust/.test(e.text)), 'the reminder is still there as a note');
+});

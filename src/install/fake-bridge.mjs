@@ -20,7 +20,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const progress = data => send({ event: 'progress', data: { job: 'install', ...data } });
 const fail = (kind, message) => { throw Object.assign(new Error(message), { kind }); };
 
-const facts = () => ({ name: phoneName, ios: '27.1', product_type: 'iPhone17,1', developer_mode: record !== null, paired_with_this_computer: installCalls > 0, wifi_address: '192.168.1.44' });
+const facts = () => ({ name: phoneName, ios: '27.1', product_type: 'iPhone17,1', developer_mode: record !== null, paired_with_this_computer: scenario === 'paired' || installCalls > 0, wifi_address: '192.168.1.44' });
 
 async function install() {
   installCalls += 1;
@@ -28,7 +28,7 @@ async function install() {
   progress({ kind: 'step', id: 'phone', title: 'Finding the iPhone' });
   progress({ kind: 'done', id: 'phone', detail: udid });
   progress({ kind: 'step', id: 'pair', title: 'Pairing with the iPhone' });
-  progress({ kind: 'waiting', id: 'pair', text: 'On the iPhone: tap Trust, then enter the passcode.' });
+  progress({ kind: 'waiting', id: 'pair', text: 'On the iPhone: stay on the Home Screen, unlocked. If it asks, tap Trust and enter the passcode.' });
   if (scenario === 'trust-timeout' && installCalls === 1) {
     await sleep(delay);
     fail('needs_person', 'The iPhone did not answer the Trust dialog in time. Unlock it, plug it in again and tap Trust.');

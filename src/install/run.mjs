@@ -365,6 +365,7 @@ class Run {
     if (!this.opts.udid && usb.length > 1) throw new StepFailure('several_phones', `${usb.length} iPhones are plugged in`);
     const row = usb[0] ?? rows[0];
     this.udid = row.phone.udid;
+    this.paired = row.facts?.paired_with_this_computer === true;
     this.record.phones = rows.map(r => ({ udid: r.phone.udid, name: r.facts?.name, product_type: r.facts?.product_type, ios: r.facts?.ios, build: r.facts?.build, link: r.phone.link?.kind, developer_mode: r.facts?.developer_mode, paired: r.facts?.paired_with_this_computer, error: r.error }));
     return `${row.facts?.product_type ?? 'iPhone'} on iOS ${row.facts?.ios ?? '?'} over ${row.phone.link?.kind ?? '?'}`;
   }
@@ -380,6 +381,8 @@ class Run {
         const onProgress = data => {
           if (data.job !== 'install') return;
           if (data.kind === 'waiting') {
+            // Poki Setup reminds about Trust on every install; a phone paired with this Mac needs no one.
+            if (data.id === 'pair' && this.paired) return this.emit({ event: 'note', text: data.text || manifest.waits.pair.say });
             const wait = manifest.waits[data.id] ? data.id : 'pair';
             this.emit({ event: 'wait', wait, who: manifest.waits[wait].who, say: data.text || manifest.waits[wait].say });
           } else if (data.kind === 'step') this.emit({ event: 'progress', id: data.id, title: data.title });
