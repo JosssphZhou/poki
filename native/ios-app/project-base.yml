@@ -6,6 +6,9 @@ options:
     iOS: "18.0"
   createIntermediateGroups: true
 packages:
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui.git
+    exactVersion: 2.4.1
   PokiCore:
     path: ../ios/PokiCore
   # Google's WebRTC, prebuilt (BSD-3-Clause), for the voice conversation with the Realtime API.
@@ -106,6 +109,7 @@ targets:
       properties:
         com.apple.security.application-groups: [$(POKI_APP_GROUP)]
     dependencies:
+      - package: MarkdownUI
       - target: PokiWidgets
       - package: PokiCore
       - package: WebRTC

@@ -1,8 +1,10 @@
 // MessageBubble is from Mackarous/ConversationUI (commit e77c69e,
 // Sources/ConversationUI/MessageBubble.swift), Copyright (c) 2024 Andrew Mackarous, MIT License. See
 // THIRD_PARTY_NOTICES.md. Changed: Poki's message kinds, the ESP-171 board's colours, 17 pt text, the
-// tail corner on the last bubble of a run, and 60 pt kept free on the far side (280 pt at most).
+// tail corner on the last bubble of a run, and 60 pt kept free on the far side. Assistant reports
+// may use up to 560 pt on wide layouts; outgoing messages keep the 280 pt limit.
 import SwiftUI
+import MarkdownUI
 
 struct MessageBubble: View {
     enum Direction { case incoming, outgoing }
@@ -16,7 +18,7 @@ struct MessageBubble: View {
             if direction == .outgoing {
                 Spacer(minLength: .messageInsetPadding)
             }
-            Text(rendered)
+            message
                 .font(.system(size: 17))
                 .tint(direction == .incoming ? Site.blue : .white)
                 .fixedSize(horizontal: false, vertical: true)
@@ -28,20 +30,20 @@ struct MessageBubble: View {
                 .contextMenu {
                     copyButton { UIPasteboard.general.string = text }
                 }
-                .frame(maxWidth: 280, alignment: direction == .incoming ? .leading : .trailing)
+                .frame(maxWidth: direction == .incoming ? 560 : 280, alignment: direction == .incoming ? .leading : .trailing)
             if direction == .incoming {
                 Spacer(minLength: .messageInsetPadding)
             }
         }
     }
 
-    /// Poki's words as Markdown (bold, italics, code, links), as models write them; the owner's as typed.
-    private var rendered: AttributedString {
-        guard direction == .incoming, text.contains(where: { "*_`[".contains($0) }),
-              let markdown = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
-            return AttributedString(text)
+    /// Assistant replies are full GFM documents; owner messages remain exactly as typed.
+    @ViewBuilder private var message: some View {
+        if direction == .incoming {
+            AssistantMarkdown(text: text).equatable()
+        } else {
+            Text(verbatim: text)
         }
-        return markdown
     }
 
     private var shape: UnevenRoundedRectangle {
@@ -70,6 +72,29 @@ struct MessageBubble: View {
         case .incoming: AnyShapeStyle(ChatColor.incoming)
         case .outgoing: AnyShapeStyle(Site.blue)
         }
+    }
+}
+
+/// Native block rendering, including tables, lists and fenced code. A wide table scrolls inside its
+/// bubble instead of stretching the transcript off screen. Unchanged replies skip reparsing when
+/// the app publishes tool progress or the waiting indicator updates.
+struct AssistantMarkdown: View, Equatable {
+    let text: String
+    var content: MarkdownContent { MarkdownContent(text) }
+
+    var body: some View {
+        Markdown(content)
+            .markdownTextStyle {
+                FontSize(17)
+                ForegroundColor(Color(.label))
+            }
+            .markdownBlockStyle(\.table) { configuration in
+                ScrollView(.horizontal) {
+                    configuration.label.fixedSize(horizontal: true, vertical: false)
+                }
+                .markdownMargin(top: 0, bottom: 12)
+            }
+            .textSelection(.enabled)
     }
 }
 

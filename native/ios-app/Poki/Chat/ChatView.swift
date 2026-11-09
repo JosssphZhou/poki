@@ -19,7 +19,7 @@ struct ChatView: View {
     @State private var newName = ""
 
     var body: some View {
-        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
+        ChatTranscript(entries: chat.entries, typing: chat.running, canRetry: chat.canRetry, retry: chat.retry) {
             if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
             if !ApprovalClassifier.isOn, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
@@ -112,7 +112,7 @@ struct ChatTranscript<Footer: View>: View {
                 }
                 if typing {
                     HStack { TypingBubble(); Spacer(minLength: .messageInsetPadding) }
-                        .padding(.top, 4).transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottomLeading)))
+                        .padding(.top, 4)
                 }
                 if canRetry {
                     Button(action: retry) { Label("Try Again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
@@ -122,8 +122,9 @@ struct ChatTranscript<Footer: View>: View {
             }
             .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
             .frame(maxWidth: .infinity)
-            .animation(PlanMotion.enter, value: entries)
-            .animation(.easeOut(duration: 0.2), value: typing)
+            // Tool progress changes existing entries frequently. Animating the entire transcript
+            // also animates its height and the bottom scroll anchor, making the page flash/jump.
+            // PlanBubble still owns its local step animations.
         }
         // Opens at the newest message, keeps a short chat at the bottom, and follows new lines (the
         // live voice transcript grows below the messages) while the content itself scrolls freely.
@@ -240,22 +241,18 @@ enum ChatTime {
     }
 }
 
-/// Three dots that rise in turn: the model is working on its answer.
+/// A stable waiting row for the whole task, including tool calls. The spinner draws in a fixed
+/// frame; it does not publish a 30 Hz timeline through the conversation's layout.
 struct TypingBubble: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 4) {
-                ForEach(0..<3) { i in
-                    let phase = (sin((t * 2 * .pi / 1.2) - Double(i) * 0.9) + 1) / 2
-                    Circle().fill(ChatColor.secondary.opacity(0.45 + 0.45 * phase)).frame(width: 8, height: 8).offset(y: -3 * phase)
-                }
-            }
+        ProgressView()
+            .tint(ChatColor.secondary)
+            .frame(width: 32, height: 14)
             .padding(.vertical, 13).padding(.horizontal, 15)
             .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: .tailRadius,
                                                                        bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
-        }
-        .accessibilityLabel(Text("Poki is typing"))
+            .transaction { $0.animation = nil }
+            .accessibilityLabel(Text("Poki is typing"))
     }
 }
 
