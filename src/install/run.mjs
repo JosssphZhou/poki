@@ -1,7 +1,7 @@
 // The install as an ordered list of steps (steps.json) that an agent, or Poki Setup's own agent,
 // runs end to end. Agent steps run by themselves; at a person step the installer says one sentence
 // and polls until it sees the step done. Every failure carries a code from steps.json.
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -29,6 +29,39 @@ const pollMs = () => Number(process.env.POKI_INSTALL_POLL_MS ?? 2000);
 const retryMs = () => Number(process.env.POKI_INSTALL_RETRY_MS ?? 3000);
 const waitMs = () => Number(process.env.POKI_INSTALL_WAIT_MS ?? 15 * 60 * 1000);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Poki Setup windows (osascript dialogs) ask for the Apple Account and the code, so the person never
+// opens Terminal. POKI_INSTALL_DIALOGS=0, or a Mac with no screen to show them on, falls back to Terminal.
+const dialogsOn = () => process.platform === 'darwin' && process.env.POKI_INSTALL_DIALOGS !== '0';
+const appleText = text => `"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+const GAVE_UP = '\u0000gave up';
+
+class DialogUnavailable extends Error {}
+
+// One native window titled Poki Setup. Its text goes to osascript on stdin, never on a command line.
+// Returns what the person typed, null for Cancel; throws WaitTimedOut when nobody answers.
+function dialog({ message, answer = '', hidden = false, wait }) {
+  const seconds = Math.max(1, Math.round(waitMs() / 1000));
+  const script = [
+    `set r to display dialog ${appleText(message)} with title "Poki Setup" default answer ${appleText(answer)}${hidden ? ' with hidden answer' : ''} buttons {"Cancel", "Continue"} default button "Continue" cancel button "Cancel" with icon note giving up after ${seconds}`,
+    `if gave up of r then return ${appleText(GAVE_UP)}`,
+    'return text returned of r',
+  ].join('\n');
+  return new Promise((resolve, reject) => {
+    const child = spawn('osascript', [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', chunk => { out += chunk; });
+    child.stderr.on('data', chunk => { err += chunk; });
+    child.on('error', error => reject(new DialogUnavailable(error.message)));
+    child.on('close', code => {
+      const text = out.replace(/\n$/, '');
+      if (code === 0) return text === GAVE_UP ? reject(new WaitTimedOut(wait)) : resolve(text);
+      if (/-128/.test(err)) return resolve(null);
+      reject(new DialogUnavailable(err.trim() || `osascript exited ${code}`));
+    });
+    child.stdin.end(script);
+  });
+}
 
 class StepFailure extends Error {
   constructor(code, reason) {
@@ -215,13 +248,13 @@ class Run {
     }
     const attempts = { code: 0, password: 0, busy: 0 };
     for (;;) {
-      const creds = await this.credentials() ?? await this.waitFor('apple_password', () => this.credentials());
+      const creds = await this.credentials() ?? await this.askCredentials(account.apple_id, attempts.password > 0) ?? await this.waitFor('apple_password', () => this.credentials());
       try {
         const started = await this.bridge.request('sign_in', { apple_id: creds.appleId, password: creds.password, keep_password: true });
         if (started.needs_code) {
           const via = started.via === 'sms' ? 'a text message' : 'your Apple devices';
           for (;;) {
-            const code = await this.waitFor('apple_code', () => this.takeInbox('apple-code'), { via, codeCommand: codeCommand(this.state) });
+            const code = await this.askCode(via, attempts.code > 0) ?? await this.waitFor('apple_code', () => this.takeInbox('apple-code'), { via, codeCommand: codeCommand(this.state) });
             try {
               await this.bridge.request('finish_sign_in', { code });
               break;
@@ -239,7 +272,7 @@ class Run {
       } catch (error) {
         if (error instanceof WaitTimedOut) throw error;
         const failure = classify('apple_account', error);
-        if (failure.code === 'apple_sign_in_rejected' && creds.from === 'keychain' && ++attempts.password <= manifest.errors.apple_sign_in_rejected.retry) {
+        if (failure.code === 'apple_sign_in_rejected' && creds.from !== 'environment' && ++attempts.password <= manifest.errors.apple_sign_in_rejected.retry) {
           this.reportError(failure, true);
           await exec('security', ['delete-generic-password', '-s', KEYCHAIN_SERVICE]).catch(() => {});
           continue;
@@ -254,6 +287,52 @@ class Run {
         }
         throw failure;
       }
+    }
+  }
+
+  // Nothing to reuse: Poki Setup windows ask for the email and the password. Poki Setup keeps the
+  // password in its own keychain item after sign-in, for renewals. Null when the windows cannot show.
+  async askCredentials(lastAppleId, again) {
+    if (this.opts.dryRun || !dialogsOn() || this.noDialogs) return null;
+    this.emit({ event: 'wait', wait: 'apple_dialog', who: 'input', say: manifest.waits.apple_dialog.say });
+    this.record.waiting = 'apple_dialog';
+    await this.save();
+    try {
+      const why = 'Poki Setup signs Poki with your Apple Account so it can run on your iPhone.';
+      const email = await dialog({ wait: 'apple_dialog', message: `${again ? 'Apple did not accept that email or password. ' : ''}${why}\n\nApple Account email:`, answer: lastAppleId ?? process.env.POKI_APPLE_ID ?? '' });
+      if (email === null || !email.trim()) throw new StepFailure('apple_credentials_missing', 'The person closed the Poki Setup window without an Apple Account.');
+      const password = await dialog({ wait: 'apple_dialog', message: `${why} Poki Setup keeps the password in this Mac's keychain to renew the signing; it is not shown or sent anywhere else.\n\nApple Account password for ${email.trim()}:`, hidden: true });
+      if (password === null || !password) throw new StepFailure('apple_credentials_missing', 'The person closed the Poki Setup window without the password.');
+      delete this.record.waiting;
+      return { appleId: email.trim(), password, from: 'Poki Setup window' };
+    } catch (error) {
+      if (!(error instanceof DialogUnavailable)) throw error;
+      this.noDialogs = true;
+      this.emit({ event: 'note', text: `Poki Setup windows cannot show here (${error.message}); asking in Terminal instead.` });
+      return null;
+    }
+  }
+
+  async askCode(via, again) {
+    if (this.opts.dryRun || !dialogsOn() || this.noDialogs) return null;
+    this.emit({ event: 'wait', wait: 'apple_code_dialog', who: 'input', say: manifest.waits.apple_code_dialog.say.replace('{via}', via) });
+    this.record.waiting = 'apple_code_dialog';
+    await this.save();
+    try {
+      for (;;) {
+        const code = await dialog({ wait: 'apple_code_dialog', message: `${again ? 'Apple did not accept that code. ' : ''}Apple sent a 6-digit verification code to ${via}.\n\nVerification code:`, hidden: true });
+        if (code === null) throw new StepFailure('apple_credentials_missing', 'The person closed the Poki Setup window without the verification code.');
+        if (/^\d{6}$/.test(code.trim())) {
+          delete this.record.waiting;
+          return code.trim();
+        }
+        again = true;
+      }
+    } catch (error) {
+      if (!(error instanceof DialogUnavailable)) throw error;
+      this.noDialogs = true;
+      this.emit({ event: 'note', text: `Poki Setup windows cannot show here (${error.message}); asking in Terminal instead.` });
+      return null;
     }
   }
 

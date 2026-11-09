@@ -11,7 +11,8 @@ import { root } from '../src/config.mjs';
 const exec = promisify(execFile);
 const cli = join(root, 'bin/install-iphone.mjs');
 const fakeBridge = join(root, 'src/install/fake-bridge.mjs');
-const fastEnv = { POKI_INSTALL_WAIT_MS: '20000', POKI_INSTALL_POLL_MS: '20', POKI_INSTALL_RETRY_MS: '20', POKI_FAKE_DELAY_MS: '30' };
+// The terminal path, unless a test turns the Poki Setup windows on with a fake osascript.
+const fastEnv = { POKI_INSTALL_WAIT_MS: '20000', POKI_INSTALL_POLL_MS: '20', POKI_INSTALL_RETRY_MS: '20', POKI_FAKE_DELAY_MS: '30', POKI_INSTALL_DIALOGS: '0' };
 
 async function stateDir(t) {
   const dir = await mkdtemp(join(tmpdir(), 'poki-install-test-'));
@@ -348,4 +349,77 @@ test('the bundle and the draft drop the Apple Account holder, the Mac name and p
     assert.match(output, /did not answer the Trust dialog in time/, `${label} keeps the failure`);
     assert.match(output, /free, 7-day signing/, `${label} keeps the kind of team`);
   }
+});
+
+// macOS's osascript and security, faked: osascript answers each Poki Setup window the way a person would
+// and logs what it was shown; security plays a login keychain with or without the installer's item.
+async function fakeMac(t, { cancel = false, keychain = null } = {}) {
+  const bin = await mkdtemp(join(tmpdir(), 'poki-install-mac-'));
+  t.after(() => rm(bin, { recursive: true, force: true }));
+  const log = join(bin, 'osascript.log');
+  await writeFile(join(bin, 'osascript'), `#!${process.execPath}
+const { appendFileSync } = require('node:fs');
+let script = '';
+process.stdin.on('data', c => { script += c; }).on('end', () => {
+  appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), script }) + '\\n');
+  if (${cancel}) { process.stderr.write('execution error: User canceled. (-128)\\n'); process.exit(1); }
+  if (/verification code/.test(script)) process.stdout.write('123456\\n');
+  else if (/hidden answer/.test(script)) process.stdout.write('correct horse\\n');
+  else process.stdout.write('tester@example.com\\n');
+});
+`);
+  const found = keychain ? `if [ "$1" = find-generic-password ]; then case "$*" in *-w*) echo ${JSON.stringify(keychain.password)};; *) echo '    "acct"<blob>="${keychain.account}"';; esac; exit 0; fi` : '';
+  await writeFile(join(bin, 'security'), `#!/bin/sh\necho "$*" >> ${JSON.stringify(join(bin, 'security.log'))}\n${found}\n[ "$1" = delete-generic-password ] && exit 0\nexit 44\n`);
+  for (const tool of ['osascript', 'security']) await chmod(join(bin, tool), 0o755);
+  const shown = async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line));
+  return { env: { PATH: `${bin}:${process.env.PATH}`, POKI_INSTALL_DIALOGS: '1', POKI_APPLE_ID: '', POKI_SETUP_PASSWORD: '' }, shown };
+}
+
+test('with nothing to reuse, Poki Setup windows ask for the Apple Account and the code, so the person never opens Terminal', async t => {
+  const state = await stateDir(t);
+  const mac = await fakeMac(t);
+  const { code, events, stderr } = await runInstaller(state, { env: mac.env, answer: { open_poki: () => sub(state, 'done', 'open_poki') } });
+  assert.equal(code, 0, stderr);
+  const waits = events.filter(e => e.event === 'wait');
+  assert.deepEqual(waits.map(e => [e.wait, e.who]), [['apple_dialog', 'input'], ['apple_code_dialog', 'input'], ['phone_plug', 'phone'], ['pair', 'phone'], ['devmode', 'phone'], ['open_poki', 'phone']]);
+  for (const wait of waits.slice(0, 2)) assert.doesNotMatch(wait.say, /Terminal|security |install-iphone/, `${wait.wait} sends the person to a window, not to Terminal`);
+  const shown = await mac.shown();
+  assert.equal(shown.length, 3, 'one window each for the email, the password and the code');
+  for (const { argv, script } of shown) {
+    assert.deepEqual(argv, [], 'the window text goes to osascript on stdin, not on its command line');
+    assert.match(script, /with title "Poki Setup"/);
+  }
+  assert.doesNotMatch(shown[0].script, /hidden answer/, 'the email is shown as typed');
+  assert.match(shown[1].script, /hidden answer/, 'the password is hidden');
+  assert.match(shown[1].script, /Apple Account/);
+  assert.match(shown[2].script, /hidden answer/, 'the code is hidden');
+  assert.match(shown[2].script, /verification code/);
+  const saved = await readFile(join(state, 'run.json'), 'utf8');
+  assert.doesNotMatch(JSON.stringify(events) + stderr + saved, /correct horse|123456/, 'neither the password nor the code reaches output or state');
+  assert.match(JSON.parse(saved).steps.apple_account.detail, /signed in with the password from the Poki Setup window/);
+});
+
+test('closing the Poki Setup window stops with apple_credentials_missing instead of signing in', async t => {
+  const state = await stateDir(t);
+  const mac = await fakeMac(t, { cancel: true });
+  const { code, events, stderr } = await runInstaller(state, { env: mac.env });
+  assert.equal(code, 2, stderr);
+  assert.equal(events.at(-1).code, 'apple_credentials_missing');
+  assert.equal((await mac.shown()).length, 1, 'the window is shown once, not again and again');
+});
+
+test('a sign-in Poki Setup already keeps, or a password already in the keychain, is reused without any window', async t => {
+  for (const [label, scenario, keychain] of [
+    ['Poki Setup is signed in', 'signed-in', null],
+    ['the keychain item is there', 'happy', { account: 'tester@example.com', password: 'correct horse' }],
+  ]) await t.test(label, async t => {
+    const state = await stateDir(t);
+    const mac = await fakeMac(t, { keychain });
+    const { code, events, stderr } = await runInstaller(state, { scenario, env: mac.env, answer: { open_poki: () => sub(state, 'done', 'open_poki'), apple_code_dialog: () => {} } });
+    assert.equal(code, 0, stderr);
+    const shown = await mac.shown();
+    assert.ok(!shown.some(s => /Apple Account password/.test(s.script)), 'no window asks for the password');
+    assert.ok(!events.some(e => e.wait === 'apple_dialog' || e.wait === 'apple_password'), 'no person stop for the Apple Account');
+    if (scenario === 'signed-in') assert.equal(shown.length, 0, 'a kept sign-in needs no window at all');
+  });
 });
