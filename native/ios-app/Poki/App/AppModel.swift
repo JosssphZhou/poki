@@ -690,9 +690,13 @@ final class AppModel {
     /// not be checked now: the loopback is down, or the simulator).
     /// A lockdown pairing record (from a computer: HostID, certificates), not an RPPairing file.
     static func isLockdownRecord(_ path: String) -> Bool {
+        pairingRecord(at: path)?["HostID"] != nil
+    }
+
+    private static func pairingRecord(at path: String) -> [String: Any]? {
         guard let data = FileManager.default.contents(atPath: path),
-              let dict = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return false }
-        return dict["HostID"] != nil
+              let record = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return nil }
+        return record
     }
 
     /// The way to the phone's developer services when a check or the runner fails, for the log:
@@ -1597,6 +1601,29 @@ final class AppModel {
     /// not a step left for the owner.
     var setupStepsLeft: Bool {
         SetupStep.shown.contains { $0 == .loopback ? setup.loopback == .none : !isDone($0) }
+    }
+
+    var canStartFromHome: Bool {
+        canStartFromHome(localDDIAvailable: diskImage.isReady && Self.localDDIMounted)
+    }
+
+    /// The home switch can offer Start before an on-device session opens. Setup's live loopback
+    /// check still reports whether the network path answers.
+    func canStartFromHome(localDDIAvailable: @autoclosure () -> Bool) -> Bool {
+        if setupComplete { return true }
+        guard automationPath == .inProcess, setup.loopback == .proxy, !setupStepsLeft,
+              let pairingPath, let record = Self.pairingRecord(at: pairingPath),
+              record["identifier"] is String,
+              (record["public_key"] as? Data)?.count == 32,
+              (record["private_key"] as? Data)?.count == 32 else { return false }
+        return localDDIAvailable()
+    }
+
+    private static var localDDIMounted: Bool {
+        // Keep this marker in sync with the launcher's ddi::mounted_locally check.
+        let marker = "/System/Developer/Library/Frameworks/XCUIAutomation.framework/XCUIAutomation"
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: marker, isDirectory: &isDirectory) && !isDirectory.boolValue
     }
 
     var activityProblem: String? { activity.lastError }

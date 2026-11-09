@@ -177,6 +177,52 @@ final class AppModelTests: XCTestCase {
 
         XCTAssertTrue(model.setupComplete, "left: \(SetupStep.shown.filter { !model.isDone($0) })")
         XCTAssertFalse(model.setupStepsLeft)
+        XCTAssertTrue(model.canStartFromHome)
+    }
+
+    func testHomeCanStartWithPreparedLocalAutomationWhileTheLoopbackIsDown() throws {
+        let (model, _) = model()
+        try XCTSkipUnless(model.automationPath == .inProcess, "Poki Runner still needs the loopback")
+        let saved = model.setup
+        defer { model.setup = saved }
+        let pairing = AppFiles.phonePairingFile
+        let previous = FileManager.default.fileExists(atPath: pairing.path) ? try Data(contentsOf: pairing) : nil
+        defer {
+            if let previous { try? previous.write(to: pairing, options: .atomic) }
+            else { try? FileManager.default.removeItem(at: pairing) }
+        }
+        func writePairing(_ record: [String: Any]) throws {
+            let bytes = try PropertyListSerialization.data(fromPropertyList: record, format: .binary, options: 0)
+            try bytes.write(to: pairing, options: .atomic)
+        }
+        let key = Data(repeating: 0, count: 32)
+        try writePairing(["identifier": "test", "public_key": key, "private_key": key])
+        model.setup.developerMode = true
+        model.setup.uiAutomation = true
+        model.setup.loopback = .proxy
+        model.loopback.simulate(.noAnswer)
+
+        XCTAssertFalse(model.isDone(.loopback))
+        XCTAssertFalse(model.setupStepsLeft)
+        XCTAssertTrue(model.canStartFromHome(localDDIAvailable: true))
+        XCTAssertFalse(model.canStartFromHome(localDDIAvailable: false))
+
+        model.setup.loopback = .none
+        XCTAssertFalse(model.canStartFromHome(localDDIAvailable: true))
+        model.setup.loopback = .builtIn
+        XCTAssertFalse(model.canStartFromHome(localDDIAvailable: true))
+        model.setup.loopback = .proxy
+        model.setup.uiAutomation = false
+        XCTAssertFalse(model.canStartFromHome(localDDIAvailable: true))
+        model.setup.uiAutomation = true
+        try writePairing(["HostID": "test"])
+        XCTAssertFalse(model.canStartFromHome(localDDIAvailable: true))
+    }
+
+    func testHomePowerAlwaysAllowsStoppingWhenPokiIsOn() {
+        XCTAssertEqual(PowerButton.Status(sessionOn: true, canStart: false), .ready)
+        XCTAssertEqual(PowerButton.Status(sessionOn: false, canStart: true), .stopped)
+        XCTAssertEqual(PowerButton.Status(sessionOn: false, canStart: false), .paused)
     }
 
     /// Home warns only in the last two days of the installed signing (ESP-222). Signing Poki again
