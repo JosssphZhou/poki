@@ -1496,17 +1496,47 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(result.text.contains("\"Continue\"): back does not dismiss sheets, tap one of its buttons or drag it down"), result.text)
     }
 
-    func testLaunchAcceptsAnInstalledAppDisplayName() async {
-        let (core, wda, _) = makeCore()
+    func testLaunchingPokiByNameCannotBypassOwnAppProtection() async {
+        let (core, wda, host) = makeCore()
+        host.apps.value = [InstalledApp(bundleID: "nz.zheha.poki", displayName: "Poki")]
         _ = await core.call("look", [:])
-        wda.set("POST /wda/apps/activate") { body in
-            if body?["bundleId"]?.string == "com.apple.mobilesafari" {
-                return (200, ["value": .null])
+        let result = await core.call("do", ["actions": [["launch": "Poki"], ["tap": 1]]])
+        XCTAssertTrue(result.text.contains(CoreConfig.ownAppRefusal), result.text)
+        XCTAssertTrue(wda.bodies("POST /wda/apps/activate").isEmpty)
+    }
+
+    func testLaunchAcceptsAnInstalledAppDisplayName() async {
+        let (core, wda, host) = makeCore()
+        host.apps.value = [InstalledApp(bundleID: "com.apple.mobilesafari", displayName: "Safari", aliases: ["浏览器"])]
+        _ = await core.call("look", [:])
+        for route in ["POST /wda/apps/activate", "POST /wda/apps/launch"] {
+            wda.set(route) { body in
+                if body?["bundleId"]?.string == "com.apple.mobilesafari" {
+                    return (200, ["value": .null])
+                }
+                return (500, ["value": ["error": "unknown error", "message": "Application is not installed"]])
             }
-            return (500, ["value": ["error": "unknown error", "message": "Application is not installed"]])
         }
-        let result = await core.call("do", ["actions": [["launch": "Safari"]]])
-        XCTAssertTrue(result.text.contains("launch com.apple.mobilesafari"), result.text)
+        wda.set("GET /wda/activeAppInfo") { _ in
+            (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]])
+        }
+        let launches: [JSON] = ["Safari", "  sA faRi ", "浏 览 器", ["name": "Safari", "fresh": true]]
+        for launch in launches {
+            let result = await core.call("do", ["actions": [["launch": launch]]])
+            XCTAssertFalse(result.isError, result.text)
+            XCTAssertTrue(result.text.contains("launch com.apple.mobilesafari"), result.text)
+        }
+        host.apps.value.append(InstalledApp(bundleID: "local.safari", displayName: "Safari"))
+        for name in ["Safari", "Missing"] {
+            let before = wda.bodies("POST /wda/apps/activate").count
+            let result = await core.call("do", ["actions": [["launch": .string(name)]]])
+            XCTAssertTrue(result.isError, result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/apps/activate").count, before)
+            if name == "Safari" {
+                XCTAssertTrue(result.text.contains("com.apple.mobilesafari"), result.text)
+                XCTAssertTrue(result.text.contains("local.safari"), result.text)
+            } else { XCTAssertTrue(result.text.contains("No installed app matches"), result.text) }
+        }
     }
 
     /// Notes is not on the CI simulator: the launch answered with the system's whole error dump.

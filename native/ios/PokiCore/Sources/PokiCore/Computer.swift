@@ -485,6 +485,7 @@ final class Computer: @unchecked Sendable {
     }
 
     func actNow(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
+        var actions = actions
         scrollFound = nil
         typedInto = nil
         var started = now()
@@ -518,6 +519,15 @@ final class Computer: @unchecked Sendable {
         let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
         if !onlyButtons, await isLocked() {
             return ToolResult(text: "screen: locked. Nothing was sent. The owner has to unlock the phone; call look once they have.", jpeg: nil, isError: true)
+        }
+
+        let actionsToResolve = actions
+        do {
+            actions = try await withDeadline(min(12, until - now()), "reading installed apps") { [self] in
+                try await resolveLaunches(actionsToResolve)
+            }
+        } catch {
+            return ToolResult(text: "not_sent: \((error as? ActionFailure)?.message ?? error.localizedDescription) Nothing was sent.", jpeg: nil, isError: true)
         }
 
         // A number that is not in the latest read is refused before anything is sent.

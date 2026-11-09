@@ -85,6 +85,15 @@ struct DeviceKey: RelayKey {
 /// its own tasks.
 final class AppCoreHost: CoreHost, @unchecked Sendable {
     private let lock = NSLock()
+    private var directoryConfig: String?
+    func update(appDirectory config: LauncherConfig) throws {
+        let json = String(decoding: try JSONEncoder().encode(config), as: UTF8.self)
+        lock.withLock { directoryConfig = json }
+    }
+    func installedApps() async throws -> [InstalledApp] {
+        guard let config = lock.withLock({ directoryConfig }) else { throw AppDirectoryUnavailable() }
+        return try await InstalledApps.read(config: config)
+    }
     private var key: Curve25519.Signing.PrivateKey?
     private var hashes: [String] = []
     private var runner: RunnerState = .starting("not started")

@@ -122,6 +122,8 @@ struct Node {
 }
 
 final class FakeHost: CoreHost, @unchecked Sendable {
+    let apps = LockedBox<[InstalledApp]>([])
+    func installedApps() async throws -> [InstalledApp] { apps.value }
     let state = LockedBox<RunnerState>(.running)
     let restarts = LockedBox(0)
     let texts = LockedBox<[RecognizedText]?>(nil)
