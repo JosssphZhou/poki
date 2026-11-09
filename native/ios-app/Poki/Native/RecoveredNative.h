@@ -17,6 +17,10 @@ NS_ASSUME_NONNULL_BEGIN
 @interface SRNativeSession : NSObject
 // Call from a worker queue: the upstream promise wait can take 3 seconds.
 - (nullable id)prepare:(NSError **)error;
+/// Re-enables Automation Mode even when this generation was enabled before (iOS can revoke it).
+- (nullable id)prepareRevalidatingAuthorization:(NSError **)error;
+/// Forgets only the cached enable, keeping the live daemon connection and generation.
+- (void)authorizationRejected;
 - (BOOL)isCurrent:(id)session generation:(uint64_t)generation;
 // Ends the current session (and Automation Mode with it). YES when one was open. The next prepare
 // opens a new one, with a new generation.

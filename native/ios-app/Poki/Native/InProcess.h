@@ -34,9 +34,11 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
 /// authenticate in iOS's prompt.
 @interface PKInProcess : NSObject
 + (instancetype)shared;
-/// Loads the Developer libraries, opens the daemon session and enables Automation Mode, or reuses an
-/// enable of the same session and generation. Keys: ok, code, detail, generation, reused, seconds.
+/// Loads the Developer libraries, opens/reuses the daemon connection and revalidates Automation Mode.
+/// A previously successful enable is not proof that iOS still authorizes this session. Keys: ok, code, detail, generation, reused, seconds.
 - (NSDictionary<NSString *, id> *)prepare;
+/// An explicit system authorization refusal expires the enable cache without closing the session.
+- (void)authorizationRejected;
 /// Ends the session, and with it Automation Mode and iOS's "Automation Running" banner, while Poki
 /// stays up. Keys: closed (whether one was open), generation (the one that ended), seconds. The next
 /// prepare opens a new session; iOS asks for no passcode again within the same boot.

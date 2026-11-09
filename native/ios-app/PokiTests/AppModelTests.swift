@@ -56,6 +56,27 @@ final class AppModelTests: XCTestCase {
     /// own call); on the Poki Runner path (`-automationPath runner`) it changes nothing.
     private func sessionOpen(_ model: AppModel) { model.inProcessReadyForProbe() }
 
+    func testAuthorizationRefusalClearsSetupAndLauncherCannotRestoreIt() async throws {
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
+        try XCTSkipUnless(model.automationPath == .inProcess, "Poki Runner path")
+        let saved = SetupState.load()
+        defer { saved.save() }
+        model.setup.uiAutomation = true
+        model.inProcessReadyForProbe()
+
+        model.automationAuthorizationLost()
+
+        XCTAssertTrue(model.automationAuthorizationRevoked)
+        XCTAssertFalse(model.isDone(.automation), "an old check mark must not survive an explicit refusal")
+        guard case .failed(let reason, _) = model.coreState(of: RunnerStatus(state: "running")) else {
+            return XCTFail("a mounted developer image must not report an authorized UI session")
+        }
+        XCTAssertTrue(reason.contains("automation_unauthorized"), reason)
+        model.runnerChanged(RunnerStatus(state: "running"))
+        XCTAssertFalse(model.setup.uiAutomation, "only a successful authorization check can restore it")
+        XCTAssertTrue(model.automationAuthorizationRevoked)
+    }
+
     /// The default path: a running launcher is not yet a running phone. The agent hears that the
     /// session is opening until it is open, and "running" right after.
     func testRunningLauncherWaitsForTheInProcessSession() throws {

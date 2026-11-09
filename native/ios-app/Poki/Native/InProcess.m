@@ -458,8 +458,9 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     NSError *error;
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     id session = nil;
+    uint64_t previousGeneration = _sessions.generation;
     @try {
-        session = [_sessions prepare:&error];
+        session = [_sessions prepareRevalidatingAuthorization:&error];
     } @catch (NSException *exception) {
         return @{@"ok": @NO, @"code": @"exception", @"detail": [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason ?: @""]};
     }
@@ -472,7 +473,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         return @{@"ok": @NO, @"code": code ?: @"unknown", @"detail": detail, @"seconds": @(seconds)};
     }
     double warm = 0;
-    if (!_sessions.enableWasReused) {
+    BOOL connectionReused = previousGeneration > 0 && previousGeneration == _sessions.generation;
+    if (!connectionReused) {
         // The first use of a new session pays for the accessibility client's first snapshot and
         // XCUIScreen's first screenshot, seconds each (the gym: the agent's first look after prepare
         // took 8.1 s and came with no tree and no picture; the next read took 1.6 s). Paid here, with
@@ -487,8 +489,10 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         } @catch (__unused NSException *e) {}
         warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm)};
+    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(connectionReused), @"authorization_checked": @YES, @"seconds": @(seconds), @"warm_seconds": @(warm)};
 }
+
+- (void)authorizationRejected { [_sessions authorizationRejected]; }
 
 - (NSDictionary<NSString *, id> *)close {
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
@@ -531,10 +535,12 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     if (!answered) {
         outcome = [PKOutcome delivery:PKDeliveryUnknown code:@"reply_timeout" detail:[NSString stringWithFormat:@"no reply from testmanagerd within %.1f s", timeout]];
     } else {
-        id accepted = context.evidence[@"inputAccepted"];
+        NSDictionary *evidence = context.evidence;
+        id accepted = evidence[@"inputAccepted"];
+        NSString *replyError = evidence[@"replyError"];
         BOOL ok = [accepted isKindOfClass:NSNumber.class] && [accepted boolValue];
         outcome = ok ? [PKOutcome delivery:PKDeliverySent code:nil detail:nil]
-                     : [PKOutcome delivery:PKDeliveryUnknown code:@"reply_error" detail:@"testmanagerd answered with an error"];
+                     : [PKOutcome delivery:PKDeliveryUnknown code:@"reply_error" detail:replyError.length ? replyError : @"testmanagerd answered with an error"];
     }
     outcome.seconds = NSProcessInfo.processInfo.systemUptime - started;
     outcome.generation = generation;
