@@ -12,6 +12,22 @@ pub struct Display {
     pub width: f64,
     pub height: f64,
     pub orientation: Option<u64>,
+    /// Clockwise rotation of the panel's content from its native orientation, in degrees.
+    pub rotation: u16,
+}
+
+/// Maps a point normalized to the screen as the user sees it (0..=65535 on both axes) onto the
+/// touchscreen's native axes. The digitizer reports in the panel's native orientation, so a panel
+/// showing rotated content needs the inverse rotation. Calibrated on a two-panel iPhone whose inner
+/// panel reported `rot90` in landscape: unrotated, a tap aimed at screen (150, 621) of 951 x 669
+/// points landed near (67, 106), which fits screen = (1 - native_y, native_x) and no other turn.
+pub fn to_panel(rotation: u16, x: u16, y: u16) -> (u16, u16) {
+    match rotation {
+        90 => (y, u16::MAX - x),
+        180 => (u16::MAX - x, u16::MAX - y),
+        270 => (u16::MAX - y, x),
+        _ => (x, y),
+    }
 }
 
 /// The active integrated display, or `None` when the phone does not advertise CoreDevice device
@@ -79,6 +95,13 @@ fn select(info: &Value) -> Result<Display> {
         Some("landscapeRight") => Some(4),
         _ => None,
     };
+    let rotation = match d["currentOrientation"].as_str() {
+        None | Some("rot0") => 0,
+        Some("rot90") => 90,
+        Some("rot180") => 180,
+        Some("rot270") => 270,
+        Some(other) => return Err(format!("Unknown display orientation {other}").into()),
+    };
     Ok(Display {
         id,
         unique_id,
@@ -89,6 +112,7 @@ fn select(info: &Value) -> Result<Display> {
         width: dimension(0)?,
         height: dimension(1)?,
         orientation,
+        rotation,
     })
 }
 
@@ -137,6 +161,33 @@ mod tests {
             (2, "inner", false, true)
         );
         assert_eq!((d.width, d.height, d.orientation), (669.0, 951.0, Some(1)));
+        assert_eq!(d.rotation, 0);
+    }
+    #[test]
+    fn reads_panel_rotation_and_refuses_unknown_values() {
+        let mut info = fixture();
+        info["displays"][1]["currentOrientation"] = json!("rot90");
+        assert_eq!(select(&info).unwrap().rotation, 90);
+        info["displays"][1]["currentOrientation"] = json!("sideways");
+        assert!(select(&info).is_err());
+    }
+    #[test]
+    fn maps_screen_points_onto_native_touch_axes() {
+        let m = u16::MAX;
+        assert_eq!(to_panel(0, 100, 200), (100, 200));
+        // rot90 landscape: screen top-left is the panel's top-right, screen bottom-left its top-left.
+        assert_eq!(to_panel(90, 0, 0), (0, m));
+        assert_eq!(to_panel(90, 0, m), (m, m));
+        assert_eq!(to_panel(90, m, 0), (0, 0));
+        assert_eq!(to_panel(180, 0, 0), (m, m));
+        assert_eq!(to_panel(270, 0, 0), (m, 0));
+        for r in [90, 180, 270] {
+            let (mut x, mut y) = (1234, 54321);
+            for _ in 0..4 {
+                (x, y) = to_panel(r, x, y);
+            }
+            assert_eq!((x, y), (1234, 54321), "rotation {r} applied a full turn is the identity");
+        }
     }
     #[test]
     fn refuses_missing_ambiguous_or_uncalibrated_panels() {
