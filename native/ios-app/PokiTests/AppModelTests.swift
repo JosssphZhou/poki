@@ -115,7 +115,7 @@ final class AppModelTests: XCTestCase {
     /// A pairing refusal is kept until the phone accepts again; a disk-image refusal re-downloads.
     func testPairingRefusalThenAcceptance() {
         let (model, _) = model()
-        model.runnerChanged(RunnerStatus(state: "failed", detail: "the phone refused the pairing", fix: "Pair again in Poki's setup"))
+        model.runnerChanged(RunnerStatus(state: "failed", detail: "the phone refused the pairing", fix: "Pair again in Poki's setup.", code: "pairing"))
         XCTAssertNotNil(model.pairingTrouble)
         model.runnerChanged(RunnerStatus(state: "launching"))
         XCTAssertNil(model.pairingTrouble)

@@ -154,7 +154,7 @@ final class LoopbackMonitor {
         case .checking: String(localized: "Looking for this iPhone at 10.7.0.1.")
         case .working(let ms): String(localized: "This iPhone answers at 10.7.0.1 (\(ms) ms).") + (onWiFi || cellularOnly ? "" : " " + String(localized: "Connect to Wi-Fi: the developer services need it."))
         case .noAnswer where cellularOnly: Self.cellularHint
-        case .noAnswer: String(localized: "The local interface is present, but this iPhone's developer services do not answer. Check Developer Mode and Wi-Fi, then reconnect the local connection.")
+        case .noAnswer: String(localized: "The local interface is present, but this iPhone does not answer at 10.7.0.1. Reconnect the local connection and check Wi-Fi. If it still does not answer, pair again in Setup › Pairing, then check Developer Mode.")
         case .off: String(localized: "This iPhone does not answer yet. Enable Poki's local connection, or choose an external connection in Setup.")
         }
     }
