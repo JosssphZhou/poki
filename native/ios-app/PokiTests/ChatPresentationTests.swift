@@ -102,4 +102,79 @@ final class ChatPresentationTests: XCTestCase {
     private func scrollViews(in view: UIView) -> [UIScrollView] {
         ((view as? UIScrollView).map { [$0] } ?? []) + view.subviews.flatMap { scrollViews(in: $0) }
     }
+
+    func testComposerCoversContentThroughBottomSafeArea() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let report = """
+        已查看活动页面，以下是当前可见的内容。
+
+        ## 一、当前看到的主要活动
+
+        | 活动 | 说明 | 起送费 |
+        | --- | --- | ---: |
+        | 每日精选 Offers for you | 查看参与活动的商家与优惠菜品 | QAR 2 |
+        | 聚餐精选 Gathering Picks | 适合多人分享的套餐 | QAR 4 |
+        | 首单优惠 | 资格以结算页为准 | QAR 0 |
+
+        ### 二、商家与菜品
+
+        **示例餐厅** 提供汉堡、炸鸡与饮品套餐。
+
+        1. 查看商家菜单和配送范围。
+        2. 在结算前核对价格与优惠条件。
+
+        以上金额为页面展示价格，未下单。
+        """
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            let root = ZStack {
+                // Any gap below the composer would expose this red backing.
+                Color.red.ignoresSafeArea()
+                ScrollView {
+                    MessageBubble(direction: .incoming, text: report, tail: true)
+                        .padding(.horizontal, 16)
+                }
+                .background(Color(.systemBackground), ignoresSafeAreaEdges: [])
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ChatComposerSurface {
+                    HStack {
+                        Text("给 Poki 发消息").font(.system(size: 16)).foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "arrow.up.circle.fill").foregroundStyle(.blue).font(.system(size: 28))
+                    }
+                    .padding(12)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22))
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                }
+            }
+            let host = UIHostingController(rootView: root)
+            let window = UIWindow(windowScene: scene)
+            window.overrideUserInterfaceStyle = style
+            window.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            try await Task.sleep(for: .milliseconds(300))
+            host.view.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in
+                host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "chat-surface-\(style == .light ? "light" : "dark")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+
+            let cg = try XCTUnwrap(image.cgImage)
+            var pixel = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(data: &pixel, width: 1, height: 1,
+                bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let sample = try XCTUnwrap(cg.cropping(to: CGRect(x: 20 * image.scale,
+                y: (image.size.height - 8) * image.scale, width: 1, height: 1)))
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            XCTAssertLessThan(abs(Int(pixel[0]) - Int(pixel[1])), 8, "bottom safe area must be neutral, not the red transcript backing")
+            XCTAssertLessThan(abs(Int(pixel[1]) - Int(pixel[2])), 8)
+            XCTAssertEqual(pixel[3], 255)
+        }
+    }
 }

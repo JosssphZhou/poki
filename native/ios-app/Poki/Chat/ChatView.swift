@@ -26,15 +26,17 @@ struct ChatView: View {
             }
             LiveVoiceTranscript(voice: voice)
         }
-        // The header and the message field are insets of the conversation, so the field sits right on
-        // the keyboard (or the home indicator) and the bubbles scroll under both, as in Messages.
+        // The composer reserves space above the keyboard, with an opaque surface through the home
+        // indicator. Scrolling content must not remain readable behind or below the input field.
         .safeAreaInset(edge: .top, spacing: 0) {
             if voice.isOn { LiveVoiceBar(voice: voice).transition(.move(edge: .top).combined(with: .opacity)) }
         }
         .animation(.snappy, value: voice.isOn)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
-                              newConversation: chat.newConversation)
+            ChatComposerSurface {
+                ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
+                                  newConversation: chat.newConversation)
+            }
         }
         .background(Color(.systemBackground))
         // The conversation's name (the one Poki gave it, or the owner's) is the title, and its title
@@ -460,7 +462,7 @@ struct ComposerInputView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 HStack(alignment: .bottom, spacing: 4) {
                     TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
-                        .font(.system(size: 17))
+                        .font(.system(size: 16))
                         .focused($focused)
                         .multilineTextAlignment(.leading)
                         .lineLimit(1...6)
@@ -471,9 +473,10 @@ struct ComposerInputView: View {
                 }
                 .padding(.leading, 16).padding(.trailing, 4)
                 .frame(minHeight: 40)
-                .composerGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color(.separator).opacity(0.25), lineWidth: 0.5) }
             }
-            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
+            .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 10)
         }
         .animation(.snappy, value: dictation.on)
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
