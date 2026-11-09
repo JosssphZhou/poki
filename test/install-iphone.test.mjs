@@ -21,11 +21,24 @@ async function stateDir(t) {
   return dir;
 }
 
+async function fakeLaunchctl(dir) {
+  const bin = join(dir, 'launchd-bin');
+  const log = join(dir, 'launchctl.log');
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, 'launchctl'), `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nexit 0\n`);
+  await chmod(join(bin, 'launchctl'), 0o755);
+  return { bin, log, calls: async () => (await readFile(log, 'utf8').catch(() => '')).split('\n').filter(Boolean) };
+}
+
 // Runs the installer the way an agent does: reads its JSON lines and answers each person stop
 // with the same subcommands the guide tells the agent to use.
-function runInstaller(state, { scenario = 'happy', env = {}, answer = {}, stateArgs = ['--state', state], args = [] } = {}) {
+async function runInstaller(state, { scenario = 'happy', env = {}, answer = {}, stateArgs = ['--state', state], args = [] } = {}) {
+  const launchd = await fakeLaunchctl(state);
+  const home = env.HOME ?? join(state, 'home');
+  await mkdir(home, { recursive: true });
+  const path = `${launchd.bin}:${env.PATH ?? process.env.PATH}`;
   const child = spawn(process.execPath, [cli, 'run', '--json', '--bridge', fakeBridge, ...stateArgs, ...args], {
-    env: { ...process.env, ...fastEnv, POKI_FAKE_SCENARIO: scenario, POKI_APPLE_ID: 'tester@example.com', POKI_SETUP_PASSWORD: 'correct horse', ...env },
+    env: { ...process.env, ...fastEnv, POKI_FAKE_SCENARIO: scenario, POKI_APPLE_ID: 'tester@example.com', POKI_SETUP_PASSWORD: 'correct horse', ...env, HOME: home, PATH: path },
   });
   const events = [];
   let stderr = '';
@@ -35,7 +48,7 @@ function runInstaller(state, { scenario = 'happy', env = {}, answer = {}, stateA
     events.push(event);
     if (event.event === 'wait' && answer[event.wait]) await answer[event.wait](event);
   });
-  return new Promise(resolve => child.on('close', code => resolve({ code, events, stderr })));
+  return new Promise(resolve => child.on('close', code => resolve({ code, events, stderr, home, launchd })));
 }
 
 const sub = (state, ...args) => exec(process.execPath, [cli, ...args, '--state', state]);
@@ -57,10 +70,10 @@ const personAnswers = state => ({
 
 test('runs every step in order, stops at each person step with one sentence, and continues once it is done', async t => {
   const state = await stateDir(t);
-  const { code, events, stderr } = await runInstaller(state, { answer: personAnswers(state) });
+  const { code, events, stderr, home, launchd } = await runInstaller(state, { answer: personAnswers(state) });
   assert.equal(code, 0, stderr);
   const stepOrder = events.filter(e => e.event === 'step').map(e => e.step);
-  assert.deepEqual(stepOrder, ['setup_app', 'bridge', 'channel', 'apple_account', 'phone', 'install', 'open_poki', 'model_key', 'loopback', 'relay', 'check']);
+  assert.deepEqual(stepOrder, ['setup_app', 'bridge', 'channel', 'apple_account', 'phone', 'install', 'open_poki', 'model_key', 'loopback', 'relay', 'check', 'renew']);
   const waits = events.filter(e => e.event === 'wait').map(e => [e.wait, e.who]);
   assert.deepEqual(waits, [['apple_code', 'input'], ['phone_plug', 'phone'], ['pair', 'phone'], ['devmode', 'phone'], ['open_poki', 'phone']]);
   for (const wait of events.filter(e => e.event === 'wait')) assert.match(wait.say, /^[A-Z].{10,}[.:]$/s, `wait ${wait.wait} has a sentence for the person`);
@@ -71,6 +84,14 @@ test('runs every step in order, stops at each person step with one sentence, and
   assert.deepEqual(result.check, { poki: '0.2.8 (501)', developer_mode: true, paired: true, ddi_mounted: true, days_left: 7, relay: 'skipped' });
   const saved = JSON.parse(await readFile(join(state, 'run.json'), 'utf8'));
   assert.equal(saved.steps.check.status, 'ok');
+  assert.equal(saved.steps.renew.status, 'ok');
+  const plistPath = join(home, 'Library/LaunchAgents/nz.zheha.poki.renew.plist');
+  await exec('plutil', ['-lint', plistPath]);
+  const plist = await readFile(plistPath, 'utf8');
+  assert.match(plist, /<key>StartCalendarInterval<\/key>[\s\S]*<key>Hour<\/key>\s*<integer>\d+<\/integer>[\s\S]*<key>Minute<\/key>\s*<integer>\d+<\/integer>/, 'daily schedule with hour and minute offset');
+  assert.match(plist, /<key>POKI_INSTALL_DIALOGS<\/key>\s*<string>0<\/string>/, 'scheduled renewal never opens a dialog window');
+  const calls = await launchd.calls();
+  assert.ok(calls.some(c => c.startsWith('bootstrap gui/') && c.endsWith(plistPath)), `launchctl bootstrap loaded the plist: ${calls.join('; ')}`);
   assert.doesNotMatch(JSON.stringify(events) + stderr + JSON.stringify(saved), /correct horse/, 'the Apple Account password never reaches output or state');
 });
 
@@ -620,4 +641,75 @@ test('a Poki too old to write its hello still counts as open once devicectl sees
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Accounts and Models/);
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'loopback').reason, /10\.7\.0\.1/);
   assert.doesNotMatch(await mac.securityLog(), /api-key/, 'a Poki that cannot take the key does not make the installer read it');
+});
+
+test('renew --uninstall-schedule unloads and removes the daily launchd agent', async t => {
+  const state = await stateDir(t);
+  const { code, stderr, home, launchd } = await runInstaller(state, { answer: personAnswers(state) });
+  assert.equal(code, 0, stderr);
+  const plistPath = join(home, 'Library/LaunchAgents/nz.zheha.poki.renew.plist');
+  await readFile(plistPath, 'utf8');
+  const env = { ...process.env, HOME: home, PATH: `${launchd.bin}:${process.env.PATH}` };
+  const { stdout } = await exec(process.execPath, [cli, 'renew', '--uninstall-schedule', '--state', state], { env });
+  assert.match(stdout, /Removed.*renew/i);
+  await assert.rejects(readFile(plistPath), { code: 'ENOENT' }, 'the LaunchAgent plist is removed');
+  const calls = await launchd.calls();
+  assert.ok(calls.some(c => c.startsWith('bootout gui/') && c.includes('nz.zheha.poki.renew')), `launchctl bootout unloaded the agent: ${calls.join('; ')}`);
+  const again = await exec(process.execPath, [cli, 'renew', '--uninstall-schedule', '--state', state], { env });
+  assert.match(again.stdout, /Removed.*renew/i, 'removing an already removed schedule is idempotent');
+  const skill = await readFile(join(root, 'skills/install-poki/SKILL.md'), 'utf8');
+  assert.match(skill, /renew --uninstall-schedule/, 'the skill documents how to remove the schedule');
+});
+
+test('renew calls renew_due: skips when not due, re-signs when due, and defers without windows or identifiers when locked, offline or needing Apple sign-in', async t => {
+  const state = await stateDir(t);
+  const setupHome = join(state, 'setup-home');
+  const mac = await fakeMac(t);
+  const launchd = await fakeLaunchctl(state);
+  const home = join(state, 'home');
+  await mkdir(home, { recursive: true });
+  const runRenew = (scenario, extraArgs = []) => exec(
+    process.execPath,
+    [cli, 'renew', '--bridge', fakeBridge, '--state', state, '--setup-home', setupHome, ...extraArgs],
+    { env: { ...process.env, ...mac.env, HOME: home, PATH: `${launchd.bin}:${mac.env.PATH}`, POKI_FAKE_SCENARIO: scenario } },
+  );
+
+  const notDue = await runRenew('not-due');
+  assert.match(notDue.stdout, /not due yet.*6 days/i, 'skips renewal above the 2-day threshold');
+
+  const renewed = await runRenew('due');
+  assert.match(renewed.stdout, /Renewed Poki 0\.2\.8 \(501\).*7 days/i, 're-signs and installs when within the 2-day threshold');
+  const recordsAfterRenew = JSON.parse(await readFile(join(setupHome, 'state/phones.json'), 'utf8'));
+  assert.ok(Math.round((recordsAfterRenew[0].profile_expires_at - Date.now() / 1000) / 86400) >= 6, 'the phone record in Poki Setup is renewed to 7 days');
+
+  const ageRecord = async () => {
+    const current = JSON.parse(await readFile(join(setupHome, 'state/phones.json'), 'utf8'));
+    current[0].profile_expires_at = Math.floor(Date.now() / 1000) + 86400;
+    await writeFile(join(setupHome, 'state/phones.json'), `${JSON.stringify(current, null, 2)}\n`);
+    return current[0];
+  };
+
+  for (const [scenario, pattern] of [
+    ['renew-locked', /locked.*try again/i],
+    ['renew-offline', /not connected|not reachable.*try again/i],
+    ['renew-unexpected', /provisioning service unavailable.*try again/i],
+    ['renew-reauth', /Apple Account.*sign in.*try again/i],
+  ]) {
+    const rec = await ageRecord();
+    const out = await runRenew(scenario);
+    assert.match(out.stdout, pattern, `${scenario} prints a readable result: ${out.stdout}`);
+    const logText = await readFile(join(state, 'renew.log'), 'utf8');
+    const jsonText = await readFile(join(state, 'renew.json'), 'utf8');
+    for (const field of ['udid', 'phone_name', 'apple_id', 'team_id', 'team_name', 'bundle_id']) {
+      assert.ok(rec[field], `record has ${field}`);
+      assert.ok(!out.stdout.includes(rec[field]), `${scenario} stdout does not leak ${field}`);
+      assert.ok(!logText.includes(rec[field]), `${scenario} renew.log does not leak ${field}`);
+      assert.ok(!jsonText.includes(rec[field]), `${scenario} renew.json does not leak ${field}`);
+    }
+  }
+  assert.equal((await mac.shown()).length, 0, 'renew never opens a Poki Setup window');
+
+  const nextRun = await runInstaller(state, { args: ['--setup-home', setupHome], answer: personAnswers(state) });
+  assert.equal(nextRun.code, 0, nextRun.stderr);
+  assert.ok(nextRun.events.some(e => e.event === 'note' && /Apple Account.*sign in/i.test(e.text)), 'the next install command outputs the person-needed note from background renewal');
 });

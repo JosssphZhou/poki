@@ -16,12 +16,32 @@ const has = name => scenario.split(',').includes(name);
 const delay = Number(process.env.POKI_FAKE_DELAY_MS ?? 300);
 const udid = '00008999-000A11B22C33D44E';
 const phoneName = 'Test iPhone';
-let signedIn = scenario === 'signed-in';
+let signedIn = scenario === 'signed-in' || has('due') || has('not-due') || has('renew-locked') || has('renew-offline') || has('renew-unexpected');
 let pending = null;
 let phoneCalls = 0;
 let signInCalls = 0;
 let installCalls = 0;
-let record = null;
+const phonesFile = process.env.POKI_SETUP_HOME ? join(process.env.POKI_SETUP_HOME, 'state/phones.json') : null;
+const makeRecord = (days = 7) => ({
+  udid, phone_name: phoneName, ios: '27.1', apple_id: 'tester@example.com', team_id: 'TEAMID1234', team_name: 'Test Team',
+  team_is_free: true, bundle_id: 'nz.zheha.poki.TEAMID1234', version: '0.2.8', build: '501', release_tag: 'ios-alpha-latest',
+  signed_at: Math.floor(Date.now() / 1000), profile_expires_at: Math.floor(Date.now() / 1000) + days * 86400,
+  pairing_handed_off: true, wifi_address: '192.168.1.44',
+});
+let record = (() => {
+  if (phonesFile && existsSync(phonesFile)) {
+    try {
+      const first = JSON.parse(readFileSync(phonesFile, 'utf8'))[0];
+      if (typeof first?.profile_expires_at === 'number') return first;
+    } catch {}
+  }
+  if (has('not-due')) return makeRecord(6);
+  if (has('due') || has('renew-locked') || has('renew-offline') || has('renew-reauth') || has('renew-unexpected')) return makeRecord(1);
+  return null;
+})();
+const saveRecord = () => {
+  if (phonesFile && record) writeFile(phonesFile, `${JSON.stringify([record], null, 2)}\n`);
+};
 // Poki's container on the simulated phone. POKI_FAKE_CONTAINER lets a test look inside it, and a fake
 // devicectl reach the same files. old-bridge is Poki Setup 0.2.1, which has no container commands.
 const container = process.env.POKI_FAKE_CONTAINER || mkdtempSync(join(tmpdir(), 'poki-fake-container-'));
@@ -63,10 +83,34 @@ async function install() {
   progress({ kind: 'step', id: 'install', title: 'Installing' });
   progress({ kind: 'step', id: 'pairing_file', title: "Giving Poki its pairing file" });
   progress({ kind: 'done', id: 'pairing_file', detail: "placed in Poki's container" });
-  record = { udid, phone_name: phoneName, ios: '27.1', apple_id: 'tester@example.com', team_id: 'TEAMID1234', team_name: 'Test Team', team_is_free: true, bundle_id: 'nz.zheha.poki.TEAMID1234', version: '0.2.8', build: '501', release_tag: 'ios-alpha-latest', signed_at: 0, profile_expires_at: Math.floor(Date.now() / 1000) + 7 * 86400, pairing_handed_off: true, wifi_address: '192.168.1.44' };
+  record = makeRecord(7);
+  saveRecord();
   progress({ kind: 'done', id: 'all', detail: `Poki 0.2.8 is on ${phoneName}` });
   setTimeout(simulatePoki, delay);
   return { record, notes: [], handoff: null };
+}
+
+function renewOne() {
+  if (has('renew-locked')) return { ok: false, error: `The iPhone (${phoneName}, ${udid}) is locked. Unlock it and keep it on the Home Screen. (PasswordProtected)` };
+  if (has('renew-offline')) return { ok: false, error: `That iPhone (${phoneName}, ${udid}) is not connected. Plug it in with a cable.` };
+  if (has('renew-reauth') || !signedIn) return { ok: false, error: `Apple wants a new verification code for ${record.apple_id} on team ${record.team_name} (${record.team_id}). Open Poki Setup and sign in again.` };
+  if (has('renew-unexpected')) return { ok: false, error: `Signing ${record.bundle_id} for ${record.team_name} (${record.team_id}) on ${phoneName} (${udid}) with ${record.apple_id} failed: provisioning service unavailable.` };
+  const now = Math.floor(Date.now() / 1000);
+  record = { ...record, signed_at: now, profile_expires_at: now + 7 * 86400, last_checked_at: now, last_error: null };
+  saveRecord();
+  return { ok: true, error: null };
+}
+
+function renewDue() {
+  if (!record) return [];
+  const daysLeft = Math.trunc((record.profile_expires_at - Math.floor(Date.now() / 1000)) / 86400);
+  if (daysLeft > 2) return [];
+  const out = renewOne();
+  if (!out.ok) {
+    record = { ...record, last_checked_at: Math.floor(Date.now() / 1000), last_error: out.error };
+    saveRecord();
+  }
+  return [{ udid: record.udid, ok: out.ok, error: out.error }];
 }
 
 // The person trusts the developer and opens Poki: Poki writes its hello with a key it made, takes a
@@ -139,6 +183,7 @@ const commands = {
   },
   install,
   records: () => (record ? [record] : []),
+  renew_due: renewDue,
   mount_ddi: () => true,
   relay_token_saved: () => false,
   relay_state: () => null,
