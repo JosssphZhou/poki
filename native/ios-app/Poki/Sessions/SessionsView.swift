@@ -118,7 +118,7 @@ struct SessionsView: View {
         .toolbar {
             HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
-                PowerButton(state: !model.setupComplete && !SetupStep.shown.allSatisfy(model.isDone) ? .paused : model.sessionOn ? .ready : .stopped,
+                PowerButton(state: !model.setupLooksComplete ? .paused : model.sessionOn ? .ready : .stopped,
                             turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() }, openSetup: openSetup)
             }
         }
@@ -130,10 +130,10 @@ struct SessionsView: View {
                 renaming = nil
             }
         }
-        // A new chat with Poki's own agent, at the bottom right. On iOS 26 it is the round button on
-        // the tab bar's line instead (RootView's New Chat tab).
+        // A new chat with Poki's own agent, at the bottom right: Poki's blue, in Liquid Glass on iOS 26
+        // (a search-role tab cannot take a colour, so it is this button on every version).
         .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            if #unavailable(iOS 26.0) { newChatButton }
+            newChatButton
         }
     }
 
@@ -170,7 +170,7 @@ struct SessionsView: View {
 
     private var needsSetup: Bool { model.pairingPath == nil || model.setupStepsLeft }
 
-    private var setupLeft: Int { model.setupComplete ? 0 : SetupStep.shown.filter { !model.isDone($0) }.count }
+    private var setupLeft: Int { model.setupLooksComplete ? 0 : SetupStep.shown.filter { !model.looksDone($0) }.count }
 
     /// What the Agents tab needs, if anything (the same test as its tab bar dot).
     private var agentsIssue: String? {
@@ -220,8 +220,8 @@ private extension View {
 
     /// Blue-tinted Liquid Glass on iOS 26 and later; a blue prominent capsule before it.
     @ViewBuilder func newChatStyle() -> some View {
-        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(.blue) }
-        else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue) }
+        if #available(iOS 26.0, *) { buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(Color.accentColor) }
+        else { buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(Color.accentColor) }
     }
 }
 
