@@ -125,6 +125,46 @@ final class HumanizeTests: XCTestCase {
         }
     }
 
+    func testRefsResolveAfterViewportRecoversFromInitialReadFailure() async {
+        for enabled in [false, true] {
+            for frame in [[380.0, 100, 40, 40], [100, 834, 40, 40]] {
+                for action: JSON in [
+                    ["tap": 1], ["long_press": ["ref": 1, "ms": 100]],
+                    ["drag": ["from": 1, "to": [200, 200], "ms": 100]],
+                    ["pinch": ["ref": 1, "scale": 1.2]],
+                ] {
+                    let (core, wda, _) = makeCore { $0.humanize = enabled }
+                    wda.tree([Node("Button", "Edge", frame)])
+                    wda.set("GET /wda/screen") { _ in throw URLError(.timedOut) }
+                    _ = await core.call("look", [:])
+                    XCTAssertNil(core.computer.size)
+                    XCTAssertFalse(core.computer.refs.isEmpty)
+                    wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 390, "height": 844]]]) }
+                    let result = await core.call("do", ["actions": [action]])
+                    XCTAssertFalse(result.text.contains("not_hittable:"), result.text)
+                    XCTAssertFalse(wda.bodies("POST /actions").isEmpty
+                        && wda.bodies("POST /wda/tap").isEmpty
+                        && wda.bodies("POST /wda/touchAndHold").isEmpty
+                        && wda.bodies("POST /wda/pressAndDragWithVelocity").isEmpty)
+                }
+            }
+        }
+    }
+
+    func testReferencedTypingRecoversViewportBeforeFocusingItsField() async {
+        let (core, wda, _) = makeCore { $0.humanize = false }
+        wda.tree([Node("TextField", "Edge field", [380, 100, 40, 40])])
+        wda.set("GET /wda/screen") { _ in throw URLError(.timedOut) }
+        _ = await core.call("look", [:])
+        XCTAssertNil(core.computer.size)
+        wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 390, "height": 844]]]) }
+        let result = await core.call("do", ["actions": [["type": "R6", "ref": 1]]])
+        XCTAssertFalse(result.text.contains("not_hittable:"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").first?["x"]?.double, 385)
+        // This fixture does not emulate text editing: acceptance here covers the field's
+        // focus target, while the existing typing tests verify resulting text separately.
+    }
+
     // MARK: Plans
 
     func testASeededPlanRepeatsAndTwoSeedsDiffer() {

@@ -266,6 +266,12 @@ extension Computer {
 
     /// Returns the action's kind (for the settle pause) and what it did.
     func perform(_ action: JSON, until: Double) async throws -> (String, String) {
+        // A partial look can retain element refs without a viewport. Recover it before
+        // resolving any input target so visible refs use Layout instead of stale centres.
+        if ["tap", "long_press", "drag", "pinch"].contains(where: { action[$0] != nil })
+            || (action["type"]?.text != nil && action["ref"] != nil) {
+            _ = try await screenSize(until: until)
+        }
         if let spec = action["run"] {
             return ("run", try await runRoutine(spec, until: until))
         }
