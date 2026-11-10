@@ -25,7 +25,7 @@ If accidentally selected while idle, the extension immediately calls
 `advanceToNextInputMode()`. It also advances when typing finishes or fails. That API
 asks iOS for the next source; it does not guarantee restoration of the previous
 source or preservation of iOS's recency ordering. Those behaviors need device checks.
-The panel uses an adaptive-width panel with a 260-point phone / 350-point iPad preferred height; floating/split keyboard
+The panel is adaptive-width with a 260-point phone / 350-point iPad preferred height; floating/split keyboard
 behavior and orientation changes are unverified.
 
 ## IME behavior and humanization
