@@ -86,6 +86,45 @@ final class HumanizeTests: XCTestCase {
         XCTAssertThrowsError(try Humanize.viewportActions(edge, screen: ScreenSize(width: .nan, height: 844)))
     }
 
+    func testSeededNearEdgeScrollTailStaysInsideViewport() async throws {
+        for seed: UInt64 in [0, 1, 7, 35, 97] {
+            for x in [1.0, 389.99] {
+                let (core, wda, _) = makeCore { $0.humanize = true }
+                _ = await core.call("look", [:])
+                core.computer.humanize = Humanize(enabled: true, seed: seed)
+                try await core.computer.scrollDrag((x, 20, x, 800), seconds: 0.4, rest: 0.25,
+                                                  until: ProcessInfo.processInfo.systemUptime + 5)
+                // FakeWDA normalizes scroll_to's f1 W3C source to drag endpoints.
+                let bodies = wda.bodies("POST /wda/pressAndDragWithVelocity")
+                XCTAssertEqual(bodies.count, 1)
+                for body in bodies {
+                    XCTAssertEqual(body["w3c"], true)
+                    for key in ["fromX", "toX"] {
+                        let value = body[key]?.double ?? .nan
+                        XCTAssertTrue(value >= 0 && value < 390, "seed \(seed) \(key): \(value)")
+                    }
+                    for key in ["fromY", "toY"] {
+                        let value = body[key]?.double ?? .nan
+                        XCTAssertTrue(value >= 0 && value < 844, "seed \(seed) \(key): \(value)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testBoundaryCenteredVisibleRefsRemainActionable() async {
+        for enabled in [false, true] {
+            for frame in [[380.0, 100, 20, 40], [100, 834, 40, 20]] {
+                let (core, wda, _) = makeCore { $0.humanize = enabled }
+                wda.tree([Node("Button", "Edge", frame)])
+                _ = await core.call("look", [:])
+                let result = await core.call("do", ["actions": [["tap": 1]]])
+                XCTAssertFalse(result.text.contains("not_hittable:"), result.text)
+                XCTAssertEqual(wda.bodies(enabled ? "POST /actions" : "POST /wda/tap").count, 1)
+            }
+        }
+    }
+
     // MARK: Plans
 
     func testASeededPlanRepeatsAndTwoSeedsDiffer() {

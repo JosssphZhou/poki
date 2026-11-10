@@ -177,6 +177,9 @@ extension Computer {
     /// pointer actions, which both WebDriverAgent and the in-process path take; a runner without
     /// them gets the press-drag.
     func scrollDrag(_ path: (Double, Double, Double, Double), seconds: Double, rest: Double, until: Double) async throws {
+        let screen = try await screenSize(until: until)
+        _ = try onScreen((path.0, path.1)); _ = try onScreen((path.2, path.3))
+        let requestedPath = path
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         // The slow tail with shaped input too: the shaped resting drag moved the gym's list 392-640 pt
         // per swipe where the slow tail moved a steady 442-471 (run 42435103942), and scroll_to's
@@ -193,18 +196,15 @@ extension Computer {
         let near = (x: path.2 - (path.2 - path.0) / distance * tail, y: path.3 - (path.3 - path.1) / distance * tail)
         let expected = seconds + rest
         let timeout = max(expected + 1.5, min(expected + 5, until - now() - 0.2))
-        let finger: JSON = ["type": "pointer", "id": "f1", "parameters": ["pointerType": "touch"], "actions": [
-            ["type": "pointerMove", "duration": 0, "x": .number(path.0.rounded()), "y": .number(path.1.rounded())],
-            ["type": "pointerDown", "button": 0],
-            ["type": "pointerMove", "duration": .number((seconds * 1000).rounded()), "x": .number(near.x.rounded()), "y": .number(near.y.rounded())],
-            ["type": "pointerMove", "duration": .number((rest * 1000).rounded()), "x": .number(path.2.rounded()), "y": .number(path.3.rounded())],
-            ["type": "pointerUp", "button": 0],
-        ]]
+        let finger: [Humanize.Sample] = [
+            (path.0, path.1, 0), (near.x, near.y, seconds),
+            (path.2, path.3, seconds + rest),
+        ]
         do {
-            _ = try await runner.call("POST", "/actions", ["actions": [finger]], timeout: timeout, countsAsMiss: false)
+            _ = try await runner.call("POST", "/actions", try Humanize.viewportActions([finger], screen: screen, idPrefix: "f"), timeout: timeout, countsAsMiss: false)
             swipeUnread = true
         } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
-            try await gesture(path, seconds: seconds, rest: rest, until: until)
+            try await gesture(requestedPath, seconds: seconds, rest: rest, until: until)
         } catch let e as RunnerError where e.delivery == .unknown {
             swipeUnread = true
             throw e
