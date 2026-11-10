@@ -31,8 +31,14 @@ extension Computer {
     }
 
     func onScreen(_ p: (x: Double, y: Double)) throws -> (x: Double, y: Double) {
-        if let size, p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height {
-            throw ActionFailure(message: "not_hittable: [\(Int(p.x)), \(Int(p.y))] is off the screen (\(Int(size.width))x\(Int(size.height)) points); nothing was sent", delivery: .notSent)
+        guard p.x.isFinite, p.y.isFinite else {
+            throw ActionFailure(message: "not_hittable: requested point must be finite; nothing was sent", delivery: .notSent)
+        }
+        if let size, p.x < 0 || p.y < 0 || p.x >= size.width || p.y >= size.height {
+            func whole(_ value: Double) -> String {
+                Int(exactly: value.rounded(.towardZero)).map(String.init) ?? String(value)
+            }
+            throw ActionFailure(message: "not_hittable: [\(whole(p.x)), \(whole(p.y))] is off the screen (\(whole(size.width))x\(whole(size.height)) points); nothing was sent", delivery: .notSent)
         }
         return p
     }
@@ -130,6 +136,8 @@ extension Computer {
     /// slight arc, uneven sampling; a flick still lifts at speed, a resting drag still ends still), sent
     /// as W3C pointer actions; a runner without `/actions` gets the two-point press-drag.
     func gesture(_ path: (Double, Double, Double, Double), seconds: Double, hold: Double = 0, rest: Double = 0, until: Double) async throws {
+        let screen = try await screenSize(until: until)
+        _ = try onScreen((path.0, path.1)); _ = try onScreen((path.2, path.3))
         let distance = max(1, hypot(path.2 - path.0, path.3 - path.1))
         let velocity = distance / max(0.05, seconds)
         let expected = hold + distance / velocity + rest + (humanize.enabled ? 0.04 : 0)
@@ -141,7 +149,7 @@ extension Computer {
             if shaped {
                 let finger = humanize.drag(from: (path.0, path.1), to: (path.2, path.3), seconds: seconds, hold: hold, rest: rest)
                 do {
-                    _ = try await runner.call("POST", "/actions", Humanize.actions([finger]), timeout: timeout, countsAsMiss: false)
+                    _ = try await runner.call("POST", "/actions", try Humanize.viewportActions([finger], screen: screen), timeout: timeout, countsAsMiss: false)
                 } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
                     shaped = false
                 }
@@ -216,6 +224,8 @@ extension Computer {
     /// a point or two of scatter kept inside `frame`'s middle, a drift before the lift); a runner
     /// without `/actions` gets WDA's tap.
     func tap(_ p: (x: Double, y: Double), within frame: Rect? = nil) async throws {
+        _ = try await screenSize(until: now() + 3)
+        _ = try onScreen(p)
         guard humanize.enabled else {
             _ = try await runner.call("POST", "/wda/tap", ["x": .number(p.x), "y": .number(p.y)], timeout: 3)
             return
@@ -227,6 +237,8 @@ extension Computer {
 
     /// A finger held at `p` for `seconds` (shaped as `Humanize.longPress` when on; the hold is exact).
     func longPress(_ p: (x: Double, y: Double), seconds: Double, within frame: Rect? = nil) async throws {
+        _ = try await screenSize(until: now() + 3)
+        _ = try onScreen(p)
         guard humanize.enabled else {
             _ = try await runner.call("POST", "/wda/touchAndHold", ["x": .number(p.x), "y": .number(p.y), "duration": .number(seconds)], timeout: 3 + seconds)
             return
@@ -238,8 +250,9 @@ extension Computer {
 
     /// Fingers as W3C pointer actions; a runner that has no `/actions` gets `legacy` instead.
     func touch(_ fingers: [[Humanize.Sample]], timeout: Double, legacy: () async throws -> Void) async throws {
+        let screen = try await screenSize(until: now() + timeout)
         do {
-            _ = try await runner.call("POST", "/actions", Humanize.actions(fingers), timeout: timeout)
+            _ = try await runner.call("POST", "/actions", try Humanize.viewportActions(fingers, screen: screen), timeout: timeout)
         } catch let e as RunnerError where e.code == "unknown command" || e.code == "unknown method" {
             try await legacy()
         }
@@ -354,12 +367,13 @@ extension Computer {
         if let spec = action["pinch"] {
             let p = try point(spec)
             let screen = try await screenSize(until: until)
+            _ = try onScreen(p)
             let scale = min(4, max(0.25, spec["scale"]?.double ?? action["scale"]?.double ?? 2))
             let start = min(screen.width, screen.height) * (scale > 1 ? 0.12 : 0.3)
             let a = start / 2, b = start * scale / 2
             // Two fingers either side of the point, each a drag of its own (shaped as a person's when
             // humanize is on), in 500 ms.
-            _ = try await runner.call("POST", "/actions", Humanize.actions(humanize.pinch(at: (p.x.rounded(), p.y.rounded()), from: a, to: b, seconds: 0.5)), timeout: 4)
+            _ = try await runner.call("POST", "/actions", try Humanize.viewportActions(humanize.pinch(at: (p.x.rounded(), p.y.rounded()), from: a, to: b, seconds: 0.5), screen: screen), timeout: 4)
             return ("pinch", "pinch \(spec.serialized()) x\(scale)")
         }
         if let name = action["button"]?.text {
