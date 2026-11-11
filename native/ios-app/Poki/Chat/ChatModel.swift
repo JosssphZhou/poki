@@ -169,7 +169,8 @@ final class ChatModel {
 
     /// The conversation as the Sessions list keeps it. Greeting-only conversations are not saved.
     private func persist() {
-        guard !isSample, entries.contains(where: { if case .you = $0.kind { return true }; if case .request = $0.kind { return true }; return false }) else { return }
+        guard !isSample, !SavedSession.isIMessageID(sessionID),
+              entries.contains(where: { if case .you = $0.kind { return true }; if case .request = $0.kind { return true }; return false }) else { return }
         SessionStore.shared.save(chat: self)
     }
 
@@ -217,7 +218,7 @@ final class ChatModel {
         }
     }
 
-    private func send(_ text: String, again: Bool) {
+    private func send(_ text: String, again: Bool, message: String? = nil) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !running else { return }
         // Another conversation (an outside agent's hand-off) is working the phone: one task at a time.
@@ -232,10 +233,14 @@ final class ChatModel {
         if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
             you = last
         } else {
-            you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+            if let message {
+                you = ChatEntry(.you(message, delivered: true))
+            } else {
+                you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+            }
             entries.append(you)
         }
-        lastOwnerText = text
+        lastOwnerText = message ?? text
         if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
         guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
@@ -335,21 +340,39 @@ final class ChatModel {
         let record = TaskRecord(session: sessionID, task: lastOwnerText ?? "", calls: Array(calls.suffix(toolCalls)), result: taskResult,
                                 seconds: Date().timeIntervalSince(taskStart))
         Self.afterTask?(record)
-        SessionStore.shared.taskEnded(sessionID, success: taskResult?.success, stopped: stopAsked)
+        if !SavedSession.isIMessageID(sessionID) {
+            SessionStore.shared.taskEnded(sessionID, success: taskResult?.success, stopped: stopAsked)
+        }
         if kind == .poki, taskResult?.success == true { Haptics.done() }
     }
 
     private var lastOutcome: PiLoop.Outcome?
 
+    var wasStopped: Bool { stopAsked }
+
     /// Runs a task an outside agent handed over (`ask_poki`) and answers with Poki's last words, how the
     /// task ended, and finish_task's summary and answer.
-    func runDelegated(_ task: String) async -> (text: String, success: Bool?) {
+    func runDelegated(_ task: String, message: String? = nil) async -> (text: String, success: Bool?) {
         ChatModel.delegatedBusy = requester ?? String(localized: "an agent")
         defer { ChatModel.delegatedBusy = nil }
         lastOutcome = nil
-        send(task)
+        send(task, again: false, message: message)
         while running { try? await Task.sleep(for: .milliseconds(100)) }
         let replies = entries.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
+        if message != nil {
+            let reply: String
+            if case .failed(let why)? = lastOutcome { return (why, false) }
+            if let tail = entries.last, case .note(.problem(let why)) = tail.kind { return (why, false) }
+            if case .stopped? = lastOutcome { return (String(localized: "Stopped."), false) }
+            if let taskResult, !taskResult.details.isEmpty {
+                reply = taskResult.details.map { "\($0.label): \($0.value)" }.joined(separator: "\n")
+            } else if taskResult?.success == false {
+                reply = taskResult?.summary ?? replies.last ?? String(localized: "The task could not be completed.")
+            } else {
+                reply = replies.last ?? taskResult?.summary ?? String(localized: "Poki ended without an answer.")
+            }
+            return (reply, taskResult?.success)
+        }
         var lines: [String] = []
         if let taskResult {
             lines.append("result: \(taskResult.success ? "done" : "not done"): \(taskResult.summary)")

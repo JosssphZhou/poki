@@ -7,7 +7,7 @@ import PokiCore
 /// listed only once the owner has set up a model, and it waits while the owner's own chat runs a task.
 @MainActor
 enum AskPoki {
-    static let schema = #"{"type":"object","properties":{"task":{"type":"string","description":"What to do on the iPhone, in plain words, as you would ask a person. Include every detail Poki needs (names, text to type); Poki cannot ask you back."},"check":{"type":"boolean","description":"true: no new task; answer with the result of the task you handed over earlier, or say it is still running."}},"additionalProperties":false}"#
+    static let schema = #"{"type":"object","properties":{"task":{"type":"string","description":"What to do on the iPhone, including any context needed."},"check":{"type":"boolean","description":"true: check the task already submitted in this MCP session."},"conversation_id":{"type":"string","format":"uuid","description":"For an iMessage bridge, the stable ID of its conversation."},"message":{"type":"string","description":"For an iMessage bridge, only the latest message as the owner wrote it."}},"additionalProperties":false}"#
 
     static let description = "Hand a REPETITIVE phone task to Poki, the small agent on this iPhone: something the owner does often (the same order, the same message, the same settings), ideally one Poki already has a saved routine for (routines {action: \"list\"} shows them). Poki repeats it by itself with the owner's own model, which is quicker but less capable than you, and answers with the result. For anything new, unusual or tricky, drive the phone yourself with look and do; when that worked and could come again, save it with routines {action: \"save\", name, description} so Poki (and ask_poki) can repeat it next time. One task at a time. A task can take minutes: when it is not done before your call would time out, the answer says it is still working, and you call ask_poki with {\"check\": true} a little later for the result."
 
@@ -59,12 +59,29 @@ enum AskPoki {
         }
         let store = SessionStore.shared
         let requester = store.client(of: session)
-        let id = store.handoffID(for: session)
+        let thread: (id: String, connector: String, message: String)?
+        if args["conversation_id"] != nil || args["message"] != nil {
+            guard let rawID = args["conversation_id"] as? String, let conversation = UUID(uuidString: rawID),
+                  let message = (args["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !message.isEmpty, message.count <= 2500,
+                  let connector = store.connector(for: session) else {
+                return PokiCore.ToolAnswer(text: "error: an iMessage thread requires a relay connector, a conversation UUID, and the latest message", jpeg: nil, isError: true)
+            }
+            thread = ("imessage-\(connector)-\(conversation.uuidString.lowercased())", connector, message)
+        } else {
+            thread = nil
+        }
+        let id = thread?.id ?? store.handoffID(for: session)
         let handoff = ChatModel(app: app, kind: .handoff, requester: requester, sessionID: id)
         running[id] = handoff
+        if let thread { store.beginIMessage(id, connector: thread.connector, message: thread.message) }
         AppLog.shared.add("chat", "\(requester) handed a task to Poki (\(task.count) characters)")
         jobs[key] = Task { @MainActor in
-            let result = await handoff.runDelegated(task)
+            let result = await handoff.runDelegated(task, message: thread?.message)
+            if thread != nil {
+                store.finishIMessage(id, reply: result.text, calls: handoff.savedCalls,
+                                     success: result.success, stopped: handoff.wasStopped)
+            }
             running[id] = nil
             return result
         }

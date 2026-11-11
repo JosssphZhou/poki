@@ -394,10 +394,14 @@ struct SessionAvatar: View {
             }
         case .agent: AgentBadge(name: session.client ?? "", size: size)
         case .handoff:
-            ZStack(alignment: .bottomTrailing) {
-                AgentBadge(name: session.client ?? "", size: size)
-                PokiAvatar(size: size * 0.5).overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 2))
-                    .offset(x: 3, y: 3)
+            if session.isIMessage {
+                PokiAvatar(size: size)
+            } else {
+                ZStack(alignment: .bottomTrailing) {
+                    AgentBadge(name: session.client ?? "", size: size)
+                    PokiAvatar(size: size * 0.5).overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 2))
+                        .offset(x: 3, y: 3)
+                }
             }
         }
     }
@@ -422,7 +426,10 @@ struct SessionView: View {
 
     var body: some View {
         let session = SessionStore.shared.session(id)
-        ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, live: AskPoki.live(id)?.running ?? (session?.live == true), canRetry: false, retry: {}, session: id) {
+        let live = AskPoki.live(id)
+        let transcript = session?.isIMessage == true ? session?.transcript : live?.entries ?? session?.transcript
+        ChatTranscript(entries: transcript ?? [], typing: live?.awaitingModel ?? false,
+                       live: live?.running ?? (session?.live == true), canRetry: false, retry: {}, session: id) {
             if session?.live == true, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
             }
@@ -451,6 +458,7 @@ struct SessionView: View {
 
     private func caption(_ session: SavedSession?) -> String {
         guard let session else { return "" }
+        if session.isIMessage { return "iMessage · \(ChatTime.row(session.updated))" }
         switch session.kind {
         case .agent: return String(localized: "Over MCP, \(ChatTime.row(session.started))")
         case .handoff: return String(localized: "Handed to Poki, \(ChatTime.row(session.started))")
