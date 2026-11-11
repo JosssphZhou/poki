@@ -4,6 +4,27 @@ import XCTest
 /// Routines: a task's do actions are recorded, saved by name, replayed in one call that waits for each
 /// target and stops at a screen that differs; notes; export and import.
 final class RoutineTests: XCTestCase {
+    func testDemonstrationMarkerSurvivesImportEditSaveAndExport() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("routines.json")
+        let store = RoutineStore(url: url)
+        let data = Data(#"{"schema":"poki.agent-backup/1","routines":[{"name":"fixture","description":"","steps":[{"action":{"wait":1},"userDemonstrated":true},{"action":{"wait":1},"userDemonstrated":false},{"action":{"wait":1}}],"params":{},"expect":[],"read":[],"runs":0,"ok":0,"failuresInARow":0,"savedBy":"test","created":"2026-01-01T00:00:00Z","updated":"2026-01-01T00:00:00Z"}],"notes":[],"runs":[]}"#.utf8)
+        _ = try store.importData(data, by: "test")
+        var routine = try XCTUnwrap(store.routine(named: "fixture"))
+        routine.description = "edited"
+        store.save(routine)
+        let reloaded = RoutineStore(url: url)
+        let exported = try reloaded.exportData()
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: exported) as? [String: Any])
+        let routines = try XCTUnwrap(object["routines"] as? [[String: Any]])
+        let steps = try XCTUnwrap(routines.first?["steps"] as? [[String: Any]])
+        XCTAssertEqual(steps[0]["userDemonstrated"] as? Bool, true, "demonstration marker must survive persistence")
+        XCTAssertEqual(steps[1]["userDemonstrated"] as? Bool, false)
+        XCTAssertNil(steps[2]["userDemonstrated"])
+    }
+
     /// Settings → General → About, a screen per tap.
     final class Pages: @unchecked Sendable {
         let wda: FakeWDA
