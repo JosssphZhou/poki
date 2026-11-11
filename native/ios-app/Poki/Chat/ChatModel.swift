@@ -118,6 +118,8 @@ final class ChatModel {
         if let sessionID { self.sessionID = sessionID }
         self.kind = kind
         self.requester = requester
+        // Stop on the Live Activity ends the task under way, in the app's chat and in a hand-off alike.
+        app.addStopObserver { [weak self] in self?.stop() }
         app.addShellObserver { [weak self] event in self?.observe(event) }
         app.addApprovalObserver { [weak self] id in self?.waitsForOwner(id) }
         if kind == .handoff { return }
