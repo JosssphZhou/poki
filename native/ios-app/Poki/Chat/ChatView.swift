@@ -619,8 +619,6 @@ struct ComposerInputView: View {
     @FocusState private var focused: Bool
     @State private var liveNote: String?
     @State private var sent: (text: String, at: Date)?
-    /// The next new line is one the person asked for (Shift-Return, or New Line on the Send button).
-    @State private var keepNewline = false
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -644,17 +642,7 @@ struct ComposerInputView: View {
                         .lineLimit(1...6)
                         .padding(.vertical, 9)
                         .submitLabel(.send)
-                        // A hardware keyboard's Return reaches onSubmit (the on-screen keyboard's adds a new
-                        // line, read below). Shift-Return adds a new line; Return alone sends. Submitting ends
-                        // editing, so the field takes the focus back for the next line or message.
-                        .onKeyPress(.return, phases: .down) { press in
-                            keepNewline = press.modifiers.contains(.shift)
-                            return .ignored
-                        }
-                        .onSubmit {
-                            if keepNewline { input += "\n" } else { submit() }
-                            Task { @MainActor in focused = true }
-                        }
+                        .onSubmit(submit)
                     trailing.frame(height: 40)
                 }
                 .padding(.leading, 16).padding(.trailing, 4)
@@ -667,15 +655,8 @@ struct ComposerInputView: View {
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
         // A keyboard that was still composing (autocorrect, Pinyin) can commit its text after Send has
         // emptied the field, which put the sent message back: for a moment after Send, that is undone.
-        .onChange(of: input) { old, text in
-            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = ""; return }
-            // The on-screen keyboard's Send key adds a new line to a multi-line field instead of calling
-            // onSubmit, so it is read here. A keyboard that is composing (Pinyin) confirms its letters
-            // on Send instead, so they are not sent.
-            guard let message = Self.sendKeyMessage(old, text) else { return }
-            if keepNewline { keepNewline = false; return }
-            input = message
-            submit()
+        .onChange(of: input) { _, text in
+            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = "" }
         }
         .onDisappear { dictation.stop(model) }
     }
@@ -704,10 +685,6 @@ struct ComposerInputView: View {
                         Image(systemName: "arrow.up.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
                     }
                     .accessibilityLabel(Text("Send"))
-                    // The keyboard's Send key sends, so a new line is a long press on Send.
-                    .contextMenu {
-                        Button("New Line", systemImage: "return") { keepNewline = true; input += "\n" }
-                    }
                 } else {
                     // The live voice conversation: Poki listens and answers out loud. It ends 8 s after an answer if nobody speaks, in the background, or when you end it.
                     Button {
@@ -727,17 +704,6 @@ struct ComposerInputView: View {
                 }
             }
         }
-    }
-
-    /// The message without its new line when the change from `old` to `new` is the Send key: one new
-    /// line typed, alone or after the word autocorrect fixed on that key ("dont" became "don't\n").
-    /// Pasted text, which replaces nothing, keeps its new lines.
-    private static func sendKeyMessage(_ old: String, _ new: String) -> String? {
-        let head = zip(old, new).prefix { $0 == $1 }.count
-        let tail = zip(old.dropFirst(head).reversed(), new.dropFirst(head).reversed()).prefix { $0 == $1 }.count
-        let typed = new.dropFirst(head).dropLast(tail), replaced = old.dropFirst(head).dropLast(tail)
-        guard typed.last == "\n", typed.filter({ $0 == "\n" }).count == 1, typed.count == 1 || !replaced.isEmpty else { return nil }
-        return String(new.prefix(head)) + String(typed.dropLast()) + String(new.suffix(tail))
     }
 
     private func submit() {

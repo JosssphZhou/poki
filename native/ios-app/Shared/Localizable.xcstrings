@@ -3641,22 +3641,6 @@
         }
       }
     },
-    "New Line" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "换行"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "換行"
-          }
-        }
-      }
-    },
     "Newest on This Channel" : {
       "localizations" : {
         "zh-Hans" : {
