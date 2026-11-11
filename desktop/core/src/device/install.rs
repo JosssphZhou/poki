@@ -40,6 +40,7 @@ pub async fn install_profiles(phone: &Phone, profiles: &[Vec<u8>], reporter: &Re
 /// of a bundle id that is already there as an upgrade too, when the team matches.
 pub async fn install_ipa(phone: &Phone, ipa: &Path, upgrade: bool, reporter: &Reporter) -> Result<()> {
     reporter.step("install", if upgrade { "Updating Poki on the iPhone" } else { "Installing Poki on the iPhone" });
+    reporter.note("install", "Close Poki in the iPhone's app switcher if it is open. Keep the iPhone unlocked.");
     let size = std::fs::metadata(ipa).map(|m| m.len()).unwrap_or(0);
     tracing::info!(upgrade, bytes = size, ipa = %ipa.display(), "uploading and installing the app");
     let provider = phone.provider()?;
@@ -59,7 +60,10 @@ pub async fn install_ipa(phone: &Phone, ipa: &Path, upgrade: bool, reporter: &Re
             installation::install_package_with_callback(&*provider, ipa, None, cb, ()).await
         }
     };
-    let result = within(600, "installing Poki (unlock the iPhone, check it for a prompt, then try again)", work).await?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(600), work).await.map_err(|_| {
+        tracing::warn!("Poki installation timed out after 600 seconds");
+        Error::device("Installation timed out. Close Poki in the iPhone's app switcher and keep the iPhone unlocked, then try again.")
+    })?;
     tracing::info!(ok = result.is_ok(), "install finished");
     result.map_err(|e| match e {
         idevice::IdeviceError::InstallationProxy(idevice::services::installation_proxy::InstallationProxyError::OperationFailed(ref text)) if text.contains("ApplicationVerificationFailed") => Error::device(
