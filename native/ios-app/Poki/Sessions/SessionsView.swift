@@ -14,6 +14,7 @@ struct SessionsView: View {
     var openDetails: () -> Void
     var openVoice: () -> Void
     var openSetup: () -> Void
+    var openUpdate: () -> Void
     @State private var copied = false
     @State private var query = ""
     @State private var renaming: SavedSession?
@@ -61,6 +62,9 @@ struct SessionsView: View {
             }
             if let warning = ExpiryWarning(expiry: model.signer.expiry) {
                 ExpiryWarningSection(warning: warning)
+            }
+            if model.signer.updateAvailable, let latest = model.signer.latest {
+                UpdateAvailableSection(latest: latest, open: openUpdate)
             }
             if store.ordered.isEmpty {
                 // In the list, under the controls (an overlay would sit on top of them).
