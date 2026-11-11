@@ -8,7 +8,7 @@ struct KeepAliveState: Equatable {
         case off, stopped, playing
 
         init(engine: Bool, running: Bool, playerPlaying: Bool, interrupted: Bool) {
-            self = !engine ? .off : running && playerPlaying ? .playing : .stopped
+            self = !engine ? .off : running && playerPlaying && !interrupted ? .playing : .stopped
         }
     }
 

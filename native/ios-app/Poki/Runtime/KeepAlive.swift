@@ -19,6 +19,12 @@ final class KeepAlive {
     }
     var isPlaying: Bool { state == .playing }
 
+    /// Where the player has rendered to, to tell on the phone whether a started engine really renders.
+    var renderedSample: Int64? {
+        guard let time = player?.lastRenderTime, time.isSampleTimeValid else { return nil }
+        return time.sampleTime
+    }
+
     func start() throws {
         guard engine == nil else { return }
         let session = AVAudioSession.sharedInstance()
@@ -39,14 +45,18 @@ final class KeepAlive {
         self.player = player
         interrupted = false
         Self.playing += 1
-        // Another app's audio can interrupt the session; start again when it ends.
+        // Another app's audio (a call, an alarm) can interrupt the session. When it ends, start again
+        // from scratch: the flags of an engine started again in place are no proof it plays. A start
+        // that fails leaves the keep-alive off, for BackgroundKeeper to try again.
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Task { @MainActor in
-                guard let self, let engine = self.engine else { return }
+                guard let self, self.engine != nil else { return }
                 if type == .began { self.interrupted = true; return }
-                try? AVAudioSession.sharedInstance().setActive(true)
-                if !engine.isRunning { try? engine.start(); player.play() }
+                // A voice conversation set the shared session up for the microphone: leave it alone.
+                guard AVAudioSession.sharedInstance().category == .playback else { return }
+                self.stop()
+                try? self.start()
             }
         }
     }

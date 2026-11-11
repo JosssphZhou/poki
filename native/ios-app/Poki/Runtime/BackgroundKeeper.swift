@@ -51,7 +51,8 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
             run.onExpired = { [weak self] in
                 guard let self, self.isOn else { return }
                 self.continuedRunEnded = true
-                self.startAudio(); self.watchInterruptions()
+                self.watchInterruptions()
+                self.check("iOS ended the continued run")
             }
             if run.begin(subtitle: String(localized: "Agents can reach this iPhone")) { return }
         }
@@ -67,14 +68,19 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     /// Poki came to the front, the only time iOS grants a continued run. One iOS ended during this
     /// session is asked for again; once granted, the silent audio and location stop.
     func cameToFront() {
-        if #available(iOS 26.0, *), isOn, continuedRunEnded, !continuedRunIsOn,
-           ContinuedRun.shared.begin(subtitle: String(localized: "Agents can reach this iPhone")) {
-            continuedRunEnded = false
-            AppLog.shared.add("background", "continued run asked for again after iOS ended it: silent audio off")
-            audio.stop()
-            setAudioLost(false)
-        }
+        if continuedRunEnded { _ = askForContinuedRun("after iOS ended it") }
         check("Poki came to the front")
+    }
+
+    /// Only while Poki is in front: iOS takes the request only from the foreground.
+    private func askForContinuedRun(_ why: String) -> Bool {
+        guard #available(iOS 26.0, *), isOn, !continuedRunIsOn,
+              ContinuedRun.shared.begin(subtitle: String(localized: "Agents can reach this iPhone")) else { return false }
+        continuedRunEnded = false
+        AppLog.shared.add("background", "continued run asked for again \(why): silent audio off")
+        audio.stop()
+        held()
+        return true
     }
 
     /// iOS's continued processing task is holding Poki up, with its own "Poki is on" on the Lock
@@ -102,16 +108,58 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         setAudioLost(!audio.isPlaying)
     }
 
-    /// Makes sure something holds Poki up. When nothing does, the silent audio starts again from
-    /// scratch (only a fresh start is known to play), and location stands in if that fails. Called
-    /// when the audio may have stopped, and as Poki comes to the front or leaves it, while a remedy
-    /// can still start.
+    /// Makes sure something holds Poki up. When nothing does: in front, the continued run is asked
+    /// for; otherwise the silent audio starts again from scratch (only a fresh start is known to play).
+    /// A start that fails keeps location on and is tried again, with iOS's background time keeping
+    /// Poki awake for the tries. Called when the audio may have stopped, and as Poki comes to the
+    /// front or leaves it, while a remedy can still start.
     func check(_ why: String) {
         guard let holder = state.holder else { return }
-        guard holder == .nothing else { setAudioLost(false); return }
-        AppLog.shared.add("background", "nothing keeps Poki running (\(why), silent audio \(audio.state), \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")): starting the silent audio again")
+        guard holder == .nothing else {
+            if holder == .silentAudio, audioLost { probeRendering() }
+            held(); return
+        }
+        let inFront = UIApplication.shared.applicationState == .active
+        if inFront, retry == nil, askForContinuedRun("as nothing kept Poki running (\(why))") { return }
+        holdBackgroundTime()
+        AppLog.shared.add("background", "nothing keeps Poki running (\(why), silent audio \(audio.state), \(inFront ? "in front" : "in the background")): starting the silent audio again")
         audio.stop()
         startAudio()
+        if audio.isPlaying { probeRendering(); held() } else { tryAgainLater() }
+    }
+
+    /// Something holds Poki up again: the tries, the background time and location stop.
+    private func held() {
+        retry = nil
+        setAudioLost(false)
+        endBackgroundTime()
+    }
+
+    /// A start that failed (another app may still hold the audio as its call ends) is tried again after
+    /// 1, 2, 4, 8 and 16 s, mostly inside the background time iOS gives (about 30 s), then every 30 s
+    /// while Poki stays awake.
+    private var retry: (at: Date, wait: TimeInterval, tries: Int)?
+    private func tryAgainLater() {
+        let wait = retry.map { min($0.wait * 2, 30) } ?? 1
+        retry = (Date().addingTimeInterval(wait), wait, (retry?.tries ?? 0) + 1)
+    }
+
+    /// Background time iOS gives an app that asks, here while nothing else holds Poki up.
+    private var backgroundTime = UIBackgroundTaskIdentifier.invalid
+    private func holdBackgroundTime() {
+        guard backgroundTime == .invalid else { return }
+        backgroundTime = UIApplication.shared.beginBackgroundTask(withName: "Poki keep-alive") { [weak self] in
+            MainActor.assumeIsolated {
+                AppLog.shared.add("background", "iOS ended Poki's background time with nothing keeping Poki running: it may be suspended until it comes to the front")
+                self?.endBackgroundTime()
+            }
+        }
+    }
+
+    private func endBackgroundTime() {
+        guard backgroundTime != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTime)
+        backgroundTime = .invalid
     }
 
     private func setAudioLost(_ lost: Bool) {
@@ -138,7 +186,8 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
                 switch type {
                 case .began: self.setAudioLost(true)
                 case .ended:
-                    // KeepAlive restarts its engine on its own; check a moment later.
+                    // KeepAlive starts its engine again on its own; check a moment later, awake.
+                    self.holdBackgroundTime()
                     try? await Task.sleep(for: .seconds(1))
                     self.check("an audio interruption ended")
                 @unknown default: break
@@ -172,9 +221,22 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     private func beat() {
         let now = Date(), gap = now.timeIntervalSince(lastBeat)
         defer { lastBeat = now }
-        guard gap > 2.5 else { return }
-        AppLog.shared.add("background", "iOS paused Poki for \(Int(gap.rounded())) s, from \(lastBeat.formatted(date: .omitted, time: .standard)); now \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")")
+        if gap > 2.5 {
+            AppLog.shared.add("background", "iOS paused Poki for \(Int(gap.rounded())) s, from \(lastBeat.formatted(date: .omitted, time: .standard)); now \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")")
+        }
+        if let retry, now >= retry.at { check("try \(retry.tries + 1)") }
+        if let probe = renderProbe, now.timeIntervalSince(probe.at) >= 2 {
+            renderProbe = nil
+            let sample = audio.renderedSample
+            let rendering = sample.map { $0 > (probe.sample ?? -1) } ?? false
+            AppLog.shared.add("background", "silent audio \(rendering ? "renders" : "does not render") 2 s after it holds Poki up (sample \(probe.sample.map(String.init) ?? "none") to \(sample.map(String.init) ?? "none"))")
+        }
     }
+
+    /// When the silent audio took over holding Poki up again, and where it had rendered to then:
+    /// logged 2 s later, so the phone shows whether the audio that counts as playing really plays.
+    private var renderProbe: (at: Date, sample: Int64?)?
+    private func probeRendering() { renderProbe = (Date(), audio.renderedSample) }
 
     /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
     /// Poki running meanwhile. The silent audio comes back when it ends, if Poki is still on.
@@ -192,6 +254,8 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         guard isOn else { return }
         isOn = false
         continuedRunEnded = false
+        retry = nil; renderProbe = nil
+        endBackgroundTime()
         heartbeat?.invalidate(); heartbeat = nil
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
         audioLost = false
