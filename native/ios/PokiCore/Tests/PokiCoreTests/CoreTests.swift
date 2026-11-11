@@ -171,6 +171,17 @@ final class ApprovalTests: XCTestCase {
         return wda
     }
 
+    func testADeletionInABatchCannotUseAnEarlierCallsAutomaticApproval() async {
+        let wda = FakeWDA()
+        wda.source([("Button", "Call"), ("Button", "Delete")], app: "Contacts")
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": 1], ["tap": 2]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertEqual(core.pendingApproval?.reason, "deleting (\"delete\")")
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
     func testADeletionWaitsForTheOwnerAndSendsNothing() async {
         let (core, wda, _) = makeCore(screenWithDelete())
         _ = await core.call("look", [:])

@@ -230,19 +230,65 @@ final class AppModelTests: XCTestCase {
 
 @MainActor
 final class ApprovalDefaultTests: XCTestCase {
-    private var saved: Any?
-    override func setUp() { saved = UserDefaults.standard.object(forKey: LiveCore.askKey) }
-    override func tearDown() { UserDefaults.standard.set(saved, forKey: LiveCore.askKey) }
+    private var saved: [String: Any] = [:]
+    private let keys = [ApprovalClassifier.modeKey, LiveCore.askKey, ApprovalClassifier.onKey]
+    override func setUp() {
+        for key in keys {
+            saved[key] = UserDefaults.standard.object(forKey: key)
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+    override func tearDown() {
+        for key in keys { UserDefaults.standard.set(saved[key], forKey: key) }
+    }
 
-    /// A phone that never chose (a new install, or an alpha tester who left the switch alone) asks the
-    /// owner before a sensitive step: the Send tap in Messages waits for an answer instead of going
-    /// through, and the switch reads on.
-    func testAPhoneThatNeverChoseAsksBeforeASensitiveTap() async {
-        UserDefaults.standard.removeObject(forKey: LiveCore.askKey)
+    func testAPhoneThatNeverChoseDoesNotAskBeforeASensitiveTap() async {
         let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
         let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
-        XCTAssertFalse(tap.mayTap, "\(tap)")
-        XCTAssertNotEqual(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).approvalMode, .off)
+        XCTAssertEqual(tap, .clear)
+        XCTAssertEqual(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).approvalMode, .off)
+    }
+
+    func testPaymentsAndDeletionsWaitForTheOwnerEvenWhenOtherApprovalsAreOff() async {
+        UserDefaults.standard.set("off", forKey: ApprovalClassifier.modeKey)
+        let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
+        for label in ["Pay", "确认支付", "Delete", "删除", "Remove"] {
+            let tap = await core.clearTap(on: label, inApp: "com.example.shop", named: "Shop", waiting: 0)
+            guard case .unanswered(let reason) = tap else {
+                XCTFail("\(label) must wait for the owner, got \(tap)")
+                continue
+            }
+            for mode in [ApprovalClassifier.Mode.off, .reply, .confirm] {
+                UserDefaults.standard.set(mode.rawValue, forKey: ApprovalClassifier.modeKey)
+                let approval = PendingApproval(id: UUID().uuidString, app: "Shop", summary: label,
+                                               reason: reason, expires: Date().addingTimeInterval(60))
+                XCTAssertEqual(ApprovalClassifier.route(approval, voiceOn: true), .owner, "\(label), \(mode)")
+            }
+        }
+        UserDefaults.standard.set("off", forKey: ApprovalClassifier.modeKey)
+        let send = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0)
+        XCTAssertEqual(send, .clear)
+        let unread = PendingApproval(id: UUID().uuidString, app: "Messages", summary: "Tap on an unread screen",
+                                     reason: "sending a message (a tap in Messages on a screen not read yet)",
+                                     expires: Date().addingTimeInterval(60))
+        XCTAssertEqual(ApprovalClassifier.route(unread, voiceOn: false), .owner)
+    }
+
+    func testAnOwnerWhoEnabledAskingKeepsTheirChoice() async {
+        let choices: [(String, Any, ApprovalClassifier.Mode)] = [
+            (ApprovalClassifier.modeKey, "confirm", .confirm),
+            (ApprovalClassifier.modeKey, "reply", .reply),
+            (LiveCore.askKey, true, .reply),
+            (ApprovalClassifier.onKey, true, .reply),
+        ]
+        for (key, value, expected) in choices {
+            UserDefaults.standard.set(value, forKey: key)
+            XCTAssertEqual(ApprovalClassifier.mode, expected)
+            let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
+            let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0)
+            XCTAssertFalse(tap.mayTap)
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     /// An owner who turned asking off keeps that choice.
