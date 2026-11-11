@@ -619,8 +619,20 @@ struct ComposerInputView: View {
     @FocusState private var focused: Bool
     @State private var liveNote: String?
     @State private var sent: (text: String, at: Date)?
-    /// The next new line is one the person asked for (Shift-Return, or New Line on the Send button).
+    /// A hardware keyboard's Return came with Shift: onSubmit adds a new line instead of sending.
     @State private var keepNewline = false
+    /// A hardware keyboard's Return came while Pinyin was composing: the keyboard confirms the letters
+    /// with it, and onSubmit sends nothing.
+    @State private var confirmsComposition = false
+    /// The field's text as UIKit last reported it and as the binding last held it (they differ while
+    /// the binding catches up, or after Poki changes the text), and whether a keyboard (Pinyin) is
+    /// still composing.
+    @State private var fieldText = ""
+    @State private var boundText = ""
+    @State private var composing = false
+    /// The Send key's edit, from the text before it to the text with its new line, until the field's
+    /// binding takes it.
+    @State private var sendKey: (from: String, to: String)?
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -645,14 +657,19 @@ struct ComposerInputView: View {
                         .padding(.vertical, 9)
                         .submitLabel(.send)
                         // A hardware keyboard's Return reaches onSubmit (the on-screen keyboard's adds a new
-                        // line, read below). Shift-Return adds a new line; Return alone sends. Submitting ends
+                        // line, read below). Shift-Return adds a new line; Return alone sends. While Pinyin
+                        // is composing, Return confirms the letters and nothing is sent. Submitting ends
                         // editing, so the field takes the focus back for the next line or message.
                         .onKeyPress(.return, phases: .down) { press in
                             keepNewline = press.modifiers.contains(.shift)
-                            return .ignored
+                            confirmsComposition = composing
+                            return composing ? .handled : .ignored
                         }
                         .onSubmit {
-                            if keepNewline { input += "\n" } else { submit() }
+                            // Ending editing drops the confirmed letters from the binding: they are put back.
+                            if keepNewline { input += "\n" } else if confirmsComposition { input = fieldText } else { submit() }
+                            keepNewline = false
+                            confirmsComposition = false
                             Task { @MainActor in focused = true }
                         }
                     trailing.frame(height: 40)
@@ -667,15 +684,26 @@ struct ComposerInputView: View {
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
         // A keyboard that was still composing (autocorrect, Pinyin) can commit its text after Send has
         // emptied the field, which put the sent message back: for a moment after Send, that is undone.
-        .onChange(of: input) { old, text in
-            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = ""; return }
-            // The on-screen keyboard's Send key adds a new line to a multi-line field instead of calling
-            // onSubmit, so it is read here. A keyboard that is composing (Pinyin) confirms its letters
-            // on Send instead, so they are not sent.
-            guard let message = Self.sendKeyMessage(old, text) else { return }
-            if keepNewline { keepNewline = false; return }
-            input = message
-            submit()
+        .onChange(of: input) { _, text in
+            boundText = text
+            if let key = sendKey, text == key.to {
+                sendKey = nil
+                input = key.from
+                submit()
+            } else if isJustSent(text) { input = "" }
+        }
+        // The on-screen keyboard's Send key adds a new line to a multi-line field instead of calling
+        // onSubmit, so it is read from UIKit's own edits, one per key: an edit that only adds one new line,
+        // with nothing being composed, is sent once it reaches the binding (above). Pasted text arrives
+        // as one edit of its own and stays. A keyboard that is composing (Pinyin) confirms its letters
+        // on Send instead, so they are not sent.
+        .onReceive(NotificationCenter.default.publisher(for: UITextView.textDidChangeNotification)) { note in
+            guard focused, let view = note.object as? UITextView, view.isFirstResponder else { return }
+            let text = view.text ?? ""
+            let before = [fieldText, boundText].first { Self.addsOneNewline($0, text) }
+            fieldText = text
+            composing = view.markedTextRange != nil
+            sendKey = composing ? nil : before.map { ($0, text) }
         }
         .onDisappear { dictation.stop(model) }
     }
@@ -706,7 +734,7 @@ struct ComposerInputView: View {
                     .accessibilityLabel(Text("Send"))
                     // The keyboard's Send key sends, so a new line is a long press on Send.
                     .contextMenu {
-                        Button("New Line", systemImage: "return") { keepNewline = true; input += "\n" }
+                        Button("New Line", systemImage: "return") { input += "\n" }
                     }
                 } else {
                     // The live voice conversation: Poki listens and answers out loud. It ends 8 s after an answer if nobody speaks, in the background, or when you end it.
@@ -729,15 +757,16 @@ struct ComposerInputView: View {
         }
     }
 
-    /// The message without its new line when the change from `old` to `new` is the Send key: one new
-    /// line typed, alone or after the word autocorrect fixed on that key ("dont" became "don't\n").
-    /// Pasted text, which replaces nothing, keeps its new lines.
-    private static func sendKeyMessage(_ old: String, _ new: String) -> String? {
-        let head = zip(old, new).prefix { $0 == $1 }.count
-        let tail = zip(old.dropFirst(head).reversed(), new.dropFirst(head).reversed()).prefix { $0 == $1 }.count
-        let typed = new.dropFirst(head).dropLast(tail), replaced = old.dropFirst(head).dropLast(tail)
-        guard typed.last == "\n", typed.filter({ $0 == "\n" }).count == 1, typed.count == 1 || !replaced.isEmpty else { return nil }
-        return String(new.prefix(head)) + String(typed.dropLast()) + String(new.suffix(tail))
+    /// `new` is `old` with one new line added and nothing else changed.
+    private static func addsOneNewline(_ old: String, _ new: String) -> Bool {
+        new.count == old.count + 1 && new.filter { $0 != "\n" } == old.filter { $0 != "\n" }
+    }
+
+    /// The field shows the message just sent again (a keyboard's late commit, or the Send key's new line
+    /// reaching the field after the message left), within a moment of Send.
+    private func isJustSent(_ text: String) -> Bool {
+        guard let sent, Date().timeIntervalSince(sent.at) < 1 else { return false }
+        return text == sent.text || Self.addsOneNewline(sent.text, text)
     }
 
     private func submit() {
@@ -750,7 +779,7 @@ struct ComposerInputView: View {
         // Once more after the keyboard has settled, for a commit that arrives in pieces.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120))
-            if input == text { input = "" }
+            if isJustSent(input) { input = "" }
         }
     }
 }

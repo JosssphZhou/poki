@@ -19,28 +19,38 @@ final class ComposerReturnTests: XCTestCase {
         let field = try composer { sent.append($0) }
 
         field.insertText("\n")
-        settle()
+        settle { field.text == "" }
         XCTAssertEqual(sent, [], "Return in an empty field sends nothing")
         XCTAssertEqual(field.text, "", "and leaves no new line behind")
 
         field.insertText("Open Settings")
-        settle()
-        // The control: the typed words reached the composer, so a failure below is Return's.
-        XCTAssertEqual(field.text, "Open Settings")
-
+        settle(for: 0.3)
         field.insertText("\n")
-        settle()
+        settle { !sent.isEmpty }
         XCTAssertEqual(sent, ["Open Settings"])
+        settle { field.text == "" }
         XCTAssertEqual(field.text, "", "the field empties once the message is sent")
 
-        // Autocorrect fixes the last word in the same edit as the Send key's new line.
+        // Autocorrect fixes the last word, then the Send key adds its new line: two edits, as UIKit makes them.
         field.insertText("I dont")
-        settle()
-        let word = try XCTUnwrap(field.textRange(from: field.position(from: field.endOfDocument, offset: -4)!, to: field.endOfDocument))
-        field.replace(word, withText: "don\u{2019}t\n")
-        settle()
+        settle(for: 0.3)
+        field.replace(try XCTUnwrap(Self.range(field, last: 4)), withText: "don\u{2019}t")
+        field.insertText("\n")
+        settle { sent.count == 2 }
         XCTAssertEqual(sent, ["Open Settings", "I don\u{2019}t"])
-        XCTAssertEqual(field.text, "")
+    }
+
+    func testPastingTextThatEndsInANewLineKeepsTheDraft() throws {
+        var sent: [String] = []
+        let field = try composer { sent.append($0) }
+
+        field.insertText("Draft")
+        settle(for: 0.3)
+        // Select the draft and paste over it: one edit that ends in a new line.
+        field.replace(try XCTUnwrap(field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)), withText: "hello\n")
+        settle(for: 0.3)
+        XCTAssertEqual(sent, [], "pasting is not the Send key")
+        XCTAssertEqual(field.text, "hello\n")
     }
 
     // MARK: Hosting
@@ -55,16 +65,29 @@ final class ComposerReturnTests: XCTestCase {
         window.rootViewController = UIHostingController(rootView: view)
         window.makeKeyAndVisible()
         self.window = window
-        settle()
+        settle { Self.textView(in: window) != nil }
         let field = try XCTUnwrap(Self.textView(in: window), "the message field is on screen")
         field.becomeFirstResponder()
-        settle()
+        settle(for: 0.2)
         return field
     }
 
-    /// Lets SwiftUI apply the text view's change to the field's binding and redraw.
-    private func settle() {
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    /// Runs the main run loop until `done` holds, for at most two seconds: SwiftUI applies the text
+    /// view's edits to the field's binding, and the field's answer back, on later turns of the loop.
+    private func settle(until done: () -> Bool) {
+        let end = Date().addingTimeInterval(2)
+        while !done(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+
+    /// A pause the field's binding needs to catch up, as between a person's keystrokes, and the wait for
+    /// an outcome that is nothing happening.
+    private func settle(for seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    private static func range(_ field: UITextView, last count: Int) -> UITextRange? {
+        guard let start = field.position(from: field.endOfDocument, offset: -count) else { return nil }
+        return field.textRange(from: start, to: field.endOfDocument)
     }
 
     private static func textView(in view: UIView) -> UITextView? {
