@@ -339,7 +339,7 @@ extension Computer {
             let h = Handoff(id: UUID().uuidString, kind: kind, text: String(text.prefix(300)), requested: Date())
             handoff.value = h
             emit(.handoffRequested(id: h.id, kind: kind, text: h.text, app: lastForeground?.describe))
-            return ("handoff", "handed to the owner (\(kind)): \"\(h.text.prefix(80))\", shown on the phone with a Done button. Keep calling look every few seconds, or {wait_until: {handoff_done: true, ms: 10000}}; no input is sent until the owner taps Done or you send {handoff: false}; status shows handoff: waiting|done")
+            return ("handoff", "handed to the owner (\(kind)): \"\(h.text.prefix(80))\", shown on the phone with a Done button. Keep calling look every few seconds, or {wait_until: {handoff_done: true, ms: 10000}}; no input is sent until the owner taps Done or you send {handoff: false}; without Done it is taken back after \(Int(Self.handoffLimit)) s; status shows handoff: waiting|done")
         }
         if let key = action["key"]?.text {
             let k = key.lowercased()
@@ -481,8 +481,20 @@ extension Computer {
         let focused = tapped || target != nil || !lastElements.contains(where: \.isSecure)
         // `hidden`: a password field is on the screen, so nothing of the field's text comes back.
         var body: [String: JSON] = ["value": .array(text.map { .string(String($0)) }), "clear": .bool(clear), "keyboard": true, "focused": .bool(focused), "hidden": .bool(hidden)]
-        if let app = lastForeground?.bundleID { body["app"] = .string(app) }
-        let answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: budget, countsAsMiss: false)
+        // Native services read no bundle ID: the app's name keeps a failed switch to that one app.
+        if let app = lastForeground?.bundleID ?? lastForeground?.name { body["app"] = .string(app) }
+        var answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: budget, countsAsMiss: false)
+        // No keyboard was on screen: the field had no focus yet. Once a keyboard is up (after another
+        // tap on the field when one is known), the keyboard is asked once more.
+        if answer["unfocused"]?.bool == true, until - now() - 4 >= 6 {
+            var up = await waitForFocus(seconds: 1.5, target: target)
+            if !up, let target {
+                try await tap(target.frame.centre, within: target.frame)
+                up = await waitForFocus(seconds: 1.5, target: target)
+            }
+            let left = until - now() - 4
+            if up, left >= 2 { answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: left, countsAsMiss: false) }
+        }
         guard answer["keyboard"]?.string == "typed" else {
             keyboardDeclined = answer["why"]?.string
             return nil
@@ -994,6 +1006,7 @@ extension Computer {
             let started = now()
             let limit = Swift.min(started + Swift.min(10, Swift.max(0.2, (spec["ms"]?.double ?? 5000) / 1000)), until)
             while now() < limit {
+                if expireHandoff() { return "wait_until: the owner did not tap Done within \(Int(Self.handoffLimit)) s, so the step was taken back. End the task and tell the owner what is left undone." }
                 if !handoffWaiting { return "wait_until: the owner is done after \(Int(((now() - started) * 1000).rounded())) ms" }
                 await sleep(seconds: Swift.min(0.25, Swift.max(0, limit - now())))
             }

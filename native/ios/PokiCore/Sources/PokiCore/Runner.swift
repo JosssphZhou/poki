@@ -258,6 +258,8 @@ public final class Runner: @unchecked Sendable {
     /// keyboard, or the keyboard stopped part way. The text is never sent again after these.
     static let takeoverCode = "poki user takeover"
     static let partialTypingCodes: Set<String> = [takeoverCode, "poki typing stopped"]
+    /// Nothing was typed and nothing on the phone can type the text: it is not sent again.
+    static let cannotTypeCode = "poki cannot type"
 
     /// This side gave up on a queued request. The runner still serves it, and everything sent after
     /// it waits its turn behind it, so the next action would run late, after the model had moved on

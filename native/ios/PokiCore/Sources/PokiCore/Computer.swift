@@ -396,6 +396,7 @@ final class Computer: @unchecked Sendable {
 
     /// The `handoff:` line: a step handed to the owner that is waiting, or just done (reported once).
     func handoffLine(clear: Bool) -> String? {
+        if expireHandoff() { return "handoff: the owner did not tap Done within \(Int(Self.handoffLimit)) s, so the step was taken back. End the task and tell the owner what is left undone." }
         guard let h = handoff.value else { return nil }
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
         if let done = h.done {
@@ -409,6 +410,24 @@ final class Computer: @unchecked Sendable {
     }
 
     var handoffWaiting: Bool { handoff.value.map { $0.done == nil } ?? false }
+
+    /// The longest a step waits for the owner, as long as an approval does: a model that polls for
+    /// them does not wait on without end.
+    static let handoffLimit: Double = 120
+
+    /// Takes back a step the owner has not finished within `handoffLimit`. The owner's own takeover
+    /// is theirs to end. True when it was taken back now.
+    @discardableResult
+    func expireHandoff() -> Bool {
+        let expired = handoff.update { h -> Handoff? in
+            guard let current = h, current.done == nil, !current.ownerOnly, Date().timeIntervalSince(current.requested) >= Self.handoffLimit else { return nil }
+            h = nil
+            return current
+        }
+        guard let expired else { return false }
+        emit(.handoffEnded(id: expired.id, how: "expired"))
+        return true
+    }
 
     func handoffDone(id: String) {
         let ended = handoff.update { r -> Bool in
@@ -900,7 +919,8 @@ final class Computer: @unchecked Sendable {
                 // delivered is never sent again by us.
                 var recoveryNote = "", recoveryLog = ""
                 // Not after Poki's keyboard took the text and stopped part way: that is never typed again.
-                let partial = (failure as? RunnerError)?.code.map(Runner.partialTypingCodes.contains) ?? false
+                // Nor a text nothing on the phone can type: it would only be refused again.
+                let partial = (failure as? RunnerError)?.code.map { Runner.partialTypingCodes.contains($0) || $0 == Runner.cannotTypeCode } ?? false
                 if !partial, let text = action["type"]?.text, action["via"]?.string != "paste", !(failure is ActionFailure), failure is RunnerError || failure is DeadlineExceeded {
                     let recovered = await recoverType(action, text: text, why: why, until: until - config.readTimeout - 0.5)
                     if let done = recovered.done {

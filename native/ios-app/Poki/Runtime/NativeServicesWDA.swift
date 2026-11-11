@@ -104,6 +104,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     static let typingMethodKey = "poki.typing.method"
     static var pasteAllowed: Bool { UserDefaults.standard.string(forKey: typingMethodKey) == "paste" }
     private static let pasteOff = "Pasting is off: the owner can choose Paste under Setup › Advanced › Typing."
+    private static let cannotTypeDomain = "PokiCannotType"
 
     /// Drops all paired tunnels without destroying the transport. The next call reconnects them,
     /// which gives PokiCore's existing restart policy the same clean boundary as the runner path.
@@ -180,7 +181,9 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             let e = error as NSError
             // "poki typing stopped": the keyboard had the text and stopped part way, so it may be half
             // in the field and is not typed again.
-            let code = e.domain != "PokiKeyboard" ? "unknown error" : e.code == 2 ? "poki user takeover" : "poki typing stopped"
+            // "poki cannot type": nothing was typed and nothing here can type it, so it is not sent again.
+            let code = e.domain == Self.cannotTypeDomain ? "poki cannot type"
+                : e.domain != "PokiKeyboard" ? "unknown error" : e.code == 2 ? "poki user takeover" : "poki typing stopped"
             return (500, (["value": ["error": .string(code), "message": .string(error.localizedDescription)]] as JSON).data())
         }
     }
@@ -245,7 +248,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             // Checked before anything is sent, so no part of the text goes in.
             if !Self.pasteAllowed, requests.contains(where: { $0["op"] as? String == "type_text" }) {
                 let why = UserDefaults.standard.string(forKey: PokiKeyboardTyping.lastDeclineKey).map { " (\($0))" } ?? ""
-                throw Self.failure("Nothing was typed. This text has characters that key presses cannot type, and Poki's keyboard was not used\(why). \(Self.pasteOff)")
+                throw NSError(domain: Self.cannotTypeDomain, code: 1, userInfo: [NSLocalizedDescriptionKey: "Nothing was typed. This text has characters that key presses cannot type, and Poki's keyboard was not used\(why). \(Self.pasteOff) Trying again will not change this. Do not type it again or hand it to the owner. End the task and tell the owner in one sentence why it could not be typed, and that setting up Poki's keyboard or choosing Paste lets Poki type it."])
             }
             for request in requests {
                 let answer = try await input.call(request)
@@ -303,7 +306,8 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
                 return ["keyboard": "typed", "check": "matched", "moved": false, "tail": .string(String(value.suffix(200))), "via": "system Pinyin"]
             }
             UserDefaults.standard.set(why, forKey: PokiKeyboardTyping.lastDeclineKey)
-            return ["keyboard": "declined", "why": .string(why)]
+            // `unfocused`: no keyboard was on screen, so PokiCore focuses the field and asks once more.
+            return ["keyboard": "declined", "why": .string(why), "unfocused": .bool(why == KeyboardSwitchMemory.noKeyboardOnScreen)]
         }
     }
     static let systemPinyinKey = "poki.typing.systemPinyin"
