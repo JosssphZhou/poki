@@ -13,6 +13,7 @@ struct PokiKeyboardState {
 
     var ready: Bool { answered && (added || !listed) }
     var waitingForPanel: Bool { added && !answered }
+    var showsAddInstructions: Bool { !added && !ready }
     var word: LocalizedStringKey {
         if ready { return "Ready" }
         if waitingForPanel { return "One More Step" }
@@ -71,9 +72,8 @@ struct PokiKeyboardPage: View {
                     Text("Tap the globe key below the keyboard and switch to Poki once. Poki only needs to see its panel appear, no typing. If the panel asks for Full Access, turn it on in Settings.")
                 }
             }
-            // The same list as Setup's other steps (Turn On Developer Mode). Once the keyboard is added these
-            // steps are behind the person, so only the field above is left.
-            if !state.waitingForPanel {
+            // Adding is finished both while waiting for the panel and after it has answered.
+            if state.showsAddInstructions {
                 HowToSection(lines: [
                     "Tap **Open Settings** below.",
                     "On Poki’s page, tap **Keyboards**.",
