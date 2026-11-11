@@ -44,6 +44,31 @@ final class FakePairing: DevicePairing {
 
 @MainActor
 final class AppModelTests: XCTestCase {
+    func testTaskCompletionReturnsByDefaultAndKeepsSavedNotificationChoice() {
+        let defaults = UserDefaults.standard
+        let idlePreference = "idleStopSeconds.v4"
+        let preferences = [AppModel.afterTaskKey, idlePreference]
+        let saved = preferences.map { defaults.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(preferences, saved) { defaults.set(value, forKey: key) }
+        }
+
+        for priorIdleSetting in [nil, 120] as [Int?] {
+            defaults.set(priorIdleSetting, forKey: idlePreference)
+            defaults.removeObject(forKey: AppModel.afterTaskKey)
+            XCTAssertTrue(AppModel.returnsAfterTask,
+                          "A fresh install or an upgrade without a saved completion preference must return to Poki")
+            XCTAssertNil(defaults.object(forKey: AppModel.afterTaskKey),
+                         "Reading the default must not save a choice for the owner")
+        }
+
+        defaults.set("notify", forKey: AppModel.afterTaskKey)
+        XCTAssertFalse(AppModel.returnsAfterTask, "Keep the owner's saved choice to stay and notify")
+        XCTAssertEqual(defaults.string(forKey: AppModel.afterTaskKey), "notify")
+        defaults.set("return", forKey: AppModel.afterTaskKey)
+        XCTAssertTrue(AppModel.returnsAfterTask)
+    }
+
     private func model() -> (AppModel, FakeLauncher) {
         let launcher = FakeLauncher()
         let model = AppModel(launcher: launcher, pairer: FakePairing())
