@@ -42,6 +42,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func start() {
         guard !isOn else { return }
         isOn = true
+        startHeartbeat()
         // iOS 26 and later: the system's continued processing task keeps Poki up, with no audio and
         // no location. Silent audio only when iOS refuses it or ends it early.
         if #available(iOS 26.0, *) {
@@ -154,6 +155,27 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         })
     }
 
+    /// A beat every second while Poki is on. A longer gap is time iOS kept Poki suspended (its timers,
+    /// a step's deadline among them, wait for it to resume), logged with what holds Poki up now.
+    private var heartbeat: Timer?
+    private var lastBeat = Date()
+
+    private func startHeartbeat() {
+        lastBeat = Date()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.beat() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeat = timer
+    }
+
+    private func beat() {
+        let now = Date(), gap = now.timeIntervalSince(lastBeat)
+        defer { lastBeat = now }
+        guard gap > 2.5 else { return }
+        AppLog.shared.add("background", "iOS paused Poki for \(Int(gap.rounded())) s, from \(lastBeat.formatted(date: .omitted, time: .standard)); now \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")")
+    }
+
     /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
     /// Poki running meanwhile. The silent audio comes back when it ends, if Poki is still on.
     /// While a voice conversation holds the audio session (it keeps Poki running itself).
@@ -170,6 +192,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         guard isOn else { return }
         isOn = false
         continuedRunEnded = false
+        heartbeat?.invalidate(); heartbeat = nil
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
         audioLost = false
         for observer in observers { NotificationCenter.default.removeObserver(observer) }
