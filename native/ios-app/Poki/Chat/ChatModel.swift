@@ -44,6 +44,7 @@ enum ChatNote: Equatable, Codable {
     case modelChecking
     case modelApproved(String)
     case modelDeclined(String)
+    case approval(JSON)
 }
 
 /// The chat: the owner's messages, Poki's answers and the steps it takes, and the model loop that runs

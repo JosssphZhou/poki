@@ -368,6 +368,8 @@ private struct NoteLine: View {
     var body: some View {
         HStack(spacing: 6) {
             switch note {
+            case .approval:
+                Text("Approval")
             case .waiting:
                 // The Dynamic Island, small.
                 Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
