@@ -58,6 +58,7 @@ final class ContinuedRun {
         }
         identifier = id
         isRunning = true
+        shown = subtitle
         AppLog.shared.add("background", "continued run requested (\(id))")
         return true
     }

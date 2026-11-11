@@ -49,6 +49,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
             continued = run
             run.onExpired = { [weak self] in
                 guard let self, self.isOn else { return }
+                self.continuedRunEnded = true
                 self.startAudio(); self.watchInterruptions()
             }
             if run.begin(subtitle: String(localized: "Agents can reach this iPhone")) { return }
@@ -59,6 +60,21 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
 
     /// The iOS 26 continued run (typed loosely so this class builds for iOS 18).
     private var continued: AnyObject?
+    /// iOS ended the continued run while Poki was on: it is asked for again when Poki comes to the front.
+    private var continuedRunEnded = false
+
+    /// Poki came to the front, the only time iOS grants a continued run. One iOS ended during this
+    /// session is asked for again; once granted, the silent audio and location stop.
+    func cameToFront() {
+        if #available(iOS 26.0, *), isOn, continuedRunEnded, !continuedRunIsOn,
+           ContinuedRun.shared.begin(subtitle: String(localized: "Agents can reach this iPhone")) {
+            continuedRunEnded = false
+            AppLog.shared.add("background", "continued run asked for again after iOS ended it: silent audio off")
+            audio.stop()
+            setAudioLost(false)
+        }
+        check("Poki came to the front")
+    }
 
     /// iOS's continued processing task is holding Poki up, with its own "Poki is on" on the Lock
     /// Screen and in the island: Poki's Live Activity is not needed while nothing is happening.
@@ -153,6 +169,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func stop() {
         guard isOn else { return }
         isOn = false
+        continuedRunEnded = false
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
         audioLost = false
         for observer in observers { NotificationCenter.default.removeObserver(observer) }

@@ -616,7 +616,7 @@ final class AppModel {
         diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
-        background.check("Poki came to the front")
+        background.cameToFront()
         // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
         // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
         if sessionOn, !activity.isRunning {
