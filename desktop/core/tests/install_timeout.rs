@@ -21,23 +21,22 @@ async fn stalled_install_explains_how_to_retry(listener: &tokio::net::TcpListene
     let events = Arc::new(Mutex::new(Vec::new()));
     let collected = events.clone();
     let reporter = Reporter::new(move |event| collected.lock().unwrap().push(event));
-    let install = tokio::spawn(async move { install_ipa(&phone, ipa.path(), upgrade, &reporter).await });
+    let install = tokio::spawn(async move { install_ipa(&phone, ipa.path(), "nz.zheha.poki.test-team", upgrade, &reporter).await });
 
-    let mut connection = tokio::time::timeout(Duration::from_secs(10), async {
-        let (mut connection, _) = listener.accept().await.unwrap();
-        let mut request = [0; 16];
-        connection.read_exact(&mut request).await.unwrap();
-        let length = u32::from_le_bytes(request[..4].try_into().unwrap()) as usize;
-        assert!((16..65536).contains(&length));
-        connection.read_exact(&mut vec![0; length - 16]).await.unwrap();
-        connection
-    }).await.expect("the installer must reach the isolated device service");
+    let first_connection = receive_request(listener).await;
 
     assert!(events.lock().unwrap().iter().any(|event| matches!(event,
         Progress::Note { id, text } if id == "install"
             && text.contains("close Poki on your iPhone")
             && text.contains("chats and settings will be kept")
     )), "explain that installation closes Poki and keeps chats and settings before contacting the phone");
+
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(20)).await;
+    tokio::task::yield_now().await;
+    tokio::time::resume();
+    let mut connection = receive_request(listener).await;
+    drop(first_connection);
 
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(600)).await;
@@ -58,4 +57,16 @@ async fn stalled_install_explains_how_to_retry(listener: &tokio::net::TcpListene
     let mut byte = [0];
     assert_eq!(connection.read(&mut byte).await.unwrap(), 0, "drop the stalled connection on timeout");
     println!("stalled_install_explains_how_to_retry passed (upgrade={upgrade})");
+}
+
+async fn receive_request(listener: &tokio::net::TcpListener) -> tokio::net::TcpStream {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let (mut connection, _) = listener.accept().await.unwrap();
+        let mut request = [0; 16];
+        connection.read_exact(&mut request).await.unwrap();
+        let length = u32::from_le_bytes(request[..4].try_into().unwrap()) as usize;
+        assert!((16..65536).contains(&length));
+        connection.read_exact(&mut vec![0; length - 16]).await.unwrap();
+        connection
+    }).await.expect("the installer must reach the isolated device service")
 }

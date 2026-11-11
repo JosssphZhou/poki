@@ -87,6 +87,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
             {phone.facts && <Pill tone={phone.facts.developer_mode ? "ok" : "warn"}>{t("Developer Mode")} {t(phone.facts.developer_mode ? "on" : "off")}</Pill>}
           </div>
         )}
+        <p className="muted small">Installation will close Poki on your iPhone. Your chats and settings will be kept.</p>
         <div className="hair" />
         {account && !account.signed_in ? (
           <div className="row between">

@@ -48,6 +48,24 @@ npm run tauri build                       # DMG / MSI; .github/workflows/desktop
 
 Data lives in the OS app-data directory (`POKI_SETUP_HOME` overrides it): pairing records, keys (0600), the release cache, state. The Apple session and, if chosen, the password are in the OS keychain.
 
+## Closing Poki before installation
+
+Poki Setup tells you that installation closes Poki and keeps your chats and settings.
+Automatic closing uses an existing trusted USB connection and the iPhone's CoreDevice
+developer services. It does not create a new pairing, request new permissions, mount a
+developer disk image, or require Xcode on the computer. Developer Mode and available
+developer services are required for this step.
+
+Setup identifies the main app by its installed bundle ID and executable path. It leaves
+widget extensions and other apps running. After the upload, it checks the main app again
+before asking iOS to install. If Poki restarted, Setup reports that it is closing it again.
+A signal response alone does not count as confirmation that the process exited.
+
+For Wi-Fi connections, unavailable developer services, or an unconfirmed exit, Setup asks
+you to close Poki in the iPhone's app switcher. Installation still has a ten-minute timeout.
+Closing the app automatically is an additional step, not a guarantee that iOS will finish
+installation. A desktop timeout also does not cancel an installation already started by iOS.
+
 ## Release approval
 
 Uploading Poki Setup installers requires the repository owner's approval. The Windows workflow

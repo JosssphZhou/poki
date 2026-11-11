@@ -3,6 +3,7 @@
 //! A [`Phone`] is a UDID plus how to reach it; [`Phone::provider`] gives idevice's connection
 //! factory for every service. Nothing here drives the phone's screen: pairing, Developer Mode,
 //! installing and files are all lockdown services the person confirms on the phone themselves.
+mod close_app;
 pub mod container;
 pub mod ddi;
 pub mod devmode;

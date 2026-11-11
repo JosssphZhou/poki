@@ -340,7 +340,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     device::install::install_profiles(&phone, &built.profiles, reporter).await?;
     let existing = device::install::find_apps(&phone, crate::POKI_BUNDLE_ID).await.unwrap_or_default();
     let upgrade = existing.iter().any(|a| a.bundle_id == built.bundle_id);
-    device::install::install_ipa(&phone, &built.ipa, upgrade, reporter).await?;
+    device::install::install_ipa(&phone, &built.ipa, &built.bundle_id, upgrade, reporter).await?;
 
     reporter.step("pairing_file", "Giving Poki its pairing file");
     let mut handed = false;
@@ -424,7 +424,7 @@ pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Resu
         let out = crate::paths::cache_dir()?.join(format!("Poki-{}-{}.ipa", team.team_id, udid));
         let built = sign_for_team(signer, &team, Some((udid, &facts.name)), &ipa, zipp.as_deref(), &out, reporter).await?;
         device::install::install_profiles(&phone, &built.profiles, reporter).await?;
-        device::install::install_ipa(&phone, &built.ipa, true, reporter).await?;
+        device::install::install_ipa(&phone, &built.ipa, &built.bundle_id, true, reporter).await?;
         let apple_id = signer.account.apple_id().unwrap_or("").to_string();
         hand_signing_identity(&phone, &built, &apple_id, reporter).await;
         Ok(keeper::Record { version: built.version, build: built.build, release_tag: rel.tag, signed_at: keeper::now(), profile_expires_at: built.profile_expires_at, last_checked_at: Some(keeper::now()), last_error: None, wifi_address: facts.wifi_address.clone().or(rec.wifi_address.clone()), ..rec.clone() })
