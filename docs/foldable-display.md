@@ -99,7 +99,7 @@ Still open:
 - `launch_app` on the inner panel reported that it could not confirm the
   launch, although the app opened.
 - Rotations of 180 and 270 degrees and folding or unfolding during a session
-  have not been tried on hardware.
+  were tried later. The last section records that run.
 
 ## Second rebase onto main
 
@@ -122,8 +122,9 @@ in the same way as the bridge while its touch path still used the main
 touchscreen. The last section removes that mismatch. `ax::Direct` does not ask
 for the active display.
 
-The hardware acceptance above was done before this rebase and has not been
-repeated. The launcher change has only been compiled and unit-tested on a Mac.
+The hardware acceptance above was done before this rebase. The last section
+records a run on the current code. The launcher has only been compiled and
+unit-tested on a Mac.
 
 ## Phones with one built-in panel keep main's path
 
@@ -164,3 +165,54 @@ active panel of a two-panel phone.
 
 The limit of 256 elements in a live read is unchanged. A longer screen on a
 second panel still fails with `AX tree exceeded 256 elements`.
+
+## Hardware run after the one-panel change
+
+Run on commit d1c2167, the code commit before this section was added. The
+daemon and a release build of the native helper both came from a checkout of
+that commit, and `poki_mcp_status` reported it. Two things were not from the
+branch:
+
+- The pinned idevice dependency carried a one-line local change to the
+  `remotepairing_serial_number` constant, because the phone is paired under
+  that value.
+- The stdio proxy that forwarded the MCP calls to the daemon came from another
+  local checkout.
+
+Same phone as above: iPhone19,4 on iOS 27.1 over RemotePairing on Wi-Fi. The
+panel and its rotation were read before each step with `xcrun devicectl device
+info displays`. Every step used Settings. "Agree" below means three things
+held: the AX tree and the OCR of a screenshot had the same size and put the
+same rows at the same heights, and a tap at the centre of an AX frame changed
+the screen to the expected view.
+
+| State | Reported size | Result |
+| --- | --- | --- |
+| Inner panel, `rot90` | 951 by 669 | Agree. A tap at a point taken from the screenshot also hit its button. |
+| Inner panel, `rot180` | 669 by 951 | Agree. |
+| Inner panel, `rot270` | 951 by 669 | Agree. |
+| Outer panel after folding, `rot0` | 466 by 678 | Agree. |
+
+- Rotating twice, folding and unfolding all happened while the same helper
+  process stayed connected. The next read and the next tap used the new panel
+  and rotation each time.
+- `launch_app` as the first call after the tunnel came up returned an unknown
+  outcome with `AX live query failed`, and Settings had opened. A second call
+  with Settings already in front confirmed the foreground app. A cold launch
+  that confirms has not been observed.
+- The first `type_text` after the tunnel came up put the text in the Settings
+  search field, as a screenshot showed, but returned `text_not_verified` and
+  left the text on the clipboard. While the keyboard was on screen, two AX
+  reads failed with `AX live query failed`. The following `type_text` with
+  `clear` verified through accessibility and restored the clipboard. After the
+  search was closed, AX reads worked again.
+- A control run of the same steps on an older local build of this work returned
+  the same `launch_app` and `type_text` errors, and a system paste prompt was on
+  screen there. So the last change did not introduce them. Their cause has not
+  been found, and the earlier section's verified `type_text` was not reproduced.
+
+Not run on hardware:
+
+- The inner panel at `rot0`.
+- A screen with more than 256 elements. The Settings root has 24.
+- The launcher.
