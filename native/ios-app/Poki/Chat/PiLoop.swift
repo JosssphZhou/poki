@@ -15,19 +15,24 @@ import PokiCore
 final class PiLoop {
     enum Outcome: Equatable { case done, stopped, overTurns, failed(String) }
 
-    let provider: ModelProvider
-    let model: Model
+    let route: ModelRoute
+    var provider: ModelProvider { route.selection.provider }
+    var model: Model { route.model }
     private let agent: Agent
+    private let profiles: ChatGPTProfiles
     private let gate = StopGate()
 
     var signature: String { "pi:\(provider.rawValue)/\(model.id)" }
     var messages: [AgentMessage] { agent.state.messages }
 
-    init(provider: ModelProvider, model: Model, tools: [ToolSpec], carrying messages: [AgentMessage] = [],
-         sessionID: String = UUID().uuidString.lowercased(),
-         perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
-        self.provider = provider
-        self.model = model
+    init(route: ModelRoute, tools: [ToolSpec], carrying messages: [AgentMessage] = [],
+         sessionID: String = UUID().uuidString.lowercased(), profiles: ChatGPTProfiles? = nil,
+         stream: StreamFn? = nil, perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
+        self.route = route
+        let profiles = profiles ?? ChatGPTProfiles.shared
+        self.profiles = profiles
+        let provider = route.selection.provider
+        let model = route.model
         let gate = self.gate
         let agentTools = tools.map { spec in
             AgentTool(label: spec.name, name: spec.name, description: spec.description, parameters: spec.schema.mapValues { AnyCodable($0) }) { id, params, _, _ in
@@ -39,21 +44,22 @@ final class PiLoop {
         // agent/pi-session.mjs: low thinking, one tool call at a time.
         agent = Agent(AgentOptions(
             initialState: AgentState(model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
+            streamFn: stream,
             // Stable Go session affinity for all model and tool-continuation requests.
             sessionId: provider == .opencodeGo ? sessionID : nil,
             identity: provider == .opencodeGo
                 ? ClientIdentity(userAgent: .custom("poki-ios/0.2.8"),
                                  attribution: .value(ClientAttribution(name: "Poki", url: "https://github.com/JosssphZhou/poki")))
                 : nil,
-            getApiKey: { _ in await ModelCredential.apiKey(for: provider) },
-            // Go's Anthropic and Gemini adapters also require Console Bearer auth.
-            // Resolve the key for EACH request so credential changes never leave stale headers.
             getModelAuth: { model in
-                guard provider == .opencodeGo else { return nil }
-                guard let key = await ModelCredential.apiKey(for: provider) else {
-                    return AgentModelAuth(error: String(localized: "OpenCode Go API key is missing."))
+                guard !gate.stopped, !Task.isCancelled, let key = await route.accessToken(profiles: profiles),
+                      !gate.stopped, !Task.isCancelled else {
+                    return AgentModelAuth(error: provider.signsIn
+                        ? String(localized: "This ChatGPT account needs to sign in again.")
+                        : String(localized: "No API key is available for this task."))
                 }
-                return Self.openCodeGoAuth(model: model, apiKey: key)
+                if provider == .opencodeGo { return Self.openCodeGoAuth(model: model, apiKey: key) }
+                return AgentModelAuth(apiKey: key)
             },
             toolExecution: .sequential
         ))
@@ -76,6 +82,10 @@ final class PiLoop {
     /// The owner's message under this task's instructions, then pi's loop until the model answers
     /// without tools, `stop()` or `maxTurns` model turns. `onText` gets each finished text block.
     func run(_ text: String, instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
+        if let id = route.selection.profileID, !profiles.beginRun(id) {
+            return .failed(String(localized: "This ChatGPT account is unavailable. Check it in Accounts."))
+        }
+        defer { if let id = route.selection.profileID { profiles.endRun(id) } }
         gate.reset()
         use(instructions)
         let turns = Counter()
@@ -139,7 +149,7 @@ final class PiLoop {
 
     /// The provider's message for the owner. pi never puts the key in it; a sign-in that ran out says so.
     private static func words(_ message: String, provider: ModelProvider) -> String {
-        if message.contains("No API key") || message.contains("missingApiKey") || message.isEmpty && !ModelKeys.hasKey(provider) {
+        if message.contains("No API key") || message.contains("missingApiKey") || message.isEmpty && (provider.signsIn || !ModelKeys.hasKey(provider)) {
             return provider.signsIn ? String(localized: "Sign in to ChatGPT again. Tap my picture, then Model.")
                                     : String(localized: "Add your \(provider.name) key. Tap my picture, then Model.")
         }

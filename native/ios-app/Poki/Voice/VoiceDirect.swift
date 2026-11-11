@@ -23,9 +23,6 @@ enum VoiceDirect {
         set { UserDefaults.standard.set(newValue, forKey: "voice.openai.enabled"); ModelKeys.saved += 1 }
     }
 
-    /// Dictation into the chat works with any model the chat can use.
-    static var canDictate: Bool { ModelKeys.hasUsableKey }
-
     /// This iPhone's first preferred language, named in English ("Chinese, Simplified (China mainland)"):
     /// the language to speak only before the user has spoken.
     private static var deviceLanguage: String {

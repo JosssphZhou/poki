@@ -10,13 +10,14 @@ struct ChatView: View {
     var openDetails: () -> Void
     var openVoice: () -> Void
     var openSetup: () -> Void
-    var openModel: () -> Void
     /// Back to the Sessions list, when the chat was opened from it.
     var back: (() -> Void)? = nil
 
     private var voice: VoiceModel { model.voice }
     @State private var renaming = false
     @State private var newName = ""
+    @State private var modelVersion = ModelKeys.saved
+    @State private var managingAccounts = false
 
     var body: some View {
         ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, live: chat.running, canRetry: chat.canRetry, retry: chat.retry, session: chat.sessionID) {
@@ -36,15 +37,34 @@ struct ChatView: View {
         }
         .animation(.snappy, value: voice.isOn)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
-                              newConversation: chat.newConversation)
+            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openAccounts,
+                              modelLabel: modelLabel, modelMenu: modelMenu)
         }
         .background(Color(.systemBackground))
         // The conversation's name (the one Poki gave it, or the owner's) is the title, and its title
         // menu renames it; the chat model is the subtitle on iOS 26.
         .navigationTitle(Text(verbatim: SessionStore.shared.session(chat.sessionID)?.name ?? "Poki"))
         .navigationBarTitleDisplayMode(.inline)
-        .sessionSubtitle(ModelKeys.selectedModelName)
+        .sessionSubtitle(modelLabel)
+        .background { Color.clear.accessibilityHidden(true).id(modelVersion) }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in modelVersion = ModelKeys.saved }
+        .task(id: chat.selection.profileID) {
+            if !chat.isSample, let id = chat.selection.profileID { await ChatGPTProfiles.shared.reloadModels(id) }
+        }
+        .task {
+            guard !chat.isSample else { return }
+            for profile in ChatGPTProfiles.shared.all where profile.isSignedIn && profile.models == nil && profile.id != chat.selection.profileID {
+                await ChatGPTProfiles.shared.reloadModels(profile.id)
+            }
+        }
+        .sheet(isPresented: $managingAccounts) {
+            NavigationStack {
+                ModelSettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { managingAccounts = false } }
+                    }
+            }
+        }
         .toolbarTitleMenu {
             if SessionStore.shared.session(chat.sessionID) != nil {
                 Button("Rename", systemImage: "pencil") { newName = SessionStore.shared.session(chat.sessionID)?.name ?? ""; renaming = true }
@@ -59,21 +79,7 @@ struct ChatView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
-                    Menu("Chat Model \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
-                        ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
-                            Section(provider.name) {
-                                ForEach(ModelCatalog.available(provider)) { choice in
-                                    Button {
-                                        ModelKeys.selectedProvider = provider
-                                        ModelKeys.selectedModel = choice.id
-                                        ModelKeys.saved += 1
-                                    } label: {
-                                        if ModelKeys.selectedProvider == provider && ModelKeys.selectedModel == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Menu("Chat Model", systemImage: "brain", content: modelMenu)
                     if VoiceDirect.apiKey != nil {
                         Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
                             ForEach(ModelCatalog.voiceAvailable) { choice in
@@ -83,13 +89,63 @@ struct ChatView: View {
                             }
                         }
                     }
-                    Button("Accounts", systemImage: "person.crop.circle", action: openModel)
+                    Button("Accounts", systemImage: "person.crop.circle", action: openAccounts)
                     Button("Status and Settings", systemImage: "gearshape", action: openDetails)
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel(Text("More"))
             }
         }
         // Full screen on iPhone; beside the sessions in a wide window, with the tabs kept.
+    }
+
+    private func openAccounts() { managingAccounts = true }
+
+    private var modelLabel: String {
+        if chat.selection.route != nil { return chat.selection.displayName }
+        if chat.savedSelection != nil { return String(localized: "\(chat.selection.displayName) (unavailable)") }
+        return String(localized: "Choose a Chat Model")
+    }
+
+    @ViewBuilder private func modelMenu() -> some View {
+        ForEach(ModelProvider.allCases) { provider in
+            if provider == .chatgpt {
+                ForEach(ChatGPTProfiles.shared.all.filter(\.isSignedIn)) { profile in
+                    accountMenu(provider, profile: profile)
+                }
+            } else {
+                accountMenu(provider)
+            }
+        }
+        Section {
+            if chat.running { Text("Model selection is available when the task ends.") }
+            else { Text("Switching accounts starts fresh model context in this conversation.") }
+            Button("Accounts", systemImage: "person.crop.circle", action: openAccounts)
+        }
+    }
+
+    @ViewBuilder private func accountMenu(_ provider: ModelProvider, profile: ChatGPTProfile? = nil) -> some View {
+        let choices = ModelKeys.usableModels(for: provider, profileID: profile?.id)
+        if !choices.isEmpty {
+            let selected = chat.selection
+            let activeAccount = selected.provider == provider && selected.profileID == profile?.id
+                && choices.contains { $0.id == selected.modelID }
+            Menu {
+                ForEach(choices) { choice in
+                    let selection = ModelSelection(provider: provider, modelID: choice.id, profileID: profile?.id)
+                    Button { chat.selectModel(selection) } label: {
+                        selectionLabel(provider.removingProviderPrefix(from: choice.name), selected: selected == selection)
+                    }
+                    .disabled(chat.running)
+                }
+            } label: {
+                selectionLabel(provider.menuAccountName(profile), selected: activeAccount)
+            }
+        }
+    }
+
+    private func selectionLabel(_ title: String, selected: Bool) -> some View {
+        Label(title, systemImage: selected ? "checkmark.circle.fill" : "circle")
+            .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// Setup is not finished (nothing paired yet, or a step left after pairing, such as UI Automation):
@@ -605,7 +661,7 @@ private struct SetupBubble: View {
 // Sources/ExyteChat/Views/InputView/InputView.swift, Copyright (c) 2019 exyte, MIT License). Now: a
 // Liquid Glass field on iOS 26 (a bar material before it), dictation that writes into the field as you
 // speak, the live voice button, and a stop button while a task runs.
-struct ComposerInputView: View {
+struct ComposerInputView<ModelMenu: View>: View {
     @Environment(AppModel.self) private var model
     var running: Bool
     var send: (String) -> Void
@@ -613,7 +669,8 @@ struct ComposerInputView: View {
     /// Starts the live voice conversation.
     var openVoice: () -> Void
     var openModel: () -> Void
-    var newConversation: () -> Void
+    var modelLabel: String
+    @ViewBuilder var modelMenu: () -> ModelMenu
     @State private var input = ""
     @State private var dictation = FieldDictation()
     @FocusState private var focused: Bool
@@ -636,14 +693,14 @@ struct ComposerInputView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 HStack(alignment: .bottom, spacing: 4) {
                     TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
-                        .font(.system(size: 17))
+                        .font(.body)
                         .focused($focused)
                         .multilineTextAlignment(.leading)
                         .lineLimit(1...6)
                         .padding(.vertical, 9)
                         .submitLabel(.send)
                         .onSubmit(submit)
-                    trailing.frame(height: 40)
+                    trailing.frame(height: 44)
                 }
                 .padding(.leading, 16).padding(.trailing, 4)
                 .frame(minHeight: 40)
@@ -663,6 +720,16 @@ struct ComposerInputView: View {
 
     @ViewBuilder private var trailing: some View {
         HStack(spacing: 2) {
+            Menu(content: modelMenu) {
+                ComposerBrain()
+                    .stroke(ChatColor.secondary, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                    .frame(width: 19, height: 19)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .accessibilityLabel(Text("Chat Model"))
+            .accessibilityValue(Text(verbatim: modelLabel))
+            .accessibilityIdentifier("composer.chat-model")
             if running {
                 Button(action: stop) {
                     Image(systemName: "stop.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
@@ -718,6 +785,29 @@ struct ComposerInputView: View {
             try? await Task.sleep(for: .milliseconds(120))
             if input == text { input = "" }
         }
+    }
+}
+
+/// A front-facing brain outline, drawn at the same visual scale as the microphone.
+private struct ComposerBrain: Shape {
+    func path(in rect: CGRect) -> Path {
+        var half = Path()
+        half.move(to: CGPoint(x: 12, y: 4.5))
+        half.addCurve(to: CGPoint(x: 6.8, y: 3.6), control1: CGPoint(x: 10.7, y: 1.7), control2: CGPoint(x: 8, y: 1.9))
+        half.addQuadCurve(to: CGPoint(x: 6, y: 6), control: CGPoint(x: 5.9, y: 4.7))
+        half.addCurve(to: CGPoint(x: 3.4, y: 11.9), control1: CGPoint(x: 3, y: 5.9), control2: CGPoint(x: 1.7, y: 9.5))
+        half.addCurve(to: CGPoint(x: 5.7, y: 17.7), control1: CGPoint(x: 1.5, y: 14.2), control2: CGPoint(x: 3, y: 17.6))
+        half.addCurve(to: CGPoint(x: 12, y: 19.1), control1: CGPoint(x: 6.2, y: 21.6), control2: CGPoint(x: 10.7, y: 22.3))
+        half.move(to: CGPoint(x: 3.4, y: 11.9))
+        half.addQuadCurve(to: CGPoint(x: 6.6, y: 10.7), control: CGPoint(x: 4.6, y: 10.5))
+        half.move(to: CGPoint(x: 5.7, y: 17.7))
+        half.addQuadCurve(to: CGPoint(x: 7.8, y: 15.7), control: CGPoint(x: 5.9, y: 16.1))
+
+        var outline = half
+        outline.addPath(half, transform: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 24, ty: 0))
+        outline.move(to: CGPoint(x: 12, y: 4.5))
+        outline.addLine(to: CGPoint(x: 12, y: 19.1))
+        return outline.applying(CGAffineTransform(scaleX: rect.width / 24, y: rect.height / 24))
     }
 }
 

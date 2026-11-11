@@ -19,7 +19,19 @@ struct ModelSettingsView: View {
     var body: some View {
         List {
             Section {
-                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                ForEach(ChatGPTProfiles.shared.all) { profile in
+                    NavigationLink { ChatGPTProfileDetail(id: profile.id) } label: {
+                        HStack(spacing: 12) {
+                            ProviderTile(provider: .chatgpt)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(verbatim: profile.title)
+                                Text(verbatim: profile.email ?? (profile.isSignedIn ? "ChatGPT" : String(localized: "Signed Out")))
+                                    .font(.footnote).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                ForEach(ModelProvider.allCases.filter { !$0.signsIn && ModelAccounts.isSetUp($0) }) { provider in
                     NavigationLink { AccountDetail(provider: provider) } label: { AccountRow(provider: provider) }
                 }
                 Button("Add Account", systemImage: "plus") { adding = true }
@@ -30,13 +42,13 @@ struct ModelSettingsView: View {
             }
 
             Section {
-                LabeledContent("Text Chat", value: ModelKeys.hasUsableKey ? "\(ModelKeys.selectedProvider.name), \(ModelKeys.selectedModelName)" : String(localized: "No Account"))
+                LabeledContent("Default Chat Model", value: ModelKeys.hasUsableKey ? ModelKeys.defaultSelection.displayName : String(localized: "No Account"))
                 LabeledContent("Live Voice", value: VoiceDirect.apiKey != nil ? String(localized: "OpenAI") : String(localized: "No Account"))
                 LabeledContent("Dictation", value: String(localized: "On This iPhone"))
             } header: {
                 Text("In Use")
             } footer: {
-                Text("Open an account to choose what it is used for. Dictation in the message field needs no account.")
+                Text("New conversations use the default. Choose a different model in the conversation’s composer.")
             }
 
         }
@@ -51,12 +63,113 @@ struct ModelSettingsView: View {
     }
 }
 
+private struct ChatGPTProfileDetail: View {
+    @Environment(\.dismiss) private var dismiss
+    let id: UUID
+    @State private var version = ModelKeys.saved
+    @State private var label = ""
+    @State private var renaming = false
+    @State private var signingIn = false
+    @State private var busy = false
+    @State private var ending: EndSession?
+    @State private var problem: String?
+    @State private var removed = false
+
+    private enum EndSession { case signOut, remove }
+    private var profile: ChatGPTProfile? { ChatGPTProfiles.shared.profile(id) }
+
+    var body: some View {
+        Form {
+            if let profile {
+                Section {
+                    if let email = profile.email { LabeledContent("Email", value: email) }
+                    Button("Edit Label") { label = profile.label ?? ""; renaming = true }
+                    Button(profile.isSignedIn ? "Sign In Again" : "Sign In") { signingIn = true }
+                }
+                if profile.isSignedIn {
+                    Section {
+                        if ModelKeys.selectedProvider == .chatgpt, ModelKeys.selectedChatGPT == id {
+                            let choices = ModelKeys.usableModels(for: .chatgpt, profileID: id)
+                            if !choices.isEmpty {
+                                Picker("Default Chat Model", selection: Binding(
+                                    get: { ModelKeys.defaultSelection.modelID },
+                                    set: { ModelKeys.selectedModel = $0; ModelKeys.saved += 1 }
+                                )) {
+                                    ForEach(choices) { Text(verbatim: $0.name).tag($0.id) }
+                                }
+                            }
+                        } else {
+                            Button("Use as Default Chat Account") { ModelKeys.useChatGPT(id) }
+                        }
+                        Button("Refresh Models") {
+                            busy = true
+                            Task {
+                                problem = await ChatGPTProfiles.shared.reloadModels(id)
+                                    ? nil : String(localized: "Poki could not refresh this account’s model list.")
+                                busy = false
+                            }
+                        }
+                    }
+                }
+                Section {
+                    if profile.isSignedIn { Button("Sign Out", role: .destructive) { ending = .signOut } }
+                    Button("Remove Account", role: .destructive) { ending = .remove }
+                }
+            }
+            if let problem { Text(verbatim: problem).foregroundStyle(.red) }
+            if removed { Button("Done") { dismiss() } }
+        }
+        .disabled(busy)
+        .background { Color.clear.accessibilityHidden(true).id(version) }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+        .navigationTitle(profile?.title ?? "ChatGPT")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $signingIn) { ChatGPTSignIn(profileID: id) }
+        .alert("Edit Label", isPresented: $renaming) {
+            TextField("Account Label", text: $label)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                do { try ChatGPTProfiles.shared.rename(id, to: label) }
+                catch let failure as ChatGPTOAuth.Failure { problem = failure.localizedDescription }
+                catch { problem = String(localized: "Poki could not save the account label.") }
+            }
+        }
+        .confirmationDialog(ending == .remove ? "Remove Account" : "Sign Out", isPresented: Binding(
+            get: { ending != nil }, set: { if !$0 { ending = nil } }
+        ), titleVisibility: .visible) {
+            if let ending {
+                Button(ending == .remove ? "Remove Account" : "Sign Out", role: .destructive) { end(ending) }
+            }
+        }
+    }
+
+    private func end(_ action: EndSession) {
+        busy = true
+        problem = nil
+        Task {
+            defer { busy = false }
+            do {
+                let revokeConfirmed = try await ChatGPTProfiles.shared.signOut(id, remove: action == .remove)
+                removed = action == .remove
+                if !revokeConfirmed {
+                    problem = String(localized: "Poki cleared this sign-in on this device. ChatGPT did not confirm remote sign-out. You can disconnect Poki in ChatGPT Settings.")
+                } else if removed { dismiss() }
+            } catch let failure as ChatGPTOAuth.Failure {
+                problem = failure.localizedDescription
+            } catch {
+                problem = String(localized: "Poki could not update this account in the Keychain. Try again.")
+            }
+        }
+    }
+}
+
 /// What a model account is and what it can power.
+@MainActor
 enum ModelAccounts {
     static func isSetUp(_ provider: ModelProvider) -> Bool {
         switch provider {
         case .custom: !ModelKeys.customURL.isEmpty
-        case .chatgpt: ChatGPTAccount.signedIn
+        case .chatgpt: ChatGPTProfiles.shared.all.contains(where: \.isSignedIn)
         default: ModelKeys.hasKey(provider)
         }
     }
@@ -101,7 +214,6 @@ private struct AccountDetail: View {
     @Environment(\.dismiss) private var dismiss
     var provider: ModelProvider
     @State private var editing = false
-    @State private var signingIn = false
     @State private var version = ModelKeys.saved
 
     var body: some View {
@@ -110,9 +222,7 @@ private struct AccountDetail: View {
                 LabeledContent("Type", value: provider.name)
                 LabeledContent("Connection", value: ModelAccounts.method(provider))
                 if provider == .custom { LabeledContent("Address", value: ModelKeys.customURL) }
-                Button(provider.signsIn ? "Sign In Again" : provider == .custom ? "Edit Address and Key" : "Replace Key") {
-                    if provider.signsIn { signingIn = true } else { editing = true }
-                }
+                Button(provider == .custom ? "Edit Address and Key" : "Replace Key") { editing = true }
             }
 
             Section {
@@ -139,7 +249,7 @@ private struct AccountDetail: View {
             }
 
             Section {
-                Button(provider.signsIn ? "Sign Out" : "Delete Account", role: .destructive) {
+                Button("Delete Account", role: .destructive) {
                     if provider == .custom { ModelKeys.customURL = ""; ModelKeys.customModel = "" }
                     ModelKeys.remove(provider)
                     if ModelKeys.selectedProvider == provider, let other = ModelProvider.allCases.first(where: { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
@@ -156,7 +266,6 @@ private struct AccountDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
         .sheet(isPresented: $editing, onDismiss: { version = ModelKeys.saved }) { KeyEntry(provider: provider) }
-        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved }) { ChatGPTSignIn() }
     }
 }
 
@@ -171,7 +280,7 @@ private struct TextChatFeature: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Use for Text Chat", isOn: Binding(get: { ModelKeys.selectedProvider == provider }, set: { on in
+                Toggle("Use for New Chats", isOn: Binding(get: { ModelKeys.selectedProvider == provider }, set: { on in
                     if on { ModelKeys.selectedProvider = provider }
                     else if let other = ModelProvider.allCases.first(where: { $0 != provider && ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
                         ModelKeys.selectedProvider = other
@@ -183,7 +292,7 @@ private struct TextChatFeature: View {
                     }
                 }
             } footer: {
-                Text("Only one account runs the text chat at a time.")
+                Text("Existing conversations keep their model selection.")
             }
             Section {
                 ForEach(ModelCatalog.all(provider)) { choice in
@@ -263,6 +372,7 @@ private struct AddAccount: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editing: ModelProvider?
     @State private var signingIn = false
+    @State private var addedChatGPT = false
 
     var body: some View {
         NavigationStack {
@@ -277,7 +387,7 @@ private struct AddAccount: View {
                                     Text(capabilities(provider)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                                 }
                                 Spacer()
-                                if ModelAccounts.isSetUp(provider) { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                                if !provider.signsIn, ModelAccounts.isSetUp(provider) { Image(systemName: "checkmark").foregroundStyle(.tint) }
                             }
                         }
                     }
@@ -289,7 +399,9 @@ private struct AddAccount: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .sheet(item: $editing, onDismiss: { if editing == nil { dismiss() } }) { provider in KeyEntry(provider: provider) }
-            .sheet(isPresented: $signingIn, onDismiss: { if ChatGPTAccount.signedIn { dismiss() } }) { ChatGPTSignIn() }
+            .sheet(isPresented: $signingIn, onDismiss: { if addedChatGPT { dismiss() } }) {
+                ChatGPTSignIn(onAuthorized: { addedChatGPT = true })
+            }
         }
     }
 

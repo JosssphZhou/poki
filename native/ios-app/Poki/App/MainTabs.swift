@@ -95,7 +95,7 @@ struct AgentsView: View {
                 Section {
                     NavigationLink(value: AgentsRoute.accounts) {
                         LabeledContent {
-                            Text(ModelKeys.hasUsableKey ? ModelKeys.selectedModelName : String(localized: "Add an Account")).foregroundStyle(ModelKeys.hasUsableKey ? Color.secondary : Color.orange)
+                            Text(ModelKeys.hasUsableKey ? ModelKeys.defaultSelection.displayName : String(localized: "Add an Account")).foregroundStyle(ModelKeys.hasUsableKey ? Color.secondary : Color.orange)
                         } label: { Label("Accounts and Models", systemImage: "person.crop.circle") }
                     }
                     NavigationLink(value: AgentsRoute.voice) {

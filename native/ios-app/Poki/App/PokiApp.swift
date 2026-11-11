@@ -92,7 +92,7 @@ struct RootView: View {
         switch route {
         case .chat:
             ChatView(openDetails: { tab = .agents }, openVoice: openLiveVoice,
-                     openSetup: openSetup, openModel: { openAgents(AgentsRoute.accounts) },
+                     openSetup: openSetup,
                      back: split ? nil : { home = NavigationPath() })
         case .session(let id):
             SessionView(id: id, back: { home = NavigationPath() })
