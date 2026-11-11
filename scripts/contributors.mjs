@@ -5,7 +5,10 @@
 //   node scripts/contributors.mjs                      report: counted, pending, new
 //   node scripts/contributors.mjs --out-dir <dir>      also write contributors.json and contributors.md there
 //   node scripts/contributors.mjs --check              exit 1 if someone qualifies but is not on the wall
-//   node scripts/contributors.mjs --write-readme       rewrite the wall in all six READMEs from scripts/contributors.curated.json
+//   node scripts/contributors.mjs --write-readme       rewrite the core wall and the thanks wall in all six READMEs from scripts/contributors.curated.json
+//
+// Statuses in the curated file: counted (core wall), community (thanks wall and the JSON,
+// early feedback and attempts), pending (undecided), excluded (not a contribution).
 //
 // Facts (who, which PRs and issues, first date) come from `gh api`.
 // Judgement (counted, pending, excluded, the one-line summary per language)
@@ -107,6 +110,7 @@ function classify(people, curated, onWall) {
   const counted = rows.filter(r => (r.status ?? r.auto) === 'counted').sort(byFirst);
   return {
     counted,
+    community: rows.filter(r => r.status === 'community').sort(byFirst),
     pending: rows.filter(r => (r.status ?? r.auto) === 'pending').sort(byFirst),
     excluded: rows.filter(r => r.status === 'excluded').sort(byFirst),
     unreviewed: rows.filter(r => !r.reviewed).sort(byFirst),
@@ -122,6 +126,7 @@ function markdown(result, generated) {
   const line = r => `| [${r.login}](${r.profile}) | ${r.entry?.summary ?? '(no summary yet)'} | ${(r.entry?.basis ?? []).map(n => /^#\d+$/.test(n) ? link(n.slice(1)) : n).join(' ')} | ${r.first ? day(r.first) : '-'} | ${label(r) } |`;
   const head = '| GitHub user | What they did | Basis | First contribution | Category |\n| --- | --- | --- | --- | --- |';
   const out = [`# Poki contributors (generated ${generated})`, '', `## Counted (${result.counted.length})`, '', head, ...result.counted.map(line)];
+  out.push('', `## Community, early feedback and attempts (${result.community.length})`, '', head, ...result.community.map(line));
   out.push('', `## Pending a decision, 待主控定 (${result.pending.length})`, '', '| GitHub user | Activity | Why it is not counted yet |', '| --- | --- | --- |');
   for (const r of result.pending) out.push(`| [${r.login}](${r.profile}) | ${activity(r)} | ${r.entry?.note ?? 'no signal that a change followed'} |`);
   return `${out.join('\n')}\n`;
@@ -182,7 +187,7 @@ try {
   if (outDir) {
     mkdirSync(outDir, { recursive: true });
     const view = r => ({ login: r.login, profile: r.profile, avatar: r.avatar, status: r.status ?? r.auto, categories: r.entry?.categories ?? [], summary: r.entry?.summary ?? null, basis: r.entry?.basis ?? [], first_contribution: r.first ? day(r.first) : null, on_readme_wall: r.onWall, signals: r.signals, note: r.entry?.note ?? null });
-    writeFileSync(join(outDir, '贡献者名单.json'), `${JSON.stringify({ repo, generated, counted: result.counted.map(view), pending: result.pending.map(view), excluded: result.excluded.map(view) }, null, 2)}\n`);
+    writeFileSync(join(outDir, '贡献者名单.json'), `${JSON.stringify({ repo, generated, counted: result.counted.map(view), community: result.community.map(view), pending: result.pending.map(view), excluded: result.excluded.map(view) }, null, 2)}\n`);
     writeFileSync(join(outDir, '贡献者名单.md'), markdown(result, generated));
   }
 
@@ -199,6 +204,10 @@ try {
       if (before !== after) { writeFileSync(path, after); changed.push(file); }
     }
     console.log(changed.length ? `Updated ${changed.join(', ')}` : 'README walls already up to date.');
+    // The thanks wall draws from the same curated file.
+    const thanks = spawnSync(process.execPath, [join(root, 'bin/thanks-wall.mjs')], { encoding: 'utf8' });
+    process.stdout.write(thanks.stdout); process.stderr.write(thanks.stderr);
+    if (thanks.status !== 0) throw new Error('bin/thanks-wall.mjs failed.');
   }
 
   const names = list => list.map(r => r.login).join(', ') || 'none';
@@ -206,7 +215,11 @@ try {
   console.log(`New (counted, not on the wall): ${names(result.missingFromWall)}`);
   console.log(`Not reviewed yet (not in contributors.curated.json): ${names(result.unreviewed)}`);
   console.log(`Pending a decision: ${names(result.pending)}`);
-  if (flag('--check') && (result.missingFromWall.length || result.unreviewed.length)) process.exit(1);
+  if (flag('--check')) {
+    const thanks = spawnSync(process.execPath, [join(root, 'bin/thanks-wall.mjs'), '--check'], { encoding: 'utf8' });
+    process.stdout.write(thanks.stdout); process.stderr.write(thanks.stderr);
+    if (result.missingFromWall.length || result.unreviewed.length || thanks.status !== 0) process.exit(1);
+  }
 } catch (error) {
   console.error(error.message);
   process.exit(1);

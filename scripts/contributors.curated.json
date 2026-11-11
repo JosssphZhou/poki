@@ -148,16 +148,21 @@
       "#28",
       "#101",
       "#102",
+      "#103",
+      "#118",
+      "#121",
+      "#122",
+      "#123",
       "#136"
     ],
-    "summary": "Reproduced two Agent bugs in #27 and #28, disabled controls offered as tap targets and partly failed batches losing their trace; both are fixed.",
+    "summary": "Reproduced two Agent bugs in #27 and #28, then merged seven fixes and test repairs, from cancelled input locks (#102) to invalid touch coordinates (#136).",
     "lines": {
-      "en": "Reproduced two Agent bugs in #27 and #28, disabled controls offered as tap targets and partly failed batches losing their trace; both are fixed.",
-      "zh-CN": "在 #27 和 #28 中复现了两个 Agent 问题：禁用的控件被当作可点击目标，部分失败的批量操作丢失验证记录；两个都已修复。",
-      "zh-TW": "在 #27 和 #28 重現兩個 Agent 問題：停用的控制項被當成可點按目標，部分失敗的批次操作遺失驗證記錄；兩個都已修正。",
-      "ja": "#27 と #28 で Agent のバグを 2 件再現しました。無効なコントロールがタップ対象になる問題と、一部失敗したバッチのトレースが失われる問題で、どちらも修正済みです。",
-      "ko": "#27과 #28에서 Agent 버그 두 건을 재현했습니다. 비활성 컨트롤이 탭 대상으로 제시되는 문제와 일부 실패한 배치의 추적 기록이 사라지는 문제이며, 둘 다 수정되었습니다.",
-      "es": "Reprodujo en #27 y #28 dos errores del Agent, controles desactivados ofrecidos como objetivos de toque y lotes con fallos parciales que perdían su traza; ambos están corregidos."
+      "en": "Reproduced two Agent bugs in #27 and #28, then merged seven fixes and test repairs, from cancelled input locks (#102) to invalid touch coordinates (#136).",
+      "zh-CN": "在 #27 和 #28 中复现了两个 Agent 缺陷，随后合并了七项修复和测试修整，从已取消的输入锁（#102）到无效的触控坐标（#136）。",
+      "zh-TW": "在 #27 和 #28 中重現了兩個 Agent 缺陷，隨後合併了七項修正和測試修整，從已取消的輸入鎖（#102）到無效的觸控座標（#136）。",
+      "ja": "#27 と #28 で Agent の 2 つの不具合を再現し、その後、キャンセル済みの入力ロック（#102）から無効なタッチ座標（#136）まで、7 件の修正とテスト修整をマージしました。",
+      "ko": "#27과 #28에서 Agent 버그 두 건을 재현한 뒤, 취소된 입력 잠금(#102)부터 잘못된 터치 좌표(#136)까지 수정과 테스트 정비 일곱 건을 병합했습니다.",
+      "es": "Reprodujo dos errores del Agent en #27 y #28 y luego fusionó siete correcciones y arreglos de pruebas, desde bloqueos de entrada cancelados (#102) hasta coordenadas táctiles no válidas (#136)."
     }
   },
   "jiahuipaung": {
@@ -392,40 +397,97 @@
     }
   },
   "zcyoung2000": {
-    "status": "pending",
-    "note": "PR #9 (SOCKS5 proxy for RemotePairing) was closed by its author; they plan to reopen it against main after testing. Nothing merged yet."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Proposed SOCKS5 proxy support for the RemotePairing transport in #9; its author closed it and plans to reopen it after testing.",
+    "basis": [
+      "#9"
+    ]
   },
   "kilingzhang": {
-    "status": "pending",
-    "note": "PR #11 (humanized input timing) is still open; its idea is the base for the bounded input variation discussed in #26, but nothing is merged."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Proposed humanized input timing and trajectory shaping in #11, still open; it is the base for the bounded input variation discussed in #26.",
+    "basis": [
+      "#11"
+    ]
   },
   "zqy5608": {
-    "status": "pending",
-    "note": "Issue #20 and PR #47 (foldable iPhone display work) led to tracking in #47 and #76; #76 builds on #47 with authorship kept, but neither is merged."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported a foldable iPhone whose accessibility and touch used the wrong panel in #20 and shared experiments in #47; tracking continues in #47 and #76.",
+    "basis": [
+      "#20",
+      "#47"
+    ]
   },
   "wanghao-SunSky": {
-    "status": "pending",
-    "note": "PRs #31 and #36 and issue #26 were closed without merging; the input-variation idea moved to #11."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Proposed an opt-in unlock tool and bounded input variation in #26, #31 and #36; closed without merging, and the input part moved to #11.",
+    "basis": [
+      "#26",
+      "#31",
+      "#36"
+    ]
   },
   "windywendyday": {
-    "status": "pending",
-    "note": "Filed #29, the same report as #30 (LAN address change); the fix in #34 came from #30's author. No comments on #29."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #29 that a LAN connection could not recover after the iPhone's address changed, the problem fixed in #34.",
+    "basis": [
+      "#29"
+    ]
   },
   "htx996": {
-    "status": "pending",
-    "note": "Issue #55 (Wi-Fi RemotePairing fails on iOS 27.0.1) led to the diagnostics change #56, which is merged, but the failure itself is not fixed."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #55 that Wi-Fi RemotePairing failed on iOS 27.0.1 while another tool connected; it led to clearer diagnostics (#56), and the failure itself is still open.",
+    "basis": [
+      "#55"
+    ]
   },
   "oasis979559-alt": {
-    "status": "pending",
-    "note": "Issue #124 is open and being traced; no fix has landed."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #124 that after a restart on iOS 18.7.7 mounting the developer image failed and the loopback stayed off; under investigation.",
+    "basis": [
+      "#124"
+    ]
   },
   "iTry": {
-    "status": "pending",
-    "note": "Issue #135 (repeated 2FA prompt) is open; the cause is not fixed yet."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Reported in #135 that Poki Setup kept asking for the two-factor code after accepting it; under investigation.",
+    "basis": [
+      "#135"
+    ]
   },
   "lunar-me": {
-    "status": "pending",
-    "note": "PR #141 (one-word doc typo fix) is open and not merged."
+    "status": "community",
+    "categories": [
+      "community"
+    ],
+    "summary": "Opened #141 to fix a repeated word in the keyboard doc; open and not merged.",
+    "basis": [
+      "#141"
+    ]
   },
   "zerocodefast": {
     "status": "excluded",
