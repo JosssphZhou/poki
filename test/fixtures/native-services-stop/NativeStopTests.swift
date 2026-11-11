@@ -7,7 +7,11 @@ final class NativeStopTests: XCTestCase {
         let device = NativeDevice.shared
         device.started = expectation(description: "The native device received the tap")
         defer { device.finishInput() }
-        let transport = NativeServicesWDA(screen: CGSize(width: 402, height: 874))
+        let transport = SwitchingTransport(
+            xctest: URLSessionTransport(),
+            native: NativeServicesWDA(screen: CGSize(width: 402, height: 874)),
+            start: .native
+        )
         let runner = Runner(url: URL(string: "http://native.invalid")!, transport: transport)
         _ = try await runner.session()
         let tap = Task {
@@ -31,5 +35,10 @@ final class NativeStopTests: XCTestCase {
         device.finishInput()
         let afterCompletion = await runner.settle(timeout: 1)
         XCTAssertTrue(afterCompletion, "settle must succeed once the native input callback completes")
+
+        XCTAssertTrue(transport.use(.xctest))
+        XCTAssertNil(transport.inputIsIdle, "WDA must retain its queued completion probe")
+        XCTAssertTrue(transport.use(.native))
+        XCTAssertEqual(transport.inputIsIdle, true, "Switching back must read the native input state")
     }
 }

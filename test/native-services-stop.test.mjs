@@ -28,7 +28,9 @@ let package = Package(
     ]
 )
 `);
-  await copyFile('native/ios-app/Poki/Runtime/NativeServicesWDA.swift', join(dir, 'Tests/NativeStopTests/NativeServicesWDA.swift'));
+  for (const name of ['NativeServicesWDA.swift', 'SwitchingTransport.swift', 'AutomationChooser.swift']) {
+    await copyFile(join('native/ios-app/Poki/Runtime', name), join(dir, 'Tests/NativeStopTests', name));
+  }
   for (const name of ['DeviceStubs.swift', 'NativeStopTests.swift']) {
     await copyFile(join('test/fixtures/native-services-stop', name), join(dir, 'Tests/NativeStopTests', name));
   }

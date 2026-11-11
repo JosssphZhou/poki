@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-// Only the device ABI and unused iOS keyboard APIs are replaced. NativeServicesWDA is compiled unchanged.
+// Device, keyboard, and saved automation settings are replaced; transport implementations compile unchanged.
 final class NativeDevice: @unchecked Sendable {
     static let shared = NativeDevice()
     var started: XCTestExpectation!
@@ -44,6 +44,10 @@ func poki_native_client_call(
 }
 
 enum AppFiles { static let pairingFile = URL(fileURLWithPath: "/unused-test-pairing") }
+enum AutomationPath: String {
+    case native, xctest
+    static var savedMethod: String? { nil }
+}
 enum KeyboardLink {
     static var directory: URL? { nil }
     static let holdFile = "hold", releaseFile = "release"
