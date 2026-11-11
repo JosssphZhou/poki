@@ -17,7 +17,8 @@ enum ShellEvent: Sendable {
     case approvalEnded(id: String, approved: Bool?)
     /// The model handed a screen to the owner (a passcode, a password, a verification, a payment, other).
     case handoffRequested(id: String, kind: String, text: String?, app: String?)
-    /// `how` is "done" (the owner tapped Done) or "takenBack" (the model went on by itself).
+    /// `how` is "done" (the owner tapped Done), "takenBack" (the model went on by itself) or
+    /// "expired" (no Done within PokiCore's handoff limit, so the step was taken back).
     case handoffEnded(id: String, how: String)
 }
 

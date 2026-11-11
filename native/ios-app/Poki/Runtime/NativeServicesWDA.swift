@@ -391,7 +391,13 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             try await slide(from: was, to: target, known: nil)
             return (nil, true)
         }
-        let before = items(try await readTree())
+        var before = items(try await readTree())
+        // A field tapped a moment ago brings its keyboard up over a few hundred milliseconds.
+        for wait in [150, 300, 450] where !before.contains(where: { Self.globeLabels.contains($0.label) }) {
+            try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
+            queue.sync { cachedTree = nil }
+            before = items(try await readTree())
+        }
         guard let globe = before.first(where: { Self.globeLabels.contains($0.label) }) else {
             return (KeyboardSwitchMemory.noKeyboardOnScreen, false)
         }
@@ -416,8 +422,11 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             // Close the list where it opened, so the next touch is not spent on it.
             try? await send("tap", at: centre(globe.frame))
             defaults.removeObject(forKey: Self.keyboardListKey)
-            return (Self.listMissed(name, listed: listed.map(\.label), named: read.filter { $0.label.hasPrefix(name) }.map(\.label),
-                                    after: Int(Date().timeIntervalSince(held) * 1000), poki: other == nil), false)
+            // A row with the name inside the list that was skipped only because the same label was on
+            // screen before the hold.
+            let skipped = read.first { $0.label.hasPrefix(name) && known.contains($0.label) && inList(centre($0.frame)) }?.label
+            return (KeyboardSwitchMemory.listMissed(name, rows: listed.map(\.label), open: listed.contains(where: \.selected), skipped: skipped,
+                                                    after: Int(Date().timeIntervalSince(held) * 1000), poki: other == nil), false)
         }
         var learnt: [String: [Double]] = ["globe": [globe.frame.midX, globe.frame.midY]]
         for entry in listed { learnt[entry.label] = [entry.frame.midX, entry.frame.midY] }
@@ -430,22 +439,6 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
         try await send("tap", at: centre(item.frame))
         return (nil, false)
-    }
-
-    /// Why the globe key's list gave no row for `name`, told apart by what the last read held: no
-    /// new row at all (the list opened late or not at all), a row with the name that was not taken
-    /// (it was on screen before the hold, or above the list), or a list without it (for Poki's
-    /// keyboard: it is not turned on, and the owner is told where to turn it on).
-    static func listMissed(_ name: String, listed: [String], named: [String], after ms: Int, poki: Bool) -> String {
-        if listed.isEmpty {
-            return "the globe key's list did not show \(name): nothing new came up within \(ms) ms of holding the globe key (the list opened late, or not at all)"
-        }
-        if let row = named.first {
-            return "the globe key's list did not show \(name) where it was looked for: a row \"\(row.prefix(40))\" was read, but it was on screen before the globe key was held, or above the list"
-        }
-        let rows = listed.prefix(8).map { "\"\($0.prefix(40))\"" }.joined(separator: ", ")
-        guard poki else { return "the globe key's list shows \(rows) and not \(name)" }
-        return "the globe key's list shows \(rows) and not \(name), so the Poki keyboard is not turned on. The owner turns it on under Settings › General › Keyboard › Keyboards › Add New Keyboard › Poki, then taps Poki there and turns on Allow Full Access"
     }
 
     /// Poki's keyboard gives way to the owner's own at the end of a task: through the globe key's

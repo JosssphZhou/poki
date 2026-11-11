@@ -303,4 +303,25 @@ final class KeyboardSwitchMemoryTests: XCTestCase {
         memory.note(in: "Settings", why: nil, at: start + 130)
         XCTAssertFalse(memory.failedLately(in: "Settings", at: start + 131), "a switch that worked clears the failure")
     }
+
+    func testABlankAppNameIsNoName() {
+        var memory = KeyboardSwitchMemory()
+        memory.note(in: " ", why: failure, at: start)
+        XCTAssertFalse(memory.failedLately(in: "", at: start + 1))
+        XCTAssertFalse(memory.failedLately(in: " ", at: start + 1))
+    }
+
+    /// Only a list seen open (a new row ticked) is taken to show that Poki's keyboard is not turned
+    /// on; the owner is then told where to turn it on.
+    func testAListWithoutPokiSaysWhyByWhatWasRead() {
+        func why(_ rows: [String], open: Bool, skipped: String? = nil) -> String {
+            KeyboardSwitchMemory.listMissed("Poki", rows: rows, open: open, skipped: skipped, after: 710, poki: true)
+        }
+        let notOn = why(["简体拼音", "English (US)", "Emoji"], open: true)
+        XCTAssertTrue(notOn.contains("not turned on") && notOn.contains("Settings › General › Keyboard"), notOn)
+        for other in [why([], open: false), why(["Send", "Photo"], open: false), why(["简体拼音"], open: true, skipped: "Poki")] {
+            XCTAssertFalse(other.contains("not turned on"), other)
+        }
+        XCTAssertFalse(why(["Send", "Photo"], open: false).contains("Photo"), "rows of a list not seen open are not quoted")
+    }
 }

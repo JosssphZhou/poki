@@ -482,18 +482,13 @@ extension Computer {
         // `hidden`: a password field is on the screen, so nothing of the field's text comes back.
         var body: [String: JSON] = ["value": .array(text.map { .string(String($0)) }), "clear": .bool(clear), "keyboard": true, "focused": .bool(focused), "hidden": .bool(hidden)]
         // Native services read no bundle ID: the app's name keeps a failed switch to that one app.
-        if let app = lastForeground?.bundleID ?? lastForeground?.name { body["app"] = .string(app) }
+        if let app = lastForeground?.bundleID ?? lastForeground?.name, !app.trimmingCharacters(in: .whitespaces).isEmpty { body["app"] = .string(app) }
         var answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: budget, countsAsMiss: false)
-        // No keyboard was on screen: the field had no focus yet. Once a keyboard is up (after another
-        // tap on the field when one is known), the keyboard is asked once more.
-        if answer["unfocused"]?.bool == true, until - now() - 4 >= 6 {
-            var up = await waitForFocus(seconds: 1.5, target: target)
-            if !up, let target {
-                try await tap(target.frame.centre, within: target.frame)
-                up = await waitForFocus(seconds: 1.5, target: target)
-            }
-            let left = until - now() - 4
-            if up, left >= 2 { answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: left, countsAsMiss: false) }
+        // No keyboard came up on the field (the keyboard's side waits for one about a second): the
+        // field is tapped again and the keyboard asked once more.
+        if answer["unfocused"]?.bool == true, let target, until - now() - 4 >= 6 {
+            try await tap(target.frame.centre, within: target.frame)
+            answer = try await runner.call("POST", "/wda/keys", .object(body), timeout: until - now() - 4, countsAsMiss: false)
         }
         guard answer["keyboard"]?.string == "typed" else {
             keyboardDeclined = answer["why"]?.string

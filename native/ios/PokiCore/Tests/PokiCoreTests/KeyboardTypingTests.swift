@@ -65,8 +65,8 @@ final class KeyboardTypingTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /wda/keys").first?["app"]?.string, "Messages")
     }
 
-    /// No keyboard on screen means the field had no focus yet: the keyboard is asked once more when
-    /// one has come up, and the text is not sent the usual way.
+    /// No keyboard came up on the field: it is tapped again and the keyboard asked once more, and the
+    /// text is not sent the usual way.
     func testNoKeyboardOnScreenIsAskedAgainOnceTheFieldHasTheFocus() async {
         let asked = LockedBox(0)
         let (core, wda) = keyboardCore { _ in
@@ -74,10 +74,10 @@ final class KeyboardTypingTests: XCTestCase {
                 ? (200, ["value": ["keyboard": "declined", "why": "no keyboard with a globe key is on screen", "unfocused": true]])
                 : (200, ["value": ["keyboard": "typed", "check": "matched", "tail": "你好"]])
         }
-        wda.tree([Node("TextField", "Message", [16, 100, 358, 44], value: ""), Node("Keyboard", nil, [0, 500, 390, 344])], app: "Notes")
         _ = await core.call("look", [:])
         let result = await core.call("do", ["actions": [["type": "你好", "ref": 1]]])
         XCTAssertTrue(result.text.contains("Poki's keyboard, which confirms"), result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 2, "the field is tapped again: \(wda.sent)")
         let keys = wda.bodies("POST /wda/keys")
         XCTAssertEqual(keys.count, 2, "\(keys)")
         XCTAssertTrue(keys.allSatisfy { $0["keyboard"]?.bool == true }, "\(keys)")

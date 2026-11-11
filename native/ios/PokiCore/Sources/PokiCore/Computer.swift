@@ -406,7 +406,7 @@ final class Computer: @unchecked Sendable {
         if h.ownerOnly {
             return "handoff: waiting for the owner to finish editing and tap Done; the agent cannot dismiss this pause. Do not replay unfinished typing. Read the edited field after Done before planning another action."
         }
-        return "handoff: waiting (\(h.kind)) since \(f.string(from: h.requested)) (\(Int(Date().timeIntervalSince(h.requested))) s): \"\(h.text.prefix(80))\"; no input is sent until the owner taps Done on the phone or you send {handoff: false}; keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}"
+        return "handoff: waiting (\(h.kind)) since \(f.string(from: h.requested)) (\(Int(Date().timeIntervalSince(h.requested))) s): \"\(h.text.prefix(80))\"; no input is sent until the owner taps Done on the phone or you send {handoff: false}; it is taken back after \(Int(Self.handoffLimit)) s without Done; keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}"
     }
 
     var handoffWaiting: Bool { handoff.value.map { $0.done == nil } ?? false }
@@ -576,7 +576,7 @@ final class Computer: @unchecked Sendable {
             if h.ownerOnly {
                 return await withPicture("not_sent: the owner took over typing. Wait for them to tap Done; agents cannot dismiss this pause. Do not replay the unfinished text.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
             }
-            return await withPicture("not_sent: a step is handed to the owner (\(h.kind): \"\(h.text.prefix(80))\"), so no input is sent until they tap Done on the phone or you send {handoff: false}. Keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
+            return await withPicture("not_sent: a step is handed to the owner (\(h.kind): \"\(h.text.prefix(80))\"), so no input is sent until they tap Done on the phone or you send {handoff: false}. It is taken back after \(Int(Self.handoffLimit)) s without Done. Keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
         }
         let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
         if !onlyButtons, await isLocked() {

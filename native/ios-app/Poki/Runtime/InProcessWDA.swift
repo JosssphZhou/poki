@@ -485,7 +485,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         let name = PokiKeyboardTyping.displayName
         let before = try await read()
         guard let globe = before.first(where: { NativeServicesWDA.globeLabels.contains($0.label) }) else {
-            return "no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)"
+            return KeyboardSwitchMemory.noKeyboardOnScreen
         }
         let known = Set(before.map(\.label))
         try await press(centre(globe.frame), for: 0.56)
