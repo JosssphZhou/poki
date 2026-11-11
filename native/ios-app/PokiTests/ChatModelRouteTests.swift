@@ -80,6 +80,21 @@ final class ChatModelRouteTests: XCTestCase {
         XCTAssertEqual(requests, [first.credentials?.access])
     }
 
+    func testSavedSelectionCannotSendChatGPTTokenToAnotherProviderOrHost() async throws {
+        let profiles = ProfileStorage().open()
+        let account = try await profiles.authorize(nil) { _ in grant("oaiapp_a") }
+        let model = try XCTUnwrap(ModelProvider.chatgpt.piModel("gpt-6.1-sol"))
+        let mismatched = ModelSelection(provider: .custom, modelID: model.id, profileID: account.id)
+        XCTAssertNil(mismatched.route)
+        let custom = ModelRoute(selection: mismatched, model: model.with(baseUrl: "https://example.invalid/v1"), key: "fixture-key")
+        let customToken = await custom.accessToken(profiles: profiles)
+        XCTAssertNil(customToken)
+        let selection = ModelSelection(provider: .chatgpt, modelID: model.id, profileID: account.id)
+        let changedHost = ModelRoute(selection: selection, model: model.with(baseUrl: "https://example.invalid/v1"), key: nil)
+        let changedHostToken = await changedHost.accessToken(profiles: profiles)
+        XCTAssertNil(changedHostToken)
+    }
+
     func testMenuFormatsSubscriptionAndAPIAccountsConsistently() {
         let profile = ChatGPTProfile(id: UUID(), number: 2, clientID: "oaiapp_fixture", label: "ChatGPT Demo B")
         XCTAssertEqual(ModelProvider.chatgpt.menuAccountName(profile), "ChatGPT · Demo B")

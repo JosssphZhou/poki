@@ -325,10 +325,11 @@ struct ModelSelection: Codable, Equatable, Sendable {
     }
 
     @MainActor var route: ModelRoute? {
-        guard ModelKeys.usableModels(for: provider, profileID: profileID).contains(where: { $0.id == modelID }),
+        guard (provider == .chatgpt) == (profileID != nil),
+              ModelKeys.usableModels(for: provider, profileID: profileID).contains(where: { $0.id == modelID }),
               let model = provider.piModel(modelID) else { return nil }
         let key = provider == .chatgpt ? nil : ModelKeys.key(provider) ?? (provider == .custom ? "none" : nil)
-        guard provider == .chatgpt ? profileID != nil : key != nil else { return nil }
+        guard provider == .chatgpt || key != nil else { return nil }
         return ModelRoute(selection: self, model: model, key: key)
     }
 
@@ -345,7 +346,12 @@ struct ModelRoute: Sendable {
     let key: String?
 
     @MainActor func accessToken(profiles: ChatGPTProfiles) async -> String? {
-        if let id = selection.profileID { return await profiles.accessToken(id) }
+        if selection.provider == .chatgpt {
+            guard let id = selection.profileID, model.api == .openAIResponses,
+                  model.baseUrl == ChatGPTOAuth.resource else { return nil }
+            return await profiles.accessToken(id)
+        }
+        guard selection.profileID == nil else { return nil }
         return key
     }
 
