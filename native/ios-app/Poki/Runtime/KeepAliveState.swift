@@ -18,6 +18,8 @@ struct KeepAliveState: Equatable {
     var continuedRun: Bool
     var voice: Bool
     var audio: Audio
+    /// How long iOS kept Poki suspended before now, as the heartbeat measures it (0 outside a beat).
+    var suspendedFor: Double = 0
 
     /// Nil while Poki is off. `.nothing` means iOS will suspend Poki once it leaves the screen.
     var holder: Holder? {

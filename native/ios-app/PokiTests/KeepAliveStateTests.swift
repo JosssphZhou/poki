@@ -25,4 +25,15 @@ final class KeepAliveStateTests: XCTestCase {
     func testInterruptedAudioHoldsNothingUntilStartedAgainFromScratch() {
         XCTAssertEqual(holder(engine: true, running: true, playing: true, interrupted: true), .nothing)
     }
+
+    /// ESP-388 on the test phone: the person stopped "Poki is on" in iOS's own UI. Poki heard no end,
+    /// went on taking the continued run for what held it up, and was suspended for 709 s, then again
+    /// for 102 s and 107 s. A running continued run never lets iOS suspend Poki.
+    func testAContinuedRunThatLetPokiBeSuspendedHoldsNothing() {
+        let state = { (suspended: Double) in
+            KeepAliveState(on: true, continuedRun: true, voice: false, audio: .off, suspendedFor: suspended).holder
+        }
+        XCTAssertEqual(state(709), .nothing)
+        XCTAssertEqual(state(1), .continuedRun, "a normal heartbeat")
+    }
 }
