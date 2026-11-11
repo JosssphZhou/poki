@@ -633,6 +633,7 @@ struct ComposerInputView: View {
     /// The Send key's edit, from the text before it to the text with its new line, until the field's
     /// binding takes it.
     @State private var sendKey: (from: String, to: String)?
+    @State private var pasteWatch = ComposerPasteWatch()
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -694,16 +695,21 @@ struct ComposerInputView: View {
         }
         // The on-screen keyboard's Send key adds a new line to a multi-line field instead of calling
         // onSubmit, so it is read from UIKit's own edits, one per key: an edit that only adds one new line,
-        // with nothing being composed, is sent once it reaches the binding (above). Pasted text arrives
-        // as one edit of its own and stays. A keyboard that is composing (Pinyin) confirms its letters
-        // on Send instead, so they are not sent.
+        // with nothing being composed, is sent once it reaches the binding (above). A paste or a drop
+        // stays, whatever it adds: UIKit tells the field's paste delegate first (ComposerPasteWatch).
+        // A keyboard that is composing (Pinyin) confirms its letters on Send instead, so they are not sent.
+        .onReceive(NotificationCenter.default.publisher(for: UITextView.textDidBeginEditingNotification)) { note in
+            if let view = note.object as? UITextView { pasteWatch.watch(view) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: UITextView.textDidChangeNotification)) { note in
             guard focused, let view = note.object as? UITextView, view.isFirstResponder else { return }
+            pasteWatch.watch(view)
             let text = view.text ?? ""
             let before = [fieldText, boundText].first { Self.addsOneNewline($0, text) }
             fieldText = text
             composing = view.markedTextRange != nil
-            sendKey = composing ? nil : before.map { ($0, text) }
+            let pasted = pasteWatch.takePaste()
+            sendKey = composing || pasted ? nil : before.map { ($0, text) }
         }
         .onDisappear { dictation.stop(model) }
     }
@@ -781,6 +787,29 @@ struct ComposerInputView: View {
             try? await Task.sleep(for: .milliseconds(120))
             if isJustSent(input) { input = "" }
         }
+    }
+}
+
+/// Tells the message field's pastes and drops from typing: UIKit asks the text view's paste delegate
+/// to transform each pasted or dropped item just before the edit that inserts it.
+@MainActor
+final class ComposerPasteWatch: NSObject, UITextPasteDelegate {
+    private var pastedAt: Date?
+
+    /// Becomes the field's paste delegate, unless something else already is.
+    func watch(_ view: UITextView) {
+        if view.pasteDelegate == nil { view.pasteDelegate = self }
+    }
+
+    /// Whether the edit UIKit just made came from a paste or a drop; each paste answers once.
+    func takePaste() -> Bool {
+        defer { pastedAt = nil }
+        return pastedAt.map { Date().timeIntervalSince($0) < 1 } ?? false
+    }
+
+    func textPasteConfigurationSupporting(_ textPasteConfigurationSupporting: UITextPasteConfigurationSupporting, transform item: UITextPasteItem) {
+        pastedAt = Date()
+        item.setDefaultResult()
     }
 }
 
