@@ -80,7 +80,8 @@ Hardware: iPhone19,4 running iOS 27.1, connected over RemotePairing on Wi-Fi,
 with the inner panel unfolded in landscape (951 by 669 points, `rot90`).
 
 - Taps landed on the intended controls in a third-party app's sidebar and
-  switched its views. Before the rotation fix, the same taps landed elsewhere.
+  switched its views. Before the rotation fix, a tap aimed at the Settings
+  search field landed on a different control.
 - In Settings, `type_text` into the search field confirmed the text by reading
   the field back, and the clipboard was restored. `tap_text` on the field's
   close button cleared it.

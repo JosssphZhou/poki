@@ -20,7 +20,8 @@ pub struct Display {
 /// touchscreen's native axes. The digitizer reports in the panel's native orientation, so a panel
 /// showing rotated content needs the inverse rotation. Calibrated on a two-panel iPhone whose inner
 /// panel reported `rot90` in landscape: unrotated, a tap aimed at screen (150, 621) of 951 x 669
-/// points landed near (67, 106), which fits screen = (1 - native_y, native_x) and no other turn.
+/// points opened the control at the top left. Of the four quarter turns, only
+/// screen = (1 - native_y, native_x) puts the touch there, at about (67, 106).
 pub fn to_panel(rotation: u16, x: u16, y: u16) -> (u16, u16) {
     match rotation {
         90 => (y, u16::MAX - x),
