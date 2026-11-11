@@ -39,9 +39,10 @@ final class ContinuedRun {
     private var ticker: Task<Void, Never>?
     /// iOS ended the task before Poki turned off.
     var onExpired: (() -> Void)?
-    /// When iOS last called the task's expiration handler, kept before the hop to the main actor. On
-    /// the phone a stop from iOS's own UI left no end in the log; this says whether iOS called it.
-    nonisolated private static let expiryCalled = OSAllocatedUnfairLock<Date?>(initialState: nil)
+    /// Which task's expiration handler iOS last called, and when, kept before the hop to the main
+    /// actor. On the phone a stop from iOS's own UI left no end in the log; this says whether iOS
+    /// called it.
+    nonisolated private static let expiryCalled = OSAllocatedUnfairLock<(id: String, at: Date)?>(initialState: nil)
     private(set) var isRunning = false
 
     /// Asks iOS for the task; must be called while Poki is in front. False when iOS refuses.
@@ -52,7 +53,6 @@ final class ContinuedRun {
         }
         let id = String(wildcard.dropLast()) + UUID().uuidString.prefix(8).lowercased()
         guard register(id) else { return false }
-        Self.expiryCalled.withLock { $0 = nil }
         let request = BGContinuedProcessingTaskRequest(identifier: id, title: String(localized: "Poki is on"), subtitle: subtitle)
         request.strategy = .fail
         do {
@@ -72,10 +72,12 @@ final class ContinuedRun {
         guard isRunning else { task.setTaskCompleted(success: true); return }
         self.task = task
         task.progress.totalUnitCount = 1_000
+        let id = task.identifier
         task.expirationHandler = { @Sendable [weak self] in
-            Self.expiryCalled.withLock { $0 = Date() }
+            Self.expiryCalled.withLock { $0 = (id, Date()) }
             Task { @MainActor in
-                guard let self, self.isRunning else { return }
+                // A late end of a task Poki already gave up on (`lost`) must not end the one asked for since.
+                guard let self, self.isRunning, self.identifier == id else { return }
                 AppLog.shared.add("background", "continued run ended by iOS")
                 self.finish(success: false)
                 self.onExpired?()
@@ -107,8 +109,8 @@ final class ContinuedRun {
     /// asked for again.
     func lost(_ why: String) {
         guard isRunning else { return }
-        let called = Self.expiryCalled.withLock { $0 }
-        AppLog.shared.add("background", "continued run gone: \(why); iOS \(called.map { "called its end at \($0.formatted(date: .omitted, time: .standard)) but it never ran" } ?? "never called its end")")
+        let called = Self.expiryCalled.withLock { $0 }.flatMap { $0.id == identifier ? $0.at : nil }
+        AppLog.shared.add("background", "continued run gone: \(why); iOS \(called.map { "called its end at \($0.formatted(date: .omitted, time: .standard)) but it never ran" } ?? "never called its end"), progress cancelled \(task?.progress.isCancelled == true)")
         finish(success: false)
     }
 
