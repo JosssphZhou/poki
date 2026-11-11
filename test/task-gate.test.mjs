@@ -11,7 +11,7 @@ async function connect({ answer, elicitation = true, clock }) {
   const gate = createTaskGate({ env: {}, now: () => clock.t });
   const server = createServer(async name => { calls.push(name); return { content: [{ type: 'text', text: `ran ${name}` }] }; }, { gate });
   const client = new Client({ name: 'test', version: '0' }, elicitation ? { capabilities: { elicitation: { form: {} } } } : {});
-  if (elicitation) client.setRequestHandler('elicitation/create', request => { asked.push(request.params.message); return { action: answer() }; });
+  if (elicitation) client.setRequestHandler('elicitation/create', async request => { asked.push(request.params.message); return { action: await answer() }; });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(a), client.connect(b)]);
   const call = (name, args = {}) => client.callTool({ name, arguments: args });
@@ -96,6 +96,62 @@ test('a second begin_task drops the old lease even when declined', async () => {
   assert.notEqual((await call('tap')).isError, true);
   await call('begin_task', { task: 'second, wider' });
   assert.equal((await call('tap')).isError, true);
+});
+
+// Answers are held back so end_task or a newer begin_task can run while an approval is open; leftovers are cancelled when the test ends.
+async function connectDeferred(t) {
+  const answers = [];
+  const connection = await connect({ answer: () => new Promise(resolve => answers.push(resolve)), clock: { t: 0 } });
+  t.after(() => { for (const answer of answers) answer('cancel'); });
+  const asked = async count => {
+    for (let turns = 0; answers.length < count; turns += 1) {
+      assert.ok(turns < 1000, `expected ${count} approval prompts, saw ${answers.length}`);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+  return { ...connection, answers, asked };
+}
+
+test('an approval answered after end_task does not open a lease', async t => {
+  const { call, calls, answers, asked } = await connectDeferred(t);
+  const first = call('begin_task', { task: 'first' });
+  await asked(1);
+  assert.notEqual((await call('end_task')).isError, true);
+  answers[0]('accept');
+  const begun = await first;
+  assert.equal(begun.isError, true);
+  assert.match(begun.content[0].text, /answer was ignored/);
+  assert.equal((await call('tap')).isError, true);
+  assert.deepEqual(calls, []);
+});
+
+test('an older approval answered after a newer begin_task does not open a lease', async t => {
+  const { call, calls, answers, asked } = await connectDeferred(t);
+  const first = call('begin_task', { task: 'first' });
+  await asked(1);
+  const second = call('begin_task', { task: 'second' });
+  await asked(2);
+  answers[1]('decline');
+  assert.match((await second).content[0].text, /did not approve/);
+  answers[0]('accept');
+  assert.match((await first).content[0].text, /answer was ignored/);
+  assert.equal((await call('tap')).isError, true);
+  assert.deepEqual(calls, []);
+});
+
+test('the newest begin_task still opens a lease after an older one was answered late', async t => {
+  const { call, calls, answers, asked } = await connectDeferred(t);
+  const first = call('begin_task', { task: 'first' });
+  await asked(1);
+  const second = call('begin_task', { task: 'second' });
+  await asked(2);
+  answers[0]('accept');
+  assert.match((await first).content[0].text, /answer was ignored/);
+  assert.equal((await call('tap')).isError, true, 'the newer request is still unanswered');
+  answers[1]('accept');
+  assert.notEqual((await second).isError, true);
+  assert.notEqual((await call('tap')).isError, true);
+  assert.deepEqual(calls, ['tap']);
 });
 
 test('without a gate the server keeps its original tool list', async () => {

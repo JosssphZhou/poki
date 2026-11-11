@@ -5,6 +5,8 @@ import { z } from 'zod';
 // person accepts the elicitation it raises. One acceptance covers the whole task: it lasts until
 // end_task, until the lease sits idle for idleMs, or until maxMs after approval, whichever is first.
 // A client without elicitation support cannot obtain a lease, so the gate fails closed.
+// Handlers are not serialized, so an answer can arrive after end_task or after a newer begin_task.
+// Both bump `generation`, and an answer to an older request is ignored instead of opening a lease.
 export const taskGateEnabled = (env = process.env) => env.POKI_MCP_TASK_APPROVAL === '1';
 
 const open = new Set(['poki_mcp_status', 'list_devices', 'begin_task', 'end_task']);
@@ -23,6 +25,7 @@ export function createTaskGate({ env = process.env, now = () => Date.now() } = {
   const maxMs = minutes(env.POKI_MCP_TASK_MAX_MINUTES, 60);
   const approvalTimeoutMs = minutes(env.POKI_MCP_TASK_APPROVAL_TIMEOUT_MINUTES, 9);
   let lease = null;
+  let generation = 0;
   let server = null;
   const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
   const refuse = message => ({ isError: true, content: [{ type: 'text', text: message }] });
@@ -38,6 +41,7 @@ export function createTaskGate({ env = process.env, now = () => Date.now() } = {
 
   async function beginTask({ task }, signal) {
     lease = null;
+    const mine = ++generation;
     let result;
     try {
       result = await server.server.elicitInput({
@@ -47,6 +51,9 @@ export function createTaskGate({ env = process.env, now = () => Date.now() } = {
       }, { timeout: approvalTimeoutMs, signal });
     } catch (error) {
       return refuse(`The approval request could not be completed (${error.message}). No device tool will run. Do not retry without the owner asking.`);
+    }
+    if (mine !== generation) {
+      return refuse('This approval request was ended by end_task or replaced by a newer begin_task before the owner answered, so the answer was ignored. It approved nothing.');
     }
     if (result?.action !== 'accept') {
       return refuse(`The owner did not approve this task (${result?.action ?? 'no answer'}). No device tool will run. Do not retry without the owner asking.`);
@@ -65,6 +72,7 @@ export function createTaskGate({ env = process.env, now = () => Date.now() } = {
       if (name === 'end_task') {
         const ended = live();
         lease = null;
+        generation += 1;
         return text({ ended: Boolean(ended), task: ended?.task ?? null });
       }
       if (open.has(name)) return null;
