@@ -52,7 +52,27 @@ final class PiLoop {
         let failure = Box()
         let agent = self.agent
         let gate = self.gate
+        let trace = UUID().uuidString
+        let started = ContinuousClock.now
+        let knownTools = Set(Harness.tools.map(\.name))
+        @Sendable func timing(_ phase: String, tool: String? = nil) async {
+            let elapsed = started.duration(to: .now).components
+            let ms = elapsed.seconds * 1000 + elapsed.attoseconds / 1_000_000_000_000_000
+            let name = tool.map { knownTools.contains($0) ? $0 : "other" }
+            let suffix = name.map { " tool=\($0)" } ?? ""
+            await MainActor.run {
+                AppLog.shared.add("timing", "run=\(trace) phase=\(phase) elapsed_ms=\(ms)\(suffix)")
+            }
+        }
         let unsubscribe = agent.subscribe { event, _ in
+            switch event {
+            case .turnStart: await timing("model_turn_start")
+            case .messageStart(.assistant): await timing("model_reply_start")
+            case .messageEnd(.assistant): await timing("model_reply_end")
+            case .toolExecutionStart(_, let name, _): await timing("tool_start", tool: name)
+            case .toolExecutionEnd(_, let name, _, _, _): await timing("tool_end", tool: name)
+            default: break
+            }
             switch event {
             case .turnStart:
                 if turns.increment() > maxTurns { gate.overTurns(); agent.abort() }
@@ -73,6 +93,7 @@ final class PiLoop {
         } catch {
             failure.set(error.localizedDescription)
         }
+        await timing("run_end")
         if gate.stopped { return gate.wasOverTurns ? .overTurns : .stopped }
         if let message = failure.value {
             // The owner's message goes again with the next one, as with the direct clients.

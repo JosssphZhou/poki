@@ -274,23 +274,23 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             return key == "GET /screenshot" ? pictures : queue
         }
         let asked = Date()
-        return await withCheckedContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             lane.async { [self] in
                 let began = Date().timeIntervalSince1970
                 let started = Date()
                 if key != "GET /screenshot" { state.withLock { inFlight = (key, began) } }
-                let out = answer(key, session: session, element: element, body: parsed, route: route)
+                let out = Result { try answer(key, session: session, element: element, body: parsed, route: route) }
                 if key != "GET /screenshot" { state.withLock { if inFlight?.since == began { inFlight = nil } } }
                 // One line per request in the system log (PokiInProcess), with its wait in the queue and
                 // its own time, so a slow call can be traced to the request that took it.
                 let waited = Int(started.timeIntervalSince(asked) * 1000), took = Int(Date().timeIntervalSince(started) * 1000)
                 if waited > 5 || took > 5 { NSLog("%@", "PokiInProcess timing: \(key) \(took) ms\(waited > 5 ? " (queued \(waited) ms)" : "")") }
-                continuation.resume(returning: out)
+                continuation.resume(with: out)
             }
         }
     }
 
-    private func answer(_ key: String, session: String?, element: String?, body: JSON?, route: Route?) -> (status: Int, body: Data) {
+    private func answer(_ key: String, session: String?, element: String?, body: JSON?, route: Route?) throws -> (status: Int, body: Data) {
         func refused(_ status: Int, _ code: String, _ message: String) -> (Int, Data) {
             (status, (["value": ["error": .string(code), "message": .string(message)]] as JSON).data())
         }
@@ -307,6 +307,8 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             return (200, (["value": try route(body, element)] as JSON).data())
         } catch let r as Refusal {
             return refused(r.code == "invalid session id" ? 404 : 500, r.code, r.message)
+        } catch let error as TransportError {
+            throw error
         } catch {
             return refused(500, "unknown error", "\(error)")
         }
