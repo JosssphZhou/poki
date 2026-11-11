@@ -1,6 +1,7 @@
 //! PokiLauncher: gets the WebDriverAgent runner up on the phone it runs on, keeps it up, and pairs
 //! the phone with itself. A C ABI for the Poki app (include/poki_launcher.h); docs/ios-core.md §3.
 
+pub mod apps;
 pub mod ddi;
 pub mod device;
 pub mod launch;
@@ -79,6 +80,23 @@ unsafe fn read_str(text: *const c_char) -> Option<String> {
         return None;
     }
     unsafe { CStr::from_ptr(text) }.to_str().ok().map(String::from)
+}
+
+/// Calls back exactly once after accepting a config; no callback on -1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn poki_installed_apps(config_json: *const c_char, cb: EventCallback, context: *mut c_void) -> i32 {
+    let Some(text) = (unsafe { read_str(config_json) }) else { return -1 };
+    let Ok(config) = serde_json::from_str::<Config>(&text) else { return -1 };
+    let callback = Callback { function: cb, context };
+    runtime().spawn(async move {
+        let result = match tokio::time::timeout(std::time::Duration::from_secs(10), apps::list(config)).await {
+            Ok(Ok(value)) => value,
+            Ok(Err(error)) => serde_json::json!({"error": error.detail}),
+            Err(_) => serde_json::json!({"error": "The installed app directory timed out. Try again or use a bundle id."}),
+        };
+        callback.call(&result);
+    });
+    0
 }
 
 pub struct PokiLauncher {

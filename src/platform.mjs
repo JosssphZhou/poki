@@ -182,20 +182,19 @@ async function refreshApps(ctx, target) {
 // missing - if they arrived, ordinary matching already knows the name the user typed - and an entry
 // only wins when that bundle really is installed. ASCII names are deliberately absent: matching
 // lowercases both sides already.
-const knownNames = new Map(Object.entries(JSON.parse(readFileSync(new URL('./data/app-names.json', import.meta.url), 'utf8'))).map(([name, bundle]) => [name.toLowerCase(), bundle]));
+const normalizeAppName = name => name.toLowerCase().replace(/\s+/gu, '');
+const knownNames = new Map(Object.entries(JSON.parse(readFileSync(new URL('./data/app-names.json', import.meta.url), 'utf8'))).map(([name, bundle]) => [normalizeAppName(name), bundle]));
 
 async function launchAppMatch(ctx, target, query) {
   const directory = appDirectory(ctx), cached = directory.get(target.id);
   let cacheHit = Boolean(cached && performance.now() - cached.at < 300000);
   const current = cacheHit ? cached : await refreshApps(ctx, target);
   let all = current.apps;
-  const normalized = query.toLowerCase();
+  const normalized = normalizeAppName(query);
   const settled = current.localized_names?.status === 'available' ? undefined : knownNames.get(normalized);
-  const installed = settled && all.find(app => app.bundle_id === settled);
-  if (installed) return { app: installed, cache_hit: cacheHit };
   const matches = list => {
-    const names = app => [app.name, ...(app.aliases ?? [])].filter(name => typeof name === 'string').map(name => name.toLowerCase());
-    const exact = list.filter(app => app.bundle_id === query || names(app).includes(normalized));
+    const names = app => [app.name, ...(app.aliases ?? [])].filter(name => typeof name === 'string').map(normalizeAppName);
+    const exact = list.filter(app => app.bundle_id === query || app.bundle_id === settled || names(app).includes(normalized));
     return exact.length ? exact : list.filter(app => normalized && names(app).some(name => name.includes(normalized)));
   };
   let found = matches(all);
@@ -203,7 +202,7 @@ async function launchAppMatch(ctx, target, query) {
     cacheHit = false; all = (await refreshApps(ctx, target)).apps; found = matches(all);
   }
   if (!found.length) throw new Error('No installed app matches the given name.');
-  if (found.length !== 1) throw new Error('Multiple installed apps match the given name; give an explicit bundle_id.');
+  if (found.length !== 1) throw new Error(`Multiple installed apps match the given name: ${found.map(app => `${app.name} (${app.bundle_id})`).join(', ')}. Give an explicit bundle_id.`);
   return { app: found[0], cache_hit: cacheHit };
 }
 
@@ -211,8 +210,9 @@ async function resolveApp(target, args) {
   const all = await apps(target, true);
   const query = args.bundle_id ?? args.name ?? args.app;
   if (!query) throw new Error('Give bundle_id or name.');
-  const matches = all.filter(app => app.bundle_id === query || app.name.toLowerCase() === query.toLowerCase());
-  if (matches.length !== 1) throw new Error(`Expected one installed app matching ${JSON.stringify(query)}; found ${matches.length}.`);
+  const matches = all.filter(app => app.bundle_id === query || [app.name, ...(app.aliases ?? [])].some(name => normalizeAppName(name) === normalizeAppName(query)));
+  if (!matches.length) throw new Error('No installed app matches the given name.');
+  if (matches.length !== 1) throw new Error(`Multiple installed apps match the given name: ${matches.map(app => `${app.name} (${app.bundle_id})`).join(', ')}. Give an explicit bundle_id.`);
   return matches[0];
 }
 

@@ -20,6 +20,8 @@ typedef void (*poki_event_cb)(void *context, const char *event_json);
 //   "attempt": n, "since_ms": n, "pairing": "remote|lockdown", "ios": "...", "runner": "...",
 //   "detail": "...", "fix": "..."}
 PokiLauncher *poki_launcher_new(const char *config_json, poki_event_cb cb, void *context);
+// One callback with {apps} or {error}; -1 rejects the config without a callback.
+int32_t poki_installed_apps(const char *config_json, poki_event_cb cb, void *context);
 int32_t poki_launcher_start(PokiLauncher *launcher);
 void poki_launcher_restart(PokiLauncher *launcher);
 void poki_launcher_stop(PokiLauncher *launcher);
