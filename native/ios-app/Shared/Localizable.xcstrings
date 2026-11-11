@@ -4529,38 +4529,6 @@
         }
       }
     },
-    "Poki checks this channel for updates. To download and sign them ahead of time, Poki needs your Apple Account. Without one, Poki Setup on your Mac installs them." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 会检查此通道的更新。要提前下载并签名，Poki 需要你的 Apple 账户。没有登录时，用 Mac 上的 Poki Setup 安装更新。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 會檢查此通道的更新。要提前下載並簽名，Poki 需要你的 Apple 賬戶。沒有登入時，用 Mac 上的 Poki Setup 安裝更新。"
-          }
-        }
-      }
-    },
-    "Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 会提前从此通道下载更新并签名，与 Poki Setup 的方式相同。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 會提前從此通道下載更新並簽名，與 Poki Setup 的方式相同。"
-          }
-        }
-      }
-    },
     "PROXY LOOPBACK INTERFACE" : {
       "localizations" : {
         "zh-Hans" : {

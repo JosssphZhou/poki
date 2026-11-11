@@ -367,18 +367,15 @@ struct SigningOptionsPage: View {
         .onAppear { anisette = signer.status?.anisette ?? "" }
     }
 
-    /// What the channel gives, as it is now: Poki prepares builds ahead of time only with an Apple
-    /// Account, and a channel with no release yet offers the next less stable channel's.
+    /// What the channel gives, as it is now: a channel with no release yet offers the next less
+    /// stable channel's. How to update is said once, under Status.
     private var channelFooter: String {
-        let how = signer.signedIn
-            ? String(localized: "Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does.")
-            : String(localized: "Poki checks this channel for updates. To download and sign them ahead of time, Poki needs your Apple Account. Without one, Poki Setup on your Mac installs them.")
         let order = channels.map(\.id)
         let title = { (id: String) in String(localized: String.LocalizationValue(channels.first { $0.id == id }?.title ?? id)) }
         if let latest = signer.latest, let chosen = signer.status?.channel,
            let got = order.firstIndex(of: latest.channel), let asked = order.firstIndex(of: chosen), got > asked {
-            return how + " " + String(localized: "\(title(chosen)) has no release yet, so the newest build here comes from \(title(latest.channel)).")
+            return String(localized: "\(title(chosen)) has no release yet, so the newest build here comes from \(title(latest.channel)).")
         }
-        return how + " " + String(localized: "Stable gets full releases only. Beta, Alpha and Pre-alpha get earlier builds.")
+        return String(localized: "Stable gets full releases only. Beta, Alpha and Pre-alpha get earlier builds.")
     }
 }
