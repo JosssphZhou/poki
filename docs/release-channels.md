@@ -76,12 +76,9 @@ the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workfl
   read), installed on this repository, with its id and private key in the Actions secrets
   `POKI_BOT_APP_ID` and `POKI_BOT_PRIVATE_KEY`.
 - Labels `promotion`, `soak-override` and `blocker`.
-- Before merging the approval workflow change, create `alpha`, `beta`, and `stable` in Settings >
-  Environments. For each, make `JosssphZhou` the only required reviewer and disable administrator
-  bypass. Leave self-review prevention off so the owner can approve a run they started.
-  Only the owner may approve releases; agents must not approve on the owner's behalf.
-  GitHub automatically creates a referenced missing environment without protection, so creating
-  and protecting all three environments must happen before merging.
+- The `alpha`, `beta`, and `stable` environments are configured with `JosssphZhou` as the only
+  required reviewer and administrator bypass disabled. Self-review prevention is off so the owner
+  can approve a run they started. Agents must not approve on the owner's behalf.
   See [GitHub's environment setup](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
 - Branch protection on `main`: the `PR checks` jobs and `promotion gate / verdict` as required checks.
 
