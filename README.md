@@ -24,11 +24,18 @@
 </p>
 <!-- badges:end -->
 
+## Poki keyboard
+
+On the native path Poki types through its own keyboard panel at a person's pace, without
+reading the screen while it types. The panel has no keys and is not a keyboard for people:
+it shows while Poki types and has a Take Over button. Nothing is pasted unless you choose
+Paste in Advanced. See [docs/poki-keyboard.md](docs/poki-keyboard.md).
+
 ## Quick start
 
 ### Poki on your iPhone
 
-Tell Claude Code or Codex on your Mac:
+Tell your agent:
 
 ```text
 Install Poki on my iPhone from https://github.com/JosssphZhou/poki
@@ -40,7 +47,7 @@ Requires macOS 14+, Node.js 24+, iOS 18+, a USB data cable, an Apple Account, an
 
 No Node.js 24, or on Windows? The same prompt works once Poki Setup is installed: the agent then uses the command line tool inside Poki Setup. Poki Setup's own menu also copies a prompt for your agent (Poki > Copy Prompt for Your Agent on a Mac, Settings > Use an agent on Windows).
 
-Prefer clicking through it yourself? Download Poki Setup from the [Alpha release](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest) and follow its window.
+Prefer clicking through it yourself? Download Poki Setup for macOS or Windows (contributed by [@ZhehanZhang](https://github.com/ZhehanZhang)) from the [Alpha release](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest) and follow its window.
 
 ### Poki MCP for your agent
 
@@ -65,7 +72,7 @@ Requires macOS 15 or later, full Xcode, Rust, Node.js 24+, and ffmpeg. `./bin/se
 
 Poki targets macOS. For Linux, see the community port [poki-for-linux](https://github.com/carrotciallo/poki-for-linux) ([#16](https://github.com/JosssphZhou/poki/issues/16)), maintained outside this repo.
 
-Windows: community port at [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows) (maintained by its author, not tested by us).
+Poki MCP on Windows: community port at [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows) (maintained by its author, not tested by us).
 
 ### Prebuilt macOS arm64 package
 
