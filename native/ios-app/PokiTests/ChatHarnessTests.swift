@@ -105,7 +105,13 @@ final class ChatHarnessTests: XCTestCase {
         let chat = chat(on: server)
 
         chat.send("Wait on the phone")
-        while chat.awaitingModel { try await Task.sleep(for: .milliseconds(50)) }
+        let modelDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while chat.awaitingModel, ContinuousClock.now < modelDeadline { try await Task.sleep(for: .milliseconds(50)) }
+        guard !chat.awaitingModel else {
+            chat.stop()
+            XCTFail("The model did not finish its first response within 10 seconds")
+            return
+        }
         XCTAssertTrue(chat.running)
         app?.stopFromLiveActivity()
         XCTAssertFalse(chat.running, "the chat's task went on after Stop on the Live Activity")

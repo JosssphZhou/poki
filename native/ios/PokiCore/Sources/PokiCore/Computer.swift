@@ -526,7 +526,9 @@ final class Computer: @unchecked Sendable {
     }
 
     func act(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
-        restartNote(await actNow(actions: actions, full: full, finish: finish, session: session, answerBy: answerBy))
+        // A cancelled read cannot confirm where earlier actions left the screen, on any exit path.
+        defer { if Task.isCancelled { refs = [:] } }
+        return restartNote(await actNow(actions: actions, full: full, finish: finish, session: session, answerBy: answerBy))
     }
 
     func actNow(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
@@ -684,10 +686,8 @@ final class Computer: @unchecked Sendable {
         error = moreError
         lastKind = moreKind ?? lastKind
         // The caller stopped: its answer goes nowhere, so the screen is not read, and no app is brought
-        // back or opened again for it. What was sent may have changed the screen, unread: the numbers
-        // of the read before are dropped, so the next call reads before it acts on one.
+        // back or opened again for it.
         if Task.isCancelled {
-            if !did.isEmpty { refs = [:] }
             return ToolResult(text: (did.map { "did: \($0)" } + ["cancelled: the caller stopped; \(error ?? "nothing more was sent")."]).joined(separator: "\n"), jpeg: nil, isError: true)
         }
         var settled = 0.0
