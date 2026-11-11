@@ -2006,8 +2006,9 @@ final class AppModel {
 
     // MARK: Choosing the method
 
-    /// No method is set in Testing Options, so Poki chooses (never with Poki Runner).
-    var methodIsChosenForOwner: Bool { automationPath != .runner && AutomationPath.pinned == nil && !Self.onSimulator }
+    var methodIsChosenForOwner: Bool {
+        AutomationPath.thisPhoneDefault == .nativeServices && automationPath != .runner && AutomationPath.pinned == nil && !Self.onSimulator
+    }
 
     /// Set Up the Local Connection › When Native Services Cannot Start: true (the default) has the
     /// agent ask the owner before the XCTest session and its banner are used; false lets Poki go on.

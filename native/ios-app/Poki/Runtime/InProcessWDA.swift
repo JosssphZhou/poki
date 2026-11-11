@@ -15,29 +15,15 @@ enum AutomationPath: String, CaseIterable, Identifiable {
     var mountsOnly: Bool { self != .runner }
     static let current = chosen(savedMethod, iOS: ProcessInfo.processInfo.operatingSystemVersion)
 
-    /// Set once Automatic has been made the default: SettingsVault does not put an older choice back before then.
-    static let automaticDefaultKey = "automationPath.automaticDefault.v1"
-    /// The method chosen on the local connection page, if any. Automatic is the default: a choice saved by an
-    /// earlier build is cleared once, so every phone starts from Automatic.
-    static let savedMethod: String? = {
-        let defaults = UserDefaults.standard
-        if !defaults.bool(forKey: automaticDefaultKey) {
-            defaults.removeObject(forKey: "automationPath")
-            defaults.set(true, forKey: automaticDefaultKey)
-        }
-        return defaults.string(forKey: "automationPath")
-    }()
+    static let savedMethod = UserDefaults.standard.string(forKey: "automationPath")
 
     /// The owner's choice in Testing Options (`automationPath`) when it names a path, otherwise the default.
     static func chosen(_ saved: String?, iOS: OperatingSystemVersion) -> AutomationPath {
         saved.flatMap(AutomationPath.init(rawValue:)) ?? defaultPath(iOS: iOS)
     }
 
-    /// The paired services stream the screen and take touches only from iOS 27: on iOS 18.6.2 (#1) and
-    /// 26.6 (#18) native services could not tap, so earlier versions keep the XCTest session. The
-    /// iOS 27 line is the one DIYgod/pinky draws in internal/driver/ios/version.go (Apache-2.0).
     static func defaultPath(iOS: OperatingSystemVersion) -> AutomationPath {
-        iOS.majorVersion >= 27 ? .nativeServices : .inProcess
+        .inProcess
     }
 
     static let thisPhoneDefault = defaultPath(iOS: ProcessInfo.processInfo.operatingSystemVersion)
@@ -397,10 +383,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
 
     // MARK: Poki's keyboard
 
-    /// PokiCore asks Poki's keyboard first (`keyboard: true` on /wda/keys) unless the owner chose
-    /// Paste under Setup › Advanced › Typing; XCTest's own typing is left for when the keyboard declines
-    /// (a password field, or the keyboard is not set up).
-    var typesThroughKeyboard: Bool { !NativeServicesWDA.pasteAllowed }
+    var typesThroughKeyboard: Bool { false }
 
     /// Work on the request queue, one at a time with every other action and read.
     private func onQueue<T>(_ work: @escaping () throws -> T) async throws -> T {
