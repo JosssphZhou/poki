@@ -32,8 +32,8 @@ carries it.
 Only the pre-alpha step compiles. Each promotion copies that same IPA to the next channel, so
 testers on Alpha run the file that was tried on Pre-alpha, and Beta runs the file the Gym scored.
 
-1. **Pre-alpha, after approval.** Every merge into `main` runs `.github/workflows/prealpha.yml`: one
-   macOS job waits for approval in `alpha`, then builds the external IPA, tags `app-<VERSION>-prealpha.<N>` and replaces the files of
+1. **Pre-alpha, automatic.** Every merge into `main` runs `.github/workflows/prealpha.yml`: one
+   macOS job builds the external IPA, tags `app-<VERSION>-prealpha.<N>` and replaces the files of
    `app-prealpha-latest`. Its artifact is kept 90 days for later promotions.
 2. **Alpha, after approval.** Actions > Promote to Alpha > Run workflow (`promote-alpha.yml`), with a
    pre-alpha tag or empty for the current one. It runs the alpha tests on that commit (`ios-app.yml`:
@@ -59,7 +59,7 @@ deploys) and `SHA256SUMS`, plus Poki Setup's `PokiSetup-*` installers and `SHA25
 
 ## Branches
 
-- `main`: protected trunk; PRs only. Every merge queues a pre-alpha for approval.
+- `main`: protected trunk; PRs only. Every merge is a pre-alpha.
 - `dev/<topic>`: one change, one PR into `main`, deleted on merge.
 - `release/X.Y`: from a version's first beta; takes cherry-picked fixes from `main` for later betas
   and X.Y.Z hotfixes.
@@ -85,7 +85,8 @@ the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workfl
 ## Fallback
 
 `channel-release.yml` still builds from a pushed alpha or pre-alpha tag
-(`native/ios-app/scripts/cut-release.sh`). Its publish job waits for approval in `alpha`, including pre-alpha tags. It starts with cold caches (about 20 minutes) and will be
+(`native/ios-app/scripts/cut-release.sh`). Its publish job uses `alpha` only for alpha tags. Pre-alpha tags publish without environment approval.
+It starts with cold caches (about 20 minutes) and will be
 removed once the pipeline above has shipped a few builds.
 
 The Mac server's update notice (`src/update-check.mjs`) reads `releases/latest` and only understands
@@ -94,8 +95,8 @@ release.
 
 ## Approval coverage
 
-The two Promote to Alpha workflows use `alpha`. Pre-alpha shares that environment because it also
-reaches users. The Pre-alpha job builds and publishes in one job, so approval precedes the build.
+The two Promote to Alpha workflows use `alpha`. The tag fallback selects `alpha` for Alpha and no
+environment for Pre-alpha. Main Pre-alpha builds and publishes automatically without approval.
 Beta and Stable use their respective environments in `publish-promotion.yml`.
 The Windows installer job uses `stable`, including artifact-only runs, because its optional release
 upload shares the build job. The macOS installer workflow only uploads Actions artifacts.
