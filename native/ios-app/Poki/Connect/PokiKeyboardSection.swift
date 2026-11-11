@@ -15,7 +15,7 @@ struct PokiKeyboardState {
     var waitingForPanel: Bool { added && !answered }
     var word: LocalizedStringKey {
         if ready { return "Ready" }
-        if waitingForPanel { return "One more step" }
+        if waitingForPanel { return "One More Step" }
         return "Not Added"
     }
 }
@@ -68,16 +68,19 @@ struct PokiKeyboardPage: View {
                 Section {
                     TextField("Tap here, then switch keyboards", text: $trial).focused($trying)
                 } footer: {
-                    Text("Tap the globe key below the keyboard and switch to Poki once. I only need to see it appear, no typing.")
+                    Text("Tap the globe key below the keyboard and switch to Poki once. Poki only needs to see its panel appear, no typing. If the panel asks for Full Access, turn it on in Settings.")
                 }
             }
-            // The same list as Setup's other steps (Turn On Developer Mode).
-            HowToSection(lines: [
-                "Tap **Open Settings** below.",
-                "On Poki’s page, tap **Keyboards**.",
-                "Turn on **Poki**, then **Allow Full Access**.",
-            ]) {
-                Text("If Poki’s page has no Keyboards row, open **Settings › General › Keyboard › Keyboards › Add New Keyboard**, choose **Poki**, then tap it in that list and turn on **Allow Full Access**.")
+            // The same list as Setup's other steps (Turn On Developer Mode). Once the keyboard is added these
+            // steps are behind the person, so only the field above is left.
+            if !state.waitingForPanel {
+                HowToSection(lines: [
+                    "Tap **Open Settings** below.",
+                    "On Poki’s page, tap **Keyboards**.",
+                    "Turn on **Poki**, then **Allow Full Access**.",
+                ]) {
+                    Text("If Poki’s page has no Keyboards row, open **Settings › General › Keyboard › Keyboards › Add New Keyboard**, choose **Poki**, then tap it in that list and turn on **Allow Full Access**.")
+                }
             }
             Section {
                 Button("Open Settings", systemImage: "gear") {
