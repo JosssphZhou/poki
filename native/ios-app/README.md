@@ -14,7 +14,8 @@ and is chosen per launch with `-automationPath runner`.
 The default path on every supported iOS version is the XCTest session, including text input.
 It does not switch to the Poki keyboard. A saved manual method choice is preserved on update.
 
-A third path, **Native services**, remains an experimental option on the local connection page. It uses the
+A third path, **Experimental Native Services**, is available in **Setup > Advanced > Testing Options**.
+Its **Typing** settings appear only when the option is on. It uses the
 paired accessibility, screenshot and HID services shared with the Mac/Linux bridge, without opening an
 XCTest session or showing its automation banner. Those services stream the screen and take touches
 only from iOS 27 (#1 on iOS 18.6.2 and #18 on iOS 26.6 could not tap). The normal PokiCore control

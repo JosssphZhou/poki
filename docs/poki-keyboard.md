@@ -83,7 +83,9 @@ carries no text.
 
 ## Settings
 
-Setup → Advanced → Typing:
+In **Setup > Advanced > Testing Options**, turn on **Experimental Native Services** to show **Typing**.
+These settings apply to the native experiment. The default XCTest path does not use the Poki keyboard or switch input methods.
+Changing the automation path takes effect when Poki next opens.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
