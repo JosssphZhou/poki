@@ -55,7 +55,7 @@ final class AppModel {
     /// longer pause the runner stops, and the agent's next request starts it again.
     /// In-process: close the automation session (and iOS's banner) when Poki stands by. Off by
     /// default until a session reopened in the same launch is shown to answer reads on the phone.
-    var closeSessionWhenIdle: Bool = UserDefaults.standard.object(forKey: "inProcess.closeWhenIdle") as? Bool ?? true {
+    var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
         didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
     }
     /// Agents › Approvals › Ask Before Sensitive Steps: how the owner is asked, or never. PokiCore
