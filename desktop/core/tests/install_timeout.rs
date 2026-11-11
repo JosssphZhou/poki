@@ -33,6 +33,12 @@ async fn stalled_install_explains_how_to_retry(listener: &tokio::net::TcpListene
         connection
     }).await.expect("the installer must reach the isolated device service");
 
+    assert!(events.lock().unwrap().iter().any(|event| matches!(event,
+        Progress::Note { id, text } if id == "install"
+            && text.contains("close Poki on your iPhone")
+            && text.contains("chats and settings will be kept")
+    )), "explain that installation closes Poki and keeps chats and settings before contacting the phone");
+
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(600)).await;
     let error = tokio::time::timeout(Duration::from_secs(1), install).await
