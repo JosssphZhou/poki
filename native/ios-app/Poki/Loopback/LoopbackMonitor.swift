@@ -149,7 +149,10 @@ final class LoopbackMonitor {
 
     #if DEBUG
     /// Tests: set the state as a probe result would, running the change hook.
-    func simulate(_ next: State) {
+    func simulate(_ next: State, wifiUp: Bool? = nil, cellularUp: Bool? = nil) {
+        if let wifiUp { self.wifiUp = wifiUp }
+        if let cellularUp { self.cellularUp = cellularUp }
+        cellularOnly = Self.forcedCellular || (self.cellularUp && !self.wifiUp)
         let old = state
         guard !Self.same(next, state) else { return }
         state = next; checkedAt = Date()

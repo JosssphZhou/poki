@@ -50,11 +50,11 @@ final class AppModel {
     private(set) var currentApp: String?
     /// The runner is stopped until the next agent request (idle, or the owner tapped Stop runner).
     private(set) var runnerPaused = false
+    private(set) var automationPausedByOwner = false
     /// Stop the runner after this long without agent activity; 0 never stops it.
     /// 60 s by default. An agent can think for about a minute between steps of a long task; after a
     /// longer pause the runner stops, and the agent's next request starts it again.
-    /// In-process: close the automation session (and iOS's banner) when Poki stands by. Off by
-    /// default until a session reopened in the same launch is shown to answer reads on the phone.
+    /// In-process: close the automation session (and iOS's banner) when Poki stands by.
     var closeSessionWhenIdle: Bool = UserDefaults.standard.object(forKey: "inProcess.closeWhenIdle") as? Bool ?? true {
         didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
     }
@@ -415,6 +415,33 @@ final class AppModel {
     private var inProcessSession = InProcessSession.opening
     /// Poki's own automation session (ESP-152); a fake in tests.
     private let automation: InProcessAutomation
+
+    var canReuseInProcessSession: Bool {
+        sessionOn && automationPath == .inProcess && inProcessSession == .open && !inProcessUsedUp
+    }
+
+    /// The owner's preparation keeps this session through idle, even with Hide Banner When Idle on.
+    private var keepsSessionForCellular = false
+
+    var cellularPreparationReady: Bool {
+        keepsSessionForCellular && canReuseInProcessSession
+    }
+
+    var canPrepareAutomationBeforeCellular: Bool {
+        sessionOn && automationPath == .inProcess && !automationPausedByOwner &&
+            !InProcessWDA.automationDeclined && loopback.isWorking && !loopback.wifiUp && !loopback.cellularUp &&
+            !cellularPreparationReady
+    }
+
+    func prepareAutomationBeforeCellular() {
+        guard canPrepareAutomationBeforeCellular else { return }
+        keepsSessionForCellular = true
+        if runnerPaused {
+            resumeAutomation()
+        } else if runner.isRunning {
+            warmInProcess("cellular preparation")
+        }
+    }
     private var inProcessWarming = false
     /// iOS is asking the owner for the passcode to allow automation (in-process): an open has not
     /// answered in 5 s. The Live Activity and Poki's home ask the owner, and the agent reads that the
@@ -437,6 +464,7 @@ final class AppModel {
     /// PokiCore's next request finds its session gone and opens a new one through prepare.
     func closeInProcess(_ why: String, then: (@MainActor () -> Void)? = nil) {
         guard automationPath == .inProcess else { return }
+        keepsSessionForCellular = false
         inProcessSession = .opening
         // An open that was still under way when this close came answers for a session that is gone:
         // its answer is not taken (it would show .open, or keep .opening for good).
@@ -473,8 +501,9 @@ final class AppModel {
     /// connects, and when an agent's call finds the last try failed. prepare is idempotent: a session
     /// already open answers "reused" in milliseconds.
     func warmInProcess(_ why: String) {
-        guard automationPath == .inProcess, sessionOn, runner.isRunning else { return }
-        if InProcessWDA.automationDeclined { return }
+        let resumingStandby = runner.state == "standby" && canReuseInProcessSession
+        guard automationPath == .inProcess, sessionOn, !runnerPaused, !automationPausedByOwner,
+              runner.isRunning || resumingStandby, !InProcessWDA.automationDeclined else { return }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
         // Poki in front, the owner is told just before it (Continue opens; elsewhere the Live
         // Activity asks for the passcode once an open takes 5 s).
@@ -537,16 +566,32 @@ final class AppModel {
                 if ok { self.automationStarted() }
                 let detail = result["detail"] as? String ?? ""
                 // iOS gives up on the passcode after a minute and says only that enabling timed out.
-                let passcodeMissed = waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
+                let code = "\(result["code"] ?? "unknown")"
+                let passcodeMissed = code == "passcode_declined" || waitedForPasscode ||
+                    detail.localizedCaseInsensitiveContains("enabling automation mode")
                 // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
                 if !ok, passcodeMissed {
                     InProcessWDA.gate.withLock { $0.declined = true }
                     self.log.add("runner", "the passcode for automation was not entered: Poki will not ask again until it is turned on again")
                 }
-                let code = "\(result["code"] ?? "unknown")"
                 if ok { self.inProcessRepairs = 0 }
-                if !ok, !passcodeMissed, self.repairInProcess(code: code, why: why) { return }
+                if !ok, !passcodeMissed, !resumingStandby, self.repairInProcess(code: code, why: why) { return }
                 self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: code, detail: detail)
+                if resumingStandby, !self.runnerPaused, self.runner.state == "standby" {
+                    if ok || passcodeMissed {
+                        self.runner = RunnerStatus(state: "running")
+                    } else {
+                        self.keepsSessionForCellular = false
+                        // The launcher can also start through a mounted image when the loopback is down.
+                        if self.loopback.isWorking || Self.localDDIMounted {
+                            self.runnerChanged(RunnerStatus(state: "connecting"))
+                            self.launchRunner()
+                        } else {
+                            self.runnerChanged(RunnerStatus(state: "waiting_network", detail: "the kept automation session did not resume"))
+                        }
+                        return
+                    }
+                }
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
             }
         }
@@ -572,7 +617,7 @@ final class AppModel {
         let epoch = inProcessEpoch
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Double(attempt) * 1.5))
-            guard let self, self.sessionOn, epoch == self.inProcessEpoch else { return }
+            guard let self, self.sessionOn, !self.runnerPaused, epoch == self.inProcessEpoch else { return }
             // The launcher's start mounts the image and, once it runs, opens the session (warmInProcess).
             if remount { self.launcher.restart() } else { self.warmInProcess("Poki's own retry \(attempt) after \(code) (\(why))") }
         }
@@ -1090,6 +1135,7 @@ final class AppModel {
             confirmRunnerEnded()
         }
         idleTimer?.invalidate(); idleTimer = nil
+        automationPausedByOwner = false
         runnerPaused = false; host.setPaused(false)
         background.stop()
         activity.end()
@@ -1132,8 +1178,22 @@ final class AppModel {
         #endif
     }
 
-    /// Stops the runner, and with it iOS's automation banner, while the relay stays connected; the
-    /// next agent request starts it again. From the Stop runner button, the Live Activity, or idle.
+    /// Pauses automation until the owner resumes it, keeping the XCTest session and the relay.
+    func pauseKeptAutomation() {
+        guard canReuseInProcessSession, approvals.isEmpty else { return }
+        automationPausedByOwner = true
+        host.setPaused(true, byOwner: true)
+        AskPoki.stopRunning()
+        if !runnerPaused { pauseRunner(reason: "Paused from Home") }
+        else { log.add("runner", "paused from Home while standing by; keeping the automation session") }
+    }
+
+    func resumeAutomation() {
+        automationPausedByOwner = false
+        wakeRunner()
+    }
+
+    /// Stands by while the relay stays connected, from the Stop runner button, Live Activity, or idle.
     func pauseRunner(reason: String = "Stopped") {
         guard sessionOn, !runnerPaused, approvals.isEmpty else { return }
         // Allow on the Live Activity is followed by its layout changing under the finger: a Stop
@@ -1144,19 +1204,16 @@ final class AppModel {
             return
         }
         if automationPath == .inProcess {
-            // The in-process session is closed, and with it Automation Mode and iOS's banner; the
-            // next agent request opens a new one (a few seconds, no passcode within the same boot).
-            // The session stays open while Poki is on: a session reopened in the same launch answered
-            // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
-            // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
-            // banner) as they are. Turning Poki off still closes it.
-            // Without closing it, Automation Mode alone is turned off where iOS offers a way, so the
-            // banner shows only while an agent works; the next request's prepare turns it on again.
-            log.add("runner", closeSessionWhenIdle ? "standing by: \(reason); closing the in-process session, and the banner with it"
-                                                   : "standing by: \(reason); the in-process session stays open, Automation Mode (the banner) is turned off")
+            // The owner can keep the session and Automation Mode for cellular. Ordinary idle
+            // follows the banner setting, closing the session or trying to turn off Automation Mode alone.
+            let keepAutomationMode = automationPausedByOwner || cellularPreparationReady
+            let closeSession = closeSessionWhenIdle && !keepAutomationMode
+            log.add("runner", closeSession ? "standing by: \(reason); closing the in-process session, and the banner with it"
+                                           : "standing by: \(reason); keeping the in-process session")
             // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
-            if closeSessionWhenIdle { closeInProcess("standing by") } else { pauseAutomationMode() }
+            if closeSession { closeInProcess("standing by") }
+            else if !keepAutomationMode { pauseAutomationMode() }
             // The launcher stays: the disk image is mounted and the next session opens through
             // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
@@ -1227,9 +1284,11 @@ final class AppModel {
     /// The runner is off and starts on the next agent request.
     private func standBy(reason: String?) {
         runnerPaused = true
-        runner = RunnerStatus(state: "standby", detail: reason.map { "\($0). It starts again when an agent asks." } ?? "It starts when an agent asks.")
+        let detail = automationPausedByOwner ? "Tap Paused on the Poki home screen to resume" :
+            reason.map { "\($0). It starts again when an agent asks." } ?? "It starts when an agent asks."
+        runner = RunnerStatus(state: "standby", detail: detail)
         host.update(runner: .starting(automationPath == .inProcess ? "opening the automation session" : automationPath == .nativeServices ? "opening native services" : "starting the runner"))
-        host.setPaused(true)
+        host.setPaused(true, byOwner: automationPausedByOwner)
         activityText = "Idle"
         activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
         // Between tasks is when the method may change (the loopback came back during a task on the
@@ -1239,7 +1298,7 @@ final class AppModel {
 
     /// Starts a paused runner again (the next agent request, or the owner).
     func wakeRunner() {
-        guard sessionOn, runnerPaused else { return }
+        guard sessionOn, runnerPaused, !automationPausedByOwner else { return }
         reconsiderMethod("an agent asked")
         runnerPaused = false
         host.setPaused(false)
@@ -1258,7 +1317,11 @@ final class AppModel {
         if automationPath == .inProcess, inProcessUsedUp {
             log.add("runner", "an agent asked after the session of this launch was closed: opening a new one in place")
         }
-        if automationPath == .inProcess, runner.isRunning { warmInProcess("an agent asked"); return }
+        if canReuseInProcessSession {
+            host.update(runner: .starting("checking the kept automation session"))
+            warmInProcess("resuming the kept automation session")
+            return
+        }
         launchRunner()
     }
 
@@ -1307,10 +1370,12 @@ final class AppModel {
             log.add("loopback", "10.7.0.1 answers already: the external connection is the recorded choice")
         }
         if wasWorking, !loopback.isWorking {
-            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state)); the runner cannot survive this")
+            log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state))" +
+                    (canReuseInProcessSession ? "; an in-process session is still open" : ""))
         } else if !wasWorking, loopback.isWorking, old != .checking {
-            log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
-            if sessionOn, !runner.isRunning, !runnerPaused { launcher.restart() }
+            let needsLauncher = sessionOn && !runner.isRunning && !runnerPaused && !canReuseInProcessSession
+            log.add("loopback", "back: 10.7.0.1 answers again" + (needsLauncher ? "; starting the runner now" : ""))
+            if needsLauncher { launcher.restart() }
         }
         // The loopback answers: check the pairing now, before anything needs it.
         if !wasWorking, loopback.isWorking { Task { await verifyPairing() } }
@@ -1327,6 +1392,10 @@ final class AppModel {
     func coreState(of status: RunnerStatus) -> RunnerState {
         // The owner decides before the XCTest session (and iOS's banner) stands in for native services.
         if let methodAsk, automationPath == .nativeServices { return .starting(Self.agentWords(methodAsk)) }
+        if status.state == "standby", automationPath == .inProcess, !runnerPaused {
+            if inProcessSession == .waitingForPasscode { return inProcessSession.agentState }
+            if canReuseInProcessSession { return .starting("checking the kept automation session") }
+        }
         // In-process, a running launcher only mounted the disk image; tools wait for the session.
         if automationPath == .inProcess, status.state == "running", inProcessSession != .open {
             return inProcessSession.agentState
@@ -1971,13 +2040,16 @@ final class AppModel {
         }
     }
 
-    var setupComplete: Bool { SetupStep.shown.allSatisfy(isDone) }
+    var setupPendingCount: Int {
+        SetupStep.shown.filter { !isDone($0) && !($0 == .loopback && canReuseInProcessSession) }.count
+    }
+    var setupComplete: Bool { setupPendingCount == 0 }
 
     /// A step as Home, the tab badge and the status pill show it: the loopback's first check after
     /// launch (a connection was chosen before) counts as done until it says otherwise, so Poki shows
-    /// Ready rather than Paused and a warning for the second it takes. The Setup page keeps isDone.
+    /// Ready while it checks. An open session can also keep working without a reachable loopback.
     func looksDone(_ step: SetupStep) -> Bool {
-        if step == .loopback, loopback.state == .checking, setup.loopback != .none { return true }
+        if step == .loopback, canReuseInProcessSession || (loopback.state == .checking && setup.loopback != .none) { return true }
         return isDone(step)
     }
     var setupLooksComplete: Bool { SetupStep.shown.allSatisfy(looksDone) }
@@ -2033,7 +2105,9 @@ final class AppModel {
     /// Looks at the conditions again and changes the method where that interrupts nothing: Poki is
     /// off, stands by between tasks, or the method in use cannot start anyway (`force`).
     func reconsiderMethod(_ moment: String, force: Bool = false) {
-        guard methodIsChosenForOwner, switching != nil else { return }
+        guard methodIsChosenForOwner, switching != nil, !automationPausedByOwner else { return }
+        // Keep the method selected for cellular preparation while Wi-Fi is off.
+        if keepsSessionForCellular, !loopback.wifiUp, !InProcessWDA.automationDeclined { return }
         let waiting = methodAsk != nil
         let choice = AutomationChooser.choose(chooserConditions)
         let ask = sessionOn || moment == "turning on" ? choice.ask : nil

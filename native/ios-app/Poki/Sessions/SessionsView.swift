@@ -22,6 +22,7 @@ struct SessionsView: View {
     private var store: SessionStore { SessionStore.shared }
 
     var body: some View {
+        let powerState = powerState
         List {
             // What matters before any conversation: whether Poki is on, whether agents can reach it,
             // and what setup still needs.
@@ -121,8 +122,12 @@ struct SessionsView: View {
         .toolbar {
             HomeBrand()
             ToolbarItem(placement: .topBarTrailing) {
-                PowerButton(state: !model.setupLooksComplete && !model.canStartWithoutLoopback ? .paused : model.sessionOn ? .ready : .stopped,
-                            turnOn: { model.startSession() }, turnOff: { chat.stop(); model.stopSession() }, openSetup: openSetup)
+                PowerButton(state: powerState) { handlePowerButton(powerState) }
+                    .contextMenu {
+                        if model.sessionOn {
+                            Button("Turn Poki Off", systemImage: "power", role: .destructive, action: turnPokiOff)
+                        }
+                    }
             }
         }
         .alert("Rename Session", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -174,6 +179,31 @@ struct SessionsView: View {
     private var needsSetup: Bool { model.pairingPath == nil || model.setupStepsLeft }
 
     private var setupLeft: Int { model.setupLooksComplete ? 0 : SetupStep.shown.filter { !model.looksDone($0) }.count }
+
+    private var powerState: PowerButton.Status {
+        if model.automationPausedByOwner { return .paused }
+        if model.canReuseInProcessSession, !model.loopback.isWorking { return .readyToPause }
+        if !model.setupLooksComplete, !model.canStartWithoutLoopback { return .needsSetup }
+        return model.sessionOn ? .ready : .stopped
+    }
+
+    private func handlePowerButton(_ state: PowerButton.Status) {
+        switch state {
+        case .ready: turnPokiOff()
+        case .readyToPause:
+            guard model.approvals.isEmpty else { return }
+            chat.stop()
+            model.pauseKeptAutomation()
+        case .paused: model.resumeAutomation()
+        case .stopped: model.startSession()
+        case .needsSetup: openSetup()
+        }
+    }
+
+    private func turnPokiOff() {
+        chat.stop()
+        model.stopSession()
+    }
 
     /// What the Agents tab needs, if anything (the same test as its tab bar dot).
     private var agentsIssue: String? {
@@ -257,29 +287,22 @@ struct HomeBrand: ToolbarContent {
     }
 }
 
-/// Poki's state as a fixed-width pill at the top right: Ready (blue, on; a tap turns it off), Stopped
-/// (red, off; a tap turns it on), Paused (orange, a setup item is open; a tap opens Setup). Words as
-/// well as colours, so the state reads without colour. A haptic for each turn.
+/// The Home control distinguishes a kept, paused session from one that still needs setup.
 struct PowerButton: View {
-    enum Status { case ready, stopped, paused }
+    enum Status { case ready, readyToPause, stopped, paused, needsSetup }
     var state: Status
-    var turnOn: () -> Void
-    var turnOff: () -> Void
-    var openSetup: () -> Void
+    var action: () -> Void
 
     var body: some View {
         Button {
             switch state {
-            case .ready:
+            case .ready, .readyToPause:
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                turnOff()
-            case .stopped:
+            case .stopped, .paused:
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                turnOn()
-            case .paused:
-                // A setup item is open: the fix is there, not in turning on.
-                openSetup()
+            case .needsSetup: break
             }
+            action()
         } label: {
             // The state's symbol before its word, a touch taller than the text, in a pill of fixed width.
             HStack(spacing: 5) {
@@ -299,30 +322,42 @@ struct PowerButton: View {
         .animation(.snappy, value: state)
         .accessibilityLabel(Text("Poki"))
         .accessibilityValue(Text(word))
-        .accessibilityHint(Text(state == .ready ? "Turns Poki off" : state == .stopped ? "Turns Poki on" : "Opens Setup"))
+        .accessibilityHint(Text(hint))
     }
 
     private var word: LocalizedStringKey {
         switch state {
-        case .ready: "Ready"
+        case .ready, .readyToPause: "Ready"
         case .stopped: "Stopped"
         case .paused: "Paused"
+        case .needsSetup: "Setup Needed"
+        }
+    }
+
+    private var hint: LocalizedStringKey {
+        switch state {
+        case .ready: "Turns Poki off"
+        case .readyToPause: "Pauses automation and keeps the session"
+        case .stopped: "Turns Poki on"
+        case .paused: "Resumes automation"
+        case .needsSetup: "Opens Setup"
         }
     }
 
     private var symbol: String {
         switch state {
-        case .ready: "checkmark.circle.fill"
+        case .ready, .readyToPause: "checkmark.circle.fill"
         case .stopped: "power"
-        case .paused: "exclamationmark.triangle.fill"
+        case .paused: "pause.circle.fill"
+        case .needsSetup: "exclamationmark.triangle.fill"
         }
     }
 
     private var tint: Color {
         switch state {
-        case .ready: .blue
+        case .ready, .readyToPause: .blue
         case .stopped: .red
-        case .paused: .orange
+        case .paused, .needsSetup: .orange
         }
     }
 }
