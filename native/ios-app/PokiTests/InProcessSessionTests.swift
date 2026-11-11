@@ -7,6 +7,17 @@ import XCTest
 /// owner cancelled the passcode, testmanagerd did not answer within 3 s), an agent's call hears why at
 /// once and asks for another try, instead of every call waiting out "opening the session".
 final class InProcessSessionTests: XCTestCase {
+    func testDefaultTypingDoesNotRequestThePokiKeyboard() {
+        let defaults = UserDefaults.standard
+        let saved = defaults.object(forKey: NativeServicesWDA.typingMethodKey)
+        defer { defaults.set(saved, forKey: NativeServicesWDA.typingMethodKey) }
+        defaults.removeObject(forKey: NativeServicesWDA.typingMethodKey)
+        let transport = SwitchingTransport(xctest: InProcessWDA(screen: CGSize(width: 402, height: 874)),
+                                           native: nil, start: .xctest)
+        XCTAssertFalse(transport.typesThroughKeyboard,
+                       "Default typing and task cleanup must not switch to or release the Poki keyboard")
+    }
+
     func testAFailedOpenIsAnsweredWithItsReasonAndTheCallTriesAgain() {
         let host = AppCoreHost()
         let tries = Tries()
