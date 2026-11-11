@@ -60,23 +60,51 @@ final class CancelTests: XCTestCase {
         XCTAssertEqual(homePresses(wda), 0, "\(wda.sent)")
     }
 
-    /// A do stopped after an action went out has not read the screen since. The element numbers of
-    /// the read before are dropped, so the next call cannot tap where an element was.
     func testElementNumbersAreDroppedAfterAStoppedDoThatSentSomething() async throws {
-        let (core, wda, _) = makeCore()
-        _ = await core.call("look", [:])
-        wda.set("POST /wda/tap") { _ in try await Task.sleep(nanoseconds: 2_000_000_000); return (200, ["value": .null]) }
-        let call = Task { await core.call("do", ["actions": [["tap": 1]]]) }
-        let tapping = await eventually(3) { !wda.bodies("POST /wda/tap").isEmpty }
-        XCTAssertTrue(tapping)
-        call.cancel()
-        _ = await call.value
-        wda.set("POST /wda/tap") { _ in (200, ["value": .null]) }
-        // The stopped call ends out of sight, just after its caller was answered.
-        try await Task.sleep(nanoseconds: 300_000_000)
-        let next = await core.call("do", ["actions": [["tap": 1]]])
-        XCTAssertTrue(next.text.contains("is not in the latest read; nothing was sent"), next.text)
-        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "\(wda.sent)")
+        enum StopAt: CaseIterable { case action, beforeApproval, approval, read }
+        for phase in StopAt.allCases {
+            let (core, wda, _) = makeCore { $0.approvalWait = 10 }
+            wda.source([("Button", "General"), ("Button", "Delete")])
+            _ = await core.call("look", [:])
+            let reached = expectation(description: "Reached \(phase)")
+            let released = phase == .approval ? nil : expectation(description: "Transport released at \(phase)")
+            let hold = AsyncStream<Void> { _ in }
+            let route: FakeWDA.Route = { _ in
+                reached.fulfill()
+                defer { released?.fulfill() }
+                for await _ in hold {}
+                throw CancellationError()
+            }
+            let listener: Task<Void, Never>?
+            switch phase {
+            case .action, .beforeApproval:
+                wda.set("POST /wda/tap", route)
+                listener = nil
+            case .read:
+                wda.set("GET /source", route)
+                listener = nil
+            case .approval:
+                listener = Task {
+                    for await event in core.events {
+                        if case .approvalRequested = event { reached.fulfill(); return }
+                    }
+                }
+            }
+            let needsApproval = phase == .beforeApproval || phase == .approval
+            let actions: JSON = needsApproval ? [["tap": 1], ["tap": 2]] : [["tap": 1]]
+            let call = Task { await core.call("do", ["actions": actions]) }
+            await fulfillment(of: [reached], timeout: 3)
+            call.cancel()
+            _ = await call.value
+            if let released { await fulfillment(of: [released], timeout: 3) }
+            listener?.cancel()
+            wda.set("POST /wda/tap") { _ in (200, ["value": .null]) }
+            wda.source([("Button", "New page")])
+            let next = await core.call("do", ["actions": [["tap": 1]]])
+            XCTAssertTrue(next.text.contains("is not in the latest read; nothing was sent"), "\(phase): \(next.text)")
+            XCTAssertTrue(next.text.contains("New page"), "\(phase): \(next.text)")
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "\(phase): \(wda.sent)")
+        }
     }
 
     /// A paste stopped part way: nothing more is sent, but the owner's clipboard still goes back.
