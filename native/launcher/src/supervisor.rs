@@ -6,6 +6,7 @@ use crate::{
     ddi,
     device::{DDI_TIMEOUT_FIX, Device, Failure, LOOPBACK_FIX, NETWORK_FIX, Pairing},
     launch,
+    remote::Stage,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -36,6 +37,15 @@ pub struct Config {
     /// image (the XCTest libraries the app loads) and starts no runner.
     #[serde(default)]
     pub in_process: bool,
+}
+
+impl Config {
+    pub(crate) fn can_try_local_ddi(&self, failure: &Failure, mounted_locally: impl FnOnce() -> bool) -> bool {
+        self.in_process
+            && self.device_address == default_address()
+            && failure.remote_stage == Some(Stage::Connect)
+            && mounted_locally()
+    }
 }
 
 /// The longest a disk image mount may take (Apple's signing server plus the upload).
@@ -195,6 +205,16 @@ impl Launcher {
         launch::end(&mut device).await.map_err(|e| e.to_string())
     }
 
+    async fn wait_in_process(&self, attempt: u32, status: Value, commands: &mut watch::Receiver<Command>) -> Result<(), Failure> {
+        self.set("running", attempt, status);
+        while commands.changed().await.is_ok() {
+            if *commands.borrow_and_update() != Command::Run {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     /// One launch and the watch over it. Ok when a running runner later stopped answering.
     async fn once(me: std::sync::Arc<Self>, attempt: u32, commands: &mut watch::Receiver<Command>) -> Result<(), Failure> {
         let config = me.config.clone();
@@ -202,7 +222,14 @@ impl Launcher {
         let mut pairing = Pairing::read(&config.pairing_file, config.host_name.as_deref())?;
         let kind = pairing.kind().name();
         me.set("pairing", attempt, json!({"pairing": kind}));
-        let mut device = Device::open(config.device_address, &mut pairing, Duration::from_secs(20)).await?;
+        let mut device = match Device::open(config.device_address, &mut pairing, Duration::from_secs(20)).await {
+            Ok(device) => device,
+            Err(failure) if config.can_try_local_ddi(&failure, ddi::mounted_locally) => {
+                // The mounted framework permits an attempt. Swift opens and checks the actual session.
+                return me.wait_in_process(attempt, json!({"runner": "in-process", "code": "local_ddi"}), commands).await;
+            }
+            Err(failure) => return Err(failure),
+        };
         if !ddi::mounted(&device) {
             me.set("mounting_ddi", attempt, json!({"pairing": kind}));
             // Apple's signing server and a ~20 MB upload: bounded, so a stalled network cannot hold
@@ -230,15 +257,7 @@ impl Launcher {
         let ios = device.ios_version().await.unwrap_or_default();
         if config.in_process {
             drop(device);
-            me.set("running", attempt, json!({"pairing": kind, "ios": ios, "runner": "in-process"}));
-            loop {
-                if commands.changed().await.is_err() {
-                    return Ok(());
-                }
-                if *commands.borrow_and_update() != Command::Run {
-                    return Ok(());
-                }
-            }
+            return me.wait_in_process(attempt, json!({"pairing": kind, "ios": ios, "runner": "in-process"}), commands).await;
         }
         me.set("launching", attempt, json!({"pairing": kind, "ios": ios}));
         let bundle = launch::find_runner(&mut device, config.runner_bundle.as_deref()).await?;

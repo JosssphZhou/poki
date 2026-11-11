@@ -1,5 +1,8 @@
 use super::*;
-use crate::device::{Device, LOOPBACK_FIX, PAIRING_FIX, Pairing, PairingKind};
+use crate::{
+    device::{Device, LOOPBACK_FIX, PAIRING_FIX, Pairing, PairingKind, remote_failure},
+    remote::{REMOTE_PAIRING_PORT, RemoteError, Stage},
+};
 use idevice::remote_pairing::RpPairingFile;
 use serde_json::json;
 use std::{
@@ -65,13 +68,58 @@ fn without_the_loopback_it_waits_for_the_network_and_keeps_trying() {
     std::fs::remove_file(&path).unwrap();
 }
 
+#[test]
+fn local_ddi_fallback_requires_a_mounted_image_and_the_local_remote_connect_failure() {
+    let mut config: Config = serde_json::from_value(json!({"pairing_file": "/p", "in_process": true})).unwrap();
+    let connect = remote_failure(RemoteError { stage: Stage::Connect, detail: "TCP refused".into() });
+    assert!(config.can_try_local_ddi(&connect, || true));
+    assert!(!config.can_try_local_ddi(&connect, || false));
+    for stage in [Stage::Handshake, Stage::PairVerify, Stage::Listener, Stage::Tunnel, Stage::Rsd] {
+        let failure = remote_failure(RemoteError { stage, detail: "device socket io failed".into() });
+        assert!(!config.can_try_local_ddi(&failure, || true), "{stage:?}");
+    }
+    config.in_process = false;
+    assert!(!config.can_try_local_ddi(&connect, || true));
+    config.in_process = true;
+    config.device_address = "127.0.0.1".parse().unwrap();
+    assert!(!config.can_try_local_ddi(&connect, || true));
+}
+
+#[tokio::test]
+async fn remote_tcp_refusal_is_distinct_from_the_whole_device_timeout() {
+    let _port = PORT_49152_TAKEN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut pairing = Pairing::Remote {
+        file: RpPairingFile::generate("Poki"),
+        host_name: "Poki".into(),
+    };
+    let address = "127.0.0.1".parse().unwrap();
+    let refused = Device::open(address, &mut pairing, Duration::from_secs(5))
+        .await
+        .err()
+        .expect("no listener should mean a connection failure");
+    assert_eq!(refused.remote_stage, Some(Stage::Connect));
+    assert_eq!(refused.code, Some("loopback"));
+
+    // Let TCP connect into the backlog while no one responds to the pairing handshake.
+    let _listener = tokio::net::TcpListener::bind((address, REMOTE_PAIRING_PORT)).await.unwrap();
+    let timed_out = Device::open(address, &mut pairing, Duration::from_millis(100))
+        .await
+        .err()
+        .expect("the device open should time out");
+    assert_eq!(timed_out.remote_stage, None);
+    assert_eq!(timed_out.code, Some("loopback"));
+    assert!(timed_out.detail.starts_with("the phone's developer services did not answer"));
+    let config: Config = serde_json::from_value(json!({"pairing_file": "/p", "in_process": true})).unwrap();
+    assert!(!config.can_try_local_ddi(&timed_out, || true));
+}
+
 /// GitHub issue 69: the loopback takes the connection, then the phone's remote pairing service never
 /// answers. Developer Mode is on (it cannot go off without a restart), so that is not the fix, and
 /// the pairing was never checked, so the app must not read it as refused.
 #[tokio::test]
 async fn a_remote_pairing_service_that_takes_the_connection_and_never_answers_is_not_called_developer_mode() {
     let _port = PORT_49152_TAKEN.lock().unwrap_or_else(|e| e.into_inner());
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", crate::remote::REMOTE_PAIRING_PORT)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", REMOTE_PAIRING_PORT)).await.unwrap();
     tokio::spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
             drop(stream);
@@ -85,6 +133,8 @@ async fn a_remote_pairing_service_that_takes_the_connection_and_never_answers_is
         Err(failure) => failure,
     };
     std::fs::remove_file(&path).unwrap();
+    assert_eq!(failure.remote_stage, Some(Stage::Handshake));
+    assert_eq!(failure.code, Some("handshake"));
     assert!(failure.detail.starts_with("remote pairing handshake failed"), "{}", failure.detail);
     let fix = failure.fix.expect("the owner is told what to do");
     assert!(!fix.contains("Developer Mode"), "{fix}");
@@ -183,7 +233,6 @@ fn disk_image_failures_name_their_own_fix() {
 /// Anything else that cannot be told apart is "can't reach this iPhone", with the loopback first.
 #[test]
 fn only_the_phone_saying_so_is_called_developer_mode_off() {
-    use crate::remote::{RemoteError, Stage};
     use idevice::IdeviceError;
     let says_developer_mode_off = |failure: &crate::device::Failure| {
         failure.code == Some("developer_mode") || failure.fix.as_deref().is_some_and(|fix| fix.starts_with("Turn on Developer Mode"))
