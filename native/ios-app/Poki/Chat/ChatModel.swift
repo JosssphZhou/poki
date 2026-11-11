@@ -415,7 +415,10 @@ final class ChatModel {
         let stopped = task
         Task { [weak self] in
             await stopped?.value
-            _ = await self?.app.phoneSettles(within: 30)
+            while let app = self?.app {
+                guard !Task.isCancelled else { return }
+                if await app.phoneSettles(within: 30) { break }
+            }
             guard let self, let i = self.entries.firstIndex(where: { $0.id == stopping.id }) else { return }
             self.entries[i].kind = .poki(String(localized: "Stopped."))
             self.persist()

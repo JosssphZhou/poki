@@ -7,6 +7,11 @@ private final class NativeInputGate: @unchecked Sendable {
     private let lock = NSLock()
     private var occupied = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
+    var isIdle: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !occupied
+    }
     func acquire() async {
         await withCheckedContinuation { continuation in
             lock.lock()
@@ -97,6 +102,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
     /// PokiCore asks Poki's keyboard first (`keyboard: true` on /wda/keys) and types the old way when
     /// the keyboard declines.
     var typesThroughKeyboard: Bool { !Self.pasteAllowed }
+    var inputIsIdle: Bool? { inputGate.isIdle }
 
     /// How text is entered (Setup › Advanced › Typing): "keyboard", the default, is Poki's keyboard
     /// with key presses behind it and never the clipboard; "paste" is key presses with a paste for

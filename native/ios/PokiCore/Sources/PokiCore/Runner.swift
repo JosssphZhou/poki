@@ -31,11 +31,14 @@ public protocol HTTPTransport: Sendable {
     /// `keyboard: true` answers `{keyboard: "typed", check, tail, moved}`, or `{keyboard: "declined"}`
     /// when the keyboard never had the text and it is to be typed the usual way.
     var typesThroughKeyboard: Bool { get }
+    /// Native transports can observe input completion directly. Nil uses WDA's queued probe.
+    var inputIsIdle: Bool? { get }
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data)
 }
 
 public extension HTTPTransport {
     var typesThroughKeyboard: Bool { false }
+    var inputIsIdle: Bool? { nil }
 }
 
 public enum TransportError: Error, Sendable {
@@ -327,10 +330,17 @@ public final class Runner: @unchecked Sendable {
     /// The runner was restarted: its settings are the defaults again.
     func forgetRunner() { forgetSession(); settingsApplied.value = false; limits.value = .full; stall.value = nil }
 
-    /// Whether the runner is through with the request this side gave up on: a cheap queued request
-    /// (opening the session, or the active app) answered within `timeout` means the queue has
-    /// drained past it. Nothing is sent to a runner that is still busy.
+    /// Native input has its own completion state. WDA needs a queued session or active-app reply
+    /// to prove that the request this side gave up on has finished.
     func waitUntilFree(timeout: Double) async -> Bool {
+        if transport.inputIsIdle != nil {
+            let until = now() + max(0, timeout)
+            while transport.inputIsIdle == false, now() < until {
+                guard !Task.isCancelled else { return false }
+                await sleep(seconds: min(0.05, max(0, until - now())))
+            }
+            return transport.inputIsIdle == true
+        }
         guard busyWith != nil else { return true }
         let t = max(0.3, timeout)
         if hasSession {
@@ -345,7 +355,11 @@ public final class Runner: @unchecked Sendable {
     /// request has given up and the queue has drained past it), false if not within `timeout`.
     func settle(timeout: Double) async -> Bool {
         let until = now() + timeout
-        while waitingOn.value > 0, now() < until { await sleep(seconds: 0.05) }
+        while waitingOn.value > 0, now() < until {
+            guard !Task.isCancelled else { return false }
+            await sleep(seconds: min(0.05, max(0, until - now())))
+        }
+        guard waitingOn.value == 0 else { return false }
         return await waitUntilFree(timeout: until - now())
     }
 

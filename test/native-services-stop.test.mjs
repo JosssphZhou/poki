@@ -7,7 +7,10 @@ import { join, resolve } from 'node:path';
 
 const exec = promisify(execFile);
 
-test('native input completion survives cancellation and session recreation', { timeout: 180000 }, async t => {
+test('native input completion survives cancellation and session recreation', {
+  timeout: 180000,
+  skip: process.platform !== 'darwin' && 'The native iOS transport contract uses macOS Swift',
+}, async t => {
   const dir = await mkdtemp(join(tmpdir(), 'poki-native-stop-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await mkdir(join(dir, 'Sources/UIKit'), { recursive: true });
