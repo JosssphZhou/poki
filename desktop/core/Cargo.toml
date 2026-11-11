@@ -66,3 +66,8 @@ libloading = "0.8"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "install_timeout"
+harness = false
+required-features = ["device"]
