@@ -1,5 +1,5 @@
 # Pre-alpha: every merge into main is built and published to the Pre-alpha channel, with no tag to
-# push and no step to wait for. One macOS job does it all (version, build, tag, publish), because
+# push. The alpha environment requires approval before the job starts. One macOS job does it all, because
 # each extra job costs a runner pickup. It runs on main so that the caches it saves are the ones
 # every later run can read; a run from a tag could only read main's caches, and main had none, so
 # every release build used to start cold (about 20 minutes, 9 of them in PiSwiftAI).
@@ -29,6 +29,7 @@ jobs:
   prealpha:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
+    environment: alpha
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
