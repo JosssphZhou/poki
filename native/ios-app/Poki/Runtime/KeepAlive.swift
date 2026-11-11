@@ -12,8 +12,11 @@ final class KeepAlive {
     private var engine: AVAudioEngine?
     private var player: AVAudioPlayerNode?
     private var interruption: NSObjectProtocol?
+    private var interrupted = false
 
-    var state: KeepAliveState.Audio { .init(engine: engine != nil, running: engine?.isRunning == true, playerPlaying: player?.isPlaying == true) }
+    var state: KeepAliveState.Audio {
+        .init(engine: engine != nil, running: engine?.isRunning == true, playerPlaying: player?.isPlaying == true, interrupted: interrupted)
+    }
     var isPlaying: Bool { state == .playing }
 
     func start() throws {
@@ -34,12 +37,14 @@ final class KeepAlive {
         player.play()
         self.engine = engine
         self.player = player
+        interrupted = false
         Self.playing += 1
         // Another app's audio can interrupt the session; start again when it ends.
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Task { @MainActor in
                 guard let self, let engine = self.engine else { return }
+                if type == .began { self.interrupted = true; return }
                 try? AVAudioSession.sharedInstance().setActive(true)
                 if !engine.isRunning { try? engine.start(); player.play() }
             }

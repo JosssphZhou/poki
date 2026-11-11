@@ -2,11 +2,12 @@
 /// frameworks, so the decision is tested on a Mac.
 struct KeepAliveState: Equatable {
     /// The silent audio. An interruption, a route or configuration change, or a media services reset
-    /// stops the engine without releasing it: `.stopped`, which holds nothing up.
+    /// stops the engine without releasing it: `.stopped`, which holds nothing up. `interrupted`: another
+    /// app's audio (a call, an alarm) interrupted it, and it has not started again from scratch since.
     enum Audio: Equatable {
         case off, stopped, playing
 
-        init(engine: Bool, running: Bool, playerPlaying: Bool) {
+        init(engine: Bool, running: Bool, playerPlaying: Bool, interrupted: Bool) {
             self = !engine ? .off : running && playerPlaying ? .playing : .stopped
         }
     }
