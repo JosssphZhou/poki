@@ -95,6 +95,7 @@ release.
 
 ## Approval coverage
 
+Publishing Alpha, Beta, Stable, or uploading installers requires the repository owner's approval.
 The two Promote to Alpha workflows use `alpha`. The tag fallback selects `alpha` for Alpha and no
 environment for Pre-alpha. Main Pre-alpha builds and publishes automatically without approval.
 Beta and Stable use their respective environments in `publish-promotion.yml`.
