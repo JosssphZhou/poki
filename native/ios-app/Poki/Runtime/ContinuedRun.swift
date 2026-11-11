@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import os
 
 /// iOS 26's continued processing task: work the person started keeps running after Poki leaves the
 /// screen, shown by iOS with its own progress UI, with no silent audio and no location. Poki holds one
@@ -38,6 +39,9 @@ final class ContinuedRun {
     private var ticker: Task<Void, Never>?
     /// iOS ended the task before Poki turned off.
     var onExpired: (() -> Void)?
+    /// When iOS last called the task's expiration handler, kept before the hop to the main actor. On
+    /// the phone a stop from iOS's own UI left no end in the log; this says whether iOS called it.
+    nonisolated private static let expiryCalled = OSAllocatedUnfairLock<Date?>(initialState: nil)
     private(set) var isRunning = false
 
     /// Asks iOS for the task; must be called while Poki is in front. False when iOS refuses.
@@ -48,6 +52,7 @@ final class ContinuedRun {
         }
         let id = String(wildcard.dropLast()) + UUID().uuidString.prefix(8).lowercased()
         guard register(id) else { return false }
+        Self.expiryCalled.withLock { $0 = nil }
         let request = BGContinuedProcessingTaskRequest(identifier: id, title: String(localized: "Poki is on"), subtitle: subtitle)
         request.strategy = .fail
         do {
@@ -67,7 +72,8 @@ final class ContinuedRun {
         guard isRunning else { task.setTaskCompleted(success: true); return }
         self.task = task
         task.progress.totalUnitCount = 1_000
-        task.expirationHandler = { [weak self] in
+        task.expirationHandler = { @Sendable [weak self] in
+            Self.expiryCalled.withLock { $0 = Date() }
             Task { @MainActor in
                 guard let self, self.isRunning else { return }
                 AppLog.shared.add("background", "continued run ended by iOS")
@@ -96,6 +102,15 @@ final class ContinuedRun {
     }
 
     func end() { finish(success: true) }
+
+    /// The task is gone though iOS said nothing Poki heard (`why`): it is ended here, so it can be
+    /// asked for again.
+    func lost(_ why: String) {
+        guard isRunning else { return }
+        let called = Self.expiryCalled.withLock { $0 }
+        AppLog.shared.add("background", "continued run gone: \(why); iOS \(called.map { "called its end at \($0.formatted(date: .omitted, time: .standard)) but it never ran" } ?? "never called its end")")
+        finish(success: false)
+    }
 
     private func finish(success: Bool) {
         isRunning = false

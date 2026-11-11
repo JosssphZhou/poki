@@ -21,10 +21,15 @@ struct KeepAliveState: Equatable {
     /// How long iOS kept Poki suspended before now, as the heartbeat measures it (0 outside a beat).
     var suspendedFor: Double = 0
 
+    /// Longer than a busy main thread holds up the heartbeat: iOS suspended Poki. A continued run that
+    /// is really running never lets that happen, so one Poki still takes for running is gone (seen when
+    /// the person stopped it in iOS's own UI and Poki heard no end).
+    static let suspendedPastAStall: Double = 10
+
     /// Nil while Poki is off. `.nothing` means iOS will suspend Poki once it leaves the screen.
     var holder: Holder? {
         guard on else { return nil }
-        if continuedRun { return .continuedRun }
+        if continuedRun, suspendedFor < Self.suspendedPastAStall { return .continuedRun }
         if voice { return .voice }
         return audio == .playing ? .silentAudio : .nothing
     }

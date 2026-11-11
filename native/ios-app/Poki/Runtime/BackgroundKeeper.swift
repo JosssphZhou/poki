@@ -45,19 +45,29 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         startHeartbeat()
         // iOS 26 and later: the system's continued processing task keeps Poki up, with no audio and
         // no location. Silent audio only when iOS refuses it or ends it early.
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), !Self.silentAudioOnly {
             let run = ContinuedRun.shared
             continued = run
-            run.onExpired = { [weak self] in
-                guard let self, self.isOn else { return }
-                self.continuedRunEnded = true
-                self.watchInterruptions()
-                self.check("iOS ended the continued run")
-            }
+            run.onExpired = { [weak self] in self?.continuedRunOver("iOS ended the continued run") }
             if run.begin(subtitle: String(localized: "Agents can reach this iPhone")) { return }
         }
+        if Self.silentAudioOnly { AppLog.shared.add("background", "no continued run asked for (Testing Options › Silent Audio Only)") }
         startAudio()
         watchInterruptions()
+    }
+
+    /// Testing Options › Silent Audio Only: no continued run, so Poki starts where iOS ending one leads
+    /// (silent audio), and the phone can test it without the person stopping "Poki is on" by hand.
+    nonisolated static let silentAudioOnlyKey = "poki.background.silentAudioOnly"
+    private static var silentAudioOnly: Bool { UserDefaults.standard.bool(forKey: silentAudioOnlyKey) }
+
+    /// The continued run no longer holds Poki up: the silent audio stands in, and the continued run is
+    /// asked for again when Poki comes to the front.
+    private func continuedRunOver(_ why: String) {
+        guard isOn else { return }
+        continuedRunEnded = true
+        watchInterruptions()
+        check(why)
     }
 
     /// The iOS 26 continued run (typed loosely so this class builds for iOS 18).
@@ -74,7 +84,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
 
     /// Only while Poki is in front: iOS takes the request only from the foreground.
     private func askForContinuedRun(_ why: String) -> Bool {
-        guard #available(iOS 26.0, *), isOn, !continuedRunIsOn,
+        guard #available(iOS 26.0, *), isOn, !continuedRunIsOn, !Self.silentAudioOnly,
               ContinuedRun.shared.begin(subtitle: String(localized: "Agents can reach this iPhone")) else { return false }
         continuedRunEnded = false
         AppLog.shared.add("background", "continued run asked for again \(why): silent audio off")
@@ -208,6 +218,18 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     /// a step's deadline among them, wait for it to resume), logged with what holds Poki up now.
     private var heartbeat: Timer?
     private var lastBeat = Date()
+    private var lastHolder: KeepAliveState.Holder?
+    /// Caches/poki-keepalive.txt, written again every 10 s while Poki is on: when Poki last ran and what
+    /// held it up. A copy of the app's data then shows whether iOS suspended Poki (the time stops),
+    /// without bringing Poki to the front, which would change what holds it up.
+    private static let aliveFile = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("poki-keepalive.txt")
+    private static let aliveStamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+    private var lastAlive = Date.distantPast
 
     private func startHeartbeat() {
         lastBeat = Date()
@@ -223,6 +245,22 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         defer { lastBeat = now }
         if gap > 2.5 {
             AppLog.shared.add("background", "iOS paused Poki for \(Int(gap.rounded())) s, from \(lastBeat.formatted(date: .omitted, time: .standard)); now \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")")
+        }
+        var seen = state
+        seen.suspendedFor = gap
+        if #available(iOS 26.0, *), seen.continuedRun, seen.holder != .continuedRun, let run = continued as? ContinuedRun {
+            run.lost("iOS kept Poki suspended for \(Int(gap.rounded())) s while it was on")
+            continuedRunOver("the continued run was gone")
+        }
+        // Each change of what holds Poki up, so the log shows the state a test starts from.
+        if let holder = state.holder, holder != lastHolder {
+            AppLog.shared.add("background", "keep-alive: \(holder) holds Poki up now\(lastHolder.map { " (was \($0))" } ?? "")")
+            lastHolder = holder
+        }
+        if now.timeIntervalSince(lastAlive) >= 10, let file = Self.aliveFile {
+            lastAlive = now
+            let line = "\(Self.aliveStamp.string(from: now)) \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")\n"
+            DispatchQueue.global(qos: .utility).async { try? line.write(to: file, atomically: true, encoding: .utf8) }
         }
         if let retry, now >= retry.at { check("try \(retry.tries + 1)") }
         if let probe = renderProbe, now.timeIntervalSince(probe.at) >= 2 {
@@ -254,7 +292,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         guard isOn else { return }
         isOn = false
         continuedRunEnded = false
-        retry = nil; renderProbe = nil
+        retry = nil; renderProbe = nil; lastHolder = nil; lastAlive = .distantPast
         endBackgroundTime()
         heartbeat?.invalidate(); heartbeat = nil
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
