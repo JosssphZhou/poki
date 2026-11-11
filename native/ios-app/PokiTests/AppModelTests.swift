@@ -69,6 +69,23 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(AppModel.returnsAfterTask)
     }
 
+    func testIdleSessionStaysOpenByDefaultAndKeepsSavedPreference() {
+        let defaults = UserDefaults.standard
+        let preference = "inProcess.closeWhenIdle"
+        let saved = defaults.object(forKey: preference)
+        defer { defaults.set(saved, forKey: preference) }
+
+        defaults.removeObject(forKey: preference)
+        XCTAssertFalse(model().0.closeSessionWhenIdle,
+                       "Without a saved choice, idle must keep the XCTest session for the next task")
+        XCTAssertNil(defaults.object(forKey: preference), "Reading the default must not save a choice")
+
+        for choice in [false, true] {
+            defaults.set(choice, forKey: preference)
+            XCTAssertEqual(model().0.closeSessionWhenIdle, choice, "Keep the owner's saved preference")
+        }
+    }
+
     private func model() -> (AppModel, FakeLauncher) {
         let launcher = FakeLauncher()
         let model = AppModel(launcher: launcher, pairer: FakePairing())
