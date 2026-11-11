@@ -21,6 +21,13 @@ public struct SensitivityRules: Sendable, Equatable {
     public var enabled = true
     public init() {}
 
+    /// Only the known optional categories can be approved automatically. Unknown reasons stay with the owner.
+    public static func requiresOwnerConfirmation(reason: String) -> Bool {
+        if reason.hasPrefix("sending a message (a tap in ") { return true }
+        return !reason.hasPrefix("sending a message") && !reason.hasPrefix("a call (") &&
+            reason != "typing into a password field" && reason != "submitting a password field"
+    }
+
     static func matches(_ text: String, _ words: [String]) -> String? {
         let lowered = text.lowercased()
         for word in words {

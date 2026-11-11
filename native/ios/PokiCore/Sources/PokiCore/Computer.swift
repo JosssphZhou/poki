@@ -1066,10 +1066,16 @@ final class Computer: @unchecked Sendable {
     func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
         guard config.sensitive.enabled else { return nil }
         var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
+        var first: (at: Int, reason: String)?
         for (at, action) in actions.enumerated() {
-            if let reason = sensitive(action, &scan) { return (at, reason) }
+            guard let reason = sensitive(action, &scan) else { continue }
+            let firstIndex = first?.at ?? at
+            if first == nil { first = (at, reason) }
+            if SensitivityRules.requiresOwnerConfirmation(reason: reason) {
+                return (firstIndex, reason)
+            }
         }
-        return nil
+        return first
     }
 
     /// Why this action needs the owner's approval, or nil; `scan` moves on past it. `do` checks its

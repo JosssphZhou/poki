@@ -28,17 +28,18 @@ enum Harness {
     static var instructions: String { [PokiCore.toolInstructions, system].joined(separator: "\n\n") }
 
     /// The instructions for a task: the above, then the saved notes and the routines that fit it.
-    @MainActor static func instructions(for task: String) -> String {
+    @MainActor static func instructions(for task: String, asking: Bool) -> String {
         let brief = PokiCore.memoryBrief(for: task)
         var parts = [instructions]
         // Poki learns the owner's repeated tasks: a saved routine runs them in one call next time.
         // The routines that fit are in the brief below, so the first call can be the routine itself:
         // listing them first cost a whole model turn before anything happened on the phone.
         parts.append("Start acting in your first reply: the saved routines that fit this task are listed below, so when one covers it, run it at once with do {run: name} and do not list routines first. Send report_plan together with your first look or do, not as a turn of its own. When a task worked and was not a routine yet, save it with routines {action: \"save\", name, description} before finish_task, with a short name the owner would use, so it can be repeated next time.")
-        // A model decides approvals from what the owner said. A refused step goes through once the
-        // owner says yes to it, so the agent asks in words and tries again.
-        if ApprovalClassifier.mode == .reply {
-            parts.append("Approvals here are decided from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, naming the step, and if they say yes, send the same step again.")
+        parts.append("Payments, deletions, Wallet input and steps Poki cannot identify require the owner's approval on the phone. Wait for that approval; neither your judgement nor an earlier approval for another step replaces it. When approval is required, tell the owner to use the approval card. A handoff or its Done button is not approval for a payment or deletion.")
+        if !asking {
+            parts.append("Approvals for other sensitive actions are off for this session. Sending messages, making calls and entering passwords proceed without Poki approval. Do not promise to ask before those actions. Follow the user's task; system authentication and owner-only handoffs still apply.")
+        } else if ApprovalClassifier.mode == .reply {
+            parts.append("For other sensitive actions, approvals are decided from what the owner said in this chat. When one of those steps is refused (declined), ask the owner in plain words whether they want that step done, naming the step, and if they say yes, send the same step again. Payments, deletions, Wallet input and unidentified steps still require the approval card.")
         }
         if !brief.isEmpty { parts.append(brief) }
         return parts.joined(separator: "\n\n")

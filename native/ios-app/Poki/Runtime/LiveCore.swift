@@ -19,9 +19,14 @@ final class LiveCore: CoreSession {
         config.userRoutineLearning = { UserDefaults.standard.bool(forKey: "poki.experimental.userRoutines") }
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
-        // Sensitive steps wait for the owner unless they turned asking off in Agents › Approvals; the
-        // way they are asked, and the auto-approval in Poki's own chat, are ApprovalClassifier's.
-        config.sensitive.enabled = ApprovalClassifier.mode != .off
+        asksForOtherStepsAtLaunch = ApprovalClassifier.mode != .off
+        if !asksForOtherStepsAtLaunch {
+            config.sensitive.secureFields = false
+            config.sensitive.sending = []
+            config.sensitive.calling = []
+            config.sensitive.callingApps = []
+            config.sensitive.messagingApps = []
+        }
         core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation
@@ -31,10 +36,9 @@ final class LiveCore: CoreSession {
         core.onSession { signal in continuation.yield(.session(signal)) }
     }
 
-    /// Agents › Approvals › Ask Before Sensitive Steps. Read when Poki starts.
+    let asksForOtherStepsAtLaunch: Bool
     static let askKey = "approvals.ask"
-    /// On unless the owner turned it off: a phone that never chose asks.
-    static var asksBeforeSensitiveSteps: Bool { UserDefaults.standard.object(forKey: askKey) as? Bool ?? true }
+    static var asksBeforeSensitiveSteps: Bool { ApprovalClassifier.mode != .off }
 
     deinit { pump?.cancel() }
 

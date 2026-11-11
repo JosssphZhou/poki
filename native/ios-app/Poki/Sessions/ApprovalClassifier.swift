@@ -1,5 +1,6 @@
 import Foundation
 import PiSwiftAI
+import PokiCore
 
 /// Agents › Approvals. A step PokiCore's rules hold back (a payment, a message, a delete) is answered
 /// one of three ways, by the two selectors there:
@@ -19,7 +20,7 @@ enum ApprovalClassifier {
     nonisolated static let levelKey = "approvals.classifier.level"
     nonisolated static let modeKey = "approvals.mode"
 
-    /// How the owner is asked. `off` keeps the rules off: read when Poki starts.
+    /// How other sensitive actions are approved. Payments, deletions and unknown actions always ask the owner.
     enum Mode: String, CaseIterable, Identifiable {
         case reply, confirm, off
         var id: String { rawValue }
@@ -27,7 +28,7 @@ enum ApprovalClassifier {
             switch self {
             case .reply: String(localized: "With Message Reply")
             case .confirm: String(localized: "With Confirmation")
-            case .off: String(localized: "Never")
+            case .off: String(localized: "Payments and Deletions")
             }
         }
     }
@@ -36,7 +37,7 @@ enum ApprovalClassifier {
     nonisolated static var mode: Mode {
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: modeKey), let mode = Mode(rawValue: raw) { return mode }
-        let asked = defaults.object(forKey: "approvals.ask") as? Bool ?? true
+        let asked = defaults.object(forKey: "approvals.ask") as? Bool ?? false
         let classifier = defaults.object(forKey: onKey) as? Bool
         if !asked, classifier != true { return .off }
         return classifier == false ? .confirm : .reply
@@ -69,7 +70,8 @@ enum ApprovalClassifier {
         let own = AskPoki.chat?.running == true || voiceOn
         let reply = mode == .reply && own
         let route: Route
-        if mode == .off { route = .allow }
+        if SensitivityRules.requiresOwnerConfirmation(reason: approval.reason) { route = .owner }
+        else if mode == .off { route = .allow }
         else if own, hasModel, reply || Level.saved != .everything { route = .model(reply: reply) }
         else { route = .owner }
         if routes.count > 200 { routes.removeAll(); handed.removeAll() }

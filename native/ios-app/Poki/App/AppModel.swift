@@ -61,8 +61,14 @@ final class AppModel {
     /// Agents › Approvals › Ask Before Sensitive Steps: how the owner is asked, or never. PokiCore
     /// reads on or off when Poki starts; the way of asking changes at once.
     var approvalMode: ApprovalClassifier.Mode = ApprovalClassifier.mode {
-        didSet { UserDefaults.standard.set(approvalMode.rawValue, forKey: ApprovalClassifier.modeKey); log.add("approval", "ask before sensitive steps: \(approvalMode.rawValue)") }
+        didSet {
+            UserDefaults.standard.set(approvalMode.rawValue, forKey: ApprovalClassifier.modeKey); log.add("approval", "ask before sensitive steps: \(approvalMode.rawValue)")
+            for observer in approvalModeObservers { observer() }
+        }
     }
+    var asksBeforeSensitiveSteps: Bool { approvalMode != .off && core.asksForOtherStepsAtLaunch }
+    private var approvalModeObservers: [() -> Void] = []
+    func addApprovalModeObserver(_ observer: @escaping () -> Void) { approvalModeObservers.append(observer) }
     var classifierLevel: ApprovalClassifier.Level = ApprovalClassifier.Level.saved {
         didSet { UserDefaults.standard.set(classifierLevel.rawValue, forKey: ApprovalClassifier.levelKey); log.add("approval", "sensitivity: \(classifierLevel.rawValue)") }
     }
@@ -1648,7 +1654,8 @@ final class AppModel {
     /// one question, not a pop-up each.
     private func askOwner(_ approval: PendingApproval) {
         approvals.append(approval)
-        if let last = lastOwnerAnswer, last.app == approval.app, Date().timeIntervalSince(last.at) < Self.answerCovers {
+        if !SensitivityRules.requiresOwnerConfirmation(reason: approval.reason),
+           let last = lastOwnerAnswer, last.app == approval.app, Date().timeIntervalSince(last.at) < Self.answerCovers {
             covered.insert(approval.id)
             log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); covered by the owner's answer \(Int(Date().timeIntervalSince(last.at))) s ago (\(last.approved ? "allowed" : "not allowed"))")
             core.resolveApproval(id: approval.id, approved: last.approved)

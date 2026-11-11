@@ -33,11 +33,11 @@ struct ApprovalsView: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Sensitive steps are paying, deleting, sending a message, placing a call, typing a password and anything in Wallet.")
+                    Text("Payments and deletions require your approval.")
                     switch model.approvalMode {
                     case .reply: Text("With Message Reply, Poki asks you in the chat and your yes lets the step through. Away from Poki you can answer from the notification. Outside agents have no chat, so their steps ask with Allow and Don’t Allow.")
                     case .confirm: Text("With Confirmation, you tap Allow or Don’t Allow on the Live Activity, in a notification, or here in Poki.")
-                    case .off: Text("Agents do all of that without asking.")
+                    case .off: Text("Payments and deletions require approval, while other sensitive steps run without it.")
                     }
                     Text("Turning asking on or off takes effect the next time Poki opens.")
                 }
