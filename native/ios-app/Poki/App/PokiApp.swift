@@ -158,6 +158,8 @@ struct RootView: View {
         // at the top, over home's header. The tab bar reads the compact width here; each tab's own
         // content gets the real width back.
         .environment(\.horizontalSizeClass, UserInterfaceSizeClass.compact)
+        .onChange(of: PokiEntry.shared.pending, initial: true) { takeEntry() }
+        .onChange(of: scenePhase) { takeEntry() }
     }
 
     var body: some View {
@@ -266,6 +268,19 @@ struct RootView: View {
             ApprovalNotice.requestPermission()
             Task { await model.voice.start() }
         }
+    }
+
+    /// The Action Button, Control Center, Shortcuts or Spotlight (PokiEntry), once Poki is in front: the
+    /// microphone starts only there. A task under way is shown, not interrupted: Talk starts voice only
+    /// when Poki is free. Pairing stays on its step.
+    private func takeEntry() {
+        guard scenePhase == .active, let request = PokiEntry.shared.take(), !model.pairingUnderWay else { return }
+        tab = .chats
+        if let handoff = AskPoki.liveSessionID { show(HomeRoute.session(handoff)); return }
+        show(HomeRoute.chat)
+        guard request == .talk, !chat.running, !model.voice.isOn, model.voice.canTalk else { return }
+        ApprovalNotice.requestPermission()
+        Task { await model.voice.start() }
     }
 
     /// Setup's checklist, on the Chats page.

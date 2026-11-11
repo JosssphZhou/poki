@@ -1575,6 +1575,8 @@ final class AppModel {
                 state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil; state.plan = nil
             }
             background.showStatus(String(localized: "Agents can reach this iPhone"))
+            // Its reply still reaches an owner who is elsewhere (a task sent from a shortcut).
+            if !inFront, let reply { ChatReplyNotice.post(reply, session: session) }
             return
         }
         let stays = !Self.returnsAfterTask
