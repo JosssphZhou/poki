@@ -10,9 +10,11 @@ final class KeepAlive {
     /// session, so only the last one to stop deactivates it.
     private static var playing = 0
     private var engine: AVAudioEngine?
+    private var player: AVAudioPlayerNode?
     private var interruption: NSObjectProtocol?
 
-    var isOn: Bool { engine != nil }
+    var state: KeepAliveState.Audio { .init(engine: engine != nil, running: engine?.isRunning == true, playerPlaying: player?.isPlaying == true) }
+    var isPlaying: Bool { state == .playing }
 
     func start() throws {
         guard engine == nil else { return }
@@ -31,6 +33,7 @@ final class KeepAlive {
         player.scheduleBuffer(buffer, at: nil, options: .loops)
         player.play()
         self.engine = engine
+        self.player = player
         Self.playing += 1
         // Another app's audio can interrupt the session; start again when it ends.
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
@@ -46,7 +49,7 @@ final class KeepAlive {
     /// Only a keep-alive that is playing stops anything, so stopping one never silences another.
     func stop() {
         guard let engine else { return }
-        engine.stop(); self.engine = nil
+        engine.stop(); self.engine = nil; player = nil
         if let interruption { NotificationCenter.default.removeObserver(interruption) }
         interruption = nil
         Self.playing -= 1

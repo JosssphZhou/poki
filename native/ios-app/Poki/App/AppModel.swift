@@ -672,7 +672,7 @@ final class AppModel {
         inFront = false
         InProcessWDA.gate.withLock { $0.inFront = false }
         sessionOn ? loopback.resume(every: 6) : loopback.pause()
-        if pairingUnderWay { log.add("pairing", "Poki in the background while pairing; keep-alive \(pairingKeepAlive.isOn ? "playing" : "off")") }
+        if pairingUnderWay { log.add("pairing", "Poki in the background while pairing; keep-alive \(pairingKeepAlive.isPlaying ? "playing" : "off")") }
         swipeBackgroundBannerAway()
     }
 

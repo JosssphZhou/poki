@@ -97,7 +97,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
                 case .ended:
                     // KeepAlive restarts its engine on its own; check a moment later.
                     try? await Task.sleep(for: .seconds(1))
-                    if self.audio.isOn { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
+                    if self.audio.isPlaying { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
                 @unknown default: break
                 }
             }
