@@ -616,6 +616,8 @@ extension Computer {
     func waitForFocus(seconds: Double, target: Element?) async -> Bool {
         let deadline = now() + seconds
         while true {
+            // A stopped call reads nothing and sleeps no time: the wait ends instead of spinning.
+            if Task.isCancelled { return false }
             let seen = await fieldOnScreen(target: target, timeout: max(0.5, min(1.5, deadline - now() + 0.5)))
             if seen.keyboard { return true }
             if now() >= deadline || (!seen.came && runner.busyWith != nil) { return false }
@@ -746,7 +748,11 @@ extension Computer {
         func restore() async {
             guard !restored else { return }
             restored = true
-            _ = try? await runner.call("POST", "/wda/setPasteboard", ["content": .string(saved.string ?? ""), "contentType": "plaintext"], timeout: 2, countsAsMiss: false)
+            // In a task of its own: a call that was stopped part way sends nothing more, but the
+            // owner's clipboard still goes back.
+            await Task { [runner] in
+                _ = try? await runner.call("POST", "/wda/setPasteboard", ["content": .string(saved.string ?? ""), "contentType": "plaintext"], timeout: 2, countsAsMiss: false)
+            }.value
         }
         do {
             if clear, let value = field.value, !value.isEmpty {
@@ -763,6 +769,7 @@ extension Computer {
             var item: Element?
             let menuBy = min(until - 0.3, now() + 2)
             while item == nil, now() < menuBy {
+                try Task.checkCancellation()
                 await sleep(seconds: 0.2)
                 if let seen = try? await runner.tree(timeout: max(0.3, min(1.2, menuBy - now())), format: config.treeFormat) {
                     item = seen.elements.first { e in Self.pasteWords.contains { e.text.lowercased() == $0 } }
@@ -777,6 +784,7 @@ extension Computer {
             let landedBy = min(until - 0.3, now() + 2.5)
             var landed = false
             while !landed, now() < landedBy {
+                try Task.checkCancellation()
                 await sleep(seconds: 0.25)
                 landed = await fieldValue(target: target, holding: text, timeout: 0.8)?.contains(text) == true
             }
@@ -994,6 +1002,8 @@ extension Computer {
             let started = now()
             let limit = Swift.min(started + Swift.min(10, Swift.max(0.2, (spec["ms"]?.double ?? 5000) / 1000)), until)
             while now() < limit {
+                // A stopped call's sleeps end at once (and its reads, below): the wait ends with it.
+                try Task.checkCancellation()
                 if !handoffWaiting { return "wait_until: the owner is done after \(Int(((now() - started) * 1000).rounded())) ms" }
                 await sleep(seconds: Swift.min(0.25, Swift.max(0, limit - now())))
             }
@@ -1019,6 +1029,7 @@ extension Computer {
         // past its timeout) stays inside the action's time, so the action answers for itself and
         // never runs out as "unknown".
         while now() < limit || (settled && text == nil && reads == 1 && until - now() > 1.5) {
+            try Task.checkCancellation()
             let room = until - now() - 0.9
             guard room >= 0.3 else { break }
             if let seen = try? await runner.tree(timeout: Swift.min(config.readTimeout, room), format: config.treeFormat) {

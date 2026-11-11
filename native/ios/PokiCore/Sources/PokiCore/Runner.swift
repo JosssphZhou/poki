@@ -209,6 +209,9 @@ public final class Runner: @unchecked Sendable {
     /// One request outside the session. `countsAsMiss: false` for a request that may rightly take long
     /// (a gesture): its timeout is not taken as a sign that the runner is gone.
     public func raw(_ method: String, _ path: String, _ body: JSON? = nil, timeout: Double = 4, countsAsMiss: Bool = true) async throws -> JSON {
+        // A caller that is already cancelled sends nothing. Nothing reached the runner, so there is
+        // no request to give up on either (below, a cancel is a request the runner may still serve).
+        try Task.checkCancellation()
         let target = URL(string: url.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path)!
         let queued = !Self.standalone.contains("\(method) \(Self.short(path))")
         let busyBefore = queued ? busyWith : nil
