@@ -142,7 +142,6 @@ impl Client {
         root.insert("Request".into(), plist::Value::Dictionary(request));
         let mut body = Vec::new();
         plist::to_writer_xml(&mut body, &plist::Value::Dictionary(root))?;
-        tracing::trace!("GSA request: {}", String::from_utf8_lossy(&body));
         let res = self
             .http
             .post(GS_SERVICE)
