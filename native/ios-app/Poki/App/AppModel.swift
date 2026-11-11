@@ -616,6 +616,7 @@ final class AppModel {
         diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
+        background.cameToFront()
         // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
         // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
         if sessionOn, !activity.isRunning {
@@ -672,7 +673,8 @@ final class AppModel {
         inFront = false
         InProcessWDA.gate.withLock { $0.inFront = false }
         sessionOn ? loopback.resume(every: 6) : loopback.pause()
-        if pairingUnderWay { log.add("pairing", "Poki in the background while pairing; keep-alive \(pairingKeepAlive.isOn ? "playing" : "off")") }
+        background.check("Poki went to the background")
+        if pairingUnderWay { log.add("pairing", "Poki in the background while pairing; keep-alive \(pairingKeepAlive.isPlaying ? "playing" : "off")") }
         swipeBackgroundBannerAway()
     }
 

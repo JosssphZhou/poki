@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreLocation
 import Foundation
+import UIKit
 
 /// Keeps Poki running in the background while it is on, so the relay connection and the launcher stay
 /// up. Silent audio does it; location is the backup only when it is needed: while a pairing waits in
@@ -41,23 +42,59 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func start() {
         guard !isOn else { return }
         isOn = true
+        silentAudioTest = UserDefaults.standard.bool(forKey: Self.silentAudioOnlyKey)
+        if !silentAudioTest, let file = Self.aliveFile { try? FileManager.default.removeItem(at: file) }
+        startHeartbeat()
         // iOS 26 and later: the system's continued processing task keeps Poki up, with no audio and
         // no location. Silent audio only when iOS refuses it or ends it early.
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, *), !silentAudioTest {
             let run = ContinuedRun.shared
             continued = run
-            run.onExpired = { [weak self] in
-                guard let self, self.isOn else { return }
-                self.startAudio(); self.watchInterruptions()
-            }
+            run.onExpired = { [weak self] in self?.continuedRunOver("iOS ended the continued run") }
             if run.begin(subtitle: String(localized: "Agents can reach this iPhone")) { return }
         }
+        if silentAudioTest { AppLog.shared.add("background", "no continued run asked for (Testing Options › Silent Audio Only)") }
         startAudio()
         watchInterruptions()
     }
 
+    /// Testing Options › Silent Audio Only, off by default, read as Poki turns on: no continued run, so
+    /// Poki starts where iOS ending one leads (silent audio), and the phone can test it without the
+    /// person stopping "Poki is on" by hand. Only then is Caches/poki-keepalive.txt written.
+    nonisolated static let silentAudioOnlyKey = "poki.background.silentAudioOnly"
+    private var silentAudioTest = false
+
+    /// The continued run no longer holds Poki up: the silent audio stands in, and the continued run is
+    /// asked for again when Poki comes to the front.
+    private func continuedRunOver(_ why: String) {
+        guard isOn else { return }
+        continuedRunEnded = true
+        watchInterruptions()
+        check(why)
+    }
+
     /// The iOS 26 continued run (typed loosely so this class builds for iOS 18).
     private var continued: AnyObject?
+    /// iOS ended the continued run while Poki was on: it is asked for again when Poki comes to the front.
+    private var continuedRunEnded = false
+
+    /// Poki came to the front, the only time iOS grants a continued run. One iOS ended during this
+    /// session is asked for again; once granted, the silent audio and location stop.
+    func cameToFront() {
+        if continuedRunEnded { _ = askForContinuedRun("after iOS ended it") }
+        check("Poki came to the front")
+    }
+
+    /// Only while Poki is in front: iOS takes the request only from the foreground.
+    private func askForContinuedRun(_ why: String) -> Bool {
+        guard #available(iOS 26.0, *), isOn, !continuedRunIsOn, !silentAudioTest,
+              ContinuedRun.shared.begin(subtitle: String(localized: "Agents can reach this iPhone")) else { return false }
+        continuedRunEnded = false
+        AppLog.shared.add("background", "continued run asked for again \(why): silent audio off")
+        audio.stop()
+        held()
+        return true
+    }
 
     /// iOS's continued processing task is holding Poki up, with its own "Poki is on" on the Lock
     /// Screen and in the island: Poki's Live Activity is not needed while nothing is happening.
@@ -73,36 +110,174 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
 
     /// Silent audio could not hold Poki up (it would be suspended): location stands in until it can.
     private(set) var audioLost = false
-    private var interruption: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
+
+    private var state: KeepAliveState {
+        KeepAliveState(on: isOn, continuedRun: continuedRunIsOn, voice: audioPaused, audio: audio.state)
+    }
 
     private func startAudio() {
-        do { try audio.start(); setAudioLost(false) } catch { setAudioLost(true) }
+        do { try audio.start() } catch { AppLog.shared.add("background", "silent audio did not start: \(error.localizedDescription)") }
+        setAudioLost(!audio.isPlaying)
+    }
+
+    /// Makes sure something holds Poki up. When nothing does: in front, the continued run is asked
+    /// for; otherwise the silent audio starts again from scratch (only a fresh start is known to play).
+    /// A start that fails keeps location on and is tried again, with iOS's background time keeping
+    /// Poki awake for the tries. Called when the audio may have stopped, and as Poki comes to the
+    /// front or leaves it, while a remedy can still start.
+    func check(_ why: String) {
+        guard let holder = state.holder else { return }
+        guard holder == .nothing else {
+            if holder == .silentAudio, audioLost { probeRendering() }
+            held(); return
+        }
+        let inFront = UIApplication.shared.applicationState == .active
+        if inFront, retry == nil, askForContinuedRun("as nothing kept Poki running (\(why))") { return }
+        holdBackgroundTime()
+        AppLog.shared.add("background", "nothing keeps Poki running (\(why), silent audio \(audio.state), \(inFront ? "in front" : "in the background")): starting the silent audio again")
+        audio.stop()
+        startAudio()
+        if audio.isPlaying { probeRendering(); held() } else { tryAgainLater() }
+    }
+
+    /// Something holds Poki up again: the tries, the background time and location stop.
+    private func held() {
+        retry = nil
+        setAudioLost(false)
+        endBackgroundTime()
+    }
+
+    /// A start that failed (another app may still hold the audio as its call ends) is tried again after
+    /// 1, 2, 4, 8 and 16 s, mostly inside the background time iOS gives (about 30 s), then every 30 s
+    /// while Poki stays awake.
+    private var retry: (at: Date, wait: TimeInterval, tries: Int)?
+    private func tryAgainLater() {
+        let wait = retry.map { min($0.wait * 2, 30) } ?? 1
+        retry = (Date().addingTimeInterval(wait), wait, (retry?.tries ?? 0) + 1)
+    }
+
+    /// Background time iOS gives an app that asks, here while nothing else holds Poki up.
+    private var backgroundTime = UIBackgroundTaskIdentifier.invalid
+    private func holdBackgroundTime() {
+        guard backgroundTime == .invalid else { return }
+        backgroundTime = UIApplication.shared.beginBackgroundTask(withName: "Poki keep-alive") { [weak self] in
+            MainActor.assumeIsolated {
+                AppLog.shared.add("background", "iOS ended Poki's background time with nothing keeping Poki running: it may be suspended until it comes to the front")
+                self?.endBackgroundTime()
+            }
+        }
+    }
+
+    private func endBackgroundTime() {
+        guard backgroundTime != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTime)
+        backgroundTime = .invalid
     }
 
     private func setAudioLost(_ lost: Bool) {
         guard lost != audioLost else { return }
         audioLost = lost
-        AppLog.shared.add("background", lost ? "silent audio stopped: location keeps Poki running until it is back" : "silent audio back: location off")
-        if lost { startLocation() } else if !pairingHold { stopLocation() }
+        if lost {
+            AppLog.shared.add("background", allowed
+                ? "silent audio not playing (\(audio.state)): location keeps Poki running until it is back (location \(always ? "Always" : "While Using"))"
+                : "silent audio not playing (\(audio.state)) and location is not allowed: iOS may suspend Poki in the background")
+            startLocation()
+        } else {
+            AppLog.shared.add("background", "\(state.holder.map { "\($0)" } ?? "off") holds Poki up: location off")
+            if !pairingHold { stopLocation() }
+        }
     }
 
     private func watchInterruptions() {
-        guard interruption == nil else { return }
-        interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Task { @MainActor in
                 guard let self, self.isOn, !self.audioPaused else { return }
                 switch type {
                 case .began: self.setAudioLost(true)
                 case .ended:
-                    // KeepAlive restarts its engine on its own; check a moment later.
+                    // KeepAlive starts its engine again on its own; check a moment later, awake.
+                    self.holdBackgroundTime()
                     try? await Task.sleep(for: .seconds(1))
-                    if self.audio.isOn { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
+                    self.check("an audio interruption ended")
                 @unknown default: break
                 }
             }
+        })
+        // These stop the engine with no interruption: a route or format change (headphones,
+        // Bluetooth), and a reset of the media services.
+        observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.check("the audio configuration changed") }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.check("the media services were reset") }
+        })
+    }
+
+    /// A beat every second while Poki is on. A longer gap is time iOS kept Poki suspended (its timers,
+    /// a step's deadline among them, wait for it to resume), logged with what holds Poki up now.
+    private var heartbeat: Timer?
+    private var lastBeat = Date()
+    private var lastHolder: KeepAliveState.Holder?
+    /// Caches/poki-keepalive.txt, written again every 10 s while Poki is on with Silent Audio Only (and
+    /// removed as Poki turns on without it): when Poki last ran and what held it up. A copy of the app's data then shows whether iOS suspended Poki (the time stops),
+    /// without bringing Poki to the front, which would change what holds it up.
+    private static let aliveFile = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("poki-keepalive.txt")
+    private static let aliveStamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+    private var lastAlive = Date.distantPast
+
+    private func startHeartbeat() {
+        lastBeat = Date()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.beat() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeat = timer
+    }
+
+    private func beat() {
+        let now = Date(), gap = now.timeIntervalSince(lastBeat)
+        defer { lastBeat = now }
+        if gap > 2.5 {
+            AppLog.shared.add("background", "iOS paused Poki for \(Int(gap.rounded())) s, from \(lastBeat.formatted(date: .omitted, time: .standard)); now \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")")
+        }
+        var seen = state
+        seen.suspendedFor = gap
+        if #available(iOS 26.0, *), seen.continuedRun, seen.holder != .continuedRun, let run = continued as? ContinuedRun {
+            run.lost("iOS kept Poki suspended for \(Int(gap.rounded())) s while it was on")
+            continuedRunOver("the continued run was gone")
+        }
+        // Each change of what holds Poki up, so the log shows the state a test starts from.
+        if let holder = state.holder, holder != lastHolder {
+            AppLog.shared.add("background", "keep-alive: \(holder) holds Poki up now\(lastHolder.map { " (was \($0))" } ?? "")")
+            lastHolder = holder
+        }
+        if silentAudioTest, now.timeIntervalSince(lastAlive) >= 10, let file = Self.aliveFile {
+            lastAlive = now
+            let line = "\(Self.aliveStamp.string(from: now)) \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")\n"
+            DispatchQueue.global(qos: .utility).async { try? line.write(to: file, atomically: true, encoding: .utf8) }
+        }
+        if let retry, now >= retry.at { check("try \(retry.tries + 1)") }
+        if let probe = renderProbe, now.timeIntervalSince(probe.at) >= 2 {
+            renderProbe = nil
+            let sample = audio.renderedSample
+            let rendering = sample.map { $0 > (probe.sample ?? -1) } ?? false
+            AppLog.shared.add("background", "silent audio \(rendering ? "renders" : "does not render") 2 s after it holds Poki up (sample \(probe.sample.map(String.init) ?? "none") to \(sample.map(String.init) ?? "none"))")
         }
     }
+
+    /// When the silent audio took over holding Poki up again, and where it had rendered to then:
+    /// logged 2 s later, so the phone shows whether the audio that counts as playing really plays.
+    private var renderProbe: (at: Date, sample: Int64?)?
+    private func probeRendering() { renderProbe = (Date(), audio.renderedSample) }
 
     /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
     /// Poki running meanwhile. The silent audio comes back when it ends, if Poki is still on.
@@ -119,10 +294,14 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func stop() {
         guard isOn else { return }
         isOn = false
+        continuedRunEnded = false
+        retry = nil; renderProbe = nil; lastHolder = nil; lastAlive = .distantPast
+        endBackgroundTime()
+        heartbeat?.invalidate(); heartbeat = nil
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
         audioLost = false
-        if let interruption { NotificationCenter.default.removeObserver(interruption) }
-        interruption = nil
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = []
         if !pairingHold { stopLocation() }
         audio.stop()
     }

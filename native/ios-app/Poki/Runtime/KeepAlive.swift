@@ -10,9 +10,20 @@ final class KeepAlive {
     /// session, so only the last one to stop deactivates it.
     private static var playing = 0
     private var engine: AVAudioEngine?
+    private var player: AVAudioPlayerNode?
     private var interruption: NSObjectProtocol?
+    private var interrupted = false
 
-    var isOn: Bool { engine != nil }
+    var state: KeepAliveState.Audio {
+        .init(engine: engine != nil, running: engine?.isRunning == true, playerPlaying: player?.isPlaying == true, interrupted: interrupted)
+    }
+    var isPlaying: Bool { state == .playing }
+
+    /// Where the player has rendered to, to tell on the phone whether a started engine really renders.
+    var renderedSample: Int64? {
+        guard let time = player?.lastRenderTime, time.isSampleTimeValid else { return nil }
+        return time.sampleTime
+    }
 
     func start() throws {
         guard engine == nil else { return }
@@ -24,21 +35,28 @@ final class KeepAlive {
         engine.attach(player)
         let format = engine.mainMixerNode.outputFormat(forBus: 0)
         engine.connect(player, to: engine.mainMixerNode, format: format)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate)) else { Self.release(session); return }
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate)) else { Self.release(session); throw NoBuffer() }
         buffer.frameLength = buffer.frameCapacity // zero-filled: silence
         engine.mainMixerNode.outputVolume = 0
         do { try engine.start() } catch { Self.release(session); throw error }
         player.scheduleBuffer(buffer, at: nil, options: .loops)
         player.play()
         self.engine = engine
+        self.player = player
+        interrupted = false
         Self.playing += 1
-        // Another app's audio can interrupt the session; start again when it ends.
+        // Another app's audio (a call, an alarm) can interrupt the session. When it ends, start again
+        // from scratch: the flags of an engine started again in place are no proof it plays. A start
+        // that fails leaves the keep-alive off, for BackgroundKeeper to try again.
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Task { @MainActor in
-                guard let self, let engine = self.engine else { return }
-                try? AVAudioSession.sharedInstance().setActive(true)
-                if !engine.isRunning { try? engine.start(); player.play() }
+                guard let self, self.engine != nil else { return }
+                if type == .began { self.interrupted = true; return }
+                // A voice conversation set the shared session up for the microphone: leave it alone.
+                guard AVAudioSession.sharedInstance().category == .playback else { return }
+                self.stop()
+                try? self.start()
             }
         }
     }
@@ -46,12 +64,14 @@ final class KeepAlive {
     /// Only a keep-alive that is playing stops anything, so stopping one never silences another.
     func stop() {
         guard let engine else { return }
-        engine.stop(); self.engine = nil
+        engine.stop(); self.engine = nil; player = nil
         if let interruption { NotificationCenter.default.removeObserver(interruption) }
         interruption = nil
         Self.playing -= 1
         Self.release(AVAudioSession.sharedInstance())
     }
+
+    private struct NoBuffer: Error {}
 
     private static func release(_ session: AVAudioSession) {
         if playing == 0 { try? session.setActive(false, options: [.notifyOthersOnDeactivation]) }

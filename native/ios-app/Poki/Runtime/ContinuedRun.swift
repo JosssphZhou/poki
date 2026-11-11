@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import os
 
 /// iOS 26's continued processing task: work the person started keeps running after Poki leaves the
 /// screen, shown by iOS with its own progress UI, with no silent audio and no location. Poki holds one
@@ -38,6 +39,10 @@ final class ContinuedRun {
     private var ticker: Task<Void, Never>?
     /// iOS ended the task before Poki turned off.
     var onExpired: (() -> Void)?
+    /// Which task's expiration handler iOS last called, and when, kept before the hop to the main
+    /// actor. On the phone a stop from iOS's own UI left no end in the log; this says whether iOS
+    /// called it.
+    nonisolated private static let expiryCalled = OSAllocatedUnfairLock<(id: String, at: Date)?>(initialState: nil)
     private(set) var isRunning = false
 
     /// Asks iOS for the task; must be called while Poki is in front. False when iOS refuses.
@@ -58,6 +63,7 @@ final class ContinuedRun {
         }
         identifier = id
         isRunning = true
+        shown = subtitle
         AppLog.shared.add("background", "continued run requested (\(id))")
         return true
     }
@@ -66,9 +72,12 @@ final class ContinuedRun {
         guard isRunning else { task.setTaskCompleted(success: true); return }
         self.task = task
         task.progress.totalUnitCount = 1_000
-        task.expirationHandler = { [weak self] in
+        let id = task.identifier
+        task.expirationHandler = { @Sendable [weak self] in
+            Self.expiryCalled.withLock { $0 = (id, Date()) }
             Task { @MainActor in
-                guard let self, self.isRunning else { return }
+                // A late end of a task Poki already gave up on (`lost`) must not end the one asked for since.
+                guard let self, self.isRunning, self.identifier == id else { return }
                 AppLog.shared.add("background", "continued run ended by iOS")
                 self.finish(success: false)
                 self.onExpired?()
@@ -95,6 +104,15 @@ final class ContinuedRun {
     }
 
     func end() { finish(success: true) }
+
+    /// The task is gone though iOS said nothing Poki heard (`why`): it is ended here, so it can be
+    /// asked for again.
+    func lost(_ why: String) {
+        guard isRunning else { return }
+        let called = Self.expiryCalled.withLock { $0 }.flatMap { $0.id == identifier ? $0.at : nil }
+        AppLog.shared.add("background", "continued run gone: \(why); iOS \(called.map { "called its end at \($0.formatted(date: .omitted, time: .standard)) but it never ran" } ?? "never called its end"), progress cancelled \(task?.progress.isCancelled == true)")
+        finish(success: false)
+    }
 
     private func finish(success: Bool) {
         isRunning = false

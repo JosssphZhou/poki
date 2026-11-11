@@ -1174,6 +1174,22 @@
         }
       }
     },
+    "Background" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后台"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "背景"
+          }
+        }
+      }
+    },
     "BACKGROUND HOLD" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2362,6 +2378,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用驗證碼登入前，請先在 ChatGPT 的「設定 › 安全」中啟用 Codex 裝置碼登入，然後前往 auth.openai.com/codex/device 輸入驗證碼。"
+          }
+        }
+      }
+    },
+    "For testing only, off by default. With this on, Poki does not ask iOS for its background task (“Poki is on”) and keeps itself running with silent audio, the way it does after iOS ends that task. It also notes in its app data every 10 seconds that it is still running. Takes effect the next time Poki turns on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手机拒绝了配对（%lld）。请在配置中重新配对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手機拒絕了配對（%lld）。請在配置中重新配對。"
           }
         }
       }
@@ -5699,6 +5731,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在執行…"
+          }
+        }
+      }
+    },
+    "Silent Audio Only" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只用静音音频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只用靜音音訊"
           }
         }
       }
