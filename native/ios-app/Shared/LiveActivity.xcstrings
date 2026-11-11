@@ -1888,6 +1888,23 @@
         }
       }
     },
+    "You did not take over, so this step was not done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你没有接手，这一步没做"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你沒有接手，這一步沒做"
+          }
+        }
+      }
+    },
     "Your turn" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -396,7 +396,7 @@ final class Computer: @unchecked Sendable {
 
     /// The `handoff:` line: a step handed to the owner that is waiting, or just done (reported once).
     func handoffLine(clear: Bool) -> String? {
-        if expireHandoff() { return "handoff: the owner did not tap Done within \(Int(Self.handoffLimit)) s, so the step was taken back. End the task and tell the owner what is left undone." }
+        if let expired = expireHandoff() { return "handoff: \(Self.expiredLine(expired))" }
         guard let h = handoff.value else { return nil }
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
         if let done = h.done {
@@ -415,18 +415,40 @@ final class Computer: @unchecked Sendable {
     /// them does not wait on without end.
     static let handoffLimit: Double = 120
 
-    /// Takes back a step the owner has not finished within `handoffLimit`. The owner's own takeover
-    /// is theirs to end. True when it was taken back now.
+    /// Steps handed over because only the owner may do them. One the owner did not do within the
+    /// limit is not done at all: Poki must not go on by itself on a page waiting for a password.
+    static let ownerOnlyKinds: Set<String> = ["passcode", "password", "verification", "payment"]
+
+    /// Such a step that the owner did not take over: nothing but reads and waits is sent until the
+    /// task finishes or another step is handed over.
+    let notDone = LockedBox<Handoff?>(nil)
+
+    static func expiredLine(_ h: Handoff) -> String {
+        guard ownerOnlyKinds.contains(h.kind) else {
+            return "the owner did not tap Done within \(Int(handoffLimit)) s, so the step was taken back. End the task and tell the owner what is left undone."
+        }
+        return notDoneLine(h)
+    }
+
+    static func notDoneLine(_ h: Handoff) -> String {
+        "the owner did not take over within \(Int(handoffLimit)) s, so this step (\(h.kind): \"\(h.text.prefix(80))\") was not done, and no input is sent on this page. End the task with finish and no actions, and tell the owner that they did not take over and the step was not done."
+    }
+
+    /// Ends a step the owner has not finished within `handoffLimit`: an ordinary step is taken back,
+    /// one only the owner may do is ended as not done. The owner's own takeover is theirs to end.
+    /// The step, when it was ended now.
     @discardableResult
-    func expireHandoff() -> Bool {
+    func expireHandoff() -> Handoff? {
         let expired = handoff.update { h -> Handoff? in
             guard let current = h, current.done == nil, !current.ownerOnly, Date().timeIntervalSince(current.requested) >= Self.handoffLimit else { return nil }
             h = nil
             return current
         }
-        guard let expired else { return false }
-        emit(.handoffEnded(id: expired.id, how: "expired"))
-        return true
+        guard let expired else { return nil }
+        let owners = Self.ownerOnlyKinds.contains(expired.kind)
+        if owners { notDone.value = expired }
+        emit(.handoffEnded(id: expired.id, how: owners ? "notDone" : "expired"))
+        return expired
     }
 
     func handoffDone(id: String) {
@@ -447,7 +469,8 @@ final class Computer: @unchecked Sendable {
         let until = now() + config.toolDeadline
         if let blocked = await waitForRunner(until: until) { return blocked }
         let begins = beginsTask()
-        if begins { beginRecording() }
+        // A step the last task left not done does not hold back a new task.
+        if begins { beginRecording(); notDone.value = nil }
         async let locked = isLocked()
         var result = restartNote(await readAndReply(until: until, full: full))
         if begins, let app = lastForeground { origin = (app, session, now()) } else { origin?.lastCall = now() }
@@ -555,6 +578,7 @@ final class Computer: @unchecked Sendable {
         // The app the owner is in before anything is sent: the read before may be another task's.
         if beginsTask() {
             beginRecording()
+            notDone.value = nil
             if let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), let bundle = front["bundleId"]?.string {
                 origin = (Foreground(bundleID: bundle, name: front["name"]?.string), session, now())
             }
@@ -577,6 +601,9 @@ final class Computer: @unchecked Sendable {
                 return await withPicture("not_sent: the owner took over typing. Wait for them to tap Done; agents cannot dismiss this pause. Do not replay the unfinished text.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
             }
             return await withPicture("not_sent: a step is handed to the owner (\(h.kind): \"\(h.text.prefix(80))\"), so no input is sent until they tap Done on the phone or you send {handoff: false}. It is taken back after \(Int(Self.handoffLimit)) s without Done. Keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
+        }
+        if !harmless, let h = notDone.value {
+            return await withPicture("not_sent: \(Self.notDoneLine(h))", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
         }
         let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
         if !onlyButtons, await isLocked() {
@@ -767,6 +794,7 @@ final class Computer: @unchecked Sendable {
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
+            notDone.value = nil
             // Poki's keyboard, if it is up, gives way to the owner's own.
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)

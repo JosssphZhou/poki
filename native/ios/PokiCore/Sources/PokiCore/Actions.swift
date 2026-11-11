@@ -338,6 +338,7 @@ extension Computer {
             guard let text = spec.text ?? spec["text"]?.text, !text.isEmpty else { throw ActionFailure(message: "handoff takes {kind, text}: what the owner must do themselves on the phone; or false to take the step back", delivery: .notSent) }
             let h = Handoff(id: UUID().uuidString, kind: kind, text: String(text.prefix(300)), requested: Date())
             handoff.value = h
+            notDone.value = nil
             emit(.handoffRequested(id: h.id, kind: kind, text: h.text, app: lastForeground?.describe))
             return ("handoff", "handed to the owner (\(kind)): \"\(h.text.prefix(80))\", shown on the phone with a Done button. Keep calling look every few seconds, or {wait_until: {handoff_done: true, ms: 10000}}; no input is sent until the owner taps Done or you send {handoff: false}; without Done it is taken back after \(Int(Self.handoffLimit)) s; status shows handoff: waiting|done")
         }
@@ -1001,7 +1002,7 @@ extension Computer {
             let started = now()
             let limit = Swift.min(started + Swift.min(10, Swift.max(0.2, (spec["ms"]?.double ?? 5000) / 1000)), until)
             while now() < limit {
-                if expireHandoff() { return "wait_until: the owner did not tap Done within \(Int(Self.handoffLimit)) s, so the step was taken back. End the task and tell the owner what is left undone." }
+                if let expired = expireHandoff() { return "wait_until: \(Self.expiredLine(expired))" }
                 if !handoffWaiting { return "wait_until: the owner is done after \(Int(((now() - started) * 1000).rounded())) ms" }
                 await sleep(seconds: Swift.min(0.25, Swift.max(0, limit - now())))
             }

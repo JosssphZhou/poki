@@ -1534,7 +1534,7 @@ final class AppModel {
                 if state.handoff?.id == id {
                     state.handoff = nil
                     state.phase = .working
-                    state.headline = how == "done" ? "Carrying on" : "The agent carried on by itself"
+                    state.headline = how == "done" ? "Carrying on" : how == "notDone" ? "You did not take over, so this step was not done" : "The agent carried on by itself"
                 }
             }
         }
