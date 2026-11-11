@@ -38,13 +38,13 @@ pub async fn read_tree_with_timeout(
     include_offscreen: bool,
     wait: Duration,
 ) -> Result<Json> {
-    if let Some(display) = super::display::active(adapter, rsd)
-        .await?
-        .filter(|display| display.multiple_integrated)
-    {
+    let deadline = tokio::time::Instant::now() + wait;
+    // Only a phone with a second built-in panel is read element by element; see display::active.
+    let display = super::display::active_within(adapter, rsd, wait).await?;
+    if let Some(display) = display.filter(|d| super::display::route(Some(d)).live_ax) {
+        let wait = deadline.saturating_duration_since(tokio::time::Instant::now());
         return read_live(adapter, rsd, include_offscreen, wait, &display).await;
     }
-    let deadline = tokio::time::Instant::now() + wait;
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         let answer = subscribe(
@@ -584,10 +584,6 @@ async fn acknowledge(socket: &mut impl ReadWrite, message: &Message) -> Result<(
     if word(28) == 0 {
         return Ok(());
     }
-    let version = matches!(
-        message.data.as_ref().and_then(Value::as_string),
-        Some("hostAPIVersion" | "hostApiVersion")
-    );
     let reply = Message::new(
         MessageHeader::new(
             0,
@@ -599,14 +595,9 @@ async fn acknowledge(socket: &mut impl ReadWrite, message: &Message) -> Result<(
         ),
         PayloadHeader::default(),
         None,
-        version.then(|| 7u64.into()),
+        None,
     );
-    let mut bytes = reply.serialize();
-    // DTX object replies use payload type 3; the dependency exposes no constructor for it.
-    if version {
-        bytes[32] = 3;
-    }
-    socket.write_all(&bytes).await?;
+    socket.write_all(&reply.serialize()).await?;
     Ok(())
 }
 

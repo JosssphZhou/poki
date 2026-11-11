@@ -1052,12 +1052,8 @@ mod tests {
             ready_at: tokio::time::Instant::now(),
         };
         let (mut connection, phone) = tunnel();
-        // This simulated phone cannot answer display queries; without device information the bridge
-        // uses the single-display touchscreen, as before display routing.
-        connection
-            .rsd
-            .services
-            .remove("com.apple.coredevice.deviceinfo");
+        // This phone advertises device information and refuses the display query, so the tap also
+        // shows that such a phone keeps the main touchscreen.
         connection.media = Some(media);
         let touch = connection.rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
         // The touch report reaches the phone; the tunnel goes down before the release.

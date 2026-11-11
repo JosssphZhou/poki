@@ -26,6 +26,9 @@ use std::{io::Read, time::Duration};
 use stream::NoDisplayService;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+/// The bridge routes input, screenshots and accessibility reads to the active panel of a phone
+/// that has more than one. The launcher compiles the same files with this off.
+const ROUTES_BY_PANEL: bool = true;
 type Hid = UniversalHidServiceClient<Box<dyn ReadWrite>>;
 struct Touch {
     client: Hid,
@@ -39,13 +42,14 @@ impl Touch {
     ) -> Result<Self> {
         let display = display::active(adapter, rsd).await?;
         let mut client = Hid::connect_rsd(adapter, rsd).await?;
-        let (surface, rotation) = match display {
-            Some(display) => (
-                display::touch_surface(&display, &client.list_connected_services().await?)?,
-                display.rotation,
-            ),
-            None => (idevice::core_device::hid::DIGITIZER_SURFACE_MAIN_TOUCHSCREEN, 0),
+        let route = display::route(display.as_ref());
+        let surface = match route.touch_panel {
+            Some(panel) => {
+                display::touch_surface(panel, &client.list_connected_services().await?)?
+            }
+            None => idevice::core_device::hid::DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
         };
+        let rotation = route.rotation;
         Ok(Self {
             client,
             surface,
@@ -125,7 +129,8 @@ impl InputMedia {
         adapter: &mut idevice::tcp::handle::AdapterHandle,
         rsd: &mut RsdHandshake,
     ) -> Result<Self> {
-        let display_id = display::active(adapter, rsd).await?.map_or(1, |d| d.id);
+        let display = display::active(adapter, rsd).await?;
+        let display_id = display::route(display.as_ref()).media_display;
         let stream = stream::start_screen_media_stream(adapter, rsd, display_id)
             .await
             .map_err(|e| {
@@ -210,6 +215,8 @@ impl Keyboard {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 enum Request {
     DisplayInfo,
+    /// Whether the phone has more than one built-in panel.
+    Panels,
     Screenshot {
         path: String,
     },
@@ -341,6 +348,7 @@ impl Request {
                 | Self::Screenshot { .. }
                 | Self::DeviceInfo
                 | Self::DisplayInfo
+                | Self::Panels
                 | Self::ListApps
         )
     }
@@ -562,17 +570,12 @@ async fn execute_connected(
         };
     }
     if let Request::Screenshot { path } = request {
-        let secondary = display::active(adapter, rsd)
-            .await?
-            .filter(|display| !display.primary);
-        let bytes = if let Some(display) = secondary {
+        let display = display::active(adapter, rsd).await?;
+        let bytes = if let Some(panel) = display::route(display.as_ref()).capture {
             let mut capture =
                 idevice::core_device::ScreenCaptureServiceClient::connect_rsd(adapter, rsd).await?;
             capture
-                .take_screenshot(
-                    Some(&display.unique_id),
-                    idevice::core_device::ImageFormat::Png,
-                )
+                .take_screenshot(Some(panel), idevice::core_device::ImageFormat::Png)
                 .await?
         } else {
             let mut dvt =
@@ -617,6 +620,9 @@ async fn execute_connected(
     if let Request::Pasteboard { action, text } = request {
         return device_ops::pasteboard(adapter, rsd, &action, text.as_deref()).await;
     }
+    if matches!(request, Request::Panels) {
+        return Ok(json!({"multiple": display::multiple(adapter, rsd).await}));
+    }
     if matches!(request, Request::DisplayInfo) {
         let mut display =
             idevice::core_device::DisplayServiceClient::connect_rsd(adapter, rsd).await?;
@@ -639,6 +645,7 @@ async fn execute_connected(
     let action: Result<Value> = async {
         match request {
             Request::DisplayInfo
+            | Request::Panels
             | Request::DeviceInfo
             | Request::Screenshot { .. }
             | Request::ListApps
