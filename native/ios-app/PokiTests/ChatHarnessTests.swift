@@ -9,6 +9,29 @@ import XCTest
 /// gets and each answer Poki gives back are the real ones.
 @MainActor
 final class ChatHarnessTests: XCTestCase {
+    func testHistoricalApprovalConversationSurvivesDecodeAndExport() throws {
+        let data = Data(#"{"id":"history-fixture","kind":"poki","title":"fixture","started":0,"updated":0,"live":false,"entries":[{"id":"00000000-0000-0000-0000-000000000001","at":0,"kind":{"note":{"_0":{"approval":{"_0":{"id":"approval-fixture","summary":"fixture","app":"fixture","why":"fixture","byModel":false,"state":"allowed","reason":"","reply":false,"answered":1,"futureField":"preserve"}}}}}}],"calls":[]}"#.utf8)
+        let session = try JSONDecoder().decode(SavedSession.self, from: data)
+        XCTAssertEqual(session.entries.count, 1)
+        let output = try JSONEncoder().encode(session)
+        let before = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? NSDictionary)
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(with: output) as? NSDictionary)
+        XCTAssertEqual(before["entries"] as? NSArray, after["entries"] as? NSArray)
+        let backup = JSONEncoder()
+        backup.dateEncodingStrategy = .iso8601
+        let restore = JSONDecoder()
+        restore.dateDecodingStrategy = .iso8601
+        XCTAssertEqual(try restore.decode(SavedSession.self, from: backup.encode(session)), session)
+        let store = SessionStore.shared
+        defer { store.delete(session.id) }
+        try store.restore(backup.encode(session))
+        XCTAssertEqual(store.session(session.id), session)
+        let exported = try XCTUnwrap(store.all().first { data in
+            (try? restore.decode(SavedSession.self, from: data).id) == session.id
+        })
+        XCTAssertEqual(try restore.decode(SavedSession.self, from: exported), session)
+    }
+
     private var saved: [String: Any?] = [:]
     private var app: AppModel?
     private var notes: [String] = []
