@@ -108,6 +108,7 @@ final class AppModel {
         setup.pairingFile = AppFiles.pairingFile.path
         SetupVault.mirrorPairingFromContainer()
         pairingTrouble = nil; connectionFailure = nil; invalidatePairingCheck()
+        Task { await verifyPairing() }
         log.add("pairing", "pairing file from Poki Setup found")
     }
     /// Why the phone refused the pairing the last time the runner started, until it is accepted again.
@@ -718,7 +719,7 @@ final class AppModel {
         case .failure(let error):
             connectionFailure = error
             servicesSilent = error.code == "handshake"
-            if error.code == "pairing" { pairingTrouble = error.message }
+            pairingTrouble = error.code == "pairing" ? error.message : nil
         }
     }
 
@@ -726,7 +727,11 @@ final class AppModel {
     func verifyPairing(force: Bool = false) async -> Bool {
         if force { invalidatePairingCheck() }
         if Self.onSimulator { return true }
-        guard let path = pairingPath, loopback.isWorking else { return true }
+        guard let path = pairingPath else { return true }
+        guard loopback.isWorking else {
+            recordConnection(.failure(SignerError(message: "The local connection is not available.", code: "loopback")))
+            return true
+        }
         if !force, connectionFailure == nil, pairingTrouble == nil,
            let at = pairingVerifiedAt, Date().timeIntervalSince(at) < 600 { return true }
         if let pairingCheck { return await pairingCheck.value }
@@ -1463,6 +1468,7 @@ final class AppModel {
         SetupVault.storePairing(data)
         setup.pairingFile = AppFiles.pairingFile.path
         pairingTrouble = nil; connectionFailure = nil; invalidatePairingCheck()
+        Task { await verifyPairing() }
         pairingNote = String(localized: "Pairing file received.")
         log.add("pairing", "pairing file \(how)")
     }
@@ -1594,6 +1600,7 @@ final class AppModel {
                 try? data.write(to: AppFiles.phonePairingFile, options: .completeFileProtectionUntilFirstUserAuthentication)
             }
             pairingTrouble = nil; connectionFailure = nil; invalidatePairingCheck()
+            Task { await verifyPairing() }
             log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }

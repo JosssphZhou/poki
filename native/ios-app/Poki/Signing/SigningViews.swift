@@ -73,8 +73,22 @@ struct SignerActivityRows: View {
                 if let f = signer.fraction { ProgressView(value: f) { Text(working) } } else { LabeledContent { ProgressView() } label: { Text(working) } }
             }
         }
-        if let error = signer.lastError {
-            Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+        if let failure = signer.failure {
+            Section { SignerFailureMessage(failure: failure) }
+        }
+    }
+}
+
+struct SignerFailureMessage: View {
+    let failure: SignerError
+
+    var body: some View {
+        Label(failure.localizedDescription, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+        if let recovery = failure.recoverySuggestion { Text(recovery) }
+        if failure.code != "notice", !failure.message.isEmpty {
+            DisclosureGroup("Details") {
+                Text(verbatim: failure.message).font(.footnote).textSelection(.enabled)
+            }
         }
     }
 }

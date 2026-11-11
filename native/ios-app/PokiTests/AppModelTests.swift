@@ -122,7 +122,7 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(model.pairingVerifiedAt)
     }
 
-    func testChecklistRequiresCurrentConnectionAndInvalidatesARefusal() throws {
+    func testChecklistRequiresCurrentConnectionAndInvalidatesARefusal() async throws {
         let (model, _) = model()
         let saved = model.setup
         defer { model.setup = saved }
@@ -146,18 +146,28 @@ final class AppModelTests: XCTestCase {
         model.loopback.simulate(.off)
         model.loopback.simulate(.working(ms: 7))
         XCTAssertFalse(model.isDone(.pairing), "TCP recovery alone must not restore a stale protocol check")
+
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await model.signer.prepare(kind: "refresh")
+        XCTAssertFalse(model.isDone(.pairing), "Renewal without a connection must also revoke the green check")
     }
 
     func testConnectionErrorsShowTheFailedStageWithoutTechnicalDetails() {
-        let cases = [
-            ("loopback", "Cannot connect to the iPhone's pairing service."),
-            ("handshake", "The iPhone's pairing service did not respond."),
-            ("pairing", "The iPhone did not accept this pairing."),
-            ("unreachable", "The device connection could not be completed.")
+        let language = Bundle.main.preferredLocalizations.first ?? "en"
+        let messages: [String: [String]] = [
+            "en": ["Cannot connect to the iPhone's pairing service.", "The iPhone's pairing service did not respond.", "The pairing record could not be verified.", "The device connection could not be completed."],
+            "zh-Hans": ["无法连接 iPhone 的配对服务。", "iPhone 的配对服务没有响应。", "无法验证配对记录。", "无法完成设备连接。"],
+            "zh-Hant": ["無法連接 iPhone 的配對服務。", "iPhone 的配對服務沒有回應。", "無法驗證配對記錄。", "無法完成裝置連線。"]
         ]
-        for (code, message) in cases {
+        let recovery = [
+            "en": "Restart your iPhone, then try again. Check Wi-Fi and your local connection. If it still fails, use Poki Setup on your computer to update over USB.",
+            "zh-Hans": "重启 iPhone 后再试。检查 Wi-Fi 和本机连接。如果仍然失败，请改用电脑上的 Poki Setup 通过 USB 更新。",
+            "zh-Hant": "重新啟動 iPhone 後再試。檢查 Wi-Fi 和本機連線。如果仍然失敗，請改用電腦上的 Poki Setup 透過 USB 更新。"
+        ]
+        for (code, message) in zip(["loopback", "handshake", "pairing", "unreachable"], messages[language] ?? messages["en"]!) {
             let error = SignerError(message: "raw protocol error: Connection refused (os error 61)", code: code)
             XCTAssertEqual(error.localizedDescription, message, code)
+            if code == "loopback" { XCTAssertEqual(error.recoverySuggestion, recovery[language] ?? recovery["en"]) }
         }
     }
 
