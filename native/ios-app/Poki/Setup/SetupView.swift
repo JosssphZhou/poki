@@ -591,7 +591,10 @@ private struct PairingPage: View {
         }
         .sheet(isPresented: $scanning) { PairingScannerSheet() }
         // Poki Setup on a computer may be writing the file into Poki right now.
-        .task { while !Task.isCancelled { model.lookForHandedPairing(); try? await Task.sleep(for: .seconds(3)) } }
+        .task {
+            await model.verifyPairing(force: true)
+            while !Task.isCancelled { model.lookForHandedPairing(); try? await Task.sleep(for: .seconds(3)) }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .xml, .data]) { result in
             do { try model.importPairingFile(from: result.get()); importError = nil }
             catch { importError = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
@@ -685,6 +688,7 @@ struct SetupChecklist: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Setup")
         .onAppear { model.loopback.resume() }
+        .task { await model.verifyPairing(force: true) }
         .sheet(isPresented: $guiding) { SetupGuide(start: SetupStep.shown.first { !model.isDone($0) }) }
     }
 }

@@ -88,6 +88,7 @@ final class SelfSigner {
     /// Before an install the owner asked for: Poki winds down (automation session, Live Activity)
     /// so it exits cleanly when iOS replaces it, and comes back on after.
     var beforeInstall: () -> Void = {}
+    var connectionChecked: ((Result<Void, SignerError>) -> Void)?
 
     private var started = false
     private var timer: Timer?
@@ -281,7 +282,7 @@ final class SelfSigner {
         request["kind"] = kind
         request["app_path"] = Bundle.main.bundlePath
         request["device_name"] = UIDevice.current.name
-        await run(kind == "update" ? "Preparing the update" : "Preparing a refresh") {
+        await run(kind == "update" ? "Preparing the update" : "Preparing a refresh", checksConnection: true) {
             let p = try await SignerBridge.decode(Prepared.self, request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
@@ -328,7 +329,7 @@ final class SelfSigner {
                 if f >= 0.9 || (f >= 0.4 && Date().timeIntervalSince(last!.since) > 5) { self.stepAside(); break }
             }
         }
-        await run("Installing") {
+        await run("Installing", checksConnection: true) {
             _ = try await SignerBridge.call(request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
@@ -341,12 +342,18 @@ final class SelfSigner {
 
     // MARK: Helpers
 
-    private func run(_ title: String?, _ work: () async throws -> Void) async {
+    private func run(_ title: String?, checksConnection: Bool = false, _ work: () async throws -> Void) async {
         working = title
         fraction = nil
         lastError = nil
         defer { working = nil; fraction = nil }
-        do { try await work() } catch {
+        do {
+            try await work()
+            if checksConnection { connectionChecked?(.success(())) }
+        } catch {
+            if checksConnection, let failure = error as? SignerError, failure.isConnectionFailure {
+                connectionChecked?(.failure(failure))
+            }
             lastError = error.localizedDescription
             log.add("signing", "\(title ?? "signer"): \(error.localizedDescription)")
         }
@@ -446,6 +453,9 @@ struct SignerError: LocalizedError {
     let message: String
     let code: String
     var errorDescription: String? { message }
+    var isConnectionFailure: Bool {
+        ["loopback", "handshake", "pairing", "unreachable"].contains(code)
+    }
 }
 
 /// A JSON value of any shape, for answers that need no struct.
