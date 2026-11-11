@@ -96,3 +96,25 @@ Still open:
   launch, although the app opened.
 - Rotations of 180 and 270 degrees and folding or unfolding during a session
   have not been tried on hardware.
+
+## Second rebase onto main
+
+`main` moved on to `ce504ac` and the branch was rebased again. The conflicts
+were all in `native/bridge/src/ax.rs`:
+
+- `Tree::update_for` keeps main's handling of streamed dumps and this branch's
+  decoding of single live responses. An initial or destroyed dump still discards
+  the cached graph. It now keeps the display orientation as well as
+  `include_offscreen`.
+- The reply to the phone's `hostAPIVersion` call still carries 7, as on main.
+  As before on this branch, it is sent as a DTX object reply (payload type 3)
+  and `hostApiVersion` is accepted as a second spelling.
+- Main's `stream_tests` and this branch's live-query tests are both kept.
+
+`main` now compiles `ax.rs` into the launcher too, so the launcher also compiles
+`display.rs`. Its accessibility reads therefore ask for the active display in
+the same way as the bridge. Its touch path is unchanged and still uses the main
+touchscreen. `ax::Direct` does not ask for the active display.
+
+The hardware acceptance above was done before this rebase and has not been
+repeated. The launcher change has only been compiled and unit-tested on a Mac.
