@@ -557,6 +557,7 @@ extension Computer {
                 // The match and its frame in the read before: a target is tapped only once it holds still
                 // across two reads (a page sliding in moves its rows, and a tap then is lost), or after 1.5 s.
                 var candidate: String?
+                var absent: (screen: String, since: Double)?
                 let readStart = now()
                 while now() < stepEnds - 0.2 {
                     guard let tree = try? await runner.tree(timeout: min(config.readTimeout, max(0.3, stepEnds - now() - 0.1)), format: config.treeFormat) else { break }
@@ -567,6 +568,18 @@ extension Computer {
                     lastAll = tree.elements
                     lastForeground = tree.foreground
                     let matches = elements.filter(target.matches)
+                    if matches.isEmpty {
+                        let screen = "\(tree.foreground.bundleID ?? "")|\(signature)"
+                        // A stable wrong page is handed back to the model instead of using the
+                        // whole action budget. A changing page still gets time to reveal its target.
+                        if let absent, absent.screen == screen {
+                            if now() - absent.since >= 0.75 { break }
+                        } else {
+                            absent = (screen, now())
+                        }
+                    } else {
+                        absent = nil
+                    }
                     if moved, !matches.isEmpty {
                         let layout = Layout(all: tree.elements, screen: screen)
                         let reachable = matches.filter { layout.touchPoint($0) != nil }

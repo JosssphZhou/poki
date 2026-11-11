@@ -86,7 +86,9 @@ final class RoutineTests: XCTestCase {
         pages.show(0)
         let taps = wda.bodies("POST /wda/tap").count
         _ = await core.call("look", [:])
+        let started = ContinuousClock.now
         let run = await core.call("do", ["actions": [["run": "iOS version"]]])
+        XCTAssertLessThan(started.duration(to: .now), .seconds(2.5), "A stable screen without the recorded target must return control promptly")
         XCTAssertTrue(run.text.contains("stopped at step 1 of 2"), run.text)
         XCTAssertTrue(run.text.contains("Button \"General\" is not on screen"), run.text)
         XCTAssertTrue(run.text.contains("app: Settings"), "the stop answers with the screen: \(run.text)")
