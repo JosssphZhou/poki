@@ -86,6 +86,28 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(result.details, [TaskResult.Detail(label: "Battery", value: "81%")])
     }
 
+    /// A choice the task leaves open goes to the owner (ESP-329): the model is told to ask, with a plain
+    /// reply, only when the options lead to different results and nothing said so far settles them, and
+    /// the question ends the task so the owner's answer reaches the model with the conversation.
+    func testAnOpenChoiceIsAskedAndTheAnswerCarriesOver() async throws {
+        let question = "There are two Alex Chen contacts, at Acme Robotics and at Northside Dental. Which one?"
+        let server = try FakeCompletions(replies: [FakeCompletions.text(question), FakeCompletions.text("Added.")])
+        let chat = chat(on: server)
+
+        let asked = await chat.runDelegated("Add the note Prefers morning calls to Alex Chen's contact")
+        _ = await chat.runDelegated("The one at Northside Dental")
+
+        XCTAssertNil(asked.success, "a question is not a finished task")
+        XCTAssertTrue(asked.text.contains(question), asked.text)
+        let system = FakeCompletions.system(server.requests[0])
+        for rule in ["ask before choosing", "with no tool call and without finish_task",
+                     "an earlier answer in this conversation already settles it", "Never take the first option only because it comes first"] {
+            XCTAssertTrue(system.contains(rule), "the prompt says: \(rule)")
+        }
+        let followUp = String(decoding: try JSONSerialization.data(withJSONObject: server.requests[1]["messages"] ?? []), as: UTF8.self)
+        XCTAssertTrue(followUp.contains("Which one?") && followUp.contains("The one at Northside Dental"), "the answer goes with the question")
+    }
+
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
     /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {

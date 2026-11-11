@@ -35,6 +35,7 @@ enum Harness {
         // The routines that fit are in the brief below, so the first call can be the routine itself:
         // listing them first cost a whole model turn before anything happened on the phone.
         parts.append("Start acting in your first reply: the saved routines that fit this task are listed below, so when one covers it, run it at once with do {run: name} and do not list routines first. Send report_plan together with your first look or do, not as a turn of its own. When a task worked and was not a routine yet, save it with routines {action: \"save\", name, description} before finish_task, with a short name the owner would use, so it can be repeated next time.")
+        parts.append(openChoice)
         // A model decides approvals from what the owner said. A refused step goes through once the
         // owner says yes to it, so the agent asks in words and tries again.
         if ApprovalClassifier.mode == .reply {
@@ -43,6 +44,11 @@ enum Harness {
         if !brief.isEmpty { parts.append(brief) }
         return parts.joined(separator: "\n\n")
     }
+
+    /// A model that meets several fitting options (a hospital's branches) took the first one and finished
+    /// the task (ESP-329). In this chat a reply without tools ends the turn and the owner's answer comes
+    /// back with the conversation, so that is how it asks; the Mac agent's runner has no such turn.
+    static let openChoice = "When a step needs a choice the owner has not made, and more than one option on screen fits the task with different results for them (contacts with the same name, branches of a hospital or store, accounts, addresses or dates), ask before choosing: reply with one short question that lists those options as the screen names them, with no tool call and without finish_task, and go on from their answer. Do not ask when the task or an earlier answer in this conversation already settles it (use that answer), when only one option fits, or when a wrong pick is minor and easy to undo. Never take the first option only because it comes first."
 
     static let tools: [ToolSpec] = phoneTools + [reportPlan, finishTask]
 
