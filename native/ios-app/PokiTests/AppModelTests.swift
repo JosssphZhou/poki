@@ -122,6 +122,32 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(model.pairingVerifiedAt)
     }
 
+    func testChecklistRequiresCurrentConnectionAndInvalidatesARefusal() throws {
+        let (model, _) = model()
+        let saved = model.setup
+        defer { model.setup = saved }
+        let pairing = AppFiles.phonePairingFile
+        if !FileManager.default.fileExists(atPath: pairing.path) {
+            try Data("pairing".utf8).write(to: pairing)
+            addTeardownBlock { try? FileManager.default.removeItem(at: pairing) }
+        }
+        model.loopback.simulate(.working(ms: 7))
+        XCTAssertFalse(model.isDone(.pairing), "A saved file and a TCP probe do not verify the device connection")
+
+        model.runnerChanged(RunnerStatus(state: "running"))
+        XCTAssertTrue(model.isDone(.pairing), "The runner opened the device connection")
+        model.runnerChanged(RunnerStatus(state: "waiting_network", detail: "remote pairing connect failed: Connection refused (os error 61)", code: "loopback"))
+        XCTAssertFalse(model.isDone(.pairing), "Connection refusal must revoke the previous green check")
+        XCTAssertFalse(model.setupComplete)
+        XCTAssertNil(model.pairingTrouble, "A connection refusal does not reject the pairing file")
+
+        model.runnerChanged(RunnerStatus(state: "running"))
+        XCTAssertTrue(model.isDone(.pairing), "A new successful connection can restore readiness")
+        model.loopback.simulate(.off)
+        model.loopback.simulate(.working(ms: 7))
+        XCTAssertFalse(model.isDone(.pairing), "TCP recovery alone must not restore a stale protocol check")
+    }
+
     /// The agent's view of the runner follows every launcher event.
     func testHostSeesTheRunnerState() {
         let (model, _) = model()
