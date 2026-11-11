@@ -86,6 +86,22 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(result.details, [TaskResult.Detail(label: "Battery", value: "81%")])
     }
 
+    func testTimingSeparatesModelTurnsFromToolsWithoutLoggingTheirContent() async throws {
+        let secret = "private-payload-" + UUID().uuidString
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("finish_task", ["success": true, "summary": secret, "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text(secret),
+        ])
+        let chat = chat(on: server)
+        let before = Set(AppLog.shared.lines)
+        _ = await chat.runDelegated(secret)
+        let lines = AppLog.shared.lines.filter { !before.contains($0) && $0.contains("[timing]") }
+        let phases = lines.compactMap { $0.components(separatedBy: "phase=").last?.split(separator: " ").first.map(String.init) }
+        XCTAssertEqual(phases, ["model_turn_start", "model_reply_start", "model_reply_end", "tool_start", "tool_end", "model_turn_start", "model_reply_start", "model_reply_end", "run_end"])
+        XCTAssertFalse(lines.joined().contains(secret), "Timing must not copy prompts, arguments or model replies")
+        XCTAssertTrue(lines.allSatisfy { $0.contains("elapsed_ms=") }, "Event times must refer to the same run start")
+    }
+
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
     /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {
