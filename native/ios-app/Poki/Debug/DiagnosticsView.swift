@@ -99,6 +99,7 @@ struct LogView: View {
 struct TestingOptionsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = true
+    @AppStorage(BackgroundKeeper.silentAudioOnlyKey) private var silentAudioOnly = false
     var body: some View {
         @Bindable var model = model
         Form {
@@ -115,6 +116,13 @@ struct TestingOptionsView: View {
                 Text("Touches and Keys")
             } footer: {
                 Text("Poki sends touches and keys over a screen-sharing session, and iOS turns the camera off in every app while one is open, so Poki opens it only for an action and closes it 5 seconds after the last one. With this on (the default), Poki opens no session at all, so the camera is never affected. If taps and typing stop working, turn it off. Takes effect the next time Poki turns on.")
+            }
+            Section {
+                Toggle("Silent Audio Only", isOn: $silentAudioOnly)
+            } header: {
+                Text("Background")
+            } footer: {
+                Text("Off by default. With this on, Poki does not ask iOS for its background task (“Poki is on”) and keeps itself running with silent audio, the way it does after iOS ends that task. For testing the silent audio. Takes effect the next time Poki turns on.")
             }
             Section {
                 NavigationLink("Live Activity Preview") { ActivityPreview() }
