@@ -32,6 +32,15 @@ final class ComposerReturnTests: XCTestCase {
         settle()
         XCTAssertEqual(sent, ["Open Settings"])
         XCTAssertEqual(field.text, "", "the field empties once the message is sent")
+
+        // Autocorrect fixes the last word in the same edit as the Send key's new line.
+        field.insertText("I dont")
+        settle()
+        let word = try XCTUnwrap(field.textRange(from: field.position(from: field.endOfDocument, offset: -4)!, to: field.endOfDocument))
+        field.replace(word, withText: "don\u{2019}t\n")
+        settle()
+        XCTAssertEqual(sent, ["Open Settings", "I don\u{2019}t"])
+        XCTAssertEqual(field.text, "")
     }
 
     // MARK: Hosting

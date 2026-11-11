@@ -670,11 +670,11 @@ struct ComposerInputView: View {
         .onChange(of: input) { old, text in
             if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = ""; return }
             // The on-screen keyboard's Send key adds a new line to a multi-line field instead of calling
-            // onSubmit, so it is read here: one new line added and nothing else changed. A keyboard that
-            // is composing (Pinyin) confirms its letters on Send instead, so they are not sent.
-            guard text.count == old.count + 1, text.filter({ $0 != "\n" }) == old.filter({ $0 != "\n" }) else { return }
+            // onSubmit, so it is read here. A keyboard that is composing (Pinyin) confirms its letters
+            // on Send instead, so they are not sent.
+            guard let message = Self.sendKeyMessage(old, text) else { return }
             if keepNewline { keepNewline = false; return }
-            input = old
+            input = message
             submit()
         }
         .onDisappear { dictation.stop(model) }
@@ -727,6 +727,17 @@ struct ComposerInputView: View {
                 }
             }
         }
+    }
+
+    /// The message without its new line when the change from `old` to `new` is the Send key: one new
+    /// line typed, alone or after the word autocorrect fixed on that key ("dont" became "don't\n").
+    /// Pasted text, which replaces nothing, keeps its new lines.
+    private static func sendKeyMessage(_ old: String, _ new: String) -> String? {
+        let head = zip(old, new).prefix { $0 == $1 }.count
+        let tail = zip(old.dropFirst(head).reversed(), new.dropFirst(head).reversed()).prefix { $0 == $1 }.count
+        let typed = new.dropFirst(head).dropLast(tail), replaced = old.dropFirst(head).dropLast(tail)
+        guard typed.last == "\n", typed.filter({ $0 == "\n" }).count == 1, typed.count == 1 || !replaced.isEmpty else { return nil }
+        return String(new.prefix(head)) + String(typed.dropLast()) + String(new.suffix(tail))
     }
 
     private func submit() {
