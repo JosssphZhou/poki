@@ -43,14 +43,31 @@ final class ComposerReturnTests: XCTestCase {
     func testPastingTextThatEndsInANewLineKeepsTheDraft() throws {
         var sent: [String] = []
         let field = try composer { sent.append($0) }
-
+        // Only written, never read here: reading another app's copy would wait for the Allow Paste alert.
+        // Paste over the selected draft: other text, then the same text, each ending in a new line.
+        for pasted in ["hello\n", "Draft\n"] {
+            field.selectedTextRange = field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)
+            field.insertText("Draft")
+            settle(for: 0.3)
+            UIPasteboard.general.string = pasted
+            field.selectedTextRange = field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)
+            field.paste(nil)
+            settle { field.text == pasted }
+            settle(for: 0.3)
+            XCTAssertEqual(sent, [], "pasting \(pasted.debugDescription) is not the Send key")
+            XCTAssertEqual(field.text, pasted)
+        }
+        // Paste a lone new line at the end of the draft.
+        field.selectedTextRange = field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)
         field.insertText("Draft")
         settle(for: 0.3)
-        // Select the draft and paste over it: one edit that ends in a new line.
-        field.replace(try XCTUnwrap(field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)), withText: "hello\n")
+        UIPasteboard.general.string = "\n"
+        field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
+        field.paste(nil)
+        settle { field.text == "Draft\n" }
         settle(for: 0.3)
-        XCTAssertEqual(sent, [], "pasting is not the Send key")
-        XCTAssertEqual(field.text, "hello\n")
+        XCTAssertEqual(sent, [], "pasting a new line is not the Send key")
+        XCTAssertEqual(field.text, "Draft\n")
     }
 
     // MARK: Hosting
