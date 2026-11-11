@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreLocation
 import Foundation
+import UIKit
 
 /// Keeps Poki running in the background while it is on, so the relay connection and the launcher stay
 /// up. Silent audio does it; location is the backup only when it is needed: while a pairing waits in
@@ -73,22 +74,47 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
 
     /// Silent audio could not hold Poki up (it would be suspended): location stands in until it can.
     private(set) var audioLost = false
-    private var interruption: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
+
+    private var state: KeepAliveState {
+        KeepAliveState(on: isOn, continuedRun: continuedRunIsOn, voice: audioPaused, audio: audio.state)
+    }
 
     private func startAudio() {
-        do { try audio.start(); setAudioLost(false) } catch { setAudioLost(true) }
+        do { try audio.start() } catch { AppLog.shared.add("background", "silent audio did not start: \(error.localizedDescription)") }
+        setAudioLost(!audio.isPlaying)
+    }
+
+    /// Makes sure something holds Poki up. When nothing does, the silent audio starts again from
+    /// scratch (only a fresh start is known to play), and location stands in if that fails. Called
+    /// when the audio may have stopped, and as Poki comes to the front or leaves it, while a remedy
+    /// can still start.
+    func check(_ why: String) {
+        guard let holder = state.holder else { return }
+        guard holder == .nothing else { setAudioLost(false); return }
+        AppLog.shared.add("background", "nothing keeps Poki running (\(why), silent audio \(audio.state), \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")): starting the silent audio again")
+        audio.stop()
+        startAudio()
     }
 
     private func setAudioLost(_ lost: Bool) {
         guard lost != audioLost else { return }
         audioLost = lost
-        AppLog.shared.add("background", lost ? "silent audio stopped: location keeps Poki running until it is back" : "silent audio back: location off")
-        if lost { startLocation() } else if !pairingHold { stopLocation() }
+        if lost {
+            AppLog.shared.add("background", allowed
+                ? "silent audio not playing (\(audio.state)): location keeps Poki running until it is back (location \(always ? "Always" : "While Using"))"
+                : "silent audio not playing (\(audio.state)) and location is not allowed: iOS may suspend Poki in the background")
+            startLocation()
+        } else {
+            AppLog.shared.add("background", "\(state.holder.map { "\($0)" } ?? "off") holds Poki up: location off")
+            if !pairingHold { stopLocation() }
+        }
     }
 
     private func watchInterruptions() {
-        guard interruption == nil else { return }
-        interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Task { @MainActor in
                 guard let self, self.isOn, !self.audioPaused else { return }
@@ -97,11 +123,19 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
                 case .ended:
                     // KeepAlive restarts its engine on its own; check a moment later.
                     try? await Task.sleep(for: .seconds(1))
-                    if self.audio.isPlaying { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
+                    self.check("an audio interruption ended")
                 @unknown default: break
                 }
             }
-        }
+        })
+        // These stop the engine with no interruption: a route or format change (headphones,
+        // Bluetooth), and a reset of the media services.
+        observers.append(center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.check("the audio configuration changed") }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.check("the media services were reset") }
+        })
     }
 
     /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
@@ -121,8 +155,8 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
         isOn = false
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
         audioLost = false
-        if let interruption { NotificationCenter.default.removeObserver(interruption) }
-        interruption = nil
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        observers = []
         if !pairingHold { stopLocation() }
         audio.stop()
     }

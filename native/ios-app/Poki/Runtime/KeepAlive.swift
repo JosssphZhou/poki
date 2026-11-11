@@ -26,7 +26,7 @@ final class KeepAlive {
         engine.attach(player)
         let format = engine.mainMixerNode.outputFormat(forBus: 0)
         engine.connect(player, to: engine.mainMixerNode, format: format)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate)) else { Self.release(session); return }
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate)) else { Self.release(session); throw NoBuffer() }
         buffer.frameLength = buffer.frameCapacity // zero-filled: silence
         engine.mainMixerNode.outputVolume = 0
         do { try engine.start() } catch { Self.release(session); throw error }
@@ -55,6 +55,8 @@ final class KeepAlive {
         Self.playing -= 1
         Self.release(AVAudioSession.sharedInstance())
     }
+
+    private struct NoBuffer: Error {}
 
     private static func release(_ session: AVAudioSession) {
         if playing == 0 { try? session.setActive(false, options: [.notifyOthersOnDeactivation]) }

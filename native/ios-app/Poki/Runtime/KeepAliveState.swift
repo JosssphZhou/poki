@@ -1,11 +1,13 @@
 /// What holds Poki up in the background right now, read from each keep-alive's real state. No iOS
 /// frameworks, so the decision is tested on a Mac.
 struct KeepAliveState: Equatable {
+    /// The silent audio. An interruption, a route or configuration change, or a media services reset
+    /// stops the engine without releasing it: `.stopped`, which holds nothing up.
     enum Audio: Equatable {
         case off, stopped, playing
 
         init(engine: Bool, running: Bool, playerPlaying: Bool) {
-            self = engine ? .playing : .off
+            self = !engine ? .off : running && playerPlaying ? .playing : .stopped
         }
     }
 
