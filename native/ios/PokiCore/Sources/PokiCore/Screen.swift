@@ -297,6 +297,7 @@ extension Runner {
         if treeCame {
             let noteSaysLimits = reading.notes.last?.contains("within this call") ?? false
             let read = limits.value
+            nextLimits.value = read
             if !read.isFull, !noteSaysLimits { reading.notes.append("the tree was read with \(read.described) (the read before timed out with more); \(read.caveat)") }
             if treeAt - started < 1.5, !read.isFull { nextLimits.value = read.larger }
         } else if let last = reading.notes.last, last.contains("did not finish within") || last.contains("did not answer") {

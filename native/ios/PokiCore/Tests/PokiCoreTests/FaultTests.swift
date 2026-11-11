@@ -1157,7 +1157,7 @@ final class GymTests: XCTestCase {
         _ = await core.call("look", [:])
         let shallow = LockedBox(false)
         wda.set("POST /appium/settings") { body in
-            if body?["settings"]?["snapshotMaxChildren"]?.double == 150 { shallow.value = true }
+            shallow.value = (body?["settings"]?["snapshotMaxChildren"]?.double ?? .infinity) <= 600
             return (200, ["value": .null])
         }
         let root: JSON = ["type": "XCUIElementTypeApplication", "label": "Settings", "rect": ["x": 0, "y": 0, "width": 390, "height": 844], "children": .array([
@@ -1172,6 +1172,11 @@ final class GymTests: XCTestCase {
         XCTAssertTrue(look.text.contains("Row 1"), look.text)
         XCTAssertTrue(look.text.contains("so it was read again with at most 150 children per element within this call; only the first 150 children of each element are listed"), look.text)
         XCTAssertFalse(look.isError)
+        let started = ContinuousClock.now
+        let next = await core.call("look", [:])
+        XCTAssertLessThan(started.duration(to: .now), .seconds(1), "The next read must reuse the bounds that just succeeded, not retry the timed-out full tree")
+        XCTAssertTrue(next.text.contains("Row 1"), next.text)
+        XCTAssertFalse(next.isError)
     }
 
     /// A WKWebView whose page is not in the tree is listed all the same, as [collapsed], with the
