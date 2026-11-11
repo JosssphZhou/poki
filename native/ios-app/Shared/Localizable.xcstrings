@@ -33,6 +33,22 @@
         }
       }
     },
+    "%@ has no release yet, so the newest build here comes from %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 还没有发布，所以这里最新的版本来自 %2$@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 還沒有發佈，所以這裡最新的版本來自 %2$@。"
+          }
+        }
+      }
+    },
     "%@ in %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -448,6 +464,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已儲存金鑰。輸入新金鑰將覆蓋原金鑰。"
+          }
+        }
+      }
+    },
+    "A New Poki Is Available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 有新版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 有新版本"
           }
         }
       }
@@ -4481,6 +4513,54 @@
         }
       }
     },
+    "Poki %@ (%@) is out. Tap to see how to update." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki %1$@ (%2$@) 已发布。轻点查看如何更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki %1$@ (%2$@) 已發佈。輕點查看如何更新。"
+          }
+        }
+      }
+    },
+    "Poki checks this channel for updates. To download and sign them ahead of time, Poki needs your Apple Account. Without one, Poki Setup on your Mac installs them." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会检查此通道的更新。要提前下载并签名，Poki 需要你的 Apple 账户。没有登录时，用 Mac 上的 Poki Setup 安装更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會檢查此通道的更新。要提前下載並簽名，Poki 需要你的 Apple 賬戶。沒有登入時，用 Mac 上的 Poki Setup 安裝更新。"
+          }
+        }
+      }
+    },
+    "Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会提前从此通道下载更新并签名，与 Poki Setup 的方式相同。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會提前從此通道下載更新並簽名，與 Poki Setup 的方式相同。"
+          }
+        }
+      }
+    },
     "PROXY LOOPBACK INTERFACE" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5715,6 +5795,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在執行…"
+          }
+        }
+      }
+    },
+    "Sign in to your Apple Account to update here. Or update with Set up Poki or Renew in Poki Setup on your Mac." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这里登录 Apple 账户即可更新。也可以在 Mac 上的 Poki Setup 里点 Set up Poki 或 Renew 更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這裡登入 Apple 賬戶即可更新。也可以在 Mac 上的 Poki Setup 裡點 Set up Poki 或 Renew 更新。"
+          }
+        }
+      }
+    },
+    "Stable gets full releases only. Beta, Alpha and Pre-alpha get earlier builds." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stable 只包含正式版本。Beta、Alpha 和 Pre-alpha 可获得更早的版本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stable 只包含正式版本。Beta、Alpha 和 Pre-alpha 可獲得更早的版本。"
           }
         }
       }
@@ -9769,22 +9881,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "釋出通道"
-          }
-        }
-      }
-    },
-    "Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only. Beta, Alpha and Pre-alpha get earlier builds." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 会提前从此通道下载更新并签名，与 Poki Setup 的方式相同。Stable 只包含正式版本。Beta、Alpha 和 Pre-alpha 可获得更早的版本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 會提前從此通道下載更新並簽名，與 Poki Setup 的方式相同。Stable 只包含正式版本。Beta、Alpha 和 Pre-alpha 可獲得更早的版本。"
           }
         }
       }

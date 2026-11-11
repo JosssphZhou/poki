@@ -57,7 +57,7 @@ struct RootView: View {
 
     /// Sessions is the first page; Poki's chat and an agent's session open over it, like a conversation
     /// in Messages; setup's checklist and its items are pushed there too.
-    enum HomeRoute: Hashable { case chat, session(String), setup }
+    enum HomeRoute: Hashable { case chat, session(String), setup, signing }
     enum RootTab: Hashable { case chats, agents, setup, newChat }
 
     @Environment(\.horizontalSizeClass) private var width
@@ -72,7 +72,7 @@ struct RootView: View {
     private func show(_ route: HomeRoute) {
         wide = route
         home = NavigationPath([route])
-        setTabBarHidden(route != .setup && width != .regular)
+        setTabBarHidden(route != .setup && route != .signing && width != .regular)
     }
 
     private func setTabBarHidden(_ hidden: Bool) {
@@ -85,7 +85,8 @@ struct RootView: View {
                      openModel: { openAgents(AgentsRoute.accounts) },
                      openConnectors: { tab = .agents; agents = NavigationPath() },
                      openDetails: { tab = .agents }, openVoice: openLiveVoice,
-                     openSetup: { tab = .setup; setup = NavigationPath() })
+                     openSetup: { tab = .setup; setup = NavigationPath() },
+                     openUpdate: { show(HomeRoute.signing) })
     }
 
     @ViewBuilder private func page(_ route: HomeRoute, split: Bool) -> some View {
@@ -98,6 +99,8 @@ struct RootView: View {
             SessionView(id: id, back: { home = NavigationPath() })
         case .setup:
             SetupChecklist()
+        case .signing:
+            SigningOptionsPage()
         }
     }
 
@@ -312,6 +315,7 @@ struct RootView: View {
         case "model": openAgents(.accounts)
         case "steps": openAgents(.activityLog)
         case "voice": show(HomeRoute.chat)
+        case "signing": show(HomeRoute.signing)
         default: break
         }
     }
