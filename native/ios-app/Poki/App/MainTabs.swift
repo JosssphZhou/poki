@@ -249,7 +249,7 @@ enum SetupRoute: Hashable { case advanced }
 /// Setup › Advanced: preferences and debugging tools.
 struct AdvancedView: View {
     @Environment(AppModel.self) private var model
-    @AppStorage(AppModel.afterTaskKey) private var afterTask = "notify"
+    @AppStorage(AppModel.afterTaskKey) private var afterTask = "return"
     var push: (SettingsRoute) -> Void
 
     var body: some View {

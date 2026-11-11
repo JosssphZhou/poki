@@ -1560,7 +1560,7 @@ final class AppModel {
     /// What the phone does when the chat's task ends: "notify" stays where the task ended and sends
     /// Poki's reply as a notification that can be answered in place; "return" opens Poki again.
     static let afterTaskKey = "poki.chat.afterTask"
-    static var returnsAfterTask: Bool { UserDefaults.standard.string(forKey: afterTaskKey) == "return" }
+    static var returnsAfterTask: Bool { (UserDefaults.standard.string(forKey: afterTaskKey) ?? "return") == "return" }
 
     /// The chat's task began (Poki is in front): the Live Activity is there for it, with no old plan.
     func chatTaskBegan() {
