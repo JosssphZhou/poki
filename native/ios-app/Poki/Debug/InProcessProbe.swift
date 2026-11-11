@@ -408,36 +408,17 @@ final class InProcessProbe: ObservableObject {
     }
 }
 
-/// Set Up the Local Connection: which way Poki controls the phone. Takes effect when Poki starts again.
+/// Setup › Advanced › Testing Options. The stored path is the switch, with no second preference to migrate.
 struct AutomationMethodSection: View {
-    /// nil is Automatic: Poki chooses between tasks.
     @AppStorage("automationPath") private var saved: String?
 
     var body: some View {
         Section {
-            Picker("Method", selection: Binding(get: { saved ?? "automatic" }, set: { saved = $0 == "automatic" ? nil : $0 })) {
-                row("Automatic", "Native services when the connection is on, the XCTest session when it is not.").tag("automatic")
-                row("Native Services", "No banner. Needs Wi-Fi and the loopback.").tag(AutomationPath.nativeServices.rawValue)
-                row("XCTest Session", "Works without Wi-Fi or the loopback. Shows iOS’s automation banner.").tag(AutomationPath.inProcess.rawValue)
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } header: {
-            Text("Method")
+            Toggle("Experimental Native Services", isOn: Binding(
+                get: { saved == AutomationPath.nativeServices.rawValue },
+                set: { saved = $0 ? AutomationPath.nativeServices.rawValue : nil }))
         } footer: {
-            if saved != AutomationPath.pinned?.rawValue {
-                Text("Takes effect when Poki starts again.").foregroundStyle(.orange)
-            }
-        }
-        .onAppear {
-            if saved == AutomationPath.runner.rawValue { saved = nil }
-        }
-    }
-
-    private func row(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-            Text(detail).font(.footnote).foregroundStyle(.secondary)
+            Text("Uses Native Services and Poki Keyboard instead of XCTest, taking effect when Poki reopens.")
         }
     }
 }

@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Poki Keyboard is only needed for experimental typing, and added keyboards remain in iOS Settings.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅实验性打字需要 Poki 键盘，已添加的键盘仍保留在 iOS 设置中。"
+          }
+        }
+      }
+    },
+    "Uses Native Services and Poki Keyboard instead of XCTest, taking effect when Poki reopens.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用原生服务和 Poki 键盘替代 XCTest，重新打开 Poki 后生效。"
+          }
+        }
+      }
+    },
+    "Experimental Native Services": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性原生服务"
+          }
+        }
+      }
+    },
     "%@" : {
       "localizations" : {
         "zh-Hans" : {

@@ -351,8 +351,6 @@ private struct LoopbackPage: View {
         }
         .disabled(externalLocked)
 
-        AutomationMethodSection()
-
         // Native services come first where the iPhone has them. Where they cannot start, the XCTest
         // session can (no loopback needed once the developer image is mounted; PR #91, issue 35),
         // with iOS's banner: the owner says here who decides that.
@@ -779,7 +777,7 @@ struct SetupChecklist: View {
                 }
                 // Poki's own keyboard, which it types through on this path. It does not hold Poki
                 // back: without it, plain text is still typed with key presses.
-                if AutomationPath.current == .nativeServices {
+                if AutomationPath.current == .nativeServices, !NativeServicesWDA.pasteAllowed {
                     NavigationLink { PokiKeyboardPage() } label: { PokiKeyboardSetupRow() }
                 }
             } header: {
@@ -1043,7 +1041,7 @@ struct SetupGuide: View {
 
     /// The Poki keyboard is the guide's last page where Poki types through it. It is not one of the
     /// steps Poki waits for: without it, plain text is still typed with key presses.
-    private static var keyboardPage: Bool { AutomationPath.current == .nativeServices }
+    private static var keyboardPage: Bool { AutomationPath.current == .nativeServices && !NativeServicesWDA.pasteAllowed }
 
     init(start: SetupStep?) {
         let steps = SetupStep.shown
