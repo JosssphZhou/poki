@@ -39,7 +39,6 @@ targets:
       - path: Shared
       # The mailbox the app and the Poki keyboard share (tested on its own: KeyboardShared/Package.swift).
       - path: KeyboardShared/Sources/KeyboardShared
-        group: KeyboardShared
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift
         group: Poki/Debug
@@ -139,7 +138,6 @@ targets:
     sources:
       - path: PokiKeyboard
       - path: KeyboardShared/Sources/KeyboardShared
-        group: KeyboardShared
     info:
       path: PokiKeyboard/Info.plist
       properties:
