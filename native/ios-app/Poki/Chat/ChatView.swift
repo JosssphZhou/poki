@@ -619,6 +619,8 @@ struct ComposerInputView: View {
     @FocusState private var focused: Bool
     @State private var liveNote: String?
     @State private var sent: (text: String, at: Date)?
+    /// The next new line is one the person asked for (Shift-Return, or New Line on the Send button).
+    @State private var keepNewline = false
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -642,7 +644,17 @@ struct ComposerInputView: View {
                         .lineLimit(1...6)
                         .padding(.vertical, 9)
                         .submitLabel(.send)
-                        .onSubmit(submit)
+                        // A hardware keyboard's Return reaches onSubmit (the on-screen keyboard's adds a new
+                        // line, read below). Shift-Return adds a new line; Return alone sends. Submitting ends
+                        // editing, so the field takes the focus back for the next line or message.
+                        .onKeyPress(.return, phases: .down) { press in
+                            keepNewline = press.modifiers.contains(.shift)
+                            return .ignored
+                        }
+                        .onSubmit {
+                            if keepNewline { input += "\n" } else { submit() }
+                            Task { @MainActor in focused = true }
+                        }
                     trailing.frame(height: 40)
                 }
                 .padding(.leading, 16).padding(.trailing, 4)
@@ -655,8 +667,15 @@ struct ComposerInputView: View {
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
         // A keyboard that was still composing (autocorrect, Pinyin) can commit its text after Send has
         // emptied the field, which put the sent message back: for a moment after Send, that is undone.
-        .onChange(of: input) { _, text in
-            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = "" }
+        .onChange(of: input) { old, text in
+            if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = ""; return }
+            // The on-screen keyboard's Send key adds a new line to a multi-line field instead of calling
+            // onSubmit, so it is read here: one new line added and nothing else changed. A keyboard that
+            // is composing (Pinyin) confirms its letters on Send instead, so they are not sent.
+            guard text.count == old.count + 1, text.filter({ $0 != "\n" }) == old.filter({ $0 != "\n" }) else { return }
+            if keepNewline { keepNewline = false; return }
+            input = old
+            submit()
         }
         .onDisappear { dictation.stop(model) }
     }
@@ -685,6 +704,10 @@ struct ComposerInputView: View {
                         Image(systemName: "arrow.up.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
                     }
                     .accessibilityLabel(Text("Send"))
+                    // The keyboard's Send key sends, so a new line is a long press on Send.
+                    .contextMenu {
+                        Button("New Line", systemImage: "return") { keepNewline = true; input += "\n" }
+                    }
                 } else {
                     // The live voice conversation: Poki listens and answers out loud. It ends 8 s after an answer if nobody speaks, in the background, or when you end it.
                     Button {
