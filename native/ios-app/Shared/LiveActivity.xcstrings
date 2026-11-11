@@ -630,6 +630,23 @@
         }
       }
     },
+    "I stopped here, since you didn’t step in" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你没来接手，我停在这一步了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你沒來接手，我停在這一步了"
+          }
+        }
+      }
+    },
     "Idle" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1884,23 +1901,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中"
-          }
-        }
-      }
-    },
-    "You did not take over, so this step was not done" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你没有接手，这一步没做"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你沒有接手，這一步沒做"
           }
         }
       }
