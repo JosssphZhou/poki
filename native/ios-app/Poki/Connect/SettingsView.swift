@@ -149,8 +149,6 @@ struct SettingsHome: View {
             } footer: {
                 Text(model.automationPath == .inProcess
                      ? "iOS shows the automation banner only while Poki’s automation session is open. Poki opens it when an agent asks and closes it when idle. Memory holds the routines and notes every agent shares."
-                     : model.automationPath == .nativeServices
-                     ? "Native services controls the phone without an XCTest automation session or its banner. Change it under Setup › Set Up the Local Connection."
                      : "Memory holds the routines and notes every agent shares.")
             }
         }

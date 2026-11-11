@@ -99,9 +99,12 @@ struct LogView: View {
 struct TestingOptionsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(NativeServicesWDA.inputWithoutScreenSharingKey) private var bareInput = true
+    @AppStorage("automationPath") private var savedMethod: String?
     var body: some View {
         @Bindable var model = model
         Form {
+            AutomationMethodSection()
+            if savedMethod == AutomationPath.nativeServices.rawValue { TypingSettingsSection() }
             Section {
                 Toggle("ask_poki Tool", isOn: $model.askPokiTool)
             } header: {

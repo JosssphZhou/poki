@@ -254,7 +254,6 @@ struct AdvancedView: View {
 
     var body: some View {
         Form {
-            if model.automationPath != .runner { TypingSettingsSection() }
             Section {
                 Picker(selection: $afterTask) {
                     Text("Notify Me").tag("notify")

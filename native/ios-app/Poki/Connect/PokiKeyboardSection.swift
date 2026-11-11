@@ -118,7 +118,7 @@ struct PokiKeyboardPage: View {
     }
 }
 
-/// Setup › Advanced › Typing: how text is entered, and the keyboard's switches.
+/// Testing Options: text entry for the experimental native-services path.
 struct TypingSettingsSection: View {
     @AppStorage(NativeServicesWDA.typingMethodKey) private var method = "keyboard"
     @AppStorage(PokiKeyboardTyping.autoSwitchKey) private var autoSwitch = true
@@ -146,6 +146,7 @@ struct TypingSettingsSection: View {
                 .onLongPressGesture(minimumDuration: 3) { showLearning.toggle() }
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
+                Text("Poki Keyboard is only needed for experimental typing, and added keyboards remain in iOS Settings.")
                 if method == "paste" {
                     Text("Poki types with key presses and pastes what the keys can’t type, such as Chinese and emoji. Your clipboard is put back afterwards. The Poki keyboard is not used.")
                 } else {
