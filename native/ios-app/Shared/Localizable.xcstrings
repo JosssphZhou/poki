@@ -2382,6 +2382,22 @@
         }
       }
     },
+    "For testing only, off by default. With this on, Poki does not ask iOS for its background task (“Poki is on”) and keeps itself running with silent audio, the way it does after iOS ends that task. It also notes in its app data every 10 seconds that it is still running. Takes effect the next time Poki turns on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手机拒绝了配对（%lld）。请在配置中重新配对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手機拒絕了配對（%lld）。請在配置中重新配對。"
+          }
+        }
+      }
+    },
     "Free on the App Store" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3923,22 +3939,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通知"
-          }
-        }
-      }
-    },
-    "Off by default. With this on, Poki does not ask iOS for its background task (“Poki is on”) and keeps itself running with silent audio, the way it does after iOS ends that task. For testing the silent audio. Takes effect the next time Poki turns on." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "默认关闭。打开后，Poki 不向 iOS 申请后台任务（“Poki 已开启”），改用静音音频保持运行，和 iOS 结束这个任务以后一样。用于测试静音音频。下次开启 Poki 时生效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "預設關閉。開啟後，Poki 不向 iOS 申請背景任務（「Poki 已開啟」），改用靜音音訊保持執行，和 iOS 結束這個任務以後一樣。用於測試靜音音訊。下次開啟 Poki 時生效。"
           }
         }
       }

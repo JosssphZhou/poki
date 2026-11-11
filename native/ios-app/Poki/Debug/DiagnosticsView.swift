@@ -122,7 +122,7 @@ struct TestingOptionsView: View {
             } header: {
                 Text("Background")
             } footer: {
-                Text("Off by default. With this on, Poki does not ask iOS for its background task (“Poki is on”) and keeps itself running with silent audio, the way it does after iOS ends that task. For testing the silent audio. Takes effect the next time Poki turns on.")
+                Text("For testing only, off by default. With this on, Poki does not ask iOS for its background task (“Poki is on”) and keeps itself running with silent audio, the way it does after iOS ends that task. It also notes in its app data every 10 seconds that it is still running. Takes effect the next time Poki turns on.")
             }
             Section {
                 NavigationLink("Live Activity Preview") { ActivityPreview() }

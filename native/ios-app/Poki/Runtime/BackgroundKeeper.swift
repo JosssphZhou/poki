@@ -42,24 +42,27 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func start() {
         guard !isOn else { return }
         isOn = true
+        silentAudioTest = UserDefaults.standard.bool(forKey: Self.silentAudioOnlyKey)
+        if !silentAudioTest, let file = Self.aliveFile { try? FileManager.default.removeItem(at: file) }
         startHeartbeat()
         // iOS 26 and later: the system's continued processing task keeps Poki up, with no audio and
         // no location. Silent audio only when iOS refuses it or ends it early.
-        if #available(iOS 26.0, *), !Self.silentAudioOnly {
+        if #available(iOS 26.0, *), !silentAudioTest {
             let run = ContinuedRun.shared
             continued = run
             run.onExpired = { [weak self] in self?.continuedRunOver("iOS ended the continued run") }
             if run.begin(subtitle: String(localized: "Agents can reach this iPhone")) { return }
         }
-        if Self.silentAudioOnly { AppLog.shared.add("background", "no continued run asked for (Testing Options › Silent Audio Only)") }
+        if silentAudioTest { AppLog.shared.add("background", "no continued run asked for (Testing Options › Silent Audio Only)") }
         startAudio()
         watchInterruptions()
     }
 
-    /// Testing Options › Silent Audio Only: no continued run, so Poki starts where iOS ending one leads
-    /// (silent audio), and the phone can test it without the person stopping "Poki is on" by hand.
+    /// Testing Options › Silent Audio Only, off by default, read as Poki turns on: no continued run, so
+    /// Poki starts where iOS ending one leads (silent audio), and the phone can test it without the
+    /// person stopping "Poki is on" by hand. Only then is Caches/poki-keepalive.txt written.
     nonisolated static let silentAudioOnlyKey = "poki.background.silentAudioOnly"
-    private static var silentAudioOnly: Bool { UserDefaults.standard.bool(forKey: silentAudioOnlyKey) }
+    private var silentAudioTest = false
 
     /// The continued run no longer holds Poki up: the silent audio stands in, and the continued run is
     /// asked for again when Poki comes to the front.
@@ -84,7 +87,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
 
     /// Only while Poki is in front: iOS takes the request only from the foreground.
     private func askForContinuedRun(_ why: String) -> Bool {
-        guard #available(iOS 26.0, *), isOn, !continuedRunIsOn, !Self.silentAudioOnly,
+        guard #available(iOS 26.0, *), isOn, !continuedRunIsOn, !silentAudioTest,
               ContinuedRun.shared.begin(subtitle: String(localized: "Agents can reach this iPhone")) else { return false }
         continuedRunEnded = false
         AppLog.shared.add("background", "continued run asked for again \(why): silent audio off")
@@ -219,8 +222,8 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     private var heartbeat: Timer?
     private var lastBeat = Date()
     private var lastHolder: KeepAliveState.Holder?
-    /// Caches/poki-keepalive.txt, written again every 10 s while Poki is on: when Poki last ran and what
-    /// held it up. A copy of the app's data then shows whether iOS suspended Poki (the time stops),
+    /// Caches/poki-keepalive.txt, written again every 10 s while Poki is on with Silent Audio Only (and
+    /// removed as Poki turns on without it): when Poki last ran and what held it up. A copy of the app's data then shows whether iOS suspended Poki (the time stops),
     /// without bringing Poki to the front, which would change what holds it up.
     private static let aliveFile = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("poki-keepalive.txt")
     private static let aliveStamp: DateFormatter = {
@@ -257,7 +260,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
             AppLog.shared.add("background", "keep-alive: \(holder) holds Poki up now\(lastHolder.map { " (was \($0))" } ?? "")")
             lastHolder = holder
         }
-        if now.timeIntervalSince(lastAlive) >= 10, let file = Self.aliveFile {
+        if silentAudioTest, now.timeIntervalSince(lastAlive) >= 10, let file = Self.aliveFile {
             lastAlive = now
             let line = "\(Self.aliveStamp.string(from: now)) \(state.holder.map { "\($0)" } ?? "off") holds Poki up, \(UIApplication.shared.applicationState == .active ? "in front" : "in the background")\n"
             DispatchQueue.global(qos: .utility).async { try? line.write(to: file, atomically: true, encoding: .utf8) }
