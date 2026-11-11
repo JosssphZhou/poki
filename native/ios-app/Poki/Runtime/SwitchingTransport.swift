@@ -31,6 +31,7 @@ final class SwitchingTransport: HTTPTransport, @unchecked Sendable {
     }
 
     var typesThroughKeyboard: Bool { current.typesThroughKeyboard }
+    var inputIsIdle: Bool? { current.inputIsIdle }
 
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
         try await current.send(method: method, url: url, body: body, timeout: timeout)
