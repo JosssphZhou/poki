@@ -72,7 +72,8 @@ final class SelfSigner {
     /// What the signer is doing now, for the Setup page.
     private(set) var working: String?
     private(set) var fraction: Double?
-    private(set) var lastError: String?
+    private(set) var failure: SignerError?
+    var lastError: String? { failure?.localizedDescription }
     private(set) var lastCheck: Date?
     /// When the installed Poki stops opening: its own profile's expiry. Nil when it has none (simulator).
     let expiry: Date? = SelfSigner.installedProfileExpiry() ?? SelfSigner.screenshotExpiry
@@ -88,6 +89,7 @@ final class SelfSigner {
     /// Before an install the owner asked for: Poki winds down (automation session, Live Activity)
     /// so it exits cleanly when iOS replaces it, and comes back on after.
     var beforeInstall: () -> Void = {}
+    var connectionChecked: ((Result<Void, SignerError>) -> Void)?
 
     private var started = false
     private var timer: Timer?
@@ -143,7 +145,7 @@ final class SelfSigner {
                 loadReady()
                 maintain()
             } catch {
-                lastError = error.localizedDescription
+                recordFailure(error)
                 log.add("signing", "signer did not start: \(error.localizedDescription)")
             }
         }
@@ -155,7 +157,7 @@ final class SelfSigner {
     }
 
     func reload() async {
-        do { status = try await SignerBridge.decode(Status.self, ["op": "status"]) } catch { lastError = error.localizedDescription }
+        do { status = try await SignerBridge.decode(Status.self, ["op": "status"]) } catch { recordFailure(error) }
     }
 
     // MARK: Account
@@ -181,7 +183,7 @@ final class SelfSigner {
     }
 
     func loadTeams() async {
-        do { teams = try await SignerBridge.decode([Team].self, ["op": "teams"]) } catch { lastError = error.localizedDescription }
+        do { teams = try await SignerBridge.decode([Team].self, ["op": "teams"]) } catch { recordFailure(error) }
         await reload()
     }
 
@@ -274,14 +276,14 @@ final class SelfSigner {
 
     func prepare(kind: String) async {
         guard var request = phone() else {
-            lastError = String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.")
+            recordFailure(SignerError(message: "No local connection or pairing file is available.", code: "loopback"), checksConnection: true)
             return
         }
         request["op"] = "prepare"
         request["kind"] = kind
         request["app_path"] = Bundle.main.bundlePath
         request["device_name"] = UIDevice.current.name
-        await run(kind == "update" ? "Preparing the update" : "Preparing a refresh") {
+        await run(kind == "update" ? "Preparing the update" : "Preparing a refresh", checksConnection: true) {
             let p = try await SignerBridge.decode(Prepared.self, request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
@@ -298,12 +300,12 @@ final class SelfSigner {
         log.add("signing", "install tapped: \(p.kind) \(p.version) (\(p.build))")
         guard isIdle() else {
             let why = busyReason() ?? ""
-            lastError = String(localized: "Poki is running a task. Install when it has finished.") + (why.isEmpty ? "" : " " + why)
+            failure = SignerError(message: String(localized: "Poki is running a task. Install when it has finished.") + (why.isEmpty ? "" : " " + why), code: "notice")
             log.add("signing", "install waits: \(why)")
             return
         }
         guard var request = phone() else {
-            lastError = String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.")
+            recordFailure(SignerError(message: "No local connection or pairing file is available.", code: "loopback"), checksConnection: true)
             log.add("signing", "install: no loopback or pairing file")
             return
         }
@@ -328,7 +330,7 @@ final class SelfSigner {
                 if f >= 0.9 || (f >= 0.4 && Date().timeIntervalSince(last!.since) > 5) { self.stepAside(); break }
             }
         }
-        await run("Installing") {
+        await run("Installing", checksConnection: true) {
             _ = try await SignerBridge.call(request) { [weak self] progress in
                 Task { @MainActor in self?.show(progress) }
             }
@@ -341,15 +343,24 @@ final class SelfSigner {
 
     // MARK: Helpers
 
-    private func run(_ title: String?, _ work: () async throws -> Void) async {
+    private func run(_ title: String?, checksConnection: Bool = false, _ work: () async throws -> Void) async {
         working = title
         fraction = nil
-        lastError = nil
+        failure = nil
         defer { working = nil; fraction = nil }
-        do { try await work() } catch {
-            lastError = error.localizedDescription
+        do {
+            try await work()
+            if checksConnection { connectionChecked?(.success(())) }
+        } catch {
+            recordFailure(error, checksConnection: checksConnection)
             log.add("signing", "\(title ?? "signer"): \(error.localizedDescription)")
         }
+    }
+
+    private func recordFailure(_ error: Error, checksConnection: Bool = false) {
+        let failure = error as? SignerError ?? SignerError(message: error.localizedDescription, code: "unknown")
+        self.failure = failure
+        if checksConnection, failure.isConnectionFailure { connectionChecked?(.failure(failure)) }
     }
 
     /// The upgrade's progress while it installs, for `install`'s watch.
@@ -445,7 +456,29 @@ final class SelfSigner {
 struct SignerError: LocalizedError {
     let message: String
     let code: String
-    var errorDescription: String? { message }
+    var errorDescription: String? {
+        switch code {
+        case "loopback": String(localized: "Cannot connect to the iPhone's pairing service.")
+        case "handshake": String(localized: "The iPhone's pairing service did not respond.")
+        case "pairing": String(localized: "The pairing record could not be verified.")
+        case "unreachable": String(localized: "The device connection could not be completed.")
+        case "needs_person": String(localized: "This step needs your attention.")
+        case "apple": String(localized: "Apple could not complete this request.")
+        case "notice": message
+        default: String(localized: "Poki could not complete this step.")
+        }
+    }
+    var recoverySuggestion: String? {
+        switch code {
+        case "loopback", "handshake", "unreachable":
+            String(localized: "Restart your iPhone, then try again. Check Wi-Fi and your local connection. If it still fails, use Poki Setup on your computer to update over USB.")
+        case "pairing": String(localized: "Pair this iPhone again in Setup.")
+        default: nil
+        }
+    }
+    var isConnectionFailure: Bool {
+        ["loopback", "handshake", "pairing", "unreachable"].contains(code)
+    }
 }
 
 /// A JSON value of any shape, for answers that need no struct.

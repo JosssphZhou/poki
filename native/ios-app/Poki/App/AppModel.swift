@@ -107,13 +107,16 @@ final class AppModel {
         try? (AppFiles.pairingFile as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
         setup.pairingFile = AppFiles.pairingFile.path
         SetupVault.mirrorPairingFromContainer()
-        pairingTrouble = nil; pairingVerifiedAt = nil
+        pairingTrouble = nil; connectionFailure = nil; invalidatePairingCheck()
+        Task { await verifyPairing() }
         log.add("pairing", "pairing file from Poki Setup found")
     }
     /// Why the phone refused the pairing the last time the runner started, until it is accepted again.
     private(set) var pairingTrouble: String?
     /// When the phone last accepted the pairing (the runner got past the pairing step).
     private(set) var pairingVerifiedAt: Date?
+    private(set) var connectionFailure: SignerError?
+    var pairingChecking: Bool { pairingCheck != nil }
     /// The loopback took the connection, but the phone's remote pairing service did not answer through
     /// it (GitHub issue 69). The loopback probe only connects, so it still reads Working; the
     /// Loopback page says so. false once the phone answers again.
@@ -270,6 +273,7 @@ final class AppModel {
                            holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() })
         self.launcher = launcher
         self.pairer = pairer
+        signer.connectionChecked = { [weak self] result in self?.recordConnection(result) }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
             await self?.askToConnect(client: client, callback: callback, connector: connector) ?? false
@@ -512,6 +516,8 @@ final class AppModel {
         diskImage.notice()
         warmInProcess("Poki came to the front")
         loopback.resume()
+        invalidatePairingCheck()
+        Task { await verifyPairing(force: true) }
         // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
         // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
         if sessionOn, !activity.isRunning {
@@ -636,6 +642,7 @@ final class AppModel {
         if method == .proxy { tunnel.disconnect() }
         setup.loopback = method
         setup.proxyApp = nil
+        invalidatePairingCheck()
         loopback.check()
     }
 
@@ -695,40 +702,59 @@ final class AppModel {
         "loopback \(setup.loopback.rawValue), local VPN \(tunnel.state), Wi-Fi \(loopback.onWiFi ? "on" : "off")\(loopback.cellularOnly ? ", cellular only" : ""), path \(loopback.pathSummary)"
     }
 
+    private func invalidatePairingCheck() {
+        pairingCheck?.cancel()
+        pairingCheck = nil
+        pairingVerifiedAt = nil
+    }
+
+    private func recordConnection(_ result: Result<Void, SignerError>) {
+        invalidatePairingCheck()
+        switch result {
+        case .success:
+            connectionFailure = nil
+            pairingTrouble = nil
+            servicesSilent = false
+            pairingVerifiedAt = Date()
+        case .failure(let error):
+            connectionFailure = error
+            servicesSilent = error.code == "handshake"
+            pairingTrouble = error.code == "pairing" ? error.message : nil
+        }
+    }
+
     @discardableResult
     func verifyPairing(force: Bool = false) async -> Bool {
+        if force { invalidatePairingCheck() }
         if Self.onSimulator { return true }
-        guard let path = pairingPath, loopback.isWorking else { return true }
-        if !force, pairingTrouble == nil, let at = pairingVerifiedAt, Date().timeIntervalSince(at) < 600 { return true }
+        guard let path = pairingPath else { return true }
+        guard loopback.isWorking else {
+            recordConnection(.failure(SignerError(message: "The local connection is not available.", code: "loopback")))
+            return true
+        }
+        if !force, connectionFailure == nil, pairingTrouble == nil,
+           let at = pairingVerifiedAt, Date().timeIntervalSince(at) < 600 { return true }
         if let pairingCheck { return await pairingCheck.value }
+        pairingVerifiedAt = nil
         let task = Task { @MainActor [weak self] () -> Bool in
             guard let self else { return true }
-            defer { self.pairingCheck = nil }
+            defer { if !Task.isCancelled { self.pairingCheck = nil } }
             do {
                 _ = try await SignerBridge.call(["op": "udid", "device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"])
-                if self.pairingTrouble != nil { self.log.add("pairing", "check: accepted again") }
-                self.pairingTrouble = nil
-                self.servicesSilent = false
-                self.pairingVerifiedAt = Date()
+                guard !Task.isCancelled else { return true }
+                self.recordConnection(.success(()))
                 return true
             } catch {
-                let text = error.localizedDescription
-                let code = (error as? SignerError)?.code
-                if code == "pairing" {
-                    if self.pairingTrouble == nil { self.log.add("pairing", "check: refused: \(text)") }
-                    self.pairingTrouble = text.replacingOccurrences(of: " Pair again in Poki's setup.", with: "")
-                    return false
+                guard !Task.isCancelled else { return true }
+                var failure = error as? SignerError ?? SignerError(message: error.localizedDescription, code: "device")
+                // A computer-made lockdown record cannot open this iOS loopback even when TCP works.
+                if SetupStep.onDevicePairing, failure.message.contains("device socket io failed"), Self.isLockdownRecord(path) {
+                    failure = SignerError(message: failure.message, code: "pairing")
                 }
-                // iOS 27 and later take only a pairing made on the phone over the loopback: a lockdown
-                // record from a computer (Poki Setup) fails its TLS session here every time.
-                if SetupStep.onDevicePairing, text.contains("device socket io failed"), Self.isLockdownRecord(path) {
-                    if self.pairingTrouble == nil { self.log.add("pairing", "check: the computer's pairing file does not open the loopback on this iOS; pair on this iPhone") }
-                    self.pairingTrouble = String(localized: "the pairing file from a computer does not work over the loopback on this iOS version. Pair this iPhone here once; the pairing stays.")
-                    return false
-                }
-                self.log.add("pairing", "check could not finish: \(text) [\(self.networkNote)]")
-                if code == "handshake" { self.servicesSilent = true }
-                return true
+                self.recordConnection(.failure(failure))
+                self.log.add("pairing", "connection check failed (\(failure.code)) [\(self.networkNote)]")
+                // Automation keeps its existing retry policy; the checklist no longer calls this ready.
+                return failure.code != "pairing"
             }
         }
         pairingCheck = task
@@ -1091,6 +1117,7 @@ final class AppModel {
             log.add("loopback", "10.7.0.1 answers already: the external connection is the recorded choice")
         }
         if wasWorking, !loopback.isWorking {
+            invalidatePairingCheck()
             log.add("loopback", "dropped: 10.7.0.1 stopped answering (\(loopback.state)); the runner cannot survive this")
         } else if !wasWorking, loopback.isWorking, old != .checking {
             log.add("loopback", "back: 10.7.0.1 answers again" + (sessionOn && !runner.isRunning && !runnerPaused ? "; starting the runner now" : ""))
@@ -1136,9 +1163,7 @@ final class AppModel {
         case "launching", "running":
             // The phone accepted the pairing.
             if pairingTrouble != nil { log.add("pairing", "accepted again") }
-            pairingTrouble = nil
-            servicesSilent = false
-            pairingVerifiedAt = Date()
+            recordConnection(.success(()))
             // The disk image mounted and the runner is starting, so Developer Mode is on; a running
             // runner means UI Automation is on too. Setup's confirm steps tick themselves (a pairing
             // file from Poki Setup then needs nothing more on the phone).
@@ -1146,11 +1171,11 @@ final class AppModel {
             if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
             if status.state == "running", automationPath == .runner { automationStarted() }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
-        case "failed" where status.code == "handshake":
-            servicesSilent = true
-        case "failed" where status.code == "pairing":
-            if pairingTrouble == nil { log.add("pairing", "refused: \(status.detail ?? "")") }
-            pairingTrouble = status.detail ?? "The phone refused the pairing."
+        case "failed", "waiting_network":
+            if let code = status.code {
+                let error = SignerError(message: status.detail ?? "", code: code)
+                if error.isConnectionFailure { recordConnection(.failure(error)) }
+            }
         default: break
         }
         if status.state != "launching" { launchingSince = nil; passcodeHint = inProcessPasscode }
@@ -1442,7 +1467,8 @@ final class AppModel {
         pairingFileSeen = true
         SetupVault.storePairing(data)
         setup.pairingFile = AppFiles.pairingFile.path
-        pairingTrouble = nil; pairingVerifiedAt = nil
+        pairingTrouble = nil; connectionFailure = nil; invalidatePairingCheck()
+        Task { await verifyPairing() }
         pairingNote = String(localized: "Pairing file received.")
         log.add("pairing", "pairing file \(how)")
     }
@@ -1573,7 +1599,8 @@ final class AppModel {
                 SetupVault.storePairing(data)
                 try? data.write(to: AppFiles.phonePairingFile, options: .completeFileProtectionUntilFirstUserAuthentication)
             }
-            pairingTrouble = nil; pairingVerifiedAt = nil
+            pairingTrouble = nil; connectionFailure = nil; invalidatePairingCheck()
+            Task { await verifyPairing() }
             log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
@@ -1618,7 +1645,7 @@ final class AppModel {
         // (or by Poki Setup on a computer) has no row tapped here, and `loopbackChanged` records it.
         case .loopback: loopback.isWorking
         // The disk image downloads by itself (and is checked again when Poki turns on): it does not hold the step open.
-        case .pairing: pairingPath != nil && pairingTrouble == nil
+        case .pairing: pairingPath != nil && loopback.isWorking && pairingVerifiedAt != nil && connectionFailure == nil && pairingTrouble == nil
         case .automation: setup.uiAutomation
         case .background: background.allowed && activity.enabled
         }

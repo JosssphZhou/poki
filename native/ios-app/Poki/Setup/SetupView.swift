@@ -536,16 +536,17 @@ private struct PairingPage: View {
         case .failed(let why)?:
             Section { Label(why, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
         default:
-            if let trouble = model.pairingTrouble {
-                Section {
-                    Label(String(localized: "The phone no longer accepts this pairing: \(trouble)"), systemImage: "exclamationmark.triangle")
-                } footer: {
-                    Text(SetupStep.onDevicePairing ? "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." : "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again from Poki Setup on your computer and send the new file here; the old key is replaced.")
-                }
+            if model.pairingChecking {
+                Section { ProgressView("Checking device connection…") }
+            } else if let failure = model.connectionFailure {
+                Section { SignerFailureMessage(failure: failure) }
             } else if model.pairingPath != nil {
                 Section {
-                    Label(model.pairingVerifiedAt.map { String(localized: "Paired. The phone accepted it at \($0.formatted(date: .omitted, time: .shortened)).") }
-                            ?? String(localized: "Paired. Checked the next time the runner starts."), systemImage: "checkmark.seal.fill")
+                    if model.isDone(.pairing) {
+                        Label("Device connection verified", systemImage: "checkmark.seal.fill")
+                    } else {
+                        Label("Device connection not verified", systemImage: "exclamationmark.circle")
+                    }
                 }
             } else if SetupStep.onDevicePairing {
                 Section("How To") {
@@ -563,6 +564,12 @@ private struct PairingPage: View {
                 } footer: {
                     Text("No Poki Setup yet? Any lockdown pairing file works: pymobiledevice3, jitterbugpair or StikPair make one.")
                 }
+            }
+        }
+        if model.pairingPath != nil {
+            Section {
+                Button("Check Connection") { Task { await model.verifyPairing(force: true) } }
+                    .disabled(model.pairingChecking || model.pairingUnderWay)
             }
         }
         if let action = Self.mainAction(model) {
@@ -591,7 +598,10 @@ private struct PairingPage: View {
         }
         .sheet(isPresented: $scanning) { PairingScannerSheet() }
         // Poki Setup on a computer may be writing the file into Poki right now.
-        .task { while !Task.isCancelled { model.lookForHandedPairing(); try? await Task.sleep(for: .seconds(3)) } }
+        .task {
+            await model.verifyPairing(force: true)
+            while !Task.isCancelled { model.lookForHandedPairing(); try? await Task.sleep(for: .seconds(3)) }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.propertyList, .xml, .data]) { result in
             do { try model.importPairingFile(from: result.get()); importError = nil }
             catch { importError = String(localized: "Invalid Pairing File: \(error.localizedDescription)") }
@@ -685,6 +695,7 @@ struct SetupChecklist: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Setup")
         .onAppear { model.loopback.resume() }
+        .task { await model.verifyPairing(force: true) }
         .sheet(isPresented: $guiding) { SetupGuide(start: SetupStep.shown.first { !model.isDone($0) }) }
     }
 }
@@ -713,8 +724,9 @@ struct SetupStepRow: View {
             if model.loopback.state == .noAnswer { return String(localized: "No Answer") }
             return model.setup.loopback == .none ? String(localized: "Needed") : String(localized: "Off")
         case .pairing:
+            if model.pairingChecking { return String(localized: "Checking") }
             if model.pairingTrouble != nil { return String(localized: "Pair Again") }
-            if model.pairingPath != nil, !model.diskImage.isReady { return String(localized: "Downloading") }
+            if model.pairingPath != nil { return String(localized: "Not Ready") }
             return String(localized: "Needed")
         default: return String(localized: "Needed")
         }
