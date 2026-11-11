@@ -23,7 +23,7 @@ test('a system prompt during input is an ordinary failure that stop_on_error dec
 test('AX miss uses OCR from the same captured observation',async t=>{
  const f=await fixture(t);await f.set({label:'Other'});
  const result=await f.call('wait_for',{text:'Absent',gone:true,timeout:10});assert.ok(!result.isError, JSON.stringify(result));
- const events=await f.events();assert.equal(events.filter(e=>e.op==='screenshot').length,1);
+ const events=await f.events();assert.equal(events.filter(e=>e.args?.includes('screenshot')).length,1);
  assert.equal(events.filter(e=>e.tool==='ocr').length,1);
 });
 
@@ -1006,8 +1006,7 @@ test('verify:false omits action verification and batches observe once after all 
  assert.equal(summary.verified,false);
  assert.ok(summary.screen.text.includes('Button: First'));
  const operations=(await f.events()).slice(before).filter(event=>event.op).map(event=>event.op);
- // The capture before the batch also goes through the native helper now, so it is listed as an op.
- assert.deepEqual(operations,['screenshot','tap','tap','ax_tree']);
+ assert.deepEqual(operations,['tap','tap','ax_tree']);
  await f.set({inputError:true});
  const failedBefore=(await f.events()).length;
  const failed=await f.call('batch_commands',{verify:false,stop_on_error:false,commands:[

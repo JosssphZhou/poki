@@ -50,16 +50,17 @@ separate touchscreen service for each panel.
 
 ## Review limits
 
-The display's reported bounds are used directly. Rotation, panel changes during
-an existing media session, external displays, split applications, system paste
-prompts, older developer images, and single-display compatibility still need
-review and hardware checks. Three hit-test samples are not an exhaustive visible
+These limits describe the snapshot as it was handed over. The sections below
+record what later commits changed: touch rotation, phones with one built-in
+panel, and the hardware checks. Panel changes during an existing media session,
+external displays, split applications, system paste prompts and older developer
+images still need review and hardware checks. Three hit-test samples are not an exhaustive visible
 application inventory, and live AX decoding remains an experimental protocol path.
 The 256-element limit refuses larger trees rather than returning partial results.
 
-This snapshot has not been rebased onto subsequent upstream changes. No further
-runtime fixes or new phone experiments were made while preparing this handoff.
-Only synthetic display identifiers and synthetic AX reference fixtures are
+The snapshot itself was not rebased and got no further runtime fixes or phone
+experiments while the handoff was prepared; the rebases and fixes that followed
+are described below. Only synthetic display identifiers and synthetic AX reference fixtures are
 included. Raw logs, captures, pairing records, runtime settings, device UDIDs,
 account labels, network names, credentials, and local filesystem paths are omitted.
 
@@ -71,10 +72,12 @@ later commits rebase them onto `8b780c2` and fix what that exposed:
 - `display::active()` returns no display when the phone does not advertise
   CoreDevice device information. Callers then keep the single-display defaults:
   display 1, the main touchscreen HID service, the DVT screenshot and the
-  cached AX subscription.
+  cached AX subscription. The section on phones with one built-in panel below
+  widens this to every phone without a second panel.
 - Touch coordinates are rotated into the active panel's native axes, using the
   panel's `currentOrientation`.
-- The AX read before text input gets 10 s instead of 4 s.
+- The AX read before text input gets 10 s instead of 4 s. This now applies only
+  to a phone with a second built-in panel.
 
 Hardware: iPhone19,4 running iOS 27.1, connected over RemotePairing on Wi-Fi,
 with the inner panel unfolded in landscape (951 by 669 points, `rot90`).
@@ -108,14 +111,56 @@ were all in `native/bridge/src/ax.rs`:
   the cached graph. It now keeps the display orientation as well as
   `include_offscreen`.
 - The reply to the phone's `hostAPIVersion` call still carries 7, as on main.
-  As before on this branch, it is sent as a DTX object reply (payload type 3)
-  and `hostApiVersion` is accepted as a second spelling.
+  At that point the branch still sent it as a DTX object reply (payload type 3)
+  and accepted `hostApiVersion` as a second spelling. Both were removed later;
+  see the last section.
 - Main's `stream_tests` and this branch's live-query tests are both kept.
 
 `main` now compiles `ax.rs` into the launcher too, so the launcher also compiles
-`display.rs`. Its accessibility reads therefore ask for the active display in
-the same way as the bridge. Its touch path is unchanged and still uses the main
-touchscreen. `ax::Direct` does not ask for the active display.
+`display.rs`. At that point its accessibility reads asked for the active display
+in the same way as the bridge while its touch path still used the main
+touchscreen. The last section removes that mismatch. `ax::Direct` does not ask
+for the active display.
 
 The hardware acceptance above was done before this rebase and has not been
 repeated. The launcher change has only been compiled and unit-tested on a Mac.
+
+## Phones with one built-in panel keep main's path
+
+Review of the rebased branch found that a phone with one built-in panel no
+longer behaved as on `main`: every request opened a device-information
+connection, a failed display query stopped input, and the touch surface,
+rotation, screenshot path and pre-input wait all depended on the answer.
+
+`display::active()` now returns a display only for a phone that reported more
+than one built-in panel. For every other phone it returns none, and
+`display::route(None)` gives main's values in one place: display 1 for input
+media, the main touchscreen (257), no rotation, the DVT screenshot, the cached
+AX subscription and a 4 s read before text input.
+
+- A phone that reports one built-in panel is remembered for the life of the
+  process and not asked again. The cost is one query per helper process, not
+  one per request.
+- A query that fails, times out after 2 s or does not parse leaves such a phone
+  on main's path. After three such failures in a row the phone is no longer
+  asked.
+- Only a phone that has already reported several panels gets an error from a
+  failed query, because main's path would read and touch the wrong panel there.
+- The query inside an AX read is bounded by that read's deadline.
+- The single-display fallback to a touchscreen named `CoreDevice
+  touchscreen(nil)` is gone. A phone with one panel never reaches the lookup by
+  name.
+- On USB, the JavaScript side asks the helper once per phone whether it has a
+  second panel (`panels`). Only then does the screenshot go through the helper.
+  Otherwise it runs the same `poki-native screenshot` command as `main`.
+
+The reply to `hostAPIVersion` is main's again: payload type 0, and only that
+spelling is answered. Nothing observed on hardware required the other form.
+
+The launcher keeps main's path on every phone. It compiles the shared files with
+`ROUTES_BY_PANEL` off, so its AX reads use the cached subscription and its taps
+go to the main touchscreen, as before this branch. It does not follow the
+active panel of a two-panel phone.
+
+The limit of 256 elements in a live read is unchanged. A longer screen on a
+second panel still fails with `AX tree exceeded 256 elements`.

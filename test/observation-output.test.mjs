@@ -17,7 +17,7 @@ test('observe_device omits PNG only when requested', async t => {
   assert.equal(second.prompt.status, 'checked');
   assert.ok(second.elements.length > 0);
   assert.ok(second.elements.every(element => /^e\d+$/.test(element.ref)));
-  const screenshots = (await f.events()).filter(event => event.op === 'screenshot');
+  const screenshots = (await f.events()).filter(event => event.args?.includes('screenshot'));
   assert.equal(screenshots.length, 2, 'Internal capture still occurs for structured-only responses');
 });
 test('missing prompt OCR remains explicit without an image attachment', async t => {
@@ -54,4 +54,16 @@ test('a tree that names only the top of the screen gets the screenshot text it l
   const looked = (await cua.call('look')).content[0].text;
   assert.match(looked, /, accessibility \+ ocr\)/);
   assert.deepEqual(looked.split('\n').filter(line => /^[ +]\d+ /.test(line)).map(line => line.match(/"(.*)"/)[1]), [...header.map(e => e[1]), ...products.map(e => e[0])]);
+});
+test('only a phone with a second built-in panel takes its screenshot through the helper', async t => {
+  const shots = async state => {
+    const f = await fixture(t);
+    await f.set(state);
+    const result = await f.call('observe_device', { source: 'ocr', include_image: false });
+    assert.ok(!result.isError, JSON.stringify(result.content));
+    const events = await f.events();
+    return { command: events.filter(event => event.args?.includes('screenshot')).length, helper: events.filter(event => event.op === 'screenshot').length };
+  };
+  assert.deepEqual(await shots({}), { command: 1, helper: 0 });
+  assert.deepEqual(await shots({ secondPanel: true }), { command: 0, helper: 1 });
 });

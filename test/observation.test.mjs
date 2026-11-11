@@ -47,7 +47,7 @@ test('six coordinate taps in one batch read the screen once at the end, not arou
  assert.notEqual(result.isError,true,JSON.stringify(result.content));
  const events=await f.events();
  assert.equal(events.filter(e=>e.op==='tap').length,6);
- assert.equal(events.filter(e=>e.op==='screenshot').length,1);
+ assert.equal(events.filter(e=>e.args?.includes('screenshot')).length,1);
  // The last tap is compared with the screen before it, and the batch's own readback reuses that read.
  assert.ok(events.filter(e=>e.op==='ax_tree').length<=5,String(events.filter(e=>e.op==='ax_tree').length));
 const summary=JSON.parse(result.content.at(-1).text);
