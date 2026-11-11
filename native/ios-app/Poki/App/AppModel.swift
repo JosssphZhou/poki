@@ -1596,8 +1596,9 @@ final class AppModel {
             finishTask()
             // A turn that never touched the phone: nothing ran, so nothing is left showing as working.
             activity.update { state in
+                state.plan = nil
                 guard state.phase == .working, state.stepCount == 0, state.approval == nil, state.handoff == nil else { return }
-                state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil; state.plan = nil
+                state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil
             }
             background.showStatus(String(localized: "Agents can reach this iPhone"))
             return
