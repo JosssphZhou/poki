@@ -113,7 +113,7 @@ enum VoiceError: LocalizedError {
         case .bridge(404, _): String(localized: "The voice bridge doesn't know this address. Copy it again from the Mac.")
         case .bridge(let code, let reason): String(localized: "The voice bridge answered \(code), \(reason)")
         case .realtime(let code, let reason): String(localized: "OpenAI answered \(code), \(reason)")
-        case .noBridge: String(localized: "Set up Poki's model first (an OpenAI key talks fastest), or enter a voice bridge address from your Mac.")
+        case .noBridge: String(localized: "Set up an account for live voice in Model, or enter a voice bridge address from your Mac.")
         case .timeout(let what): String(localized: "\(what) took too long.")
         case .noPath: String(localized: "The voice connection could not reach OpenAI over this network. Check Wi-Fi or cellular, or a VPN or proxy app that blocks calls, then try again.")
         case .noMicrophone: String(localized: "Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.")
@@ -200,9 +200,8 @@ struct VoiceClock {
     var sleep: @MainActor (Duration) async -> Void = { try? await Task.sleep(for: $0) }
 }
 
-/// Talking to Poki: one Realtime session at a time over WebRTC, the calls it asked for, and what was
-/// said. The model hears the microphone and speaks through the speaker; `get_ios_version` is answered
-/// here, the other tools by the voice bridge.
+/// Talking to Poki: one realtime session at a time, the tools it calls, and what was said.
+/// Direct voice runs tools on the phone; the Mac voice bridge can run tools for its own sessions.
 @MainActor
 @Observable
 final class VoiceModel {
@@ -305,6 +304,11 @@ final class VoiceModel {
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.inBackground = false }
         }
+        NotificationCenter.default.addObserver(forName: ModelKeys.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if let self, self.link is GrokVoiceLink, !VoiceDirect.usesGrok { self.stop() }
+            }
+        }
     }
     private var holdingMicrophone = false {
         didSet { if holdingMicrophone != oldValue { holdMicrophone(holdingMicrophone) } }
@@ -316,19 +320,18 @@ final class VoiceModel {
     var isOn: Bool { link != nil || dictation != nil || isConnecting }
     private var isConnecting: Bool { if case .connecting = phase { return true }; return false }
 
-    /// Voice can start: the OpenAI key on this iPhone (Realtime, no bridge), the Mac's voice bridge, or
-    /// dictation into the chat with whichever model Poki uses.
-    var canTalk: Bool { VoiceDirect.apiKey != nil || bridge != nil || VoiceDirect.canDictate }
+    /// Voice can start with a live provider, the Mac's bridge, or dictation into the chat.
+    var canTalk: Bool { canTalkLive || VoiceDirect.canDictate }
 
-    /// A live (Realtime) conversation can start: the OpenAI key on this iPhone or the voice bridge.
-    /// Without one, voice is dictation into the message field, turn by turn.
-    var canTalkLive: Bool { VoiceDirect.apiKey != nil || bridge != nil }
+    /// Live voice uses a Grok sign-in, an OpenAI key, or the voice bridge.
+    var canTalkLive: Bool { VoiceDirect.usesGrok || VoiceDirect.apiKey != nil || bridge != nil }
 
     /// A live Realtime conversation is on or connecting (not the hold-to-dictate fallback).
     var isLive: Bool { isOn && dictation == nil }
 
     /// How voice runs now, for the settings screen.
     var route: String {
+        if VoiceDirect.usesGrok { return String(localized: "Grok Live Voice") }
         if VoiceDirect.apiKey != nil { return String(localized: "Your OpenAI key, straight from this iPhone") }
         if let bridge { return String(localized: "Voice bridge at \(bridge.display)") }
         if VoiceDirect.canDictate { return String(localized: "Dictation to \(ModelKeys.selectedModelName), Poki reads the answer aloud") }
@@ -367,11 +370,18 @@ final class VoiceModel {
 
     func start(microphone: Bool = true) async {
         guard link == nil, dictation == nil, !isConnecting else { return }
-        // The OpenAI key on this iPhone first (no Mac needed), then the bridge, then dictation.
-        let key = VoiceDirect.apiKey
-        if key == nil, bridge == nil {
+        // An opted-in Grok account comes first, then OpenAI, the bridge and dictation.
+        let usesGrok = VoiceDirect.usesGrok
+        let key = usesGrok ? nil : VoiceDirect.apiKey
+        let bridge = self.bridge
+        if !usesGrok, key == nil, bridge == nil {
             if VoiceDirect.canDictate, microphone { await startDictation() } else { phase = .lost(VoiceError.noBridge.localizedDescription) }
             return
+        }
+        func webRTCToken() async throws -> VoiceBridge.Token {
+            if let key { return try await VoiceDirect.token(apiKey: key) }
+            if let bridge { return try await bridge.token() }
+            throw VoiceError.noBridge
         }
         phase = .connecting
         session += 1
@@ -382,32 +392,39 @@ final class VoiceModel {
             if microphone, !(await AVAudioApplication.requestRecordPermission()) { throw VoiceError.noMicrophone }
             guard number == session else { return }
             let token: VoiceBridge.Token
-            if let key { token = try await VoiceDirect.token(apiKey: key) } else { token = try await bridge!.token() }
+            if usesGrok {
+                let access = try? await GrokCredential.shared.accessToken()
+                guard number == session else { return }
+                guard VoiceDirect.usesGrok else { stop(); return }
+                guard let access else { throw GrokVoiceLink.Failure.signInRequired }
+                token = .init(value: access, model: GrokVoiceLink.model, local_tools: ["get_ios_version", "look", "do"])
+            } else {
+                token = try await webRTCToken()
+            }
             // Ended (End, or the button again) while the key was exchanged.
             guard number == session else { return }
             localTools = Set(token.local_tools)
-            var link = connection({ [weak self] event in self?.handle(event, session: number) },
-                                  { [weak self] reason in self?.closed(reason, session: number) })
+            let onEvent: @MainActor ([String: Any]) -> Void = { [weak self] event in self?.handle(event, session: number) }
+            let onClosed: @MainActor (String) -> Void = { [weak self] reason in self?.closed(reason, session: number) }
+            var link: VoiceConnection = usesGrok ? GrokVoiceLink(onEvent: onEvent, onClosed: onClosed) : connection(onEvent, onClosed)
             self.link = link
             transcript = ("voice-\(UUID().uuidString.prefix(8).lowercased())", Date(), lines.count)
             if microphone { holdingMicrophone = true }
             do {
                 try await link.connect(secret: token.value, microphone: microphone, direct: false)
-            } catch VoiceError.noPath(let ice) {
+            } catch VoiceError.noPath(let ice) where !usesGrok {
                 // No path opened (ICE \(ice)): once more, off VPN interfaces (Poki's loopback, a proxy
                 // app) and with a fresh key, before telling the owner.
                 guard number == session else { return }
                 log.add("voice", "no network path opened (ICE \(ice)); trying again off VPN interfaces")
                 link.close()
-                let retry: VoiceBridge.Token
-                if let key { retry = try await VoiceDirect.token(apiKey: key) } else { retry = try await bridge!.token() }
+                let retry = try await webRTCToken()
                 guard number == session else { return }
-                link = connection({ [weak self] event in self?.handle(event, session: number) },
-                                  { [weak self] reason in self?.closed(reason, session: number) })
+                link = connection(onEvent, onClosed)
                 self.link = link
                 try await link.connect(secret: retry.value, microphone: microphone, direct: true)
             }
-            guard number == session else { link.close(); return }
+            guard number == session, self.link === link else { link.close(); return }
             // The server owes session.created now; the microphone is on while Poki waits for it.
             lastActivity = time.now()
             watchForStall(session: number)
@@ -750,7 +767,7 @@ final class VoiceModel {
         lines.append(VoiceLine(role: .tool, text: Self.describe(call)))
         log.add("voice", "tool \(call.name) \(call.arguments)")
         let local = localTools.contains(call.name)
-        let bridge = bridge
+        let bridge = link is GrokVoiceLink ? nil : self.bridge
         Task {
             var state = VoiceCall.State.done
             var output: String
@@ -831,6 +848,7 @@ final class VoiceModel {
     /// Asks for a response once none is active (the API takes one at a time).
     private func flush() {
         guard wantsResponse, activeResponse == nil, ready, let link else { return }
+        if link is GrokVoiceLink, calls.contains(where: { $0.session == session && $0.state == .running }) { return }
         wantsResponse = false
         awaitingAnswer = true
         let id = UUID().uuidString

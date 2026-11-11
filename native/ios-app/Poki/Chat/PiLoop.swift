@@ -49,6 +49,12 @@ final class PiLoop {
             // Go's Anthropic and Gemini adapters also require Console Bearer auth.
             // Resolve the key for EACH request so credential changes never leave stale headers.
             getModelAuth: { model in
+                if provider == .grok {
+                    guard let token = await ModelCredential.apiKey(for: provider) else {
+                        return AgentModelAuth(error: Self.grokSignInAgain)
+                    }
+                    return AgentModelAuth(apiKey: token)
+                }
                 guard provider == .opencodeGo else { return nil }
                 guard let key = await ModelCredential.apiKey(for: provider) else {
                     return AgentModelAuth(error: String(localized: "OpenCode Go API key is missing."))
@@ -139,6 +145,13 @@ final class PiLoop {
 
     /// The provider's message for the owner. pi never puts the key in it; a sign-in that ran out says so.
     private static func words(_ message: String, provider: ModelProvider) -> String {
+        if provider == .grok {
+            if message.contains("403") {
+                return String(localized: "xAI refused model access. Check whether your Grok subscription includes OAuth model access.")
+            }
+            if message.contains("401") || message == grokSignInAgain { return grokSignInAgain }
+            return String(localized: "Grok could not complete this request. Try again.")
+        }
         if message.contains("No API key") || message.contains("missingApiKey") || message.isEmpty && !ModelKeys.hasKey(provider) {
             return provider.signsIn ? String(localized: "Sign in to ChatGPT again. Tap my picture, then Model.")
                                     : String(localized: "Add your \(provider.name) key. Tap my picture, then Model.")
@@ -152,6 +165,10 @@ final class PiLoop {
             return rest.isEmpty ? said : said + " (" + rest + ")"
         }
         return String(localized: "\(provider.name), \(message.isEmpty ? String(localized: "the request failed.") : message)")
+    }
+
+    private nonisolated static var grokSignInAgain: String {
+        String(localized: "Sign in to Grok again. Tap my picture, then Model.")
     }
 }
 

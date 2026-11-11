@@ -7,6 +7,7 @@ import Speech
 /// - With the owner's OpenAI API key on this iPhone, Poki asks OpenAI for a one-minute Realtime key
 ///   itself (what `bin/voice-bridge.mjs` does on the Mac: the same model, instructions and tools), and
 ///   look and do run here, through PokiCore, as with the bridge's phone tools.
+/// - With an eligible Grok sign-in, a WebSocket carries audio and the same local tools.
 /// - With any other model (a ChatGPT plan, Anthropic, OpenRouter…), whose sign-in has no Realtime
 ///   audio, holding the button dictates on this iPhone (Apple's speech recognition, on the device when
 ///   it can) and lets go to send it to Poki's chat; Poki reads the answer out loud.
@@ -21,6 +22,27 @@ enum VoiceDirect {
     static var enabled: Bool {
         get { UserDefaults.standard.object(forKey: "voice.openai.enabled") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "voice.openai.enabled"); ModelKeys.saved += 1 }
+    }
+
+    static var grokEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "voice.grok.enabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "voice.grok.enabled"); ModelKeys.saved += 1 }
+    }
+
+    static var usesGrok: Bool { grokEnabled && GrokAccount.canAuthenticate }
+
+    static var grokSession: [String: Any] {
+        let format: [String: Any] = ["type": "audio/pcm", "rate": 24_000]
+        var input: [String: Any] = ["format": format]
+        if Locale.preferredLanguages.first?.hasPrefix("zh") == true {
+            input["transcription"] = ["language_hint": "zh"]
+        }
+        return ["type": "session.update", "session": [
+            "voice": "eve", "instructions": instructions,
+            "turn_detection": ["type": "server_vad"],
+            "audio": ["input": input, "output": ["format": format]],
+            "tools": tools,
+        ]]
     }
 
     /// Dictation into the chat works with any model the chat can use.

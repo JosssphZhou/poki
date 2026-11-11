@@ -244,12 +244,13 @@ final class VoiceModelTests: XCTestCase {
     /// The connection fails (a key OpenAI refuses, no network): the bar that said "Connecting" goes with
     /// it, so the reason is left in the chat instead of vanishing.
     func testAConnectionThatFailsSaysWhyInTheChat() async {
-        let h = Harness(failConnect: VoiceError.realtime(401, "Incorrect API key provided"))
+        let error = VoiceError.realtime(401, "Incorrect API key provided")
+        let h = Harness(failConnect: error)
         await h.connect()
         XCTAssertFalse(h.voice.isOn)
         XCTAssertEqual(h.microphone, [true, false])
         let said = h.ended.last?.map(\.text).joined() ?? ""
-        XCTAssertTrue(said.contains("OpenAI answered 401: Incorrect API key provided"), said)
+        XCTAssertTrue(said.contains(error.localizedDescription), said)
     }
 
     /// Talk to Poki, then Home before it has connected: it never opens the microphone in the background.

@@ -2,13 +2,13 @@ import AVFoundation
 import Foundation
 import WebRTC
 
-/// What VoiceModel talks through: a VoiceLink in the app, a recorded conversation in tests.
+/// What VoiceModel talks through: a realtime connection or a recorded conversation in tests.
 protocol VoiceConnection: AnyObject, Sendable {
-    func connect(secret: String, microphone: Bool, direct: Bool) async throws
-    @discardableResult func send(_ event: [String: Any]) -> Bool
-    func setRemoteVolume(_ value: Double)
-    func diagnose(_ write: @escaping @MainActor (String) -> Void)
-    func close()
+    @MainActor func connect(secret: String, microphone: Bool, direct: Bool) async throws
+    @MainActor @discardableResult func send(_ event: [String: Any]) -> Bool
+    @MainActor func setRemoteVolume(_ value: Double)
+    @MainActor func diagnose(_ write: @escaping @MainActor (String) -> Void)
+    @MainActor func close()
 }
 
 /// One WebRTC connection to the OpenAI Realtime API: the microphone as the audio track, the model's

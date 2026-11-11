@@ -254,6 +254,7 @@ extension ModelProvider {
         switch self {
         case .anthropic: "Provider-anthropic"
         case .openai, .chatgpt: "Provider-openai"
+        case .grok: "Provider-grok"
         case .gemini: "Provider-googlegemini"
         case .deepseek: "Provider-deepseek"
         case .openrouter: "Provider-openrouter"

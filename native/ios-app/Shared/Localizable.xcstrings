@@ -20010,6 +20010,438 @@
           }
         }
       }
+    },
+    "Continue with Grok" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续使用 Grok"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繼續使用 Grok"
+          }
+        }
+      }
+    },
+    "Enable Live Voice for Grok or OpenAI (tap here for Model), or use the voice bridge. The microphone in the field dictates with any model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请为 Grok 或 OpenAI 启用实时语音（点这里打开模型设置），或使用语音桥接。输入框的麦克风可搭配任何模型使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請為 Grok 或 OpenAI 啟用即時語音（點這裡開啟模型設定），或使用語音橋接。輸入欄的麥克風可搭配任何模型使用。"
+          }
+        }
+      }
+    },
+    "Enable Live Voice under your Grok or OpenAI account in Poki › Model. Dictation in the message field works with every model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在 Poki 的模型设置中，为 Grok 或 OpenAI 账号启用实时语音。输入框的听写适用于所有模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在 Poki 的模型設定中，為 Grok 或 OpenAI 帳號啟用即時語音。輸入欄的聽寫適用於所有模型。"
+          }
+        }
+      }
+    },
+    "Grok Live Voice" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 实时语音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 即時語音"
+          }
+        }
+      }
+    },
+    "Grok could not complete this request. Try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 未能完成这次请求。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 未能完成這次要求。請重試。"
+          }
+        }
+      }
+    },
+    "Grok live voice uses the xAI account you signed in with." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 实时语音使用你登录的 xAI 账号。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 即時語音使用你登入的 xAI 帳號。"
+          }
+        }
+      }
+    },
+    "Grok reported a live voice error." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 报告了实时语音错误。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 回報了即時語音錯誤。"
+          }
+        }
+      }
+    },
+    "Grok sign-in was declined." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 登录已被拒绝。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 登入已遭拒絕。"
+          }
+        }
+      }
+    },
+    "Live voice works with Grok sign-in or an OpenAI API key. Dictation in the message field works with this account." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音支持 Grok 登录或 OpenAI API 密钥。此账号可以使用输入框的听写功能。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時語音支援 Grok 登入或 OpenAI API 金鑰。此帳號可以使用輸入欄的聽寫功能。"
+          }
+        }
+      }
+    },
+    "Open xAI Sign-in" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 xAI 登录页"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 xAI 登入頁"
+          }
+        }
+      }
+    },
+    "Open xAI in your browser and approve the code to use your eligible Grok subscription for text chat. Poki keeps the tokens in this iPhone’s Keychain." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在浏览器打开 xAI 并确认验证码，即可使用符合条件的 Grok 订阅进行文字聊天。Poki 把令牌保存在这台 iPhone 的钥匙串中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在瀏覽器開啟 xAI 並確認驗證碼，即可使用符合資格的 Grok 訂閱進行文字聊天。Poki 將權杖儲存在這台 iPhone 的鑰匙圈中。"
+          }
+        }
+      }
+    },
+    "Or sign in on another device" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可在其他设备上登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "也可在其他裝置上登入"
+          }
+        }
+      }
+    },
+    "Poki could not connect to Grok live voice." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 无法连接 Grok 实时语音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 無法連線至 Grok 即時語音。"
+          }
+        }
+      }
+    },
+    "Poki could not prepare the microphone for Grok live voice." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 无法为 Grok 实时语音准备麦克风。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 無法為 Grok 即時語音準備麥克風。"
+          }
+        }
+      }
+    },
+    "Set up an account for live voice in Model, or enter a voice bridge address from your Mac." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在模型设置中配置实时语音账号，或输入 Mac 上的语音桥接地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在模型設定中設定即時語音帳號，或輸入 Mac 上的語音橋接位址。"
+          }
+        }
+      }
+    },
+    "Sign in to Grok again. Tap my picture, then Model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重新登录 Grok。点我的头像，再打开「模型」。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請重新登入 Grok。點我的頭像，再開啟「模型」。"
+          }
+        }
+      }
+    },
+    "Sign in to Grok first. Tap my picture, then Model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录 Grok。点我的头像，再打开「模型」。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先登入 Grok。點我的頭像，再開啟「模型」。"
+          }
+        }
+      }
+    },
+    "Sign in with Grok" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Grok 登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Grok 登入"
+          }
+        }
+      }
+    },
+    "Sign in with Grok again to use live voice." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请重新登录 Grok 以使用实时语音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請重新登入 Grok 以使用即時語音。"
+          }
+        }
+      }
+    },
+    "Text chat works with every account. Live voice works with Grok sign-in or an OpenAI API key." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有账号都支持文字聊天。实时语音支持 Grok 登录或 OpenAI API 密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有帳號都支援文字聊天。即時語音支援 Grok 登入或 OpenAI API 金鑰。"
+          }
+        }
+      }
+    },
+    "The Grok sign-in code expired. Start again for a new code." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 登录验证码已过期。请重新获取。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grok 登入驗證碼已過期。請重新取得。"
+          }
+        }
+      }
+    },
+    "Waiting for xAI authorization…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待 xAI 授权…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待 xAI 授權…"
+          }
+        }
+      }
+    },
+    "xAI could not finish Grok sign-in. Check your account and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 未能完成 Grok 登录。请检查账号后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 未能完成 Grok 登入。請檢查帳號後重試。"
+          }
+        }
+      }
+    },
+    "xAI refused live voice for this Grok account." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 拒绝了此 Grok 账号的实时语音请求。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 拒絕了此 Grok 帳號的即時語音要求。"
+          }
+        }
+      }
+    },
+    "xAI refused model access. Check whether your Grok subscription includes OAuth model access." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 拒绝了模型访问。请检查你的 Grok 订阅是否支持通过 OAuth 使用模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 拒絕了模型存取。請檢查你的 Grok 訂閱是否支援透過 OAuth 使用模型。"
+          }
+        }
+      }
+    },
+    "xAI rejected the Grok voice session settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 拒绝了 Grok 语音会话的配置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 拒絕了 Grok 語音工作階段的設定。"
+          }
+        }
+      }
+    },
+    "xAI returned an invalid sign-in response." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 返回了无效的登录响应。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xAI 傳回了無效的登入回應。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

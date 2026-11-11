@@ -11,6 +11,7 @@ enum ModelCatalog {
         switch provider {
         case .anthropic: ["claude-haiku-5-5", "claude-sonnet-5-5"]
         case .openai, .chatgpt: ["gpt-6.1-terra"]
+        case .grok: ["grok-4.7", "grok-4.6"]
         case .deepseek: ["deepseek-flash"]
         case .gemini: ["gemini-3.8-flash"]
         case .openrouter: ["anthropic/claude-sonnet-5.5", "google/gemini-3.8-flash"]
@@ -126,8 +127,8 @@ enum ModelCatalog {
             guard let url = URL(string: base)?.appending(path: "models") else { return nil }
             request = URLRequest(url: url)
             if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
-        case .chatgpt:
-            // A ChatGPT sign-in has no model list; its plan's models are the built-in ones.
+        case .chatgpt, .grok:
+            // OAuth accounts use the built-in list for their subscription.
             return nil
         }
         request.timeoutInterval = 15
