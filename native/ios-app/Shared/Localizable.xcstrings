@@ -5622,6 +5622,22 @@
         }
       }
     },
+    "Right now I don’t ask before sensitive steps such as paying, deleting or sending. You can change that in Agents › Safety › Approvals." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前我不会在付款、删除、发送等敏感步骤前先问你。可以在“智能体 › 安全 › 批准”中更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前我不會在付款、刪除、傳送等敏感步驟前先問你。可以在「AI 代理 › 安全 › 批准」中更改。"
+          }
+        }
+      }
+    },
     "Run Checks" : {
       "localizations" : {
         "zh-Hans" : {
