@@ -125,7 +125,7 @@ struct RootView: View {
         }
     }
 
-    var body: some View {
+    private var tabs: some View {
         TabView(selection: $tab) {
             Tab(String(localized: "Poki"), systemImage: "bubble.left.and.bubble.right.fill", value: RootTab.chats) { pokiTab }
 
@@ -145,6 +145,10 @@ struct RootView: View {
                 Tab(String(localized: "New Chat"), systemImage: "square.and.pencil", value: RootTab.newChat, role: .search) { Color.clear }
             }
         }
+    }
+
+    private var tabsWithPrompts: some View {
+        tabs
         .onChange(of: tab) { old, new in
             // Leaving the Poki tab from a conversation (to Accounts, Setup, a connector): the Poki
             // tab is back at Sessions, with its tab bar, when you come back. Done without animation
@@ -187,6 +191,10 @@ struct RootView: View {
         } message: {
             Text("This is the first time Poki starts automation since your iPhone restarted, so iOS will ask for your passcode on the next screen. That screen belongs to iOS: Poki can’t see or read what you enter, and it asks only once until the next restart.")
         }
+    }
+
+    var body: some View {
+        tabsWithPrompts
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
         }

@@ -83,6 +83,8 @@ The iPhone app's chat, Poki details and model pages ([native/ios-app/Poki/Chat](
 
 The plan bubble's motion (`PlanMotion.swift`) uses the spring, duration and order parameters of four [Motion+](https://motion.dev/plus) examples for React (notifications-list, copy-button, todo-list, typewriter-change-content), rewritten in SwiftUI. The typing pace is Poki's own. No Motion+ file is included.
 
+Assistant messages render GitHub Flavored Markdown using [gonzalezreal/swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) 2.4.1 (MIT; [full notice](third_party/LICENSE.markdown-ui)). Its runtime dependencies include NetworkImage (MIT; [full notice](third_party/LICENSE.network-image)) and swift-cmark (BSD-2-Clause and included notices; [full notice](third_party/LICENSE.swift-cmark)). These are Swift package dependencies, not copied source files.
+
 ## iPhone app model loop
 
 The chat's model loop (`native/ios-app/Poki/Chat/PiLoop.swift`) links two products of [xibbon/PiSwift](https://github.com/xibbon/PiSwift/tree/f8696524cf41ca0a7f42f5b230eafa443daececd) at commit `f869652`, a Swift port of Mario Zechner's pi-mono, copyright 2025 Mario Zechner, under the [MIT license](third_party/LICENSE.piswift): PiSwiftAgent (the agent loop) and PiSwiftAI (the model providers and the ChatGPT sign-in). They are a Swift package dependency, not copied files; PiSwift's own dependencies come with it through the package resolution: MacPaw/OpenAI and jamesrochabrun/SwiftAnthropic (MIT) and apple/swift-argument-parser (Apache-2.0).

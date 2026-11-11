@@ -306,10 +306,18 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             guard let route else { return refused(404, "unknown command", "not answered in-process: \(key)") }
             return (200, (["value": try route(body, element)] as JSON).data())
         } catch let r as Refusal {
+            noteAuthorizationFailure(r.message)
             return refused(r.code == "invalid session id" ? 404 : 500, r.code, r.message)
         } catch {
+            noteAuthorizationFailure("\(error)")
             return refused(500, "unknown error", "\(error)")
         }
+    }
+
+    private func noteAuthorizationFailure(_ message: String) {
+        guard AutomationAuthorization.isDenied(message) else { return }
+        native.authorizationRejected()
+        NotificationCenter.default.post(name: AutomationAuthorization.lost, object: nil)
     }
 
     /// The native outcome as WDA's answer: sent is done, not sent is refused, and an unknown outcome is
@@ -322,7 +330,11 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
                 throw Refusal("invalid session id", "the automation session ended before the action was sent (\(outcome.code ?? ""))")
             }
             throw Refusal("unknown error", "not sent: \(outcome.code ?? "unknown")\(outcome.detail.map { " (\($0))" } ?? "")")
-        case .unknown: throw TransportError.other("sent, no confirmation: \(outcome.code ?? "unknown")")
+        case .unknown:
+            // Keep a refusal's reason so it can expire the authorization cache. Other dispatched
+            // failures remain unknown; no action is automatically replayed here.
+            let detail = outcome.detail ?? ""
+            throw TransportError.other("sent, no confirmation: \(outcome.code ?? "unknown")\(detail.isEmpty ? "" : ": \(detail)")")
         @unknown default: throw TransportError.other("unknown outcome")
         }
     }

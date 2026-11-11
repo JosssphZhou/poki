@@ -7,6 +7,13 @@ import XCTest
 /// owner cancelled the passcode, testmanagerd did not answer within 3 s), an agent's call hears why at
 /// once and asks for another try, instead of every call waiting out "opening the session".
 final class InProcessSessionTests: XCTestCase {
+    func testOnlyAnExplicitAuthorizationRefusalExpiresAuthorization() {
+        XCTAssertTrue(AutomationAuthorization.isDenied("The runner refused: Not authorized for performing UI testing actions."))
+        XCTAssertFalse(AutomationAuthorization.isDenied("no_front_app"))
+        XCTAssertFalse(AutomationAuthorization.isDenied("reply_timeout"))
+        XCTAssertFalse(AutomationAuthorization.isDenied("The request to open the app failed."))
+    }
+
     func testAFailedOpenIsAnsweredWithItsReasonAndTheCallTriesAgain() {
         let host = AppCoreHost()
         let tries = Tries()

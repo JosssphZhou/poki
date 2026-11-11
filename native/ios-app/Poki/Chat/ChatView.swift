@@ -19,22 +19,24 @@ struct ChatView: View {
     @State private var newName = ""
 
     var body: some View {
-        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
+        ChatTranscript(entries: chat.entries, typing: chat.running, canRetry: chat.canRetry, retry: chat.retry) {
             if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
             if !ApprovalClassifier.isOn, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
             }
             LiveVoiceTranscript(voice: voice)
         }
-        // The header and the message field are insets of the conversation, so the field sits right on
-        // the keyboard (or the home indicator) and the bubbles scroll under both, as in Messages.
+        // The composer reserves space above the keyboard, with an opaque surface through the home
+        // indicator. Scrolling content must not remain readable behind or below the input field.
         .safeAreaInset(edge: .top, spacing: 0) {
             if voice.isOn { LiveVoiceBar(voice: voice).transition(.move(edge: .top).combined(with: .opacity)) }
         }
         .animation(.snappy, value: voice.isOn)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
-                              newConversation: chat.newConversation)
+            ChatComposerSurface {
+                ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
+                                  newConversation: chat.newConversation)
+            }
         }
         .background(Color(.systemBackground))
         // The conversation's name (the one Poki gave it, or the owner's) is the title, and its title
@@ -112,7 +114,7 @@ struct ChatTranscript<Footer: View>: View {
                 }
                 if typing {
                     HStack { TypingBubble(); Spacer(minLength: .messageInsetPadding) }
-                        .padding(.top, 4).transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottomLeading)))
+                        .padding(.top, 4)
                 }
                 if canRetry {
                     Button(action: retry) { Label("Try Again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
@@ -122,8 +124,9 @@ struct ChatTranscript<Footer: View>: View {
             }
             .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
             .frame(maxWidth: .infinity)
-            .animation(PlanMotion.enter, value: entries)
-            .animation(.easeOut(duration: 0.2), value: typing)
+            // Tool progress changes existing entries frequently. Animating the entire transcript
+            // also animates its height and the bottom scroll anchor, making the page flash/jump.
+            // PlanBubble still owns its local step animations.
         }
         // Opens at the newest message, keeps a short chat at the bottom, and follows new lines (the
         // live voice transcript grows below the messages) while the content itself scrolls freely.
@@ -167,10 +170,8 @@ struct ChatTranscript<Footer: View>: View {
                 .padding(.top, startsRun(i) ? 10 : 0)
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
-            HStack {
-                PlanBubble(steps: steps, tail: isLast(i, poki: true))
-                Spacer(minLength: .messageInsetPadding)
-            }
+            PlanBubble(steps: steps, tail: isLast(i, poki: true))
+                .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(PlanMotion.stepTransition)
         case .note(let note):
@@ -240,22 +241,18 @@ enum ChatTime {
     }
 }
 
-/// Three dots that rise in turn: the model is working on its answer.
+/// A stable waiting row for the whole task, including tool calls. The spinner draws in a fixed
+/// frame; it does not publish a 30 Hz timeline through the conversation's layout.
 struct TypingBubble: View {
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 4) {
-                ForEach(0..<3) { i in
-                    let phase = (sin((t * 2 * .pi / 1.2) - Double(i) * 0.9) + 1) / 2
-                    Circle().fill(ChatColor.secondary.opacity(0.45 + 0.45 * phase)).frame(width: 8, height: 8).offset(y: -3 * phase)
-                }
-            }
+        ProgressView()
+            .tint(ChatColor.secondary)
+            .frame(width: 32, height: 14)
             .padding(.vertical, 13).padding(.horizontal, 15)
             .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: .tailRadius,
                                                                        bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
-        }
-        .accessibilityLabel(Text("Poki is typing"))
+            .transaction { $0.animation = nil }
+            .accessibilityLabel(Text("Poki is typing"))
     }
 }
 
@@ -298,59 +295,6 @@ struct PokiAvatar: View {
 }
 
 // MARK: Plan
-
-/// The steps of a task in one Poki bubble: done steps ticked, the step under way typing its words.
-struct PlanBubble: View {
-    var steps: [PlanStep]
-    var tail: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(steps) { step in
-                PlanRow(step: step).transition(PlanMotion.stepTransition)
-            }
-        }
-        .animation(PlanMotion.enter, value: steps)
-        .padding(.vertical, 10).padding(.horizontal, 14)
-        .frame(width: 250, alignment: .leading)
-        .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: tail ? .tailRadius : .cornerRadius,
-                                                                    bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct PlanRow: View {
-    var step: PlanStep
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            ZStack {
-                switch step.state {
-                case .done:
-                    DrawingCheck(color: ChatColor.green).frame(width: 12, height: 12).transition(PlanMotion.swapTransition)
-                case .failed:
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(.systemRed)).transition(PlanMotion.swapTransition)
-                case .current, .waiting:
-                    Circle().strokeBorder(ChatColor.secondary.opacity(0.6), lineWidth: 1).frame(width: 13, height: 13).transition(PlanMotion.swapTransition)
-                }
-            }
-            .frame(width: 13)
-            .animation(PlanMotion.swap, value: step.state)
-            Group {
-                switch step.state {
-                case .current, .waiting:
-                    TypewriterText(text: step.state == .waiting ? String(localized: "\(step.text), waiting for you") : step.text,
-                                   font: .system(size: 15), color: ChatColor.pending)
-                case .done, .failed:
-                    Text(step.text).font(.system(size: 15)).foregroundStyle(Color(.label))
-                        .transition(PlanMotion.swapTransition.animation(PlanMotion.swap.delay(PlanMotion.stagger)))
-                }
-            }
-            .animation(PlanMotion.complete, value: step.state)
-        }
-        .lineLimit(2)
-    }
-}
 
 // MARK: Notes
 
@@ -463,7 +407,7 @@ struct ComposerInputView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 HStack(alignment: .bottom, spacing: 4) {
                     TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
-                        .font(.system(size: 17))
+                        .font(.system(size: 16))
                         .focused($focused)
                         .multilineTextAlignment(.leading)
                         .lineLimit(1...6)
@@ -474,9 +418,10 @@ struct ComposerInputView: View {
                 }
                 .padding(.leading, 16).padding(.trailing, 4)
                 .frame(minHeight: 40)
-                .composerGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Color(.separator).opacity(0.25), lineWidth: 0.5) }
             }
-            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
+            .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 10)
         }
         .animation(.snappy, value: dictation.on)
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }

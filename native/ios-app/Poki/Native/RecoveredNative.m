@@ -118,7 +118,8 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
         @"inputAttempted":@(_committed), @"inputDispatched":@(_dispatched),
         @"acknowledgementPending":@(_pending > 0), @"acknowledgementPolicy":@"no_wait",
         @"inputAccepted":_received ? @(_replyError == nil) : NSNull.null,
-        @"deliveryProven":@NO, @"pendingReplies":@(_pending)};
+        @"deliveryProven":@NO, @"pendingReplies":@(_pending),
+        @"replyError":_replyError.localizedDescription ?: @""};
     [_lock unlock];
     return result;
 }
@@ -243,6 +244,18 @@ static NSArray<NSString *> *SRSelectorsWith(Class cls, NSString *part) {
     [_prepareLock lock];
     @try { return [self prepareLocked:error]; }
     @finally { [_prepareLock unlock]; }
+}
+- (void)authorizationRejected {
+    [_lifecycleLock lock];
+    _enabled = nil; _enabledGeneration = 0; _reused = NO;
+    [_lifecycleLock unlock];
+}
+- (id)prepareRevalidatingAuthorization:(NSError **)error {
+    [_prepareLock lock];
+    @try {
+        [self authorizationRejected];
+        return [self prepareLocked:error];
+    } @finally { [_prepareLock unlock]; }
 }
 - (id)prepareLocked:(NSError **)error {
     // Ordered NSArray recovered from 0x100ce91a8 -> 0x100ce7ef0.

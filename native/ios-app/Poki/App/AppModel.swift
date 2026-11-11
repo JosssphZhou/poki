@@ -342,6 +342,9 @@ final class AppModel {
             identity.secrets.first { $0.hash == hash }.map { $0.named ? $0.name : ($0.agent ?? $0.name) }
         }
         if UserDefaults.standard.string(forKey: "pokiSample") != nil { loadSample() }
+        NotificationCenter.default.addObserver(forName: AutomationAuthorization.lost, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.automationAuthorizationLost() }
+        }
         NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appWillTerminate() }
         }
@@ -357,6 +360,19 @@ final class AppModel {
 
     /// The in-process session as prepare last answered it in this process (ESP-152).
     private var inProcessSession = InProcessSession.opening
+    private(set) var automationAuthorizationRevoked = false
+
+    func automationAuthorizationLost() {
+        guard automationPath == .inProcess else { return }
+        automationAuthorizationRevoked = true
+        inProcessEpoch += 1
+        inProcessWarming = false
+        inProcessSession = .failed(code: "automation_unauthorized", detail: "iOS revoked UI automation authorization; open Poki and allow automation when iOS asks")
+        setup.uiAutomation = false
+        setup.save()
+        host.update(runner: coreState(of: runner))
+        log.add("runner", "iOS refused UI testing actions: the saved authorization is no longer valid; the next open revalidates it without replaying the action")
+    }
     /// Poki's own automation session (ESP-152); a fake in tests.
     private let automation: InProcessAutomation
     private var inProcessWarming = false
@@ -459,10 +475,19 @@ final class AppModel {
                 self.endPasscodeWait(opened: ok)
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
                 let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
-                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
+                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm)\((result["authorization_checked"] as? Bool) == true ? ", authorization revalidated" : ""))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
-                if ok { self.automationStarted() }
+                if ok {
+                    self.automationAuthorizationRevoked = false
+                    self.setup.uiAutomation = true
+                    self.setup.save()
+                    self.automationStarted()
+                }
                 let detail = result["detail"] as? String ?? ""
+                if !ok, AutomationAuthorization.isDenied(detail) {
+                    self.automationAuthorizationLost()
+                    return
+                }
                 // iOS gives up on the passcode after a minute and says only that enabling timed out.
                 let passcodeMissed = waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
                 // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
@@ -1140,7 +1165,7 @@ final class AppModel {
             // runner means UI Automation is on too. Setup's confirm steps tick themselves (a pairing
             // file from Poki Setup then needs nothing more on the phone).
             if !setup.developerMode { setup.developerMode = true; log.add("setup", "Developer Mode is on (the runner started)") }
-            if status.state == "running", !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
+            if status.state == "running", automationPath == .runner, !setup.uiAutomation { setup.uiAutomation = true; log.add("setup", "UI Automation is on (the runner runs)") }
             if status.state == "running", automationPath == .runner { automationStarted() }
             if status.state == "launching", runner.state != "launching" { launchingSince = Date() }
         case "failed" where status.code == "handshake":

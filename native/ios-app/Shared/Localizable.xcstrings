@@ -1,6 +1,46 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "iOS no longer authorizes this automation session. Keep the iPhone unlocked, open Poki and allow automation if iOS asks. The next request checks authorization again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 已撤销当前会话的自动化授权。请保持 iPhone 解锁，打开 Poki，并在系统提示时允许自动化。下次请求会重新检查授权。"
+          }
+        }
+      }
+    },
+    "Allow UI Automation Again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新允许界面自动化"
+          }
+        }
+      }
+    },
+    "Authorization Required" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要重新授权"
+          }
+        }
+      }
+    },
+    "Swipe to see all columns" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "左右滑动查看完整表格"
+          }
+        }
+      }
+    },
     "%@" : {
       "localizations" : {
         "zh-Hans" : {

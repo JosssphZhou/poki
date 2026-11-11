@@ -17,6 +17,9 @@ struct Health {
 
     @MainActor static func runner(_ model: AppModel) -> Health {
         guard model.sessionOn else { return Health(word: String(localized: "Off"), color: off) }
+        if model.automationAuthorizationRevoked {
+            return Health(word: String(localized: "Authorization Required"), color: Site.bad)
+        }
         let runner = model.runner
         let word = Bundle.main.localizedString(forKey: runner.title, value: runner.title, table: nil)
         if runner.isRunning { return Health(word: word, color: Site.ok) }
@@ -67,6 +70,10 @@ struct Issue: Identifiable {
     @MainActor static func current(_ model: AppModel) -> [Issue] {
         var out: [Issue] = []
         if model.sessionOn {
+            if model.automationAuthorizationRevoked {
+                out.append(Issue(id: "automation_authorization", title: String(localized: "Allow UI Automation Again"),
+                                 text: String(localized: "iOS no longer authorizes this automation session. Keep the iPhone unlocked, open Poki and allow automation if iOS asks. The next request checks authorization again."), fix: .retry))
+            }
             let runner = model.runner
             if runner.state == "failed", model.pairingTrouble == nil {
                 let fix = runner.fix ?? ""
