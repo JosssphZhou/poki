@@ -3484,22 +3484,6 @@
         }
       }
     },
-    "Needs Full Access" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要完全访问"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要完全訪問"
-          }
-        }
-      }
-    },
     "Needs Wi-Fi" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3907,6 +3891,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通知"
+          }
+        }
+      }
+    },
+    "One more step" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还差一步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還差一步"
           }
         }
       }
@@ -6466,6 +6466,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用系統拼音鍵盤輸入中文"
+          }
+        }
+      }
+    },
+    "Tap here, then switch keyboards" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点这里，然后切换键盘"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點這裡，然後切換鍵盤"
+          }
+        }
+      }
+    },
+    "Tap the globe key below the keyboard and switch to Poki once. I only need to see it appear, no typing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轻点键盘下方的地球键，切到 Poki 一次。看到我的面板出现就行，不用打字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輕點鍵盤下方的地球鍵，切到 Poki 一次。看到我的面板出現就行，不用打字。"
           }
         }
       }

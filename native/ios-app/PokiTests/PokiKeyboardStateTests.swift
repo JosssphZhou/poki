@@ -10,5 +10,7 @@ final class PokiKeyboardStateTests: XCTestCase {
         // Added with Full Access on, but the panel has not come up yet: one step is left, not a permission.
         XCTAssertEqual(PokiKeyboardState(added: true, answered: false).word, "One more step")
         XCTAssertEqual(PokiKeyboardState(added: true, answered: true).word, "Ready")
+        // Removed in Settings after it had answered: iOS's list no longer has it.
+        XCTAssertEqual(PokiKeyboardState(added: false, answered: true, listed: true).word, "Not Added")
     }
 }
