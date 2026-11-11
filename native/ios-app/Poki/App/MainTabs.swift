@@ -266,6 +266,7 @@ struct AdvancedView: View {
                 Text(afterTask == "return" ? "Poki comes back to the front with its reply when a task ends."
                      : "The phone stays where the task ended. Poki’s reply comes as a notification: touch and hold it to answer and carry on from there.")
             }
+            ActionButtonSection()
             Section {
                 Button("Notification Settings", systemImage: "bell.badge") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
