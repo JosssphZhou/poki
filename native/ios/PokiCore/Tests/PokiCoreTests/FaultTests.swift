@@ -1057,6 +1057,27 @@ final class GymTests: XCTestCase {
         XCTAssertEqual(tries.value, 2)
     }
 
+    /// A step handed to the owner waits two minutes at most, as an approval does: then it is taken
+    /// back at once, so a model polling for the owner does not wait on without end.
+    func testAHandoffIsTakenBackAfterTwoMinutes() async {
+        let (core, _, _) = makeCore()
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("look", [:])
+        core.computer.handoff.value = Handoff(id: "h", kind: "other", text: "Type the message", requested: Date().addingTimeInterval(-125))
+        let started = now()
+        let waited = await core.call("do", ["actions": [["wait_until": ["handoff_done": true, "ms": 3000]]]])
+        XCTAssertLessThan(now() - started, 2, waited.text)
+        XCTAssertNil(core.handoff, waited.text)
+        XCTAssertTrue(waited.text.contains("taken back"), waited.text)
+        let ended = await eventually { events.value.contains(.handoffEnded(id: "h", how: "expired")) }
+        XCTAssertTrue(ended, "\(events.value)")
+        // An owner's own takeover is theirs to end.
+        core.computer.handoff.value = Handoff(id: "t", kind: "other", text: "Editing", requested: Date().addingTimeInterval(-125), ownerOnly: true)
+        _ = await core.call("look", [:])
+        XCTAssertNotNil(core.handoff)
+    }
+
     /// A step handed to the owner: the Live Activity gets the event, inputs are held (with the
     /// picture), looks work, Done or a take-back ends it and the next answer says so once.
     func testAHandoffHoldsInputsUntilTheOwnerIsDone() async {

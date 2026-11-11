@@ -389,7 +389,7 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
         let before = items(try await readTree())
         guard let globe = before.first(where: { Self.globeLabels.contains($0.label) }) else {
-            return ("no keyboard with a globe key is on screen (no text field has the focus, or the field takes only its own keyboard)", false)
+            return (KeyboardSwitchMemory.noKeyboardOnScreen, false)
         }
         if !fresh, let was = place("globe"), let target = place(name), inList(target),
            abs(was.x - globe.frame.midX) < 2, abs(was.y - globe.frame.midY) < 2 {

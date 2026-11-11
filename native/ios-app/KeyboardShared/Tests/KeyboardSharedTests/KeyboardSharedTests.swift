@@ -276,3 +276,31 @@ final class KeyboardSharedTests: XCTestCase {
         XCTAssertEqual(KeyboardLink.read(KeyboardLink.Status.self, KeyboardLink.statusFile, in: directory)?.phase, .done)
     }
 }
+
+/// What Poki remembers of failed switches to its keyboard (the app's PokiKeyboardTyping).
+final class KeyboardSwitchMemoryTests: XCTestCase {
+    let start = Date()
+    let failure = "the globe key's list did not show Poki"
+
+    /// The order seen on the phone: a type in Settings with no field focused, then the first type in
+    /// another app two minutes later. Native services name no app, so both come without one.
+    func testASwitchWithNoFieldFocusedHoldsNothingBack() {
+        var memory = KeyboardSwitchMemory()
+        memory.note(in: nil, why: KeyboardSwitchMemory.noKeyboardOnScreen, at: start)
+        XCTAssertFalse(memory.failedLately(in: nil, at: start + 120), "the next app was held back")
+        memory.note(in: "Settings", why: KeyboardSwitchMemory.noKeyboardOnScreen, at: start)
+        XCTAssertFalse(memory.failedLately(in: "Settings", at: start + 120), "no keyboard on screen counted as a failed switch")
+    }
+
+    func testAFailedSwitchHoldsBackOnlyItsOwnApp() {
+        var memory = KeyboardSwitchMemory()
+        memory.note(in: nil, why: failure, at: start)
+        XCTAssertFalse(memory.failedLately(in: nil, at: start + 120), "a failure in an app without a name held back every app")
+        memory.note(in: "Settings", why: failure, at: start)
+        XCTAssertTrue(memory.failedLately(in: "Settings", at: start + 120))
+        XCTAssertFalse(memory.failedLately(in: "Messages", at: start + 120))
+        XCTAssertFalse(memory.failedLately(in: "Settings", at: start + 601))
+        memory.note(in: "Settings", why: nil, at: start + 130)
+        XCTAssertFalse(memory.failedLately(in: "Settings", at: start + 131), "a switch that worked clears the failure")
+    }
+}

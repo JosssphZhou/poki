@@ -122,4 +122,16 @@ final class NativeServicesWDATests: XCTestCase {
         XCTAssertEqual(points[2]["y"] as? Int, 16_527)
         XCTAssertEqual(points[2]["time_ms"] as? Double, 75)
     }
+
+    /// Characters that key presses cannot type, with pasting off, are refused with their own code,
+    /// which PokiCore does not send again.
+    func testATextKeysCannotTypeIsRefusedAsFinal() async throws {
+        UserDefaults.standard.removeObject(forKey: NativeServicesWDA.typingMethodKey)
+        let wda = NativeServicesWDA(screen: CGSize(width: 402, height: 874))
+        let body: JSON = ["value": ["你", "好"]]
+        let answer = try await wda.send(method: "POST", url: URL(string: "http://localhost/session/s/wda/keys")!, body: body.data(), timeout: 5)
+        let value = try JSON.parse(answer.body)["value"]
+        XCTAssertEqual(value?["error"]?.string, "poki cannot type")
+        XCTAssertTrue(value?["message"]?.string?.hasPrefix("Nothing was typed.") == true, "\(value as Any)")
+    }
 }

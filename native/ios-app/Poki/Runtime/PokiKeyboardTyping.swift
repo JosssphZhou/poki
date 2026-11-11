@@ -60,14 +60,14 @@ final class PokiKeyboardTyping {
     static let switchBackKey = "poki.keyboard.switchBack"
 
     private static let lock = NSLock()
-    private static var failedSwitches: [String: Date] = [:]
+    private static var switches = KeyboardSwitchMemory()
     private static func switchFailedLately(_ app: String?) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return failedSwitches[app ?? ""].map { Date().timeIntervalSince($0) < 600 } ?? false
+        return switches.failedLately(in: app, at: Date())
     }
-    private static func noteSwitch(_ app: String?, failed: Bool) {
+    private static func noteSwitch(_ app: String?, why: String?) {
         lock.lock(); defer { lock.unlock() }
-        failedSwitches[app ?? ""] = failed ? Date() : nil
+        switches.note(in: app, why: why, at: Date())
     }
 
     /// The last switch through the globe key's list brought the panel up: for the next ten minutes
@@ -119,7 +119,7 @@ final class PokiKeyboardTyping {
             if !accepted, switching {
                 whyNot = try await bringUp(id, in: directory, left: left)
                 accepted = whyNot == nil
-                Self.noteSwitch(options.app, failed: !accepted)
+                Self.noteSwitch(options.app, why: whyNot)
             }
             if !accepted {
                 if KeyboardLink.withdraw(KeyboardLink.requestFile, in: directory) {
