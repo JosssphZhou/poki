@@ -1078,6 +1078,28 @@ final class GymTests: XCTestCase {
         XCTAssertNotNil(core.handoff)
     }
 
+    /// A step only the owner may do (a password, a code, a payment) that they did not take over is
+    /// not done: no input goes on that page, the model is told to finish, and finishing is allowed.
+    func testAnOwnersStepTheyDidNotTakeOverIsNotDone() async {
+        let (core, wda, _) = makeCore()
+        let events = LockedBox<[CoreEvent]>([])
+        Task { for await e in core.events { events.update { $0.append(e) } } }
+        _ = await core.call("look", [:])
+        core.computer.handoff.value = Handoff(id: "p", kind: "password", text: "Enter your password", requested: Date().addingTimeInterval(-125))
+        let waited = await core.call("do", ["actions": [["wait_until": ["handoff_done": true, "ms": 3000]]]])
+        XCTAssertNil(core.handoff, waited.text)
+        XCTAssertTrue(waited.text.contains("did not take over") && waited.text.contains("was not done"), waited.text)
+        let ended = await eventually { events.value.contains(.handoffEnded(id: "p", how: "notDone")) }
+        XCTAssertTrue(ended, "\(events.value)")
+        let tap = await core.call("do", ["actions": [["tap": [100, 120]]]])
+        XCTAssertTrue(tap.text.hasPrefix("not_sent:"), tap.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 0)
+        let finished = await core.call("do", ["actions": [["wait": 10]], "finish": true])
+        XCTAssertFalse(finished.text.hasPrefix("not_sent:"), finished.text)
+        _ = await core.call("do", ["actions": [["tap": [100, 120]]]])
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "the next task sends inputs again")
+    }
+
     /// A step handed to the owner: the Live Activity gets the event, inputs are held (with the
     /// picture), looks work, Done or a take-back ends it and the next answer says so once.
     func testAHandoffHoldsInputsUntilTheOwnerIsDone() async {
