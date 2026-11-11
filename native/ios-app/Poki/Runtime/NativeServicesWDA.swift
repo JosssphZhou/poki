@@ -401,12 +401,14 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             return (nil, true)
         }
         try await send("long_press", at: centre(globe.frame), ["duration_ms": 560])
+        let held = Date()
         let known = Set(before.map(\.label))
         // The list opens under the finger and stays after it lifts.
-        var listed: [Item] = [], item: Item?
+        var read: [Item] = [], listed: [Item] = [], item: Item?
         for wait in [60, 200, 450] {
             try await Task.sleep(nanoseconds: UInt64(wait) * 1_000_000)
-            listed = items(try await readTree()).filter { !known.contains($0.label) && inList(centre($0.frame)) }
+            read = items(try await readTree())
+            listed = read.filter { !known.contains($0.label) && inList(centre($0.frame)) }
             item = listed.first { $0.label == name } ?? listed.first { $0.label.hasPrefix(name) }
             if item != nil { break }
         }
@@ -414,9 +416,8 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
             // Close the list where it opened, so the next touch is not spent on it.
             try? await send("tap", at: centre(globe.frame))
             defaults.removeObject(forKey: Self.keyboardListKey)
-            return (other == nil
-                ? "the globe key's list did not show \(name) (is the Poki keyboard turned on under Settings › Poki › Keyboards?)"
-                : "the globe key's list did not show \(name)", false)
+            return (Self.listMissed(name, listed: listed.map(\.label), named: read.filter { $0.label.hasPrefix(name) }.map(\.label),
+                                    after: Int(Date().timeIntervalSince(held) * 1000), poki: other == nil), false)
         }
         var learnt: [String: [Double]] = ["globe": [globe.frame.midX, globe.frame.midY]]
         for entry in listed { learnt[entry.label] = [entry.frame.midX, entry.frame.midY] }
@@ -429,6 +430,22 @@ final class NativeServicesWDA: HTTPTransport, @unchecked Sendable {
         }
         try await send("tap", at: centre(item.frame))
         return (nil, false)
+    }
+
+    /// Why the globe key's list gave no row for `name`, told apart by what the last read held: no
+    /// new row at all (the list opened late or not at all), a row with the name that was not taken
+    /// (it was on screen before the hold, or above the list), or a list without it (for Poki's
+    /// keyboard: it is not turned on, and the owner is told where to turn it on).
+    static func listMissed(_ name: String, listed: [String], named: [String], after ms: Int, poki: Bool) -> String {
+        if listed.isEmpty {
+            return "the globe key's list did not show \(name): nothing new came up within \(ms) ms of holding the globe key (the list opened late, or not at all)"
+        }
+        if let row = named.first {
+            return "the globe key's list did not show \(name) where it was looked for: a row \"\(row.prefix(40))\" was read, but it was on screen before the globe key was held, or above the list"
+        }
+        let rows = listed.prefix(8).map { "\"\($0.prefix(40))\"" }.joined(separator: ", ")
+        guard poki else { return "the globe key's list shows \(rows) and not \(name)" }
+        return "the globe key's list shows \(rows) and not \(name), so the Poki keyboard is not turned on. The owner turns it on under Settings › General › Keyboard › Keyboards › Add New Keyboard › Poki, then taps Poki there and turns on Allow Full Access"
     }
 
     /// Poki's keyboard gives way to the owner's own at the end of a task: through the globe key's
