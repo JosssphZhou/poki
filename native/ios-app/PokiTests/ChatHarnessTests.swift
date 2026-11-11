@@ -96,6 +96,27 @@ final class ChatHarnessTests: XCTestCase {
         let named = Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text).map { String(text[$0]) } })
         XCTAssertEqual(named.subtracting(tools), [], "named in agent-system.md but not offered to the model")
     }
+
+    /// Stop on the Live Activity ends the chat's task, as Pause in the app does. Before, only the
+    /// runner stood by: the model went on, and its next step started the runner again.
+    func testStopOnTheLiveActivityEndsTheChatsTask() async throws {
+        let waits = Array(repeating: ["wait": 1000], count: 3)
+        let server = try FakeCompletions(replies: [FakeCompletions.tool("do", ["actions": waits]), FakeCompletions.text("Done.")])
+        let chat = chat(on: server)
+
+        chat.send("Wait on the phone")
+        while chat.awaitingModel { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(chat.running)
+        app?.stopFromLiveActivity()
+        XCTAssertFalse(chat.running, "the chat's task went on after Stop on the Live Activity")
+        // The step under way ends by itself, and the model is not asked for another turn: a second
+        // request would follow the step's answer at once.
+        let stopped = ContinuousClock.now
+        while chat.savedCalls.isEmpty, ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertFalse(chat.savedCalls.isEmpty, "the step under way never ended")
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(server.requests.count, 1)
+    }
 }
 
 /// An OpenAI chat completions endpoint on 127.0.0.1: each request is kept and answered with the next
