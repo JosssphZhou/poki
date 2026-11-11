@@ -148,6 +148,19 @@ final class AppModelTests: XCTestCase {
         XCTAssertFalse(model.isDone(.pairing), "TCP recovery alone must not restore a stale protocol check")
     }
 
+    func testConnectionErrorsShowTheFailedStageWithoutTechnicalDetails() {
+        let cases = [
+            ("loopback", "Cannot connect to the iPhone's pairing service."),
+            ("handshake", "The iPhone's pairing service did not respond."),
+            ("pairing", "The iPhone did not accept this pairing."),
+            ("unreachable", "The device connection could not be completed.")
+        ]
+        for (code, message) in cases {
+            let error = SignerError(message: "raw protocol error: Connection refused (os error 61)", code: code)
+            XCTAssertEqual(error.localizedDescription, message, code)
+        }
+    }
+
     /// The agent's view of the runner follows every launcher event.
     func testHostSeesTheRunnerState() {
         let (model, _) = model()
@@ -195,6 +208,7 @@ final class AppModelTests: XCTestCase {
         model.loopback.simulate(.working(ms: 7))
         XCTAssertTrue(model.background.allowed && model.activitiesEnabled, "the simulator grants location and Live Activities")
         XCTAssertFalse(model.signer.signedIn)
+        model.runnerChanged(RunnerStatus(state: "running"))
 
         XCTAssertTrue(model.setupComplete, "left: \(SetupStep.shown.filter { !model.isDone($0) })")
         XCTAssertFalse(model.setupStepsLeft)
