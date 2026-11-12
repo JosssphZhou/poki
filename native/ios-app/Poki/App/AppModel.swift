@@ -812,7 +812,7 @@ final class AppModel {
         return await task.value
     }
 
-    func startSession(reconnectLocal: Bool = true) {
+    func startSession(reconnectLocal: Bool = true, chatRoute: ModelRoute? = nil) {
         guard !sessionOn, !sessionStarting else { return }
         // Turning on is the owner asking for automation again, after a cancelled passcode screen too.
         InProcessWDA.gate.withLock { $0.declined = false }
@@ -851,7 +851,7 @@ final class AppModel {
                         problem = "The phone refused the pairing (\(pairingTrouble ?? "")). Pair again in Setup."
                         return
                     }
-                    beginSession()
+                    beginSession(chatRoute: chatRoute)
                 } catch is CancellationError { }
                 catch { problem = error.localizedDescription }
             }
@@ -865,12 +865,17 @@ final class AppModel {
                     if let pairingTrouble { problem = "The phone refused the pairing (\(pairingTrouble)). Pair again in Setup." }
                     return
                 }
-                beginSession()
+                beginSession(chatRoute: chatRoute)
             }
-        } else { beginSession() }
+        } else { beginSession(chatRoute: chatRoute) }
     }
 
-    private func beginSession() {
+    static func hasLocalModel(selection: ModelSelection, captured: ModelRoute?, profiles: ModelProfiles) -> Bool {
+        if let captured { return captured.isRegistered(in: profiles) }
+        return selection.route(in: profiles) != nil
+    }
+
+    private func beginSession(chatRoute: ModelRoute?) {
         guard !sessionOn else { return }
         problem = nil
         #if targetEnvironment(simulator)
@@ -882,7 +887,10 @@ final class AppModel {
         #endif
         // The chat's own model loop needs no relay; agents on a computer do.
         let relay = activeRelay
-        guard relay != nil || ModelKeys.hasUsableKey else { problem = Self.noRelay; return }
+        guard relay != nil || Self.hasLocalModel(
+            selection: AskPoki.chat?.selection ?? ModelKeys.defaultSelection,
+            captured: chatRoute, profiles: .shared
+        ) else { problem = Self.noRelay; return }
         if !inFront { loopback.resume(every: 6) }
         guard Self.onSimulator || diskImage.isReady && diskImage.recheck() else {
             problem = "The developer disk image is not downloaded yet (Setup > Pair). It is needed once."
@@ -1372,8 +1380,9 @@ final class AppModel {
                 // The chat model checks it first: no Live Activity card, no notification, no tap. The chat shows it.
                 checking.append(approval)
                 log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); asking the auto-classifier")
+                let route = ApprovalClassifier.modelRoute
                 Task { [weak self] in
-                    let verdict = await ApprovalClassifier.decide(approval, level: ApprovalClassifier.Level.saved, voice: self?.voice.lines ?? [])
+                    let verdict = await ApprovalClassifier.decide(approval, level: ApprovalClassifier.Level.saved, voice: self?.voice.lines ?? [], route: route)
                     guard let self, self.checking.contains(where: { $0.id == approval.id }) else { return }
                     self.log.add("approval", "auto-classifier \(verdict.allowed ? "allowed" : "refused") \(approval.id): \(verdict.reason)")
                     if verdict.allowed || reply {
@@ -1487,9 +1496,12 @@ final class AppModel {
         activity.finishNow(alert: true)
     }
 
-    func runTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+    func runTool(_ name: String, arguments: String, chatRoute: ModelRoute? = nil) async -> PokiCore.ToolAnswer {
         if probeDriven { return await core.callTool(name, arguments: arguments) }
-        if !sessionOn { startSession() }
+        if let chatRoute, !chatRoute.isRegistered(in: .shared) || Task.isCancelled {
+            return PokiCore.ToolAnswer(text: "not_sent: The chat task or its model account is no longer available. Nothing was sent.", jpeg: nil, isError: true)
+        }
+        if !sessionOn { startSession(chatRoute: chatRoute) }
         guard sessionOn else {
             let why = problem ?? "Poki is off."
             return PokiCore.ToolAnswer(text: "not_sent: Poki could not turn on: \(why) Nothing was sent. Tell the owner what to fix.", jpeg: nil, isError: true)

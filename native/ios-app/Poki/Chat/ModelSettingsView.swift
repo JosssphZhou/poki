@@ -15,32 +15,52 @@ import SwiftUI
 struct ModelSettingsView: View {
     @State private var adding = false
     @State private var changing = false
+    @State private var problem: String?
     @State private var version = ModelKeys.saved
 
     var body: some View {
+        let profiles = ModelProfiles.shared.all
+        let registrations = ChatGPTProfiles.shared.all
+        let selection = AskPoki.chat?.selection ?? ModelKeys.defaultSelection
         List {
             // ESP-469 board "02 模型": what runs now, on a card on top, with the way to change the chat's model.
             Section {
-                InUseCard(add: { adding = true }, change: { changing = true })
+                InUseCard(selection: selection, hasAccounts: !profiles.isEmpty || !registrations.isEmpty, add: { adding = true }, change: { changing = true })
             } header: {
                 Text("In Use").textCase(nil)
             } footer: {
                 Text("Open an account to choose what it is used for. Dictation in the message field needs no account.")
             }
 
-            // With no account yet the card above has Add Account, and an empty group would only be a heading.
-            if ModelProvider.allCases.contains(where: ModelAccounts.isSetUp) {
-            Section {
-                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
-                    NavigationLink { AccountDetail(provider: provider) } label: { AccountRow(provider: provider) }
+            ForEach(ModelProvider.allCases.filter { provider in provider == .chatgpt ? !registrations.isEmpty : profiles.contains { $0.provider == provider } }) { provider in
+                Section(provider.name) {
+                    if provider == .chatgpt {
+                        ForEach(registrations) { profile in
+                            NavigationLink { ChatGPTProfileDetail(profileID: profile.id) } label: {
+                                VStack(alignment: .leading) {
+                                    HStack(spacing: 12) { ProviderTile(provider: provider); Text(profile.title) }
+                                    Text(profile.isSignedIn ? String(localized: "Signed In") : String(localized: "Sign In Again")).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .accessibilityLabel("\(provider.name), \(profile.title)")
+                            .accessibilityIdentifier("model.profile.\(profile.id.uuidString)")
+                        }
+                    } else {
+                        ForEach(profiles.filter { $0.provider == provider }) { profile in
+                            NavigationLink { ModelProfileDetail(profileID: profile.id) } label: {
+                                HStack(spacing: 12) { ProviderTile(provider: provider); Text(profile.title) }
+                            }
+                            .accessibilityLabel("\(provider.name), \(profile.title)")
+                            .accessibilityIdentifier("model.profile.\(profile.id.uuidString)")
+                        }
+                    }
                 }
-                Button("Add Account", systemImage: "plus") { adding = true }
-            } header: {
-                Text("Accounts").textCase(nil)
-            } footer: {
-                Text("Keys and sign-ins stay in this iPhone’s Keychain. Poki sends each one only to its own provider.")
             }
+
+            if !profiles.isEmpty || !registrations.isEmpty {
+                Section { Button("Add Account", systemImage: "plus") { adding = true }.accessibilityIdentifier("model.addAccount") }
             }
+            if let problem { Text(problem).foregroundStyle(.red) }
         }
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
         // (a rebuild dropped taps and the sheets it was presenting).
@@ -49,28 +69,36 @@ struct ModelSettingsView: View {
         .listSectionSpacing(16)
         .navigationTitle("Models")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(isPresented: $changing) { TextChatFeature(provider: ModelKeys.selectedProvider) }
+        .navigationDestination(isPresented: $changing) { ProfileModelSelection() }
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
         .sheet(isPresented: $adding) { AddAccount() }
+        .task {
+            do { _ = try ModelProfiles.shared.load() } catch { problem = error.localizedDescription }
+            for profile in ChatGPTProfiles.shared.all where profile.isSignedIn && profile.models == nil {
+                _ = await ChatGPTProfiles.shared.reloadModels(profile.id)
+            }
+        }
     }
 }
 
 /// What runs now: the chat's model and its account, what the text chat, live voice and dictation each
 /// use (main's In Use rows), and Change Chat Model (or Add Account while there is none).
 private struct InUseCard: View {
+    var selection: ModelSelection
+    var hasAccounts: Bool
     var add: () -> Void
     var change: () -> Void
 
     var body: some View {
-        let has = ModelKeys.hasUsableKey
-        let provider = ModelKeys.selectedProvider
+        let has = selection.route != nil
+        let provider = selection.provider
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 if has { ProviderTile(provider: provider, size: 44) } else { SettingsIcon(symbol: "sparkles", warns: true, size: 44) }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: has ? ModelKeys.selectedModelName : String(localized: "No Account"))
+                    Text(verbatim: has ? (selection.route?.model.name ?? selection.modelID) : String(localized: hasAccounts ? "Unavailable" : "No Account"))
                         .font(.title3.weight(.semibold)).foregroundStyle(Color(.label))
-                    if has { Text(verbatim: provider.name).font(.subheadline).foregroundStyle(Color(.secondaryLabel)) }
+                    if hasAccounts { Text(verbatim: "\(provider.name) · \(selection.profileID.flatMap { ModelProfiles.shared.profile($0)?.title ?? ChatGPTProfiles.shared.profile($0)?.title } ?? String(localized: "Unavailable"))").font(.subheadline).foregroundStyle(Color(.secondaryLabel)) }
                 }
             }
             .accessibilityElement(children: .combine)
@@ -78,8 +106,8 @@ private struct InUseCard: View {
                 HStack(spacing: 6) { uses(has: has, provider: provider) }
                 VStack(alignment: .leading, spacing: 6) { uses(has: has, provider: provider) }
             }
-            SettingsPill(title: has ? "Change Chat Model" : "Add Account", symbol: has ? "arrow.triangle.2.circlepath" : "plus",
-                         prominent: true, action: has ? change : add)
+            SettingsPill(title: hasAccounts ? "Change Chat Model" : "Add Account", symbol: hasAccounts ? "arrow.triangle.2.circlepath" : "plus",
+                         prominent: true, action: hasAccounts ? change : add)
                 .accessibilityIdentifier("model.inUse.action")
         }
         .padding(.vertical, 8)
@@ -107,178 +135,158 @@ private struct InUseCard: View {
     }
 }
 
-/// What a model account is and what it can power.
+/// Used by setup and account summaries. An API key represents a connection, not a verified identity.
 enum ModelAccounts {
-    static func isSetUp(_ provider: ModelProvider) -> Bool {
-        switch provider {
-        case .custom: !ModelKeys.customURL.isEmpty
-        case .chatgpt: ChatGPTAccount.signedIn
-        default: ModelKeys.hasKey(provider)
-        }
+    @MainActor static func isSetUp(_ provider: ModelProvider) -> Bool {
+        provider == .chatgpt ? !ChatGPTProfiles.shared.all.isEmpty : ModelProfiles.shared.all.contains { $0.provider == provider }
     }
-
     static func canChat(_ provider: ModelProvider) -> Bool { provider.wired }
-    /// Live voice is OpenAI's Realtime API: an OpenAI API key only (a ChatGPT sign-in can't open it).
     static func canTalkLive(_ provider: ModelProvider) -> Bool { provider == .openai }
-
     static func method(_ provider: ModelProvider) -> String {
-        switch provider {
-        case .chatgpt: String(localized: "Sign in with ChatGPT")
-        case .custom: String(localized: "OpenAI-compatible address")
-        default: String(localized: "API key")
-        }
-    }
-
-    /// "Text Chat, Live Voice", "Not in use".
-    static func uses(_ provider: ModelProvider) -> String {
-        var out: [String] = []
-        if ModelKeys.selectedProvider == provider, ModelKeys.hasUsableKey { out.append(String(localized: "Text Chat")) }
-        if canTalkLive(provider), VoiceDirect.apiKey != nil { out.append(String(localized: "Live Voice")) }
-        return out.isEmpty ? String(localized: "Not in use") : out.joined(separator: ", ")
+        provider == .chatgpt ? String(localized: "Sign in with ChatGPT") : provider == .custom ? String(localized: "OpenAI-compatible address") : String(localized: "API key")
     }
 }
 
-private struct AccountRow: View {
-    var provider: ModelProvider
-    var body: some View {
-        HStack(spacing: 12) {
-            ProviderTile(provider: provider)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: provider.name)
-                Text(ModelAccounts.uses(provider)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-            }
-        }
-    }
-}
-
-/// One account: its type and connection, what it is used for (switches; the ones it can't power are
-/// shown greyed with why), its model, and Delete.
-private struct AccountDetail: View {
+private struct ModelProfileDetail: View {
     @Environment(\.dismiss) private var dismiss
-    var provider: ModelProvider
-    @State private var editing = false
-    @State private var signingIn = false
+    let profileID: UUID
     @State private var version = ModelKeys.saved
+    @State private var editing = false
+    @State private var loading = false
+    @State private var problem: String?
+    private var profile: ModelProfile? { ModelProfiles.shared.profile(profileID) }
 
     var body: some View {
         Form {
-            Section {
-                LabeledContent("Type", value: provider.name)
-                LabeledContent("Connection", value: ModelAccounts.method(provider))
-                if provider == .custom { LabeledContent("Address", value: ModelKeys.customURL) }
-                Button(provider.signsIn ? "Sign In Again" : provider == .custom ? "Edit Address and Key" : "Replace Key") {
-                    if provider.signsIn { signingIn = true } else { editing = true }
-                }
-            }
-
-            Section {
-                NavigationLink { TextChatFeature(provider: provider) } label: {
-                    LabeledContent {
-                        Text(ModelKeys.selectedProvider == provider ? ModelKeys.selectedModelName : ModelAccounts.canChat(provider) ? String(localized: "Off") : String(localized: "Not Supported"))
-                    } label: { SettingsLabel("Text Chat", systemImage: "bubble.left.and.text.bubble.right") }
-                }
-                .disabled(!ModelAccounts.canChat(provider))
-                NavigationLink { LiveVoiceFeature() } label: {
-                    LabeledContent {
-                        Text(ModelAccounts.canTalkLive(provider) ? (VoiceDirect.enabled ? VoiceDirect.model : String(localized: "Off")) : String(localized: "Not Supported"))
-                    } label: { SettingsLabel("Live Voice", systemImage: "waveform") }
-                }
-                .disabled(!ModelAccounts.canTalkLive(provider))
-            } header: {
-                Text("Use This Account For")
-            } footer: {
-                if !ModelAccounts.canChat(provider) {
-                    Text("Poki keeps this key; chatting with \(provider.name) comes in an update.")
-                } else if !ModelAccounts.canTalkLive(provider) {
-                    Text("Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account.")
-                }
-            }
-
-            Section {
-                Button(provider.signsIn ? "Sign Out" : "Delete Account", role: .destructive) {
-                    if provider == .custom { ModelKeys.customURL = ""; ModelKeys.customModel = "" }
-                    ModelKeys.remove(provider)
-                    if ModelKeys.selectedProvider == provider, let other = ModelProvider.allCases.first(where: { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
-                        ModelKeys.selectedProvider = other
+            if let p = profile {
+                Section {
+                    LabeledContent("Provider", value: p.provider.name)
+                    if let endpoint = p.endpoint { LabeledContent("Address", value: endpoint) }
+                    Button("Edit Profile") { editing = true }
+                } footer: { Text("API keys are stored securely. The profile name is your label for this connection.") }
+                Section("Models to Choose From") {
+                    ForEach(ModelProfiles.shared.models(profileID)) { model in
+                        Toggle(model.name, isOn: Binding(get: { profile?.enabled.contains(model.id) == true }, set: { enabled in
+                            perform { try ModelProfiles.shared.setModel(model.id, enabled: enabled, profileID: profileID) }
+                        }))
                     }
-                    dismiss()
+                    Button(loading ? "Reading the Model List…" : "Refresh Model List") {
+                        loading = true
+                        Task {
+                            do { try await ModelProfiles.shared.refresh(profileID); problem = nil }
+                            catch { problem = error.localizedDescription }
+                            loading = false
+                        }
+                    }.disabled(loading)
                 }
-            }
+                if p.provider == .openai {
+                    Section {
+                        Button("Use This Profile for Live Voice") { UserDefaults.standard.set(profileID.uuidString, forKey: "voice.profile"); VoiceDirect.enabled = true }
+                        NavigationLink("Live Voice") { LiveVoiceFeature() }
+                    }
+                }
+                Section {
+                    Button("Delete Profile", role: .destructive) { perform { try ModelProfiles.shared.remove(profileID); dismiss() } }
+                }
+            } else { Text("This account profile is unavailable. Choose another in Accounts.") }
+            if let problem { Text(problem).foregroundStyle(.red) }
         }
-        // Reads the version so the page redraws with the new keys and models, without rebuilding it
-        // (a rebuild dropped taps and the sheets it was presenting).
+        .navigationTitle(profile?.title ?? String(localized: "Unavailable"))
         .background { Color.clear.accessibilityHidden(true).id(version) }
-        .navigationTitle(Text(verbatim: provider.name))
-        .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
-        .sheet(isPresented: $editing, onDismiss: { version = ModelKeys.saved }) { KeyEntry(provider: provider) }
-        .sheet(isPresented: $signingIn, onDismiss: { version = ModelKeys.saved }) { ChatGPTSignIn() }
+        .sheet(isPresented: $editing) { if let p = profile { ProfileEditor(provider: p.provider, profileID: profileID) } }
     }
+    private func perform(_ action: () throws -> Void) { do { try action(); problem = nil } catch { problem = error.localizedDescription } }
 }
 
-/// Account › Text Chat: whether this account runs the chat, its model, and which of its models the
-/// chat's model menu offers.
-private struct TextChatFeature: View {
-    var provider: ModelProvider
-    @State private var version = ModelKeys.saved
-    @State private var loading = false
+private struct ProfileEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let provider: ModelProvider
+    var profileID: UUID?
+    var onSaved: (() -> Void)?
+    @State private var label = ""
+    @State private var key = ""
+    @State private var address = ""
+    @State private var model = ""
+    @State private var removeKey = false
     @State private var problem: String?
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Use for Text Chat", isOn: Binding(get: { ModelKeys.selectedProvider == provider }, set: { on in
-                    if on { ModelKeys.selectedProvider = provider }
-                    else if let other = ModelProvider.allCases.first(where: { $0 != provider && ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) {
-                        ModelKeys.selectedProvider = other
-                    }
-                }))
-                if ModelKeys.selectedProvider == provider {
-                    Picker("Chat Model", selection: Binding(get: { ModelKeys.selectedModel }, set: { ModelKeys.selectedModel = $0; ModelKeys.saved += 1 })) {
-                        ForEach(ModelCatalog.available(provider)) { Text($0.name).tag($0.id) }
-                    }
+        NavigationStack {
+            Form {
+                TextField("Profile Name", text: $label).accessibilityIdentifier("profile.name")
+                SecureField(profileID == nil ? provider.keyPrompt : String(localized: "Replace Key"), text: $key)
+                    .accessibilityIdentifier("profile.key").textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .disabled(removeKey)
+                if provider == .custom, let profileID, ModelProfiles.shared.profile(profileID)?.key != nil {
+                    Toggle("Remove Key", isOn: $removeKey)
                 }
-            } footer: {
-                Text("Only one account runs the text chat at a time.")
+                if provider == .custom {
+                    TextField("Address", text: $address).accessibilityIdentifier("profile.address").keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Model", text: $model).accessibilityIdentifier("profile.model").textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                if let problem { Text(problem).foregroundStyle(.red) }
             }
-            Section {
-                ForEach(ModelCatalog.all(provider)) { choice in
-                    Toggle(isOn: Binding(get: { ModelCatalog.enabled(provider).contains(choice.id) }, set: { ModelCatalog.set(choice.id, on: $0, for: provider) })) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(choice.name)
-                            if ModelCatalog.fast(choice.id) { Text("Fast").font(.caption).foregroundStyle(Color(.secondaryLabel)) }
-                        }
-                    }
+            .navigationTitle(provider.name)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { save() } }
+            }
+            .onAppear {
+                if let id = profileID, let p = ModelProfiles.shared.profile(id) {
+                    label = p.label; address = p.endpoint ?? ""; model = p.customModel ?? ""
                 }
-                if provider != .chatgpt {
-                    Button(loading ? "Reading the Model List…" : "Refresh Model List") { refresh() }.disabled(loading)
-                }
-            } header: {
-                Text("Models to Choose From")
-            } footer: {
-                Text(problem ?? String(localized: "Fast models without long thinking answer quickest on the phone. Models from \(provider.name)’s list start switched off."))
             }
         }
-        // Reads the version so the page redraws with the new keys and models, without rebuilding it
-        // (a rebuild dropped taps and the sheets it was presenting).
-        .background { Color.clear.accessibilityHidden(true).id(version) }
-        .navigationTitle("Text Chat")
-        .navigationBarTitleDisplayMode(.inline)
-        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
-        .task { if ModelCatalog.listed(provider).isEmpty, provider != .chatgpt { refresh() } }
     }
-
-    private func refresh() {
-        loading = true
-        problem = nil
-        Task {
-            do { _ = try await ModelCatalog.refresh(provider) } catch { problem = String(localized: "\(provider.name) didn’t return its model list. The built-in models still work.") }
-            loading = false
-        }
+    private func save() {
+        do {
+            let previous = profileID.flatMap(ModelProfiles.shared.profile)
+            let secret = removeKey ? nil : (key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? previous?.key : key)
+            let p = try ModelProfiles.shared.save(profileID, provider: provider, label: label, key: secret, endpoint: address, model: model)
+            if profileID == nil { ModelProfiles.shared.choose(p.id) }
+            key = ""; dismiss(); onSaved?()
+        } catch { problem = error.localizedDescription }
     }
 }
 
-/// Account › Live Voice (OpenAI only): on or off, the voice model, and which voice models to offer.
+private struct ChatGPTProfileDetail: View {
+    @Environment(\.dismiss) private var dismiss
+    let profileID: UUID
+    @State private var signingIn = false
+    @State private var label = ""
+    @State private var version = ModelKeys.saved
+    @State private var problem: String?
+    private var profile: ChatGPTProfile? { ChatGPTProfiles.shared.profile(profileID) }
+    var body: some View {
+        Form {
+            if let p = profile {
+                TextField("Profile Name", text: $label).accessibilityIdentifier("profile.name")
+                Button("Save Name") { do { try ChatGPTProfiles.shared.rename(profileID, to: label) } catch { problem = error.localizedDescription } }
+                Button("Sign In Again") { signingIn = true }
+                Button("Refresh Model List") { Task { if await ChatGPTProfiles.shared.reloadModels(profileID) == false { problem = String(localized: "The model list could not be refreshed.") } } }
+                ForEach(p.models ?? []) { Text($0.name) }
+                Button("Sign Out", role: .destructive) { signOut(remove: false) }
+                Button("Remove Account", role: .destructive) { signOut(remove: true) }
+            } else { Text("This account profile is unavailable. Choose another in Accounts.") }
+            if let problem { Text(problem).foregroundStyle(.red) }
+        }
+        .navigationTitle(profile?.title ?? String(localized: "Unavailable"))
+        .onAppear { label = profile?.label ?? "" }
+        .background { Color.clear.accessibilityHidden(true).id(version) }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+        .sheet(isPresented: $signingIn) { ChatGPTSignIn(profileID: profileID) }
+    }
+    private func signOut(remove: Bool) {
+        Task {
+            do {
+                let revoked = try await ChatGPTProfiles.shared.signOut(profileID, remove: remove)
+                if !revoked { problem = String(localized: "Signed out locally. Server revocation could not be confirmed.") }
+                else if remove { dismiss() }
+            } catch { problem = error.localizedDescription }
+        }
+    }
+}
 private struct LiveVoiceFeature: View {
     @State private var version = ModelKeys.saved
 
@@ -313,8 +321,50 @@ private struct LiveVoiceFeature: View {
     }
 }
 
-/// Add Account: the account types, each with how it connects; choosing one opens its key, address or
-/// sign-in.
+/// Settings and composer both select the same profile route, including the open conversation.
+private struct ProfileModelSelection: View {
+    @State private var version = ModelKeys.saved
+    var body: some View {
+        let connections = ModelProfiles.shared.all
+        let registrations = ChatGPTProfiles.shared.all
+        let current = AskPoki.chat?.selection ?? ModelKeys.defaultSelection
+        List {
+            ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                Section(provider.name) {
+                    let profiles: [(UUID, String)] = provider == .chatgpt
+                        ? registrations.map { ($0.id, $0.title) }
+                        : connections.filter { $0.provider == provider }.map { ($0.id, $0.title) }
+                    ForEach(profiles, id: \.0) { id, title in
+                        NavigationLink(title) {
+                            List {
+                                ForEach(ModelProfiles.shared.available(id)) { model in
+                                    let selection = ModelSelection(provider: provider, modelID: model.id, profileID: id)
+                                    Button {
+                                        if let chat = AskPoki.chat { chat.selectModel(selection) }
+                                        else { try? ModelProfiles.shared.select(selection) }
+                                    } label: {
+                                        HStack {
+                                            Text(model.name)
+                                            Spacer()
+                                            if current == selection { Image(systemName: "checkmark") }
+                                        }
+                                    }
+                                    .disabled(AskPoki.chat?.running == true)
+                                }
+                                if ModelProfiles.shared.available(id).isEmpty { Text("No available models. Check this profile in Accounts.") }
+                            }
+                            .navigationTitle(title)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Change Chat Model")
+        .background { Color.clear.accessibilityHidden(true).id(version) }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+    }
+}
+
 private struct AddAccount: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editing: ModelProvider?
@@ -336,6 +386,7 @@ private struct AddAccount: View {
                                 if ModelAccounts.isSetUp(provider) { Image(systemName: "checkmark").foregroundStyle(.tint) }
                             }
                         }
+                        .accessibilityIdentifier("model.addProvider.\(provider.rawValue)")
                     }
                 } footer: {
                     Text("Text chat works with every account. Live voice needs an OpenAI API key.")
@@ -344,8 +395,8 @@ private struct AddAccount: View {
             .navigationTitle("Add Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .sheet(item: $editing, onDismiss: { if editing == nil { dismiss() } }) { provider in KeyEntry(provider: provider) }
-            .sheet(isPresented: $signingIn, onDismiss: { if ChatGPTAccount.signedIn { dismiss() } }) { ChatGPTSignIn() }
+            .sheet(item: $editing) { provider in ProfileEditor(provider: provider, onSaved: { dismiss() }) }
+            .sheet(isPresented: $signingIn, onDismiss: { if ChatGPTProfiles.shared.all.contains(where: { $0.isSignedIn }) { dismiss() } }) { ChatGPTSignIn() }
         }
     }
 
@@ -354,79 +405,5 @@ private struct AddAccount: View {
         if ModelAccounts.canTalkLive(provider) { return String(localized: "\(how) · Text chat and live voice") }
         if ModelAccounts.canChat(provider) { return String(localized: "\(how) · Text chat") }
         return String(localized: "\(how) · Coming in an update")
-    }
-}
-
-/// Entering, replacing or removing one provider's key. The field is secure and the key is never shown
-/// again after it is saved.
-private struct KeyEntry: View {
-    @Environment(\.dismiss) private var dismiss
-    var provider: ModelProvider
-    @State private var key = ""
-    @State private var url = ModelKeys.customURL
-    @State private var modelID = ModelKeys.customModel
-    @State private var failed = false
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if provider == .custom {
-                    Section {
-                        TextField("https://…/v1", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("Model, such as llama-4-maverick", text: $modelID).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    } header: { Text("Address and model") }
-                }
-                Section {
-                    SecureField(provider.keyPrompt, text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
-                } header: {
-                    Text("\(provider.name) key")
-                } footer: {
-                    if !provider.wired {
-                        Text("Poki keeps the key now; chatting with \(provider.name) comes in an update. Until then, choose Anthropic or OpenAI.")
-                    } else if ModelKeys.hasKey(provider) {
-                        Text("A key is saved. Enter a new one to replace it.")
-                    } else {
-                        Text(verbatim: provider.keyHelp)
-                    }
-                }
-                if failed { Text("The keychain did not take the key. Try again.").foregroundStyle(Color(.systemRed)) }
-                if ModelKeys.hasKey(provider) {
-                    Section { Button("Remove Key", role: .destructive) { ModelKeys.remove(provider); dismiss() } }
-                }
-            }
-            .navigationTitle(Text(verbatim: provider.name))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave) }
-            }
-        }
-    }
-
-    private var canSave: Bool {
-        provider == .custom ? URL(string: url.trimmingCharacters(in: .whitespaces))?.scheme?.hasPrefix("http") == true && !modelID.trimmingCharacters(in: .whitespaces).isEmpty : !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func save() {
-        do {
-            if provider == .custom {
-                ModelKeys.customURL = url.trimmingCharacters(in: .whitespaces)
-                ModelKeys.customModel = modelID.trimmingCharacters(in: .whitespaces)
-                if key.isEmpty { ModelKeys.selectedProvider = .custom }
-            }
-            if !key.isEmpty { try ModelKeys.save(key, for: provider) }
-            // A new key picks its provider; the model page's picker switches between providers with keys.
-            if provider.wired, !key.isEmpty {
-                // Ready at once: chat on this account's first fast model, live voice on where it can.
-                ModelKeys.selectedProvider = provider
-                if let first = ModelCatalog.available(provider).first { ModelKeys.selectedModel = first.id }
-                if provider == .openai { VoiceDirect.enabled = true }
-                Task { _ = try? await ModelCatalog.refresh(provider) }
-            }
-            key = ""
-            dismiss()
-        } catch {
-            failed = true
-        }
     }
 }

@@ -298,6 +298,10 @@ final class InProcessProbe: ObservableObject {
         let defaults = UserDefaults.standard
         ModelKeys.customURL = defaults.string(forKey: "pokiProbeModelURL") ?? "http://127.0.0.1:8765/v1"
         ModelKeys.customModel = defaults.string(forKey: "pokiProbeModel") ?? "poki-mock"
+        if let profile = try? ModelProfiles.shared.save(nil, provider: .custom, label: "Probe \(UUID())", key: nil,
+                                                       endpoint: ModelKeys.customURL, model: ModelKeys.customModel) {
+            ModelProfiles.shared.choose(profile.id)
+        }
         ModelKeys.selectedProvider = .custom
         AskPoki.refresh()
         guard let chat = AskPoki.chat else { note("no chat", ["step": "chat_missing"]); return }

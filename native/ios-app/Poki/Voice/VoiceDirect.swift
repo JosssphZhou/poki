@@ -10,21 +10,26 @@ import Speech
 /// - With any other model (a ChatGPT plan, Anthropic, OpenRouter…), whose sign-in has no Realtime
 ///   audio, holding the button dictates on this iPhone (Apple's speech recognition, on the device when
 ///   it can) and lets go to send it to Poki's chat; Poki reads the answer out loud.
+@MainActor
 enum VoiceDirect {
     /// The live voice model the owner picked (Accounts › OpenAI › Live Voice), GPT Realtime 2.1 by default.
     static var model: String { ModelCatalog.voiceModel }
 
     /// The OpenAI API key on this iPhone, when there is one.
-    static var apiKey: String? { enabled ? ModelKeys.key(.openai) : nil }
+    static var profileID: UUID? {
+        if let saved = UserDefaults.standard.string(forKey: "voice.profile") { return UUID(uuidString: saved) }
+        return ModelProfiles.shared.preferred(.openai)?.id
+    }
+    static var apiKey: String? {
+        guard enabled, let id = profileID, let profile = ModelProfiles.shared.profile(id), profile.provider == .openai else { return nil }
+        return profile.key
+    }
 
     /// The owner's switch in Accounts › OpenAI › Live Voice (on unless turned off).
     static var enabled: Bool {
         get { UserDefaults.standard.object(forKey: "voice.openai.enabled") as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: "voice.openai.enabled"); ModelKeys.saved += 1 }
     }
-
-    /// Dictation into the chat works with any model the chat can use.
-    static var canDictate: Bool { ModelKeys.hasUsableKey }
 
     /// This iPhone's first preferred language, named in English ("Chinese, Simplified (China mainland)"):
     /// the language to speak only before the user has spoken.
