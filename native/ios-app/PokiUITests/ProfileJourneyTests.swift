@@ -5,8 +5,7 @@ final class ProfileJourneyTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app.launchEnvironment["POKI_UI_TEST_PROXY"] = ProcessInfo.processInfo.environment["POKI_UI_TEST_PROXY"] ?? "http://127.0.0.1:19383"
-        app.launchArguments = ["-pokiScreen", "model", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launch()
+        launch("model")
     }
     func testTwoAPIProfilesSelectSendAndRestoreFromChat() throws {
         let work = "Work \(UUID().uuidString.prefix(4))"
@@ -75,6 +74,7 @@ final class ProfileJourneyTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Choose an available chat model or open Accounts to finish setting one up."].waitForExistence(timeout: 5))
     }
     func testActiveTaskDisablesSwitchingAndStopEndsIt() {
+        setPlacement("more")
         let label = "Stop fixture \(UUID().uuidString.prefix(4))"
         addProfile(label, key: "fixture-stop")
         restartChat()
@@ -87,10 +87,14 @@ final class ProfileJourneyTests: XCTestCase {
         app.buttons["composer.more"].tap()
         XCTAssertTrue(app.buttons["composer.model.busy"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["composer.model"].exists)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
-        let closed = Date().addingTimeInterval(5)
-        while app.buttons["composer.model.busy"].exists && Date() < closed { usleep(300_000) }
-        app.buttons["composer.main"].tap()
+        // While Stop is showing, the open keyboard leaves the More popover above the composer.
+        // Dismiss it from the opposite edge before tapping Stop.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.24)).tap()
+        XCTAssertTrue(app.buttons["composer.model.busy"].waitForNonExistence(timeout: 5))
+        let stop = app.buttons["composer.main"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true AND label == %@", "Stop"), object: stop)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        stop.tap()
         XCTAssertTrue(app.staticTexts["Stopped."].firstMatch.waitForExistence(timeout: 10))
     }
     func testUpstreamModelsInUseAndChangeChatModelUseTheChosenProfile() {
@@ -127,11 +131,179 @@ final class ProfileJourneyTests: XCTestCase {
         add(image)
     }
 
+    func testModelSwitcherPlacementPersistsAndBothEntrancesSelectProfiles() {
+        setPlacement("more")
+        let work = "Work \(UUID().uuidString.prefix(4))"
+        let personal = "Personal \(UUID().uuidString.prefix(4))"
+        addProfile(work, key: "fixture-brain-work")
+        addProfile(personal, key: "fixture-brain-personal")
+
+        restartChat()
+        let more = app.buttons["composer.more"]
+        let brain = app.buttons["composer.model.brain"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        XCTAssertFalse(brain.exists)
+        choose(work)
+        XCTAssertEqual(app.buttons["composer.main"].label, "Talk to Poki")
+
+        openAccountsFromMore()
+        setPlacement("brain")
+        restartChat()
+        XCTAssertTrue(brain.waitForExistence(timeout: 10))
+        XCTAssertTrue(brain.label.contains(work))
+        XCTAssertTrue(brain.label.contains("deepseek-flash"))
+        XCTAssertGreaterThanOrEqual(brain.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(brain.frame.height, 44)
+        let input = app.descendants(matching: .any).matching(identifier: "capsule.field").firstMatch
+        XCTAssertGreaterThan(input.frame.width, 90)
+        XCTAssertLessThanOrEqual(input.frame.maxX, brain.frame.minX)
+        XCTAssertLessThanOrEqual(brain.frame.maxX, app.buttons["composer.main"].frame.minX)
+
+        more.tap()
+        XCTAssertTrue(app.buttons["Accounts and Models"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["composer.model"].exists)
+        XCTAssertTrue(app.buttons["Dictate"].isEnabled)
+        XCTAssertEqual(app.buttons["composer.main"].label, "Talk to Poki")
+        dismissMenu()
+
+        input.tap()
+        let draft = "Fixture draft stays in the message field while I switch accounts."
+        input.typeText(draft)
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 6))
+        recordScreenshot("Composer before opening Brain")
+        brain.tap()
+        XCTAssertTrue(app.buttons["Accounts and Models"].waitForExistence(timeout: 5))
+        recordScreenshot("Brain provider menu")
+        app.buttons["DeepSeek"].tap()
+        app.buttons[personal].tap()
+        recordScreenshot("Brain profile model choices")
+        app.buttons["DeepSeek V4.1 Flash"].tap()
+        XCTAssertTrue(brain.label.contains(personal))
+        XCTAssertTrue(brain.label.contains("deepseek-flash"))
+        XCTAssertEqual(input.value as? String, draft)
+        XCTAssertTrue(keyboard.exists)
+        input.typeText("!")
+        XCTAssertEqual(input.value as? String, draft + "!")
+        XCTAssertEqual(app.buttons["composer.main"].label, "Send")
+        recordScreenshot("Brain with selected profile and draft")
+
+        restartChat()
+        XCTAssertTrue(brain.waitForExistence(timeout: 10))
+        XCTAssertTrue(brain.label.contains(personal))
+        openAccountsFromMore()
+        setPlacement("more")
+        restartChat()
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        XCTAssertFalse(brain.exists)
+        more.tap()
+        let picker = app.buttons["composer.model"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+        XCTAssertTrue(picker.label.contains(personal))
+        XCTAssertTrue(picker.label.contains("deepseek-flash"))
+        recordScreenshot("More with the same selected profile")
+        dismissMenu()
+        input.tap()
+        input.typeText("Draft in More mode")
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 6))
+        choose(work)
+        XCTAssertTrue(keyboard.exists)
+        input.typeText("!")
+        XCTAssertEqual(input.value as? String, "Draft in More mode!")
+    }
+
+    func testBrainDismissalKeepsComposerUsableAtLargeTextSizes() {
+        setPlacement("brain")
+        restartChat()
+        let brain = app.buttons["composer.model.brain"]
+        let input = app.textViews["capsule.field"]
+        let main = app.buttons["composer.main"]
+        XCTAssertTrue(brain.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(brain.frame.width, 44)
+        XCTAssertLessThanOrEqual(input.frame.maxX, brain.frame.minX)
+        XCTAssertLessThanOrEqual(brain.frame.maxX, main.frame.minX)
+        input.tap()
+        input.typeText("Fixture draft")
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 6))
+        recordScreenshot("Composer before dismissal test")
+        brain.tap()
+        let accounts = app.buttons["Accounts and Models"]
+        XCTAssertTrue(accounts.waitForExistence(timeout: 5))
+        recordScreenshot("Brain picker at large text size")
+        dismissMenu()
+        XCTAssertTrue(accounts.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(keyboard.exists)
+        XCTAssertEqual(input.value as? String, "Fixture draft")
+        XCTAssertEqual(main.label, "Send")
+        recordScreenshot("Composer after dismissing Brain")
+        app.terminate()
+        launch("model")
+        setPlacement("more")
+    }
+
+    func testBrainCannotSwitchDuringSyntheticTaskAndStopRemainsReachable() {
+        setPlacement("brain")
+        let label = "Brain Stop \(UUID().uuidString.prefix(4))"
+        addProfile(label, key: "fixture-brain-stop")
+        restartChat()
+        let brain = app.buttons["composer.model.brain"]
+        let sendStop = app.buttons["composer.main"]
+        XCTAssertTrue(brain.waitForExistence(timeout: 10))
+        brain.tap()
+        app.buttons["DeepSeek"].tap()
+        app.buttons[label].tap()
+        app.buttons["DeepSeek V4.1 Flash"].tap()
+        XCTAssertTrue(brain.label.contains(label))
+        let input = app.descendants(matching: .any).matching(identifier: "capsule.field").firstMatch
+        input.tap()
+        input.typeText("hold-for-stop")
+        sendStop.tap()
+        let stopping = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Stop"), object: sendStop)
+        XCTAssertEqual(XCTWaiter.wait(for: [stopping], timeout: 5), .completed)
+        XCTAssertFalse(brain.isEnabled)
+        recordScreenshot("Disabled Brain while Stop remains available")
+        sendStop.tap()
+        XCTAssertTrue(app.staticTexts["Stopped."].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(brain.isEnabled)
+        openAccountsFromMore()
+        setPlacement("more")
+    }
+
+    private func dismissMenu() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+    }
+
+    private func openAccountsFromMore() {
+        app.buttons["composer.more"].tap()
+        app.buttons["Accounts and Models"].tap()
+    }
+
+    private func setPlacement(_ placement: String) {
+        let option = app.buttons["model.switcher.\(placement)"]
+        XCTAssertTrue(option.waitForExistence(timeout: 10))
+        option.tap()
+        XCTAssertTrue(option.isSelected)
+        recordScreenshot("Accounts setting for \(placement)")
+    }
+
+    private func recordScreenshot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func restartChat() {
         app.terminate()
-        app.launchArguments = ["-pokiScreen", "chat", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        launch("chat")
+    }
+
+    private func launch(_ screen: String) {
+        app.launchArguments = ["-pokiScreen", screen, "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
     }
+
     private func addProfile(_ label: String, key: String, providerID: String = "deepseek", endpoint: String? = nil, model: String? = nil) {
         var add = app.buttons["profile.add.\(providerID)"]
         if !add.exists {

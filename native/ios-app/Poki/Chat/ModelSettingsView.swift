@@ -13,6 +13,7 @@ import SwiftUI
 /// What an account can power is worked out from its type: any wired provider can run the text chat;
 /// live voice needs OpenAI's Realtime API, so only an OpenAI API key can run it.
 struct ModelSettingsView: View {
+    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.more
     @State private var adding = false
     @State private var changing = false
     @State private var problem: String?
@@ -32,6 +33,28 @@ struct ModelSettingsView: View {
                 Text("Open an account to choose what it is used for. Dictation in the message field needs no account.")
             }
 
+            Section {
+                ForEach(ChatModelSwitcherPlacement.allCases) { placement in
+                    let selected = switcherPlacement == placement
+                    Button { switcherPlacement = placement } label: {
+                        HStack {
+                            Text(placement.title)
+                            Spacer()
+                            if selected {
+                                Image(systemName: "checkmark").foregroundStyle(Tint.blue)
+                            }
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .accessibilityIdentifier("model.switcher.\(placement.rawValue)")
+                }
+            } header: {
+                Text("Chat Model Switcher")
+            } footer: {
+                Text("Choose where to switch models in the chat.")
+            }
             ForEach(ModelProvider.allCases.filter { provider in provider == .chatgpt ? !registrations.isEmpty : profiles.contains { $0.provider == provider } }) { provider in
                 Section(provider.name) {
                     if provider == .chatgpt {

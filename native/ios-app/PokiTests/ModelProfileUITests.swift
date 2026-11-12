@@ -24,6 +24,10 @@ final class ModelProfileUITests: XCTestCase {
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         let chat = ChatModel(app: app)
         let draft = Draft()
+        let placementKey = ChatModelSwitcherPlacement.preferenceKey
+        let previousPlacement = UserDefaults.standard.object(forKey: placementKey)
+        defer { UserDefaults.standard.set(previousPlacement, forKey: placementKey) }
+        UserDefaults.standard.set(ChatModelSwitcherPlacement.more.rawValue, forKey: placementKey)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 390, height: 360)
@@ -39,6 +43,13 @@ final class ModelProfileUITests: XCTestCase {
         settle { draft.text == "nihao" }
         chat.selectModel(.init(provider: .deepseek, modelID: "deepseek-flash", profileID: api.id))
         XCTAssertEqual(chat.selection.profileID, api.id)
+        let beforePlacementChange = chat.selection
+        UserDefaults.standard.set(ChatModelSwitcherPlacement.brain.rawValue, forKey: placementKey)
+        settle { self.field(in: window) === field }
+        XCTAssertEqual(chat.selection, beforePlacementChange)
+        XCTAssertTrue(field.isFirstResponder)
+        XCTAssertEqual(draft.text, "nihao")
+        XCTAssertNotNil(field.markedTextRange)
         chat.selectModel(.init(provider: .chatgpt, modelID: "gpt-6.1-sol", profileID: account.id))
         settle { chat.selection.profileID == account.id }
         XCTAssertTrue(self.field(in: window) === field)

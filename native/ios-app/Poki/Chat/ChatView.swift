@@ -1150,6 +1150,21 @@ struct ModeLabels: View {
 
 // MARK: Composer
 
+enum ChatModelSwitcherPlacement: String, CaseIterable, Identifiable {
+    case more
+    case brain
+
+    static let preferenceKey = "chat.modelSwitcherPlacement"
+    var id: Self { self }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .more: "More Menu"
+        case .brain: "Brain Button"
+        }
+    }
+}
+
 // ComposerInputView started from GetStream/swiftui-iMessage-clone (commit df114b4,
 // iMessageClone/MessageList/View/Composer/ComposerInputView.swift, by Stefan Blos; no licence file in
 // the repository), with the plus button in front from exyte/Chat (commit f382a14,
@@ -1178,6 +1193,8 @@ struct ComposerInputView: View {
     /// Opens the conversations; nil where the list is always beside the chat.
     var openThreads: (() -> Void)? = nil
     var newConversation: () -> Void
+    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.more
+    @State private var showsBrain = false
     @State private var dictation = FieldDictation()
     @State private var sent: (text: String, at: Date)?
     /// Bumped when the chosen model changes, so the chip redraws (ModelKeys is not observable).
@@ -1209,6 +1226,7 @@ struct ComposerInputView: View {
                     }
                     .frame(minHeight: 48)
                 if dictation.on { dictating }
+                if switcherPlacement == .brain { brain }
                 mainButton
             }
             .padding(8)
@@ -1255,11 +1273,15 @@ struct ComposerInputView: View {
             Divider()
             Button("Dictate", systemImage: "mic") { dictation.start(model, after: input) }.disabled(voice.isOn || dictation.on)
             hands
+            if switcherPlacement == .more {
             if running {
                 Text("Model selection is available when the task ends.")
                     .accessibilityIdentifier("composer.model.busy")
             } else {
                 modelMenu
+            }
+            } else {
+                voiceModelMenu
             }
             Divider()
             Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
@@ -1295,15 +1317,7 @@ struct ComposerInputView: View {
                     }
                 }
                 Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
-                if VoiceDirect.apiKey != nil {
-                    Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
-                        ForEach(ModelCatalog.voiceAvailable) { choice in
-                            Button { ModelCatalog.voiceModel = choice.id; modelVersion += 1 } label: {
-                                if VoiceDirect.model == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
-                            }
-                        }
-                    }
-                }
+                voiceModelMenu
             } label: {
                 Label("Chat Model \(chat.selection.displayName)", systemImage: "cpu")
             }
@@ -1314,6 +1328,18 @@ struct ComposerInputView: View {
             Button("Add Model", systemImage: "plus", action: openModel)
                 .accessibilityIdentifier("composer.addModel")
         }
+    }
+
+    @ViewBuilder private var voiceModelMenu: some View {
+                if VoiceDirect.apiKey != nil {
+                    Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
+                        ForEach(ModelCatalog.voiceAvailable) { choice in
+                            Button { ModelCatalog.voiceModel = choice.id; modelVersion += 1 } label: {
+                                if VoiceDirect.model == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
+                            }
+                        }
+                    }
+                }
     }
 
     private func profileMenu(_ provider: ModelProvider, id: UUID, title: String) -> some View {
@@ -1332,6 +1358,35 @@ struct ComposerInputView: View {
             Label(choices.isEmpty ? "\(title) (\(String(localized: "Unavailable")))" : title,
                   systemImage: chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID } ? "checkmark.circle.fill" : "circle")
         }
+    }
+
+
+    private var brain: some View {
+        Button {
+            showsBrain = true
+        } label: {
+            BrainGlyph()
+                .stroke(Color(.label), style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+                .frame(width: 23, height: 23)
+                .id(modelVersion)
+                .frame(width: 44, height: 48)
+                .background {
+                    Circle().fill(Color(.label).opacity(scheme == .dark ? 0.12 : 0.06))
+                        .frame(width: 40, height: 40)
+                }
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Chat Model \(chat.selection.displayName)"))
+        .accessibilityIdentifier("composer.model.brain")
+        .disabled(running)
+        .popover(isPresented: $showsBrain, arrowEdge: .bottom) {
+            options(from: .brain, isPresented: $showsBrain)
+        }
+    }
+
+    private func options(from placement: ChatModelSwitcherPlacement, isPresented: Binding<Bool>) -> some View {
+        ComposerModelPicker(isPresented: isPresented, running: running, openModel: openModel)
     }
 
     /// Poki's hands: on, resting (you paused it; it starts again when you or an agent asks), or off.
@@ -1479,6 +1534,157 @@ final class FieldDictation {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             model.background.resumeAudio()
         }
+    }
+}
+
+/// The front-facing outline used for the model switcher, drawn from the design reference.
+private struct BrainGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let outline = Path { path in
+            path.move(to: CGPoint(x: 14, y: 4))
+            path.addCurve(to: CGPoint(x: 6.5, y: 6), control1: CGPoint(x: 11.7, y: 0.4), control2: CGPoint(x: 7.3, y: 1.7))
+            path.addCurve(to: CGPoint(x: 3.8, y: 12), control1: CGPoint(x: 2.4, y: 6.3), control2: CGPoint(x: 1.3, y: 9.1))
+            path.addCurve(to: CGPoint(x: 6.5, y: 21.8), control1: CGPoint(x: 0.5, y: 15.6), control2: CGPoint(x: 2.1, y: 20.4))
+            path.addCurve(to: CGPoint(x: 14, y: 23.6), control1: CGPoint(x: 7.5, y: 26.3), control2: CGPoint(x: 11.8, y: 27))
+            path.addCurve(to: CGPoint(x: 21.5, y: 21.8), control1: CGPoint(x: 16.2, y: 27), control2: CGPoint(x: 20.5, y: 26.3))
+            path.addCurve(to: CGPoint(x: 24.2, y: 12), control1: CGPoint(x: 25.9, y: 20.4), control2: CGPoint(x: 27.5, y: 15.6))
+            path.addCurve(to: CGPoint(x: 21.5, y: 6), control1: CGPoint(x: 26.7, y: 9.1), control2: CGPoint(x: 25.6, y: 6.3))
+            path.addCurve(to: CGPoint(x: 14, y: 4), control1: CGPoint(x: 20.7, y: 1.7), control2: CGPoint(x: 16.3, y: 0.4))
+            path.closeSubpath()
+
+            path.move(to: CGPoint(x: 14, y: 4))
+            path.addLine(to: CGPoint(x: 14, y: 23.6))
+
+            path.move(to: CGPoint(x: 3.8, y: 12))
+            path.addQuadCurve(to: CGPoint(x: 8.4, y: 11.1), control: CGPoint(x: 6.1, y: 13))
+            path.move(to: CGPoint(x: 11.1, y: 8.9))
+            path.addQuadCurve(to: CGPoint(x: 14, y: 8.3), control: CGPoint(x: 12.4, y: 7.8))
+            path.move(to: CGPoint(x: 10.6, y: 18.1))
+            path.addQuadCurve(to: CGPoint(x: 14, y: 18.2), control: CGPoint(x: 12.1, y: 16.9))
+            path.move(to: CGPoint(x: 14, y: 14.4))
+            path.addQuadCurve(to: CGPoint(x: 17.8, y: 14), control: CGPoint(x: 15.8, y: 13))
+            path.move(to: CGPoint(x: 21.5, y: 6))
+            path.addQuadCurve(to: CGPoint(x: 19.2, y: 10), control: CGPoint(x: 21.3, y: 8.7))
+            path.move(to: CGPoint(x: 21.5, y: 21.8))
+            path.addQuadCurve(to: CGPoint(x: 17.7, y: 21.5), control: CGPoint(x: 19.7, y: 22.7))
+        }
+        return outline
+            .applying(CGAffineTransform(scaleX: rect.width / 28, y: rect.height / 28))
+            .offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+}
+
+private struct ComposerModelPicker: View {
+    private enum PickerPage {
+        case providers
+        case profiles(ModelProvider)
+        case models(ModelProvider, UUID, String)
+    }
+
+    @Environment(ChatModel.self) private var chat
+    @Binding var isPresented: Bool
+    let running: Bool
+    var openModel: () -> Void
+    @State private var pickerPage: PickerPage?
+    @State private var modelVersion = 0
+
+    // The picker shares the composer's presentation so switching pages never replaces the message field.
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            optionRows.fixedSize(horizontal: false, vertical: true)
+            ScrollView { optionRows }.scrollDismissesKeyboard(.never)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in modelVersion += 1 }
+        .frame(width: 270)
+        .frame(maxHeight: 310)
+        .padding(.vertical, 6)
+        .presentationCompactAdaptation(.popover)
+        .accessibilityAction(.escape, closeOptions)
+        .onChange(of: running) { _, active in
+            if active { closeOptions() }
+        }
+    }
+
+    private var optionRows: some View {
+        VStack(spacing: 0) {
+            switch pickerPage ?? .providers {
+            case .providers:
+                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                    option({ pickerPage = .profiles(provider) }) { Text(provider.name) }
+                }
+                option({ performOption(openModel) }) { Label("Accounts and Models", systemImage: "person.crop.circle") }
+            case .profiles(let provider):
+                backRow("Chat Model", to: .providers)
+                if provider == .chatgpt {
+                    ForEach(ChatGPTProfiles.shared.all) { profile in
+                        profileRow(provider, id: profile.id, title: profile.title)
+                    }
+                } else {
+                    ForEach(ModelProfiles.shared.all.filter { $0.provider == provider }) { profile in
+                        profileRow(provider, id: profile.id, title: profile.title)
+                    }
+                }
+            case .models(let provider, let id, let title):
+                backRow(Text(title), to: .profiles(provider))
+                let choices = ModelProfiles.shared.available(id)
+                ForEach(choices) { choice in
+                    let selection = ModelSelection(provider: provider, modelID: choice.id, profileID: id)
+                    let selected = chat.selection == selection
+                    option({ performOption { chat.selectModel(selection) } }) {
+                        Label(choice.name, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                    }
+                    .disabled(running)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                if choices.isEmpty {
+                    Text("No available models. Check this profile in Accounts.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    option({ performOption(openModel) }) { Label("Accounts and Models", systemImage: "person.crop.circle") }
+                }
+
+            }
+        }
+        .padding(.horizontal, 8)
+        .id(modelVersion)
+    }
+
+    private func profileRow(_ provider: ModelProvider, id: UUID, title: String) -> some View {
+        let choices = ModelProfiles.shared.available(id)
+        let selected = chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID }
+        return option({ pickerPage = .models(provider, id, title) }) {
+            Label(choices.isEmpty ? "\(title) (\(String(localized: "Unavailable")))" : title,
+                  systemImage: selected ? "checkmark.circle.fill" : "circle")
+        }
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func backRow(_ title: LocalizedStringKey, to page: PickerPage) -> some View {
+        backRow(Text(title), to: page)
+    }
+
+    private func backRow(_ title: Text, to page: PickerPage) -> some View {
+        option({ pickerPage = page }) {
+            Label { title } icon: { Image(systemName: "chevron.backward") }
+        }
+        .accessibilityLabel(Text("Back"))
+    }
+
+    private func option<Content: View>(_ action: @escaping () -> Void, @ViewBuilder label: () -> Content) -> some View {
+        Button(action: action) {
+            label().frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, 12).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func closeOptions() {
+        isPresented = false
+    }
+
+    private func performOption(_ action: () -> Void) {
+        closeOptions()
+        action()
     }
 }
 
