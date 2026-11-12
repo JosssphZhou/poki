@@ -292,3 +292,61 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
     }
 }
+
+/// Issue 208: Poki's own session did not open because the developer disk image's XCTest library
+/// would not load (developer_framework_unavailable), and the agent was told to have the owner enter
+/// the passcode. Poki starts the launcher again by itself, which mounts the image where it is
+/// missing, and the agent is told to wait.
+@MainActor
+final class InProcessRepairTests: XCTestCase {
+    private var saved: (relay: String?, relayEnabled: Any?, setup: SetupState)!
+    private var model: AppModel!
+    private var launcher: FakeLauncher!
+    private var session: FakeAutomation!
+
+    override func setUp() async throws {
+        try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
+        saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load())
+        session = FakeAutomation()
+        launcher = FakeLauncher()
+        model = AppModel(launcher: launcher, pairer: FakePairing(), automation: session)
+        model.loopback.simulate(.working(ms: 9))
+        model.setup.loopback = .proxy
+        XCTAssertTrue(model.setRelay("https://relay.invalid"))
+        model.startSession()
+        XCTAssertTrue(model.sessionOn)
+    }
+
+    override func tearDown() async throws {
+        session?.answer(nil)
+        guard let saved, let model else { return }
+        model.stopSession()
+        UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
+        UserDefaults.standard.set(saved.relayEnabled, forKey: "relayEnabled")
+        saved.setup.save()
+    }
+
+    func testAFrameworkThatWouldNotLoadIsOpenedAgainAfterTheLauncherStartsAgain() async {
+        session.holdNextOpen()
+        model.wakeRunner()
+        // On the simulator the launcher is WebDriverAgent on the Mac; its answer comes first.
+        let answered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in ["failed", "running"].contains(self.model.runner.state) }, object: nil)
+        await fulfillment(of: [answered], timeout: 5)
+        model.runnerChanged(RunnerStatus(state: "running"))
+        let restartsBefore = launcher.restarts
+        session.answer(["ok": false, "code": "developer_framework_unavailable",
+                        "detail": "developer_framework_unavailable (dlopen(/System/Developer/usr/lib/lib_TestingInterop.dylib, 0x000A): tried: '/System/Developer/usr/lib/lib_TestingInterop.dylib' (no such file))",
+                        "seconds": 0.03])
+
+        let restarted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.launcher.restarts > restartsBefore }, object: nil)
+        restarted.expectationDescription = "Poki starts the launcher again by itself, which mounts the developer disk image"
+        await fulfillment(of: [restarted], timeout: 5)
+        let waiting = model.host.currentRunner.describe
+        XCTAssertTrue(waiting.hasPrefix("starting"), "the agent waits while Poki tries again: \(waiting)")
+        XCTAssertFalse(waiting.contains("passcode"), waiting)
+
+        model.runnerChanged(RunnerStatus(state: "connecting"))
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in self.model.host.currentRunner.isRunning }, object: nil)], timeout: 5)
+    }
+}
