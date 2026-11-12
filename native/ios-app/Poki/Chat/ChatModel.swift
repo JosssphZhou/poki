@@ -584,7 +584,10 @@ final class ChatModel {
             if call.name == "do" { noteTyping(args) }
             phoneStepUnderWay = true
             defer { phoneStepUnderWay = false }
-            return await app.runTool(call.name, arguments: call.arguments)
+            guard let activeRoute else {
+                return PokiCore.ToolAnswer(text: "not_sent: The chat task has no active model route. Nothing was sent.", jpeg: nil, isError: true)
+            }
+            return await app.runTool(call.name, arguments: call.arguments, chatRoute: activeRoute)
         }
     }
 
