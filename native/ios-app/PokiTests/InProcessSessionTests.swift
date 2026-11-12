@@ -21,16 +21,19 @@ final class InProcessSessionTests: XCTestCase {
         XCTAssertEqual(tries.count, 1, "the call asks Poki to open the session again")
     }
 
-    /// Issue 208: the developer disk image's XCTest library would not load. Once Poki's own tries
-    /// are used up, the agent hears iOS's loader error and a step for that cause, not "enter the
-    /// passcode", which iOS never asked for.
-    func testAFrameworkThatWouldNotLoadIsNotAnsweredWithThePasscode() {
-        let loader = "dlopen(/System/Developer/usr/lib/lib_TestingInterop.dylib, 0x000A): tried: '/System/Developer/usr/lib/lib_TestingInterop.dylib' (no such file)"
+    /// Issue 208: the developer disk image's XCTest library would not load, with the image's services
+    /// answering. Once Poki's own tries are used up, the agent hears iOS's loader error and what
+    /// happened, and the owner is asked for the log: not "enter the passcode", which iOS never asked
+    /// for, nor "the image is not mounted", which the services answering disproves.
+    func testAFrameworkThatWouldNotLoadIsAnsweredWithWhatHappenedAndAnAskForTheLog() {
+        let loader = "dlopen(/System/Developer/usr/lib/lib_TestingInterop.dylib, 0x000A): the loader's reason"
         let state = InProcessSession.failed(code: "developer_framework_unavailable", detail: "developer_framework_unavailable (\(loader))").agentState
 
         guard case .failed(let detail, let fix) = state else { return XCTFail("the agent reads \(state.describe)") }
         XCTAssertTrue(detail.contains(loader), detail)
+        XCTAssertFalse(detail.contains("not mounted"), detail)
         XCTAssertFalse((fix ?? "").contains("passcode"), fix ?? "")
+        XCTAssertTrue((fix ?? "").contains("Share Log"), fix ?? "")
     }
 
     /// Seen on the phone: the banner up and the session open, while every look answered "still
