@@ -14,7 +14,7 @@ result and the time next to each line.
 ## 1. Loopback (choose one; no proxy app is required with the built-in connection)
 
 - [ ] Built-in: install the local-VPN build with Network Extensions provisioned for both Poki and
-  PokiTunnel. In Setup > Connect to this iPhone, tap Enable local connection and approve iOS's VPN
+  PokiTunnel. In Settings › Connection › Loopback, tap Enable local connection and approve iOS's VPN
   prompt. The developer-service check passes; neither a saved profile nor VPN Connected alone counts.
 - [ ] Built-in: a normal web page still loads; no DNS or internet default route is installed by Poki.
 - [ ] Built-in: disconnect/reconnect, lock/unlock, and reboot recover after an explicit reconnect (or,
@@ -27,16 +27,15 @@ result and the time next to each line.
   Xcode > Debug > Attach to Process, PokiTunnel, then stop the session). With no hand on the phone, the log
   shows `local VPN: failed`, `reconnecting in 1 s`, `connected`, `back: 10.7.0.1 answers again; starting
   the runner now`, and the next agent call works. If it keeps failing, it tries 8 times in about 2 minutes
-  (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; then only Enable Local Connection in Setup starts it again.
+  (1, 2, 4, 8, 16, 30, 30, 30 s) and stops; then only Enable local connection (Settings › Connection › Loopback) starts it again.
   Opening Poki dials nothing (GitHub issue 44).
 - [ ] Built-in, with Poki on, the tunnel fails and a different VPN (WireGuard, a work VPN) is turned on
-  before the retry comes: Poki does not dial if it detects that VPN. Setup says `Another VPN appears to be on…`, Home shows it under
-  Needs attention, the log says `another VPN is on; not reconnecting`, and the other VPN stays connected. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected, so Poki may still dial over it.
-  Turning that VPN off and tapping Enable Local Connection brings the runner back, and the message goes.
+  before the retry comes: Poki does not dial if it detects that VPN. The Loopback page says `Another VPN appears to be on…`, the log says `another VPN is on; not reconnecting`, and the other VPN stays connected. Detection is best effort: a VPN that sets no proxy, such as Tailscale, may not be detected, so Poki may still dial over it.
+  Turning that VPN off and tapping Enable local connection brings the runner back, and the message goes.
   (The check reads the interfaces iOS has network settings for; confirm it sees a real VPN, and sees none
   with only Wi-Fi or cellular.)
 - [ ] Installed over 0.2.3 with a proxy app that was set up only in the proxy app (no connection
-  chosen in Poki): Turn on says to choose a local connection first, and Setup > External app > Use
+  chosen in Poki): Turn on says to choose a local connection first, and Settings › Connection › Loopback › Use
   the current VPN brings it back. Say this in the release notes for 0.2.3 users.
 - [ ] External build: no PokiTunnel is embedded and no built-in enable button is offered. Continue
   with an external option below. Use this build when Network Extension signing is unavailable.
@@ -51,8 +50,8 @@ result and the time next to each line.
 - [ ] Pick it: a PIN appears in Poki's Live Activity; type it on the phone.
 - [ ] `paired` arrives with a path; the file is in the app's container (never print its contents).
 - [ ] Start pairing, then leave Settings without pairing: after 10 minutes Poki stops waiting (Try again
-  shows), the Live Activity ends, and Poki no longer keeps itself running. Switching to another tab, or
-  opening another Setup step, while pairing cancels it at once.
+  shows), the Live Activity ends, and Poki no longer keeps itself running. Leaving the pairing page for another
+  setup item while pairing cancels it at once.
 - [ ] Older iOS, or if this fails: use a pairing file made on a Mac (RPPairing or lockdown plist) and note which kind worked.
 
 ## 3. Launcher
@@ -70,7 +69,7 @@ result and the time next to each line.
 
 ## 4. PokiCore through the relay
 
-- [ ] Deploy your relay (`deploy/cf-relay/deploy.sh`) and enter its address in Connect. The relay state reaches `ready`; the connector URL (`https://<relay host>/v1/<label>/<secret>/mcp`) is shown in Poki.
+- [ ] Deploy your relay (`deploy/cf-relay/deploy.sh`) and enter its address in Settings › Agents › Address. The relay state reaches `ready`; the connector URL (`https://<relay host>/v1/<label>/<secret>/mcp`) is shown in Poki.
 - [ ] Add it in Claude as a connector; `tools/list` shows look, do, status.
 - [ ] `look` within 2 s, with a screenshot and elements.
 - [ ] A Clock task (World Clock → add a city) and a Notes task, timed from the first call to the last.
@@ -84,9 +83,9 @@ result and the time next to each line.
 - [ ] Do not approve: after about 115 s (about 50 s behind a relay still at `REQ_TIMEOUT_MS` 60000) the answer says `approval_required`. Approve afterwards and send the same actions: it taps once; a third time asks again.
 - [ ] Behind a relay still at `REQ_TIMEOUT_MS` 60000, approve at about 52 s: the answer says `approval_required` and the owner approved too late; nothing was tapped. Send the same actions again: they run at once.
 - [ ] Decline: `not_sent: the owner declined`.
-- [ ] While an approval is pending, have the agent tap the Live Activity's Approve button (`do` with the button's point): the pending request is withdrawn first, so nothing is approved.
+- [ ] While an approval is pending, have the agent tap the Live Activity's Allow button (`do` with the button's point): the pending request is withdrawn first, so nothing is approved.
 - [ ] Typing into a password field asks first, and the Live Activity hides the text.
-- [ ] A fresh install (or an alpha that never touched the switch): Agents › Approvals › Ask Before Sensitive Steps is on, and the first Delete asks.
+- [ ] A fresh install (or an alpha that never touched the switch): Settings › Ask before sensitive steps is on, and the first Delete asks.
 - [ ] With Poki in front while an agent's approval waits (the Dynamic Island hides Poki's own Live Activity then): the chat shows Allow this step? with Allow and Don't Allow; Allow runs the step and the phone goes back to the app the agent was in.
 - [ ] Leave an approval unanswered and send nothing more: after 2 minutes the Live Activity leaves Approval, Poki says the approval ran out, and the idle stop works again.
 - [ ] In Wallet: the agent can wait, hand the screen to you and press Home without being asked; a tap asks.

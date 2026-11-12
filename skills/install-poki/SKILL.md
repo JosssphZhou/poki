@@ -100,7 +100,7 @@ The installer exits with code 2. The last `error` event has `code`, `reason` and
 | `install_failed` | iOS refused the install. | Retried once. Then run `diagnose`. |
 | `relay_failed` | The relay deploy or check failed. Poki still works on the phone. | Report it. The user can deploy from Poki Setup's Relay page. |
 | `check_failed` | Installed, but the self-check found something not ready. | Read the `check` fields, fix what the matching code says, run again. |
-| `model_key_missing` | `--model-key` was given, but the keychain item is missing or empty. | Tell the user the item name. They add it in their own Terminal (`security add-generic-password -U -s <item> -a "$USER" -w`) or type the key in Poki: Agents > Accounts and Models. |
+| `model_key_missing` | `--model-key` was given, but the keychain item is missing or empty. | Tell the user the item name. They add it in their own Terminal (`security add-generic-password -U -s <item> -a "$USER" -w`) or type the key in Poki: Settings > Model. |
 | `model_key_not_taken` | Poki did not take the sealed key in time. | Ask the user to bring Poki to the front, then run again. |
 | `node_too_old` | Node.js is older than 24. | Install Node.js 24 or later, or follow "Without Node.js, or on Windows" below. |
 | `unknown` | Not recognised. | Run `diagnose` and `issue`. |

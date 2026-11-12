@@ -602,9 +602,9 @@ test('with no way into Poki\'s files (Poki Setup 0.2.1, no Xcode), the install f
   assert.equal(code, 3, stderr);
   assert.equal(events.at(-1).ok, false);
   assert.deepEqual(events.at(-1).unverified.map(s => s.step), ['model_key', 'loopback']);
-  assert.ok(events.some(e => e.event === 'note' && /Accounts and Models/.test(e.text)));
+  assert.ok(events.some(e => e.event === 'note' && /Settings > Model/.test(e.text)));
   assert.ok(events.some(e => e.event === 'wait' && e.wait === 'open_poki_tell' && /Tell me/.test(e.say)), 'the agent confirms Poki is open with done');
-  assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Accounts and Models/);
+  assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Settings > Model/);
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'loopback').reason, /10\.7\.0\.1/);
   assert.doesNotMatch(await mac.securityLog(), /api-key/, 'with nowhere to put it, the key is not read');
 });
@@ -668,7 +668,7 @@ test('a Poki too old to write its hello still counts as open once devicectl sees
   assert.equal(events.at(-1).ok, false);
   assert.deepEqual(events.at(-1).unverified.map(s => s.step), ['model_key', 'loopback']);
   assert.match(events.find(e => e.event === 'done' && e.step === 'open_poki').detail, /running/);
-  assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Accounts and Models/);
+  assert.match(events.find(e => e.event === 'skipped' && e.step === 'model_key').reason, /Settings > Model/);
   assert.match(events.find(e => e.event === 'skipped' && e.step === 'loopback').reason, /10\.7\.0\.1/);
   assert.doesNotMatch(await mac.securityLog(), /api-key/, 'a Poki that cannot take the key does not make the installer read it');
 });
