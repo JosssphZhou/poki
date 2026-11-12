@@ -6,7 +6,7 @@ import PiSwiftAI
 /// - Sensitivity Permissive, Balanced or Strict: in Poki's own chat and live call the chat model checks
 ///   the step against what the owner said, and allows it or not (auto-approval). The chat shows the
 ///   decision on a card and the Activity Log keeps it.
-/// - A step the model did not allow, and every step at Ask for Everything, is the owner's: With Message
+/// - A step the model did not allow, and every step at Ask All, is the owner's: With Message
 ///   Reply, the step is refused and the agent asks in words, and the owner's yes in the chat (or in the
 ///   notification's reply field) lets the next try through; With Confirmation, an Allow / Don't Allow
 ///   card, on the Live Activity, in a notification or in the chat.
@@ -103,11 +103,11 @@ enum ApprovalClassifier {
             case .strict: String(localized: "Strict")
             case .balanced: String(localized: "Balanced")
             case .permissive: String(localized: "Permissive")
-            case .everything: String(localized: "Ask for Everything")
+            case .everything: String(localized: "Ask All")
             }
         }
         /// The saved sensitivity; before there was one, Balanced for an owner who already let the model
-        /// judge or chose a mode here, and Ask for Everything, as 752 did, for everyone else.
+        /// judge or chose a mode here, and Ask All, as 752 did, for everyone else.
         static var saved: Level {
             let defaults = UserDefaults.standard
             if let level = Level(rawValue: defaults.string(forKey: levelKey) ?? "") { return level }
