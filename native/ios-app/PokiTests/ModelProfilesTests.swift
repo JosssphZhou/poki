@@ -58,6 +58,65 @@ final class ModelProfilesTests: XCTestCase {
         XCTAssertNil(fixture.legacy[.openai])
     }
 
+    func testLegacyCustomMigrationPreservesFetchedSelectionAndExplicitEnablement() throws {
+        let fixture = ConnectionStorage()
+        fixture.defaults.set("custom", forKey: "chat.provider")
+        fixture.defaults.set("https://fixture.invalid/v1", forKey: "chat.customURL")
+        fixture.defaults.set("manual", forKey: "chat.customModel")
+        fixture.defaults.set(["fetched", "other"], forKey: "models.listed.custom")
+        fixture.defaults.set(["fetched", "other"], forKey: "models.enabled.custom")
+        fixture.defaults.set("fetched", forKey: "chat.model.custom")
+        let store = fixture.open()
+        let profile = try XCTUnwrap(store.all.first)
+        XCTAssertEqual(profile.enabled, ["fetched", "other"])
+        XCTAssertEqual(store.defaultSelection.route(in: store)?.model.id, "fetched")
+        XCTAssertEqual(fixture.open().defaultSelection, store.defaultSelection)
+    }
+
+    func testLegacyCustomMigrationDistinguishesMissingEmptyAndStalePreferences() throws {
+        for enabled: [String]? in [nil, [], ["other"]] {
+            let fixture = ConnectionStorage()
+            fixture.defaults.set("custom", forKey: "chat.provider")
+            fixture.defaults.set("https://fixture.invalid/v1", forKey: "chat.customURL")
+            fixture.defaults.set("manual", forKey: "chat.customModel")
+            fixture.defaults.set(["other"], forKey: "models.listed.custom")
+            if let enabled {
+                fixture.defaults.set(enabled, forKey: "models.enabled.custom")
+                fixture.defaults.set("stale", forKey: "chat.model.custom")
+            }
+            let store = fixture.open()
+            let profile = try XCTUnwrap(store.all.first)
+            XCTAssertEqual(profile.enabled, Set(enabled ?? ["manual"]))
+            XCTAssertEqual(store.defaultSelection.route(in: store)?.model.id, enabled == nil ? "manual" : nil)
+            if enabled == ["other"] {
+                try store.select(.init(provider: .custom, modelID: "other", profileID: profile.id))
+                XCTAssertEqual(store.defaultSelection.route(in: store)?.model.id, "other")
+            }
+        }
+    }
+
+    func testLocalReadinessUsesRestoredAndCapturedRouteAndFailsAfterRemoval() throws {
+        let store = ConnectionStorage().open()
+        let restored = try store.save(nil, provider: .deepseek, label: "Restored", key: "fixture-a")
+        let preferred = try store.save(nil, provider: .deepseek, label: "Default", key: "fixture-b")
+        store.choose(preferred.id)
+        let id = try XCTUnwrap(store.available(restored.id).first?.id)
+        let selection = ModelSelection(provider: .deepseek, modelID: id, profileID: restored.id)
+        let restoredSelection = try JSONDecoder().decode(ModelSelection.self, from: JSONEncoder().encode(selection))
+        let captured = try XCTUnwrap(restoredSelection.route(in: store))
+        try store.remove(preferred.id)
+        XCTAssertFalse(AppModel.hasLocalModel(selection: store.defaultSelection, captured: nil, profiles: store))
+        XCTAssertTrue(AppModel.hasLocalModel(selection: restoredSelection, captured: nil, profiles: store))
+        XCTAssertTrue(AppModel.hasLocalModel(selection: store.defaultSelection, captured: captured, profiles: store))
+
+        try store.remove(restored.id)
+        let replacement = try store.save(nil, provider: .deepseek, label: "New default", key: "fixture-c")
+        store.choose(replacement.id)
+        XCTAssertTrue(AppModel.hasLocalModel(selection: store.defaultSelection, captured: nil, profiles: store))
+        XCTAssertFalse(AppModel.hasLocalModel(selection: restoredSelection, captured: nil, profiles: store))
+        XCTAssertFalse(AppModel.hasLocalModel(selection: store.defaultSelection, captured: captured, profiles: store))
+    }
+
     func testPerProfileModelListsAndEnabledStatesDoNotLeak() async throws {
         let fixture = ConnectionStorage(); let store = fixture.open()
         let a = try store.save(nil, provider: .openai, label: "A", key: "a")

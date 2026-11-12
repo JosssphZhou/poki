@@ -255,15 +255,20 @@ enum ChatGPTOAuth {
     }
 
     static func models(_ token: String) async throws -> [ChatModelChoice] {
+        var query = URLRequest(url: URL(string: "\(resource)/models")!)
+        query.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try decodeModelCatalog(await request(query))
+    }
+
+    // Sign in with ChatGPT uses a plan OAuth token. The API-key list at the same URL uses data[].id.
+    static func decodeModelCatalog(_ data: Data) throws -> [ChatModelChoice] {
         struct Item: Decodable {
             let slug: String
             let display_name: String
             let visibility: String
         }
         struct Catalog: Decodable { let models: [Item] }
-        var query = URLRequest(url: URL(string: "\(resource)/models")!)
-        query.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let catalog = try JSONDecoder().decode(Catalog.self, from: await request(query))
+        let catalog = try JSONDecoder().decode(Catalog.self, from: data)
         var seen: Set<String> = []
         return catalog.models.compactMap { item in
             guard item.visibility == "list", !item.slug.isEmpty, !item.display_name.isEmpty,

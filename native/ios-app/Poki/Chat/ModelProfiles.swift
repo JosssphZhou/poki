@@ -69,10 +69,12 @@ final class ModelProfiles {
             let model = provider == .custom ? defaults.string(forKey: "chat.customModel") : nil
             guard key?.isEmpty == false || (endpoint?.isEmpty == false && model?.isEmpty == false) else { continue }
             let listed = defaults.stringArray(forKey: "models.listed.\(provider.rawValue)")?.map { ChatModelChoice(id: $0, name: $0) }
-            let enabled = Set(defaults.stringArray(forKey: "models.enabled.\(provider.rawValue)") ?? Array(ModelCatalog.defaults(provider)))
+            let savedEnabled = defaults.stringArray(forKey: "models.enabled.\(provider.rawValue)")
+            let defaultEnabled = provider == .custom ? Set([model].compactMap { $0 }.filter { !$0.isEmpty }) : ModelCatalog.defaults(provider)
+            let enabled = savedEnabled.map(Set.init) ?? defaultEnabled
             profiles.append(ModelProfile(id: UUID(), provider: provider, label: String(localized: "Profile 1"),
                                          key: key, endpoint: endpoint, customModel: model, listed: listed,
-                                         enabled: provider == .custom ? Set([model ?? ""]) : enabled,
+                                         enabled: enabled,
                                          modelID: defaults.string(forKey: "chat.model.\(provider.rawValue)") ?? model ?? "", legacy: true))
         }
         try persist(profiles)
@@ -115,7 +117,10 @@ final class ModelProfiles {
             return .init(provider: provider, modelID: "", profileID: defaults.string(forKey: "chat.profile.\(provider.rawValue)").flatMap(UUID.init(uuidString:)))
         }
         let models = available(profile.id)
-        let model = models.first { $0.id == profile.modelID } ?? models.first
+        // Keep an unavailable legacy custom choice unresolved until the owner picks a model.
+        // Falling back here can change which model receives the first task after migration.
+        let keepLegacyChoice = profile.provider == .custom && profile.legacy == true && !profile.modelID.isEmpty
+        let model = models.first { $0.id == profile.modelID } ?? (keepLegacyChoice ? nil : models.first)
         return .init(provider: provider, modelID: model?.id ?? "", profileID: profile.id)
     }
 
@@ -263,6 +268,17 @@ struct ModelRoute: Sendable {
     let selection: ModelSelection
     let model: Model
     let key: String?
+
+    @MainActor func isRegistered(in store: ModelProfiles) -> Bool {
+        guard let id = selection.profileID else { return false }
+        if selection.provider == .chatgpt {
+            return model.api == .openAIResponses && model.baseUrl == ChatGPTOAuth.resource
+                && store.chatGPT.profile(id)?.isSignedIn == true
+        }
+        return store.profile(id)?.provider == selection.provider
+            && model.provider == selection.provider.piProvider
+            && (key != nil || selection.provider == .custom)
+    }
 
     /// A replacement affects future task routes. This route keeps its captured API credential.
     /// Local deletion prevents the next authentication lookup, including a tool continuation.

@@ -158,6 +158,39 @@ final class ChatGPTProfileTests: XCTestCase {
         XCTAssertThrowsError(try returning.code(from: mismatch))
     }
 
+    func testPlanModelCatalogUsesOAuthSchemaAndPreservesServerOrder() throws {
+        let data = Data(#"{"models":[{"slug":"gpt-6.1-sol","display_name":"Sol","visibility":"list"},{"slug":"hidden","display_name":"Hidden","visibility":"hidden"},{"slug":"gpt-6.1-sol","display_name":"Duplicate","visibility":"list"},{"slug":"gpt-6.1-terra","display_name":"Terra","visibility":"list"}]}"#.utf8)
+        let models = try ChatGPTOAuth.decodeModelCatalog(data)
+        XCTAssertEqual(models.map(\.id), ["gpt-6.1-sol", "gpt-6.1-terra"])
+        XCTAssertEqual(models.map(\.name), ["Sol", "Terra"])
+        XCTAssertEqual(try ChatGPTOAuth.decodeModelCatalog(Data(#"{"models":[]}"#.utf8)), [])
+        let keyCatalog = Data(#"{"data":[{"id":"gpt-6.1-sol"}]}"#.utf8)
+        XCTAssertThrowsError(try ChatGPTOAuth.decodeModelCatalog(keyCatalog))
+        XCTAssertEqual(try ModelCatalog.decodeModels(keyCatalog, provider: .openai).map(\.id), ["gpt-6.1-sol"])
+    }
+
+    func testLegacyPlanCatalogRefreshKeepsFailureSeparateFromEmptyResult() async throws {
+        let storage = ProfileStorage()
+        let authorization = grant("oaiapp_legacy")
+        storage.legacy = try JSONEncoder().encode(authorization.credentials)
+        let profiles = storage.open()
+        let legacy = try XCTUnwrap(profiles.all.first)
+        let failed = await profiles.reloadModels(legacy.id) { _ in throw URLError(.badServerResponse) }
+        XCTAssertFalse(failed)
+        XCTAssertNil(profiles.profile(legacy.id)?.models)
+        let empty = await profiles.reloadModels(legacy.id) { _ in
+            try ChatGPTOAuth.decodeModelCatalog(Data(#"{"models":[]}"#.utf8))
+        }
+        XCTAssertTrue(empty)
+        XCTAssertEqual(profiles.profile(legacy.id)?.models, [])
+        let loaded = await profiles.reloadModels(legacy.id) { token in
+            XCTAssertEqual(token, authorization.credentials.access)
+            return try ChatGPTOAuth.decodeModelCatalog(Data(#"{"models":[{"slug":"gpt-6.1-sol","display_name":"Sol","visibility":"list"}]}"#.utf8))
+        }
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(storage.open().profile(legacy.id)?.models?.map(\.id), ["gpt-6.1-sol"])
+    }
+
     func testIDTokenSignatureAndBinding() throws {
         let key = try XCTUnwrap(SecKeyCreateRandomKey([kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeySizeInBits: 2048] as CFDictionary, nil))
         let publicKey = try XCTUnwrap(SecKeyCopyPublicKey(key))
