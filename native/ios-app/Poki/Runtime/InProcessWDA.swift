@@ -33,8 +33,8 @@ enum InProcessSession: Equatable {
     case open
     /// An open failed and Poki is trying again by itself (attempt 1 to `repairs`).
     case repairing(attempt: Int)
-    /// prepare answered no: its code and detail.
-    case failed(code: String, detail: String)
+    /// prepare answered no: its code and detail, and how often Poki had tried again by itself.
+    case failed(code: String, detail: String, tries: Int = 0)
     /// iOS is asking the owner for the passcode before it allows automation.
     case waitingForPasscode
     /// iOS asked for the passcode and nobody entered it before it gave up (about a minute).
@@ -42,13 +42,24 @@ enum InProcessSession: Equatable {
 
     /// How often Poki tries a failed open again by itself before it says so.
     static let repairs = 3
+    /// Failures no retry by Poki changes: an iOS without the session API, and the passcode gate
+    /// (Poki in the background, another open asking, the owner cancelled), which waits on the owner.
+    static let unrepairable: Set<String> = ["session_api_unavailable", "open_poki_first", "open_under_way", "passcode_declined"]
 
     /// What a failure code means and the one thing that fixes it, in words the owner can act on.
     static func cause(_ code: String) -> (what: String, fix: String) {
         switch code {
         case "developer_framework_unavailable":
-            return ("the developer disk image is not mounted, so iOS's automation framework is missing",
-                    "Open Poki, go to Setup and check Turn On Loopback and Pair This iPhone; Poki mounts the developer disk image again once both have a tick")
+            // The launcher reports running only once the image's services answer, and prepare runs
+            // only while it does: the image is there and one of its libraries did not load.
+            return ("the developer disk image is mounted and its services answer, but iOS's automation framework in it did not load; the loader error in parentheses names the file and the reason",
+                    "Open Poki › Setup › Advanced › Diagnostics, tap Share Log and send the log to the Poki team")
+        case "open_poki_first", "open_under_way":
+            return ("iOS asks for the passcode before the first automation since the iPhone restarted, and only while Poki is open",
+                    "Open Poki and, if iOS asks, enter the passcode to allow automation")
+        case "passcode_declined":
+            return ("the owner cancelled iOS's passcode screen for automation",
+                    "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
         case "enable_failed":
             return ("iOS refused to turn on Automation Mode",
                     "Open Settings › Developer and turn on Enable UI Automation, then open Poki; if iOS asks for the passcode, enter it")
@@ -60,7 +71,7 @@ enum InProcessSession: Equatable {
                     "Update Poki to the latest build; this iOS version needs a build that supports it")
         default:
             return ("the reason is in Poki's log",
-                    "Open Poki › Setup › Advanced › Log, copy the log and report it; turning Poki off and on starts a new session")
+                    "Open Poki › Setup › Advanced › Diagnostics, tap Share Log and send the log to the Poki team; turning Poki off and on starts a new session")
         }
     }
 
@@ -76,9 +87,10 @@ enum InProcessSession: Equatable {
         case .passcodeMissed:
             return .failed("the owner did not enter the iPhone passcode when iOS asked for it to allow automation (cancelled, or a minute passed). Nothing was sent, and Poki does not ask again by itself: the owner turns Poki off and on to be asked again",
                            fix: "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
-        case .failed(let code, let detail):
+        case .failed(let code, let detail, let tries):
             let cause = Self.cause(code)
-            return .failed("the automation session could not be opened after \(Self.repairs) tries by Poki itself (\(code)\(detail.isEmpty ? "" : ": \(detail)")): \(cause.what). Nothing was sent. Tell the owner exactly this: \(cause.fix). Poki tries again on your next call",
+            let after = tries > 0 ? " after \(tries) \(tries == 1 ? "try" : "tries") by Poki itself" : ""
+            return .failed("the automation session could not be opened\(after) (\(code)\(detail.isEmpty ? "" : ": \(detail)")): \(cause.what). Nothing was sent. Tell the owner exactly this: \(cause.fix). Poki tries again on your next call",
                            fix: cause.fix)
         }
     }

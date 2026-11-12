@@ -461,10 +461,10 @@ final class AppModel {
                 self.endPasscodeWait(opened: ok)
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
                 let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
-                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
-                                          : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
-                if ok { self.automationStarted() }
                 let detail = result["detail"] as? String ?? ""
+                self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
+                                          : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s\(detail.isEmpty ? "" : " (\(detail))")")
+                if ok { self.automationStarted() }
                 // iOS gives up on the passcode after a minute and says only that enabling timed out.
                 let passcodeMissed = waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
                 // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
@@ -473,29 +473,32 @@ final class AppModel {
                     self.log.add("runner", "the passcode for automation was not entered: Poki will not ask again until it is turned on again")
                 }
                 let code = "\(result["code"] ?? "unknown")"
+                let tries = self.inProcessRepairs
                 if ok { self.inProcessRepairs = 0 }
                 if !ok, !passcodeMissed, self.repairInProcess(code: code, why: why) { return }
-                self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: code, detail: detail)
+                self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: code, detail: detail, tries: tries)
                 if self.sessionOn { self.host.update(runner: self.coreState(of: self.runner)) }
             }
         }
     }
 
     /// A session that would not open is opened again by Poki itself, up to `InProcessSession.repairs`
-    /// times with a longer pause each time, mounting the developer disk image again where that is
-    /// what was missing (and on the second try whatever the code). Agents are told to wait, not what
-    /// to do; only when every try failed do they get the cause and the owner's one step. False when
-    /// the tries are used up or the code is one no retry can change.
+    /// times with a longer pause each time, starting the launcher again first where the image's
+    /// library did not load (and on the second try whatever the code); the launcher mounts the image
+    /// if it is missing. Agents are told to wait, not what to do; only when every try failed do they
+    /// get the cause and the owner's one step. False when the tries are used up, the code is one no
+    /// retry can change, or the loopback does not answer: the launcher reconnects only through it,
+    /// and a running launcher lets a session open without it, so it is left as it is.
     private var inProcessRepairs = 0
     private func repairInProcess(code: String, why: String) -> Bool {
-        guard sessionOn, !runnerPaused, code != "session_api_unavailable", inProcessRepairs < InProcessSession.repairs else {
+        guard sessionOn, !runnerPaused, loopback.isWorking, !InProcessSession.unrepairable.contains(code), inProcessRepairs < InProcessSession.repairs else {
             inProcessRepairs = 0
             return false
         }
         inProcessRepairs += 1
         let attempt = inProcessRepairs
         let remount = code == "developer_framework_unavailable" || attempt == 2
-        log.add("runner", "the automation session did not open (\(code)): Poki tries again by itself, attempt \(attempt) of \(InProcessSession.repairs)\(remount ? ", mounting the developer disk image again first" : "")")
+        log.add("runner", "the automation session did not open (\(code)): Poki tries again by itself, attempt \(attempt) of \(InProcessSession.repairs)\(remount ? ", starting the launcher again first (it mounts the developer disk image if it is missing)" : "")")
         inProcessSession = .repairing(attempt: attempt)
         host.update(runner: coreState(of: runner))
         let epoch = inProcessEpoch
@@ -503,7 +506,7 @@ final class AppModel {
             try? await Task.sleep(for: .seconds(Double(attempt) * 1.5))
             guard let self, self.sessionOn, epoch == self.inProcessEpoch else { return }
             // The launcher's start mounts the image and, once it runs, opens the session (warmInProcess).
-            if remount { self.launcher.restart() } else { self.warmInProcess("Poki's own retry \(attempt) after \(code) (\(why))") }
+            if remount, self.loopback.isWorking { self.launcher.restart() } else { self.warmInProcess("Poki's own retry \(attempt) after \(code) (\(why))") }
         }
         return true
     }
