@@ -61,9 +61,12 @@ struct SettingsRow: View {
                 // At the accessibility sizes the value goes under the caption, as in Settings.
                 if typeSize.isAccessibilitySize, let value { valueView(value) }
             }
+            .layoutPriority(1)
             Spacer(minLength: 8)
-            // The value keeps its width (a model's name, the way of asking); the caption wraps instead.
-            if !typeSize.isAccessibilitySize, let value { valueView(value).lineLimit(1).layoutPriority(1) }
+            // A long account/model name must not squeeze the title into a vertical column.
+            if !typeSize.isAccessibilitySize, let value {
+                valueView(value).lineLimit(1).frame(maxWidth: 120, alignment: .trailing)
+            }
         }
         .padding(.vertical, 6)
     }

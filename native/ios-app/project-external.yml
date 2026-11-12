@@ -1,3 +1,24 @@
 # For signing without Network Extensions: no packet-tunnel entitlement or embedded tunnel.
 include: project-base.yml
 name: PokiExternal
+
+# Native end-to-end coverage of profile setup and the chat selector.
+targets:
+  PokiProfileUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [PokiUITests]
+    dependencies:
+      - target: Poki
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Poki
+schemes:
+  PokiProfileUI:
+    build:
+      targets:
+        Poki: all
+        PokiProfileUITests: [test]
+    test:
+      targets: [PokiProfileUITests]

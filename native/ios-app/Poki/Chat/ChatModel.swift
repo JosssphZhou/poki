@@ -103,6 +103,21 @@ final class ChatModel {
     /// The model's side of the conversation: pi's loop (ESP-177), or for Anthropic and OpenAI with
     /// `-chatEngine direct`, the provider's own API in its own form.
     private var loop: PiLoop?
+    private var directRoute: ModelRoute?
+    private(set) var savedSelection: ModelSelection?
+    private(set) var activeRoute: ModelRoute?
+    private var contextRoute: ModelRoute?
+    private var contextStart = 0
+    var selection: ModelSelection { savedSelection ?? ModelKeys.defaultSelection }
+
+    func selectModel(_ selection: ModelSelection) {
+        guard !running, let route = selection.route else { return }
+        do {
+            try ModelProfiles.shared.select(route.selection)
+            savedSelection = route.selection
+            persist()
+        } catch { add(.note(.problem(error.localizedDescription))) }
+    }
     /// For the log's line at the end of each task: when it began, the tool calls, finish_task's verdict.
     private var taskStart = Date()
     private var toolCalls = 0
@@ -189,8 +204,12 @@ final class ChatModel {
         if isDemo { entries = [ChatEntry(.time(Date()))] + greeting.dropFirst(); return }
         loop = nil
         client = nil
+        directRoute = nil
+        contextRoute = nil
+        contextStart = 0
         calls = []
         planID = nil; noteID = nil; modelPlan = nil
+        savedSelection = nil
         sessionID = UUID().uuidString.lowercased()
         greet()
     }
@@ -201,7 +220,11 @@ final class ChatModel {
         guard session.kind == .poki, !running else { return }
         loop = nil
         client = nil
+        directRoute = nil
+        contextRoute = nil
+        contextStart = 0
         planID = nil; noteID = nil; modelPlan = nil
+        savedSelection = session.modelSelection.map { $0.route?.selection ?? $0 }
         sessionID = session.id
         calls = session.calls
         entries = session.entries.isEmpty ? greeting : session.entries
@@ -247,7 +270,7 @@ final class ChatModel {
 
     /// What was said in this chat, oldest first, for the auto-classifier.
     var ownerContext: [String] {
-        entries.suffix(30).compactMap { entry in
+        entries.dropFirst(contextStart).suffix(30).compactMap { entry in
             switch entry.kind {
             case .you(let text, _): "Owner: \(text)"
             case .request(let text, let from): "Request from \(from): \(text)"
@@ -278,18 +301,17 @@ final class ChatModel {
         }
         lastOwnerText = text
         if kind == .poki { Haptics.sent() }
-        let provider = ModelKeys.selectedProvider
-        guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
-            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first. Open Settings, then Models.")
-                                       : String(localized: "Add a model key first. Open Settings, then Models.")))
+        let selected = selection
+        let provider = selected.provider
+        guard let route = selected.route else {
+            add(.note(.problem(String(localized: "Choose an available chat model or open Accounts to finish setting one up."))))
             return
         }
-        let model = ModelKeys.selectedModel
-        // The first message names the chat: a few words from the chat's own model, in the background.
-        if kind == .poki, !again, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
-           let piModel = provider.piModel(model) {
+        if kind == .poki { savedSelection = selected }
+        let model = route.model.id
+        if kind == .poki, !again, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1 {
             let id = sessionID
-            Task { if let name = await SessionNamer.name(for: text, provider: provider, model: piModel) { SessionStore.shared.setAutoName(id, name) } }
+            Task { if let name = await SessionNamer.name(for: text, route: route) { SessionStore.shared.setAutoName(id, name) } }
         }
         running = true
         awaitingModel = true
@@ -297,10 +319,12 @@ final class ChatModel {
         planID = nil; noteID = nil; modelPlan = nil
         sendTo = nil; lastTyped = nil; typedAtDo = 0; doCalls = 0; askWords = [:]; taskApp = nil
         let instructions = Harness.instructions(for: text)
-        if Self.direct, provider == .anthropic || provider == .openai {
+        if Self.direct, let key = route.key, provider == .anthropic || provider == .openai {
+            loop = nil
             // Another model starts a new conversation on the model's side; the chat on screen stays.
-            if client?.signature != "\(provider.rawValue)/\(model)" {
+            if directRoute?.sameAccount(as: route) != true || directRoute?.model.id != model {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
+                directRoute = route
             }
             guard let client else { running = false; awaitingModel = false; return }
             runToken += 1
@@ -311,8 +335,11 @@ final class ChatModel {
                 await previous?.value
                 guard let self, self.runToken == token else { return }
                 client.say(text)
+                self.beginContext(route, at: you.id)
+                self.activeRoute = route
+                defer { self.activeRoute = nil }
                 self.began("direct", provider, model)
-                await self.run(client, instructions: instructions, delivered: you.id, token: token)
+                await self.run(client, route: route, instructions: instructions, delivered: you.id, token: token)
                 let current = self.runToken == token
                 if !current { self.app.finishTask() }
                 self.logEnd("direct", outcome: nil, stopped: !current)
@@ -320,20 +347,8 @@ final class ChatModel {
             }
             return
         }
-        guard let piModel = provider.piModel(model) else {
-            running = false
-            add(.note(.problem(String(localized: "pi has no model \(model) for \(provider.name)."))))
-            return
-        }
-        // Another model starts a new loop that carries the conversation over.
-        if loop?.provider != provider || loop?.model.id != piModel.id {
-            loop = PiLoop(provider: provider, model: piModel, tools: Harness.tools,
-                          carrying: loop?.messages ?? []) { [weak self] call in
-                guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
-                return await self.perform(call)
-            }
-        }
-        guard let loop else { running = false; awaitingModel = false; return }
+        client = nil
+        directRoute = nil
         runToken += 1
         let token = runToken
         let previous = task
@@ -341,6 +356,19 @@ final class ChatModel {
             // A stopped task may still be ending its last step: this one starts after it.
             await previous?.value
             guard let self, self.runToken == token else { return }
+            // Carry Pi messages across model changes within one account and endpoint. A different
+            // account starts fresh model context in this same visible conversation.
+            if self.loop?.route.sameAccount(as: route) != true || self.loop?.model.id != model {
+                let carried = self.loop?.route.sameAccount(as: route) == true ? self.loop?.messages ?? [] : []
+                self.loop = PiLoop(route: route, tools: Harness.tools, carrying: carried) { [weak self] call in
+                    guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
+                    return await self.perform(call)
+                }
+            }
+            guard let loop = self.loop else { self.running = false; self.awaitingModel = false; return }
+            self.beginContext(route, at: you.id)
+            self.activeRoute = route
+            defer { self.activeRoute = nil }
             self.began("pi", provider, model)
             let outcome = await loop.run(text, instructions: instructions, maxTurns: Self.maxTurns) { [weak self] text in
                 guard let self, self.runToken == token else { return }
@@ -361,6 +389,13 @@ final class ChatModel {
     /// Every provider runs on pi. `-chatEngine direct` sends Anthropic and OpenAI through their own APIs
     /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
+
+    private func beginContext(_ route: ModelRoute, at message: UUID) {
+        if contextRoute?.sameAccount(as: route) != true {
+            contextStart = entries.firstIndex(where: { $0.id == message }) ?? entries.count
+        }
+        contextRoute = route
+    }
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
@@ -460,10 +495,16 @@ final class ChatModel {
     /// A look or do of this chat is on its way to the phone.
     private var phoneStepUnderWay = false
 
-    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID, token: Int) async {
+    private func run(_ client: ModelClient, route: ModelRoute, instructions: String, delivered youID: UUID, token: Int) async {
         // Stop has moved the token on (and said Stopped): this task writes nothing more.
         var stopped: Bool { runToken != token || Task.isCancelled }
         for _ in 0..<Self.maxTurns {
+            guard !stopped else { return }
+            guard await route.accessToken(profiles: .shared) != nil else {
+                add(.note(.problem(ModelProfiles.Failure.missing.localizedDescription)))
+                return
+            }
+            guard !stopped else { return }
             let turn: ModelTurn
             do {
                 turn = try await client.next(instructions: instructions, tools: Harness.tools)
@@ -543,7 +584,10 @@ final class ChatModel {
             if call.name == "do" { noteTyping(args) }
             phoneStepUnderWay = true
             defer { phoneStepUnderWay = false }
-            return await app.runTool(call.name, arguments: call.arguments)
+            guard let activeRoute else {
+                return PokiCore.ToolAnswer(text: "not_sent: The chat task has no active model route. Nothing was sent.", jpeg: nil, isError: true)
+            }
+            return await app.runTool(call.name, arguments: call.arguments, chatRoute: activeRoute)
         }
     }
 

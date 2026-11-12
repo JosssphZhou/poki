@@ -24,6 +24,7 @@ struct SavedSession: Codable, Identifiable, Equatable {
     var autoName: String? = nil
     /// sha256 of the connector secret an outside agent's session came through (the relay says).
     var connector: String? = nil
+    var modelSelection: ModelSelection? = nil
 
     /// The row's second line: the last thing that happened, as plain text (markdown neither drawn nor
     /// shown as its marks).
@@ -156,6 +157,7 @@ final class SessionStore {
         let changed = saved == nil || session.entries != chat.entries
         session.entries = chat.entries
         session.calls = chat.savedCalls
+        session.modelSelection = chat.savedSelection
         session.title = chat.title
         if let name = pendingNames.removeValue(forKey: chat.sessionID) { session.autoName = name }
         // Opening a conversation hands the same lines back: only a new line gives the row a new time

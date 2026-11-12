@@ -3,7 +3,7 @@ import PiSwiftAI
 
 /// The model providers the chat can use with the owner's own key or account (ESP-171 board "M Model").
 /// The wired ones run through pi (PiLoop); the others store their key and address for a later step.
-enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
+enum ModelProvider: String, Codable, CaseIterable, Identifiable, Sendable {
     case anthropic, openai, chatgpt, deepseek, gemini, openrouter, custom
     var id: String { rawValue }
 
@@ -105,7 +105,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "gemini-3.8-flash", name: "Gemini 3.8 Flash"),
             ChatModelChoice(id: "gemini-4-argon", name: "Gemini 4 Argon"),
         ]
-        // One OpenRouter key, the main labs' models (PiSwift's openrouter catalog).
+        // Built-in OpenRouter model defaults (PiSwift's openrouter catalog).
         case .openrouter: [
             ChatModelChoice(id: "anthropic/claude-sonnet-5.5", name: "Claude Sonnet 5.5 (OpenRouter)"),
             ChatModelChoice(id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5 (OpenRouter)"),
@@ -114,7 +114,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         ]
         // Whatever model the owner's endpoint serves (a local server, a company gateway).
         case .custom:
-            ModelKeys.customModel.isEmpty ? [] : [ChatModelChoice(id: ModelKeys.customModel, name: ModelKeys.customModel)]
+            []
         }
     }
 
@@ -133,10 +133,10 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// pi's model for one of `models`.
-    func piModel(_ id: String) -> Model? {
+    func piModel(_ id: String, endpoint: String? = nil) -> Model? {
         guard let piProvider else { return nil }
         if self == .custom {
-            let base = ModelKeys.customURL.trimmingCharacters(in: .whitespaces)
+            let base = (endpoint ?? ModelKeys.customURL).trimmingCharacters(in: .whitespaces)
             guard !base.isEmpty, !id.isEmpty else { return nil }
             return Model(id: id, name: id, api: .openAICompletions, provider: piProvider, baseUrl: base, reasoning: false,
                          input: [.text, .image], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
@@ -147,7 +147,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         // same API and inputs as gpt-6.1-sol.
         // A model from the provider's own list that pi's catalog lacks takes the shape of a built-in one of
         // the same provider (same API and inputs), with its own id.
-        let template = (self == .openai || self == .chatgpt) && id == "gpt-6.1-terra" ? "gpt-6.1-sol" : models.lazy.compactMap { getModel(provider: piProvider, modelId: $0.id) }.first?.id
+        let template = self == .chatgpt || (self == .openai && id == "gpt-6.1-terra") ? "gpt-6.1-sol" : models.lazy.compactMap { getModel(provider: piProvider, modelId: $0.id) }.first?.id
         guard let template, let base = getModel(provider: piProvider, modelId: template),
               var json = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(base))) as? [String: Any] else { return nil }
         json["id"] = id
@@ -156,33 +156,31 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-struct ChatModelChoice: Hashable, Identifiable, Sendable {
+struct ChatModelChoice: Codable, Hashable, Identifiable, Sendable {
     var id: String
     var name: String
 }
 
-/// The owner's keys and the ChatGPT sign-in, in this iPhone's keychain (the relay key's service, one
-/// account per provider). A key is only ever sent to its own provider. Nothing here prints or logs a key
-/// or a token.
+/// Legacy preference readers and setup/voice entry points. Profile credentials are resolved through
+/// ModelProfiles, while ChatGPT registration and refresh remain in ChatGPTProfiles.
 enum ModelKeys {
-    private static func account(_ provider: ModelProvider) -> String { "model-key.\(provider.rawValue)" }
-
-    static func key(_ provider: ModelProvider) -> String? {
-        guard let data = try? Keychain.read(account(provider)), let key = String(data: data, encoding: .utf8), !key.isEmpty else { return nil }
-        return key
+    @MainActor static func key(_ provider: ModelProvider) -> String? {
+        guard provider != .chatgpt else { return nil }
+        return ModelProfiles.shared.preferred(provider)?.key
     }
 
-    static func hasKey(_ provider: ModelProvider) -> Bool { key(provider) != nil }
+    @MainActor static func hasKey(_ provider: ModelProvider) -> Bool { key(provider) != nil }
 
-    static func save(_ key: String, for provider: ModelProvider) throws {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        try Keychain.write(Data(trimmed.utf8), account: account(provider))
-        saved += 1
+    @MainActor static func save(_ key: String, for provider: ModelProvider) throws {
+        let profile = try ModelProfiles.shared.save(nil, provider: provider, label: "", key: key,
+                                                  endpoint: provider == .custom ? customURL : nil,
+                                                  model: provider == .custom ? customModel : nil)
+        ModelProfiles.shared.choose(profile.id)
     }
 
-    static func remove(_ provider: ModelProvider) {
-        Keychain.delete(account(provider))
-        saved += 1
+    @MainActor static func remove(_ provider: ModelProvider) {
+        guard let id = ModelProfiles.shared.preferred(provider)?.id else { return }
+        try? ModelProfiles.shared.remove(id)
     }
 
     /// The custom endpoint's address (not a secret: kept in the app's settings).
@@ -199,11 +197,9 @@ enum ModelKeys {
 
     /// The chat can run: the chosen provider is wired and has a key (a custom endpoint: an address and a
     /// model; its key is optional).
-    static var hasUsableKey: Bool {
-        if selectedProvider == .custom { return !customURL.isEmpty && !customModel.isEmpty }
-        if selectedProvider == .chatgpt { return ChatGPTAccount.signedIn }
-        return selectedProvider.wired && hasKey(selectedProvider)
-    }
+    @MainActor static var hasUsableKey: Bool { defaultSelection.route != nil }
+    @MainActor static var defaultSelection: ModelSelection { ModelProfiles.shared.defaultSelection }
+    @MainActor static func useChatGPT(_ id: UUID) { ModelProfiles.shared.choose(id) }
 
     static var selectedProvider: ModelProvider {
         get { UserDefaults.standard.string(forKey: "chat.provider").flatMap(ModelProvider.init(rawValue:)) ?? .anthropic }
@@ -211,42 +207,25 @@ enum ModelKeys {
     }
 
     /// Each provider's model: its first (Claude Sonnet 5.5, GPT-6.1 Terra) unless the owner picks another.
-    static func model(for provider: ModelProvider) -> String {
-        let saved = UserDefaults.standard.string(forKey: "chat.model.\(provider.rawValue)")
-        let available = ModelCatalog.available(provider)
-        return saved.flatMap { id in available.contains { $0.id == id } ? id : nil } ?? available.first?.id ?? provider.models.first?.id ?? ""
+    @MainActor static func model(for provider: ModelProvider) -> String {
+        if provider == selectedProvider { return defaultSelection.modelID }
+        guard let profile = ModelProfiles.shared.preferred(provider) else { return "" }
+        return ModelProfiles.shared.available(profile.id).first?.id ?? ""
     }
 
-    static var selectedModel: String {
-        get { model(for: selectedProvider) }
-        set { UserDefaults.standard.set(newValue, forKey: "chat.model.\(selectedProvider.rawValue)") }
+    @MainActor static var selectedModel: String {
+        get { defaultSelection.modelID }
+        set {
+            var selection = defaultSelection
+            selection = ModelSelection(provider: selection.provider, modelID: newValue, profileID: selection.profileID)
+            try? ModelProfiles.shared.select(selection)
+        }
     }
 
-    static var selectedModelName: String {
-        ModelCatalog.all(selectedProvider).first { $0.id == selectedModel }?.name ?? selectedModel
-    }
+    @MainActor static var selectedModelName: String { (AskPoki.chat?.selection ?? defaultSelection).displayName }
 
     /// Bumped on every change, so views that read keys can redraw; `changed` is posted too (ask_poki is
     /// listed for outside agents only while a model is set up).
     nonisolated(unsafe) static var saved = 0 { didSet { NotificationCenter.default.post(name: changed, object: nil) } }
     static let changed = Notification.Name("PokiModelKeysChanged")
-}
-
-/// The credential pi sends for a provider: the key, or for ChatGPT the signed-in access token, refreshed
-/// a minute before it runs out (pi's rule; `expires` is in milliseconds).
-enum ModelCredential {
-    static func apiKey(for provider: ModelProvider) async -> String? {
-        // A custom endpoint may need no key; the request still carries one.
-        guard let stored = ModelKeys.key(provider) else { return provider == .custom ? "none" : nil }
-        guard provider.signsIn else { return stored }
-        // A sign-in from OpenAI's open-source flow carries its issued client id; an older Codex-client
-        // sign-in does not, and has to be done again.
-        guard var credentials = ChatGPTAccount.decode(stored), credentials.clientId?.isEmpty == false else { return nil }
-        if credentials.expires < Date().timeIntervalSince1970 * 1000 + 60_000, !credentials.refresh.isEmpty {
-            guard let fresh = try? await refreshOpenAIChatGPTToken(credentials) else { return nil }
-            credentials = fresh
-            try? ChatGPTAccount.save(credentials)
-        }
-        return credentials.access
-    }
 }

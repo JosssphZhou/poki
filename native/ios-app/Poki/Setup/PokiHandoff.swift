@@ -50,7 +50,7 @@ enum PokiHandoff {
     /// Takes a sealed model key the installer left, once: saves it as that provider's key, makes it the
     /// chat's provider, deletes the file and the key pair. A file that does not open is deleted too
     /// (the installer seals again for the next key). Returns what happened, for the log; never the key.
-    static func takeSealedKey(bundleID: String = Bundle.main.bundleIdentifier ?? "") -> String? {
+    @MainActor static func takeSealedKey(bundleID: String = Bundle.main.bundleIdentifier ?? "") -> String? {
         let file = sealedKeyFile
         guard let data = try? Data(contentsOf: file) else { return nil }
         try? FileManager.default.removeItem(at: file)

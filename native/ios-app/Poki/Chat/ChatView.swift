@@ -1151,6 +1151,15 @@ struct ModeLabels: View {
 
 // MARK: Composer
 
+enum ChatModelSwitcherPlacement: String, CaseIterable, Identifiable {
+    case more
+    case brain
+
+    static let preferenceKey = "chat.modelSwitcherPlacement"
+    var id: Self { self }
+
+}
+
 // ComposerInputView started from GetStream/swiftui-iMessage-clone (commit df114b4,
 // iMessageClone/MessageList/View/Composer/ComposerInputView.swift, by Stefan Blos; no licence file in
 // the repository), with the plus button in front from exyte/Chat (commit f382a14,
@@ -1160,6 +1169,7 @@ struct ModeLabels: View {
 // stops.
 struct ComposerInputView: View {
     @Environment(AppModel.self) private var model
+    @Environment(ChatModel.self) private var chat
     /// The message being written; the greeting's suggestions fill it.
     @Binding var input: String
     /// The message field has the keyboard; the home page's suggestions set it.
@@ -1178,6 +1188,8 @@ struct ComposerInputView: View {
     /// Opens the conversations; nil where the list is always beside the chat.
     var openThreads: (() -> Void)? = nil
     var newConversation: () -> Void
+    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.brain
+    @State private var showsBrain = false
     @State private var dictation = FieldDictation()
     @State private var sent: (text: String, at: Date)?
     /// Bumped when the chosen model changes, so the chip redraws (ModelKeys is not observable).
@@ -1209,6 +1221,7 @@ struct ComposerInputView: View {
                     }
                     .frame(minHeight: 48)
                 if dictation.on { dictating }
+                if switcherPlacement == .brain { brain }
                 mainButton
             }
             .padding(8)
@@ -1255,7 +1268,7 @@ struct ComposerInputView: View {
             Divider()
             Button("Dictate", systemImage: "mic") { dictation.start(model, after: input) }.disabled(voice.isOn || dictation.on)
             hands
-            modelMenu
+            voiceModelMenu
             Divider()
             Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
             Button("Poki Details", systemImage: "gearshape", action: openDetails)
@@ -1270,25 +1283,7 @@ struct ComposerInputView: View {
         .accessibilityIdentifier("composer.more")
     }
 
-    /// The model that answers, and the menu that changes it: the chat models of every account that is
-    /// set up and the voice model. With no account yet it is a plain button straight to adding one.
-    @ViewBuilder private var modelMenu: some View {
-        // A screenshot's sample scene shows the menu as it reads with an account, whatever the simulator has.
-        if ModelKeys.hasUsableKey || sample {
-            Menu {
-                ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
-                    Section(provider.name) {
-                        ForEach(ModelCatalog.available(provider)) { choice in
-                            Button {
-                                ModelKeys.selectedProvider = provider
-                                ModelKeys.selectedModel = choice.id
-                                ModelKeys.saved += 1
-                            } label: {
-                                if ModelKeys.selectedProvider == provider && ModelKeys.selectedModel == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
-                            }
-                        }
-                    }
-                }
+    @ViewBuilder private var voiceModelMenu: some View {
                 if VoiceDirect.apiKey != nil {
                     Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
                         ForEach(ModelCatalog.voiceAvailable) { choice in
@@ -1298,13 +1293,29 @@ struct ComposerInputView: View {
                         }
                     }
                 }
-            } label: {
-                Label("Chat Model \(ModelKeys.selectedModelName)", systemImage: "cpu")
-            }
-            .id(modelVersion)
-        } else {
-            Button("Add Model", systemImage: "plus", action: openModel)
-                .accessibilityIdentifier("composer.addModel")
+    }
+
+    private var brain: some View {
+        Button {
+            showsBrain = true
+        } label: {
+            BrainGlyph()
+                .stroke(Color(.label), style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+                .frame(width: 23, height: 23)
+                .id(modelVersion)
+                .frame(width: 44, height: 48)
+                .background {
+                    Circle().fill(Color(.label).opacity(scheme == .dark ? 0.12 : 0.06))
+                        .frame(width: 40, height: 40)
+                }
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Chat Model \(chat.selection.displayName)"))
+        .accessibilityIdentifier("composer.model.brain")
+        .disabled(running)
+        .popover(isPresented: $showsBrain, arrowEdge: .bottom) {
+            ComposerModelPicker(isPresented: $showsBrain, running: running, openModel: openModel)
         }
     }
 
@@ -1453,6 +1464,152 @@ final class FieldDictation {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             model.background.resumeAudio()
         }
+    }
+}
+
+/// The front-facing outline used for the model switcher, drawn from the design reference.
+struct BrainGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let outline = Path { path in
+            path.move(to: CGPoint(x: 14, y: 4))
+            path.addCurve(to: CGPoint(x: 6.5, y: 6), control1: CGPoint(x: 11.7, y: 0.4), control2: CGPoint(x: 7.3, y: 1.7))
+            path.addCurve(to: CGPoint(x: 3.8, y: 12), control1: CGPoint(x: 2.4, y: 6.3), control2: CGPoint(x: 1.3, y: 9.1))
+            path.addCurve(to: CGPoint(x: 6.5, y: 21.8), control1: CGPoint(x: 0.5, y: 15.6), control2: CGPoint(x: 2.1, y: 20.4))
+            path.addCurve(to: CGPoint(x: 14, y: 23.6), control1: CGPoint(x: 7.5, y: 26.3), control2: CGPoint(x: 11.8, y: 27))
+            path.addCurve(to: CGPoint(x: 21.5, y: 21.8), control1: CGPoint(x: 16.2, y: 27), control2: CGPoint(x: 20.5, y: 26.3))
+            path.addCurve(to: CGPoint(x: 24.2, y: 12), control1: CGPoint(x: 25.9, y: 20.4), control2: CGPoint(x: 27.5, y: 15.6))
+            path.addCurve(to: CGPoint(x: 21.5, y: 6), control1: CGPoint(x: 26.7, y: 9.1), control2: CGPoint(x: 25.6, y: 6.3))
+            path.addCurve(to: CGPoint(x: 14, y: 4), control1: CGPoint(x: 20.7, y: 1.7), control2: CGPoint(x: 16.3, y: 0.4))
+            path.closeSubpath()
+
+            path.move(to: CGPoint(x: 14, y: 4))
+            path.addLine(to: CGPoint(x: 14, y: 23.6))
+
+            path.move(to: CGPoint(x: 3.8, y: 12))
+            path.addQuadCurve(to: CGPoint(x: 8.4, y: 11.1), control: CGPoint(x: 6.1, y: 13))
+            path.move(to: CGPoint(x: 11.1, y: 8.9))
+            path.addQuadCurve(to: CGPoint(x: 14, y: 8.3), control: CGPoint(x: 12.4, y: 7.8))
+            path.move(to: CGPoint(x: 10.6, y: 18.1))
+            path.addQuadCurve(to: CGPoint(x: 14, y: 18.2), control: CGPoint(x: 12.1, y: 16.9))
+            path.move(to: CGPoint(x: 14, y: 14.4))
+            path.addQuadCurve(to: CGPoint(x: 17.8, y: 14), control: CGPoint(x: 15.8, y: 13))
+            path.move(to: CGPoint(x: 21.5, y: 6))
+            path.addQuadCurve(to: CGPoint(x: 19.2, y: 10), control: CGPoint(x: 21.3, y: 8.7))
+            path.move(to: CGPoint(x: 21.5, y: 21.8))
+            path.addQuadCurve(to: CGPoint(x: 17.7, y: 21.5), control: CGPoint(x: 19.7, y: 22.7))
+        }
+        return outline
+            .applying(CGAffineTransform(scaleX: rect.width / 28, y: rect.height / 28))
+            .offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+}
+
+private struct ComposerModelPicker: View {
+    @Environment(ChatModel.self) private var chat
+    @Binding var isPresented: Bool
+    let running: Bool
+    var openModel: () -> Void
+    @State private var modelVersion = 0
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 52
+
+    private var accountCount: Int {
+        ModelProfiles.shared.all.count + ChatGPTProfiles.shared.all.count
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    option({ isPresented = false; openModel() }) {
+                        Label("Accounts and Models", systemImage: "person.crop.circle")
+                    }
+                    Divider().padding(.horizontal, 12)
+                    ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                        if provider == .chatgpt {
+                            ForEach(ChatGPTProfiles.shared.all) { profile in
+                                profileRow(provider, id: profile.id, title: profile.title)
+                            }
+                        } else {
+                            ForEach(ModelProfiles.shared.all.filter { $0.provider == provider }) { profile in
+                                profileRow(provider, id: profile.id, title: profile.title)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
+            .scrollDismissesKeyboard(.never)
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in modelVersion += 1 }
+        .id(modelVersion)
+        .frame(width: 270, height: min(310, rowHeight * CGFloat(accountCount + 1) + 12))
+        .presentationCompactAdaptation(.popover)
+        .accessibilityAction(.escape) { isPresented = false }
+        .onChange(of: running) { _, active in
+            if active { isPresented = false }
+        }
+    }
+
+    private func profileRow(_ provider: ModelProvider, id: UUID, title: String) -> some View {
+        let choices = ModelProfiles.shared.available(id)
+        let selected = chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID }
+        return NavigationLink {
+            modelChoices(provider, id: id, title: title)
+                .toolbar(.visible, for: .navigationBar)
+        } label: {
+            HStack(spacing: 12) {
+                ProviderTile(provider: provider, size: 26)
+                Text(verbatim: title).foregroundStyle(Color(.label))
+                Spacer(minLength: 4)
+                if selected { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 12).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(provider.name), \(title)")
+        .accessibilityValue(choices.isEmpty ? Text("Unavailable") : Text(""))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func modelChoices(_ provider: ModelProvider, id: UUID, title: String) -> some View {
+        let choices = ModelProfiles.shared.available(id)
+        return ScrollView {
+            VStack(spacing: 0) {
+                ForEach(choices) { choice in
+                    let selection = ModelSelection(provider: provider, modelID: choice.id, profileID: id)
+                    let selected = chat.selection == selection
+                    option({ isPresented = false; chat.selectModel(selection) }) {
+                        Label(choice.name, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                    }
+                    .disabled(running)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+                if choices.isEmpty {
+                    Text("No available models. Check this profile in Accounts.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    option({ isPresented = false; openModel() }) {
+                        Label("Accounts and Models", systemImage: "person.crop.circle")
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+        .scrollDismissesKeyboard(.never)
+        .navigationTitle(Text(verbatim: title))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func option<Content: View>(_ action: @escaping () -> Void, @ViewBuilder label: () -> Content) -> some View {
+        Button(action: action) {
+            label().frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(.horizontal, 12).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
     }
 }
 
