@@ -1157,12 +1157,6 @@ enum ChatModelSwitcherPlacement: String, CaseIterable, Identifiable {
     static let preferenceKey = "chat.modelSwitcherPlacement"
     var id: Self { self }
 
-    var title: LocalizedStringKey {
-        switch self {
-        case .more: "More Menu"
-        case .brain: "Brain Button"
-        }
-    }
 }
 
 // ComposerInputView started from GetStream/swiftui-iMessage-clone (commit df114b4,
@@ -1193,7 +1187,7 @@ struct ComposerInputView: View {
     /// Opens the conversations; nil where the list is always beside the chat.
     var openThreads: (() -> Void)? = nil
     var newConversation: () -> Void
-    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.more
+    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.brain
     @State private var showsBrain = false
     @State private var dictation = FieldDictation()
     @State private var sent: (text: String, at: Date)?
@@ -1273,16 +1267,7 @@ struct ComposerInputView: View {
             Divider()
             Button("Dictate", systemImage: "mic") { dictation.start(model, after: input) }.disabled(voice.isOn || dictation.on)
             hands
-            if switcherPlacement == .more {
-            if running {
-                Text("Model selection is available when the task ends.")
-                    .accessibilityIdentifier("composer.model.busy")
-            } else {
-                modelMenu
-            }
-            } else {
-                voiceModelMenu
-            }
+            voiceModelMenu
             Divider()
             Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
             Button("Poki Details", systemImage: "gearshape", action: openDetails)
@@ -1297,39 +1282,6 @@ struct ComposerInputView: View {
         .accessibilityIdentifier("composer.more")
     }
 
-    /// The model that answers, and the menu that changes it: the chat models of every account that is
-    /// set up and the voice model. With no account yet it is a plain button straight to adding one.
-    @ViewBuilder private var modelMenu: some View {
-        // A screenshot's sample scene shows the menu as it reads with an account, whatever the simulator has.
-        if !ModelProfiles.shared.all.isEmpty || !ChatGPTProfiles.shared.all.isEmpty || sample {
-            Menu {
-                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
-                    Menu(provider.name) {
-                        if provider == .chatgpt {
-                            ForEach(ChatGPTProfiles.shared.all) { profile in
-                                profileMenu(provider, id: profile.id, title: profile.title)
-                            }
-                        } else {
-                            ForEach(ModelProfiles.shared.all.filter { $0.provider == provider }) { profile in
-                                profileMenu(provider, id: profile.id, title: profile.title)
-                            }
-                        }
-                    }
-                }
-                Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
-                voiceModelMenu
-            } label: {
-                Label("Chat Model \(chat.selection.displayName)", systemImage: "cpu")
-            }
-            .id(modelVersion)
-            .accessibilityIdentifier("composer.model")
-            .disabled(running)
-        } else {
-            Button("Add Model", systemImage: "plus", action: openModel)
-                .accessibilityIdentifier("composer.addModel")
-        }
-    }
-
     @ViewBuilder private var voiceModelMenu: some View {
                 if VoiceDirect.apiKey != nil {
                     Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
@@ -1341,25 +1293,6 @@ struct ComposerInputView: View {
                     }
                 }
     }
-
-    private func profileMenu(_ provider: ModelProvider, id: UUID, title: String) -> some View {
-        let choices = ModelProfiles.shared.available(id)
-        return Menu {
-            ForEach(choices) { choice in
-                let selection = ModelSelection(provider: provider, modelID: choice.id, profileID: id)
-                Button { chat.selectModel(selection) } label: {
-                    Label(choice.name, systemImage: chat.selection == selection ? "checkmark.circle.fill" : "circle")
-                }
-                .disabled(running)
-                .accessibilityAddTraits(chat.selection == selection ? .isSelected : [])
-            }
-            if choices.isEmpty { Text("No available models. Check this profile in Accounts.") }
-        } label: {
-            Label(choices.isEmpty ? "\(title) (\(String(localized: "Unavailable")))" : title,
-                  systemImage: chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID } ? "checkmark.circle.fill" : "circle")
-        }
-    }
-
 
     private var brain: some View {
         Button {
@@ -1381,12 +1314,8 @@ struct ComposerInputView: View {
         .accessibilityIdentifier("composer.model.brain")
         .disabled(running)
         .popover(isPresented: $showsBrain, arrowEdge: .bottom) {
-            options(from: .brain, isPresented: $showsBrain)
+            ComposerModelPicker(isPresented: $showsBrain, running: running, openModel: openModel)
         }
-    }
-
-    private func options(from placement: ChatModelSwitcherPlacement, isPresented: Binding<Bool>) -> some View {
-        ComposerModelPicker(isPresented: isPresented, running: running, openModel: openModel)
     }
 
     /// Poki's hands: on, resting (you paused it; it starts again when you or an agent asks), or off.
@@ -1538,7 +1467,7 @@ final class FieldDictation {
 }
 
 /// The front-facing outline used for the model switcher, drawn from the design reference.
-private struct BrainGlyph: Shape {
+struct BrainGlyph: Shape {
     func path(in rect: CGRect) -> Path {
         let outline = Path { path in
             path.move(to: CGPoint(x: 14, y: 4))
@@ -1575,62 +1504,84 @@ private struct BrainGlyph: Shape {
 }
 
 private struct ComposerModelPicker: View {
-    private enum PickerPage {
-        case providers
-        case profiles(ModelProvider)
-        case models(ModelProvider, UUID, String)
-    }
-
     @Environment(ChatModel.self) private var chat
     @Binding var isPresented: Bool
     let running: Bool
     var openModel: () -> Void
-    @State private var pickerPage: PickerPage?
     @State private var modelVersion = 0
+    @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 52
 
-    // The picker shares the composer's presentation so switching pages never replaces the message field.
+    private var accountCount: Int {
+        ModelProfiles.shared.all.count + ChatGPTProfiles.shared.all.count
+    }
+
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            optionRows.fixedSize(horizontal: false, vertical: true)
-            ScrollView { optionRows }.scrollDismissesKeyboard(.never)
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    option({ isPresented = false; openModel() }) {
+                        Label("Accounts and Models", systemImage: "person.crop.circle")
+                    }
+                    Divider().padding(.horizontal, 12)
+                    ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                        if provider == .chatgpt {
+                            ForEach(ChatGPTProfiles.shared.all) { profile in
+                                profileRow(provider, id: profile.id, title: profile.title)
+                            }
+                        } else {
+                            ForEach(ModelProfiles.shared.all.filter { $0.provider == provider }) { profile in
+                                profileRow(provider, id: profile.id, title: profile.title)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
+            .scrollDismissesKeyboard(.never)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in modelVersion += 1 }
-        .frame(width: 270)
-        .frame(maxHeight: 310)
-        .padding(.vertical, 6)
+        .id(modelVersion)
+        .frame(width: 270, height: min(310, rowHeight * CGFloat(accountCount + 1) + 12))
         .presentationCompactAdaptation(.popover)
-        .accessibilityAction(.escape, closeOptions)
+        .accessibilityAction(.escape) { isPresented = false }
         .onChange(of: running) { _, active in
-            if active { closeOptions() }
+            if active { isPresented = false }
         }
     }
 
-    private var optionRows: some View {
-        VStack(spacing: 0) {
-            switch pickerPage ?? .providers {
-            case .providers:
-                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
-                    option({ pickerPage = .profiles(provider) }) { Text(provider.name) }
-                }
-                option({ performOption(openModel) }) { Label("Accounts and Models", systemImage: "person.crop.circle") }
-            case .profiles(let provider):
-                backRow("Chat Model", to: .providers)
-                if provider == .chatgpt {
-                    ForEach(ChatGPTProfiles.shared.all) { profile in
-                        profileRow(provider, id: profile.id, title: profile.title)
-                    }
-                } else {
-                    ForEach(ModelProfiles.shared.all.filter { $0.provider == provider }) { profile in
-                        profileRow(provider, id: profile.id, title: profile.title)
-                    }
-                }
-            case .models(let provider, let id, let title):
-                backRow(Text(title), to: .profiles(provider))
-                let choices = ModelProfiles.shared.available(id)
+    private func profileRow(_ provider: ModelProvider, id: UUID, title: String) -> some View {
+        let choices = ModelProfiles.shared.available(id)
+        let selected = chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID }
+        return NavigationLink {
+            modelChoices(provider, id: id, title: title)
+                .toolbar(.visible, for: .navigationBar)
+        } label: {
+            HStack(spacing: 12) {
+                ProviderTile(provider: provider, size: 26)
+                Text(verbatim: title).foregroundStyle(Color(.label))
+                Spacer(minLength: 4)
+                if selected { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 12).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(provider.name), \(title)")
+        .accessibilityValue(choices.isEmpty ? Text("Unavailable") : Text(""))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func modelChoices(_ provider: ModelProvider, id: UUID, title: String) -> some View {
+        let choices = ModelProfiles.shared.available(id)
+        return ScrollView {
+            VStack(spacing: 0) {
                 ForEach(choices) { choice in
                     let selection = ModelSelection(provider: provider, modelID: choice.id, profileID: id)
                     let selected = chat.selection == selection
-                    option({ performOption { chat.selectModel(selection) } }) {
+                    option({ isPresented = false; chat.selectModel(selection) }) {
                         Label(choice.name, systemImage: selected ? "checkmark.circle.fill" : "circle")
                     }
                     .disabled(running)
@@ -1640,34 +1591,16 @@ private struct ComposerModelPicker: View {
                     Text("No available models. Check this profile in Accounts.")
                         .font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                    option({ performOption(openModel) }) { Label("Accounts and Models", systemImage: "person.crop.circle") }
+                    option({ isPresented = false; openModel() }) {
+                        Label("Accounts and Models", systemImage: "person.crop.circle")
+                    }
                 }
-
             }
+            .padding(.horizontal, 8)
         }
-        .padding(.horizontal, 8)
-        .id(modelVersion)
-    }
-
-    private func profileRow(_ provider: ModelProvider, id: UUID, title: String) -> some View {
-        let choices = ModelProfiles.shared.available(id)
-        let selected = chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID }
-        return option({ pickerPage = .models(provider, id, title) }) {
-            Label(choices.isEmpty ? "\(title) (\(String(localized: "Unavailable")))" : title,
-                  systemImage: selected ? "checkmark.circle.fill" : "circle")
-        }
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private func backRow(_ title: LocalizedStringKey, to page: PickerPage) -> some View {
-        backRow(Text(title), to: page)
-    }
-
-    private func backRow(_ title: Text, to page: PickerPage) -> some View {
-        option({ pickerPage = page }) {
-            Label { title } icon: { Image(systemName: "chevron.backward") }
-        }
-        .accessibilityLabel(Text("Back"))
+        .scrollDismissesKeyboard(.never)
+        .navigationTitle(Text(verbatim: title))
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func option<Content: View>(_ action: @escaping () -> Void, @ViewBuilder label: () -> Content) -> some View {
@@ -1676,15 +1609,6 @@ private struct ComposerModelPicker: View {
                 .padding(.horizontal, 12).contentShape(.rect)
         }
         .buttonStyle(.plain)
-    }
-
-    private func closeOptions() {
-        isPresented = false
-    }
-
-    private func performOption(_ action: () -> Void) {
-        closeOptions()
-        action()
     }
 }
 

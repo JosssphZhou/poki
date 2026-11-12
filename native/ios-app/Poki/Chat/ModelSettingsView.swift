@@ -13,7 +13,7 @@ import SwiftUI
 /// What an account can power is worked out from its type: any wired provider can run the text chat;
 /// live voice needs OpenAI's Realtime API, so only an OpenAI API key can run it.
 struct ModelSettingsView: View {
-    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.more
+    @AppStorage(ChatModelSwitcherPlacement.preferenceKey) private var switcherPlacement = ChatModelSwitcherPlacement.brain
     @State private var adding = false
     @State private var changing = false
     @State private var problem: String?
@@ -34,26 +34,23 @@ struct ModelSettingsView: View {
             }
 
             Section {
-                ForEach(ChatModelSwitcherPlacement.allCases) { placement in
-                    let selected = switcherPlacement == placement
-                    Button { switcherPlacement = placement } label: {
-                        HStack {
-                            Text(placement.title)
-                            Spacer()
-                            if selected {
-                                Image(systemName: "checkmark").foregroundStyle(Tint.blue)
-                            }
-                        }
-                        .contentShape(.rect)
+                Toggle(isOn: Binding(
+                    get: { switcherPlacement == .brain },
+                    set: { switcherPlacement = $0 ? .brain : .more }
+                )) {
+                    HStack(spacing: 12) {
+                        BrainGlyph()
+                            .stroke(Color(.label), style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+                            .frame(width: 18, height: 18)
+                            .frame(width: 29, height: 29)
+                            .background(Color(.label).opacity(0.08), in: .circle)
+                            .accessibilityHidden(true)
+                        Text("Composer Shortcut")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                    .accessibilityIdentifier("model.switcher.\(placement.rawValue)")
                 }
+                .accessibilityIdentifier("model.switcher.shortcut")
             } header: {
                 Text("Chat Model Switcher")
-            } footer: {
-                Text("Choose where to switch models in the chat.")
             }
             ForEach(ModelProvider.allCases.filter { provider in provider == .chatgpt ? !registrations.isEmpty : profiles.contains { $0.provider == provider } }) { provider in
                 Section(provider.name) {
