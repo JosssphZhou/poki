@@ -1,6 +1,20 @@
 import SwiftUI
 import UIKit
 
+enum AppAppearance: String {
+    static let defaultsKey = "appAppearance"
+
+    case system, light, dark
+
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: .unspecified
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 /// The app's own colours (ESP-326 prototype, theme.ts), each one a light and a dark value. Blue belongs
 /// to Poki: the bear, the task card while it has the phone, the links to what it can do. Amber is your
 /// turn, green is done, red is a problem. Surfaces, text and separators are the system's own semantic
