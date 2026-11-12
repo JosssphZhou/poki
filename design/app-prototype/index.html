@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Added to an iPhone's Home Screen, the prototype runs full screen, under the real status bar. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Poki demo" />
+    <title>Poki app prototype</title>
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <aside class="tour" id="tour" aria-label="Walkthrough">
+      <small id="tourN"></small><i><u id="tourBar"></u></i><b id="tourH" role="status"></b>
+      <p id="tourP"></p>
+      <div><button id="tourAgain">Play again</button><button id="tourStop">Stop</button></div>
+    </aside>
+    <span class="tapdot" id="tapdot" aria-hidden="true"></span>
+    <aside class="side" id="side">
+      <a class="allf" href="frames.html">← All frames</a>
+      <h4>Go to</h4>
+      <button data-run="tour">Play the whole flow</button><button data-run="rest">New chat</button
+      ><button data-run="chats">Chats</button><button data-sc="set">Settings</button
+      ><button data-sc="ob-welcome">First run</button><button data-run="dictate">Dictate a request</button
+      ><button data-run="talk">Talk with Poki</button><button data-run="task">Write a phone task</button
+      ><button data-run="ask">Write a question</button>
+      <h4>Mode</h4>
+      <div class="seg"><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div>
+      <h4>Island while working</h4>
+      <div class="seg">
+        <button data-isl="line">Line</button><button data-isl="peek">Peek</button
+        ><button data-isl="quiet">Quiet</button>
+      </div>
+      <div class="seg" style="margin-top: 6px">
+        <button data-mat="glass">Glass</button><button data-mat="black">Black</button>
+      </div>
+      <h4>Poki’s light</h4>
+      <div class="dots" id="dots"></div>
+      <p>
+        Drag the front page sideways, or tap the icon at its top right, to reach the chats. The window shrinks
+        into the New chat button.
+      </p>
+      <p>
+        The bar is one input. Its black button offers two ways to speak: dictate text, or talk with Poki live.
+      </p>
+      <details>
+        <summary>Bear states and feel</summary>
+        <div class="seg" id="poses"></div>
+        <h4>Moves</h4>
+        <div class="seg">
+          <button data-move="wave">Wave</button><button data-move="hop">Hop</button
+          ><button data-move="nod">Nod</button><button data-move="wake">Fall asleep, wake up</button
+          ><button data-move="jump">Jump to the island</button>
+        </div>
+        <label class="ctl"
+          >Energy<input type="range" id="cEnergy" min="0" max="2" step="0.05" value="1"
+        /></label>
+        <label class="ctl"
+          >Voice level<input type="range" id="cAmp" min="0" max="1" step="0.01" value="0.6"
+        /></label>
+        <label><input type="checkbox" id="cSlow" />Slow motion</label>
+        <label><input type="checkbox" id="cStill" />Still pictures</label>
+      </details>
+    </aside>
+    <div class="pickrow">
+      <select id="pTheme" aria-label="Mode">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option></select
+      ><select id="pRun" aria-label="Try it">
+        <option value="rest">New chat</option>
+        <option value="call">Call, then a task</option>
+        <option value="task">Write a task</option>
+        <option value="ask">Write a question</option>
+      </select>
+    </div>
+    <main id="stage"></main>
+    <!-- Plain scripts, in this order: they share one scope, and each builds on the ones before it. -->
+    <script src="js/util.js"></script>
+    <script src="js/hue.js"></script>
+    <script src="js/bear-art.js"></script>
+    <script src="js/markup.js"></script>
+    <script src="js/chats.js"></script>
+    <script src="js/puppet.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/first-run.js"></script>
+    <script src="js/records.js"></script>
+    <script src="js/scenes.js"></script>
+    <script src="js/voice.js"></script>
+    <script src="js/events.js"></script>
+    <script src="js/page.js"></script>
+    <script src="js/island-style.js"></script>
+    <script src="js/island.js"></script>
+    <script src="js/walkthrough.js"></script>
+    <script src="js/boot.js"></script>
+  </body>
+</html>

@@ -1,0 +1,3555 @@
+:root {
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --f: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: #d9dad6;
+  font-family: var(--f);
+  color: #1a1a17;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 36px;
+  overflow: hidden;
+}
+#stage {
+  width: 390px;
+  height: 844px;
+  flex-shrink: 0;
+  transform: scale(var(--s, 1));
+  transform-origin: center;
+}
+/* Neutral surfaces only. The one coloured thing is Poki's light, and it lives in the dark "room" where calls happen. */
+.phone {
+  position: relative;
+  width: 390px;
+  height: 844px;
+  border-radius: 48px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 10px #111,
+    0 30px 60px rgba(0, 0, 0, 0.25);
+  isolation: isolate;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.4;
+  user-select: none;
+  -webkit-user-select: none;
+  --bg: #fafaf9;
+  --fill: #f0f0ee;
+  --ink: #1c1c1a;
+  --ink2: #70706b;
+  --line: #e4e4e0;
+  --btn: #1c1c1a;
+  --btnink: #fafaf9;
+  --room: #0b0b0d;
+}
+.phone[data-theme='dark'] {
+  --bg: #050506;
+  --fill: #151517;
+  --ink: #f2f2ee;
+  --ink2: #8c8c86;
+  --line: #262629;
+  --btn: #f2f2ee;
+  --btnink: #050506;
+  --room: #141417;
+}
+.phone[data-v='twins'] {
+  --bg: #ffffff;
+  --fill: #f5f5f7;
+  --ink: #1d1d1f;
+  --ink2: #6e6e73;
+  --line: #e5e5ea;
+  --btn: #1d1d1f;
+  --btnink: #ffffff;
+}
+.phone[data-v='twins'][data-theme='dark'] {
+  --bg: #000000;
+  --fill: #1c1c1e;
+  --ink: #f5f5f7;
+  --ink2: #8e8e93;
+  --line: #2c2c2e;
+  --btn: #f5f5f7;
+  --btnink: #000000;
+  --room: #131315;
+}
+.phone[data-v='card'] {
+  --bg: #ffffff;
+  --fill: #f7f6f3;
+  --ink: #37352f;
+  --ink2: #787774;
+  --line: #e9e9e7;
+  --btn: #37352f;
+  --btnink: #ffffff;
+}
+.phone[data-v='card'][data-theme='dark'] {
+  --bg: #191919;
+  --fill: #252525;
+  --ink: #e6e5e3;
+  --ink2: #9b9a97;
+  --line: #373737;
+  --btn: #e6e5e3;
+  --btnink: #191919;
+  --room: #0c0c0d;
+}
+.phone button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  border: 0;
+  background: none;
+  padding: 0;
+  transition: scale 150ms ease-out;
+}
+.phone button:active {
+  scale: 0.96;
+}
+.phone button:focus-visible,
+.phone input:focus-visible,
+.phone [tabindex]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.phone input {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.sb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 54px;
+  z-index: 12;
+  pointer-events: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 30px 0 34px;
+  transition: color 200ms ease-out;
+}
+.sb i {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.phone[data-call] .sb {
+  color: #fff;
+}
+.phone[data-away] .sb {
+  color: #1a1a17;
+}
+.phone .isl {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  height: 37px;
+  width: 126px;
+  margin-left: -63px;
+  border-radius: 19px;
+  background: #000;
+  color: #fff;
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  transition:
+    width 520ms var(--ease),
+    margin-left 520ms var(--ease);
+}
+.phone[data-at='island'] .isl {
+  width: 226px;
+  margin-left: -113px;
+}
+.isl span {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+.phone[data-at='island'] .isl span {
+  opacity: 1;
+  transition-delay: 420ms;
+}
+
+/* ---- two pages side by side: a new chat, and every chat so far ---- */
+.pager {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 780px;
+  height: 844px;
+  z-index: 2;
+  transform: translateX(var(--px, 0px));
+  transition: transform 440ms var(--ease);
+  touch-action: pan-y;
+}
+.page {
+  position: absolute;
+  top: 0;
+  width: 390px;
+  height: 844px;
+}
+.home {
+  left: 0;
+}
+.list {
+  left: 390px;
+  background: var(--bg);
+}
+.phone[data-drag] .pager,
+.phone[data-drag] .perch,
+.phone[data-drag] .room,
+.phone[data-drag] .room .glow,
+.phone[data-drag] .bx,
+.phone[data-drag] .by,
+.phone[data-drag] .sillw,
+.phone[data-drag] .fab {
+  transition: none;
+}
+/* front page to chats: the page slides, and the window shrinks into the New chat button with Poki in it. One timing for every part. */
+.phone[data-morph] .pager,
+.phone[data-morph] .sillw {
+  transition-duration: 460ms;
+}
+.phone[data-morph] .room,
+.phone[data-morph] .perch {
+  transition:
+    clip-path 460ms var(--ease),
+    opacity 200ms ease-out;
+}
+.phone[data-morph] .room .glow,
+.phone[data-morph] .bx,
+.phone[data-morph] .by {
+  transition: transform 460ms var(--ease);
+}
+.phone > .room {
+  z-index: 3;
+}
+.over {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+.sillw {
+  position: absolute;
+  inset: 0;
+  transform: translateX(var(--px, 0px));
+  opacity: var(--so, 1);
+  transition:
+    transform 440ms var(--ease),
+    opacity 200ms ease-out;
+}
+.over .sill {
+  pointer-events: auto;
+}
+.phone .fab {
+  position: absolute;
+  right: 20px;
+  bottom: 34px;
+  width: 158px;
+  height: 64px;
+  border-radius: 32px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px 0 0;
+  opacity: var(--fo, 0);
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+.phone[data-pg='chats'] .fab {
+  pointer-events: auto;
+}
+.phone[data-pg='chats'] .over .sill {
+  pointer-events: none;
+}
+.phone[data-call] .over,
+.phone[data-ob] .over,
+.phone[data-at='island'] .over {
+  opacity: 0;
+}
+.phone[data-call] .over *,
+.phone[data-ob] .over *,
+.phone[data-at='island'] .over * {
+  pointer-events: none !important;
+}
+.ui {
+  position: absolute;
+  inset: 0;
+  transition: opacity 200ms ease-out;
+}
+.phone[data-call] .ui {
+  opacity: 0;
+  pointer-events: none;
+}
+.top {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 56px;
+  display: flex;
+  justify-content: space-between;
+}
+.top span {
+  display: flex;
+}
+.ic {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink2) !important;
+  flex-shrink: 0;
+}
+.bar {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 30px;
+  height: 56px;
+  border-radius: 28px;
+  background: var(--fill);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 22px;
+}
+.bar:focus-within,
+.card:focus-within {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.phone input {
+  font: inherit;
+  font-size: 17px;
+  color: var(--ink);
+  border: 0;
+  background: transparent;
+  min-width: 0;
+  flex: 1;
+  height: 44px;
+  padding: 0;
+}
+.bar input:focus-visible,
+.card input:focus-visible,
+.field input:focus-visible {
+  outline: none;
+}
+.phone input::placeholder {
+  color: var(--ink2);
+}
+.phone .send {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--btn);
+  color: var(--btnink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.hello {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.18;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+}
+.hello span {
+  display: block;
+  color: var(--ink2);
+}
+.chips {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.phone .chip {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 19px;
+  box-shadow: 0 0 0 1px var(--line) inset;
+  font-size: 15px;
+  color: var(--ink2);
+  background: var(--bg);
+}
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 104px;
+  transform: translateX(-50%);
+  z-index: 9;
+  background: var(--btn);
+  color: var(--btnink);
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 16px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease-out;
+}
+.toast[data-on] {
+  opacity: 1;
+}
+
+/* ---- the room: a dark window holding Poki's light. At rest it is the call control; on a call it opens to fill the screen. ---- */
+.room {
+  position: absolute;
+  inset: 0;
+  background: var(--room);
+  clip-path: var(--clip);
+  transition: clip-path 520ms var(--ease);
+  overflow: hidden;
+  pointer-events: none;
+  --g0: var(--r0);
+  --g1a: var(--r1a);
+  --g1b: var(--r1b);
+  --g2a: var(--r2a);
+  --g2b: var(--r2b);
+  --g3: var(--r3);
+}
+.phone[data-call] .room {
+  clip-path: inset(0px 0px 0px 0px round 0px);
+}
+.glow {
+  position: absolute;
+  width: 352px;
+  height: 310px;
+  pointer-events: none;
+  filter: saturate(calc(1 + var(--amp, 0) * 0.45)) brightness(calc(1 + var(--amp, 0) * 0.12));
+  transition:
+    opacity 420ms ease-out,
+    filter 200ms ease-out,
+    transform 520ms var(--ease);
+}
+.room .glow {
+  left: 0;
+  top: 0;
+  transform: var(--grest);
+}
+.phone[data-call] .room .glow {
+  transform: translate(19px, 150px) scale(1.15);
+}
+.glow-in {
+  position: absolute;
+  inset: 0;
+  animation: breath 6.4s ease-in-out infinite;
+}
+@keyframes breath {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.phone[data-hear] .glow-in {
+  animation: hear 3s ease-in-out infinite;
+}
+@keyframes hear {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.glow i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+}
+.g0 {
+  inset: 2%;
+  background: var(--g0);
+  filter: blur(40px);
+}
+.g1 {
+  inset: 16% 17% 12% 17%;
+  background: linear-gradient(in oklch, var(--g1a), var(--g1b));
+  filter: blur(26px);
+}
+.g2 {
+  left: 32%;
+  top: 42%;
+  width: 50%;
+  height: 48%;
+  background: radial-gradient(closest-side, var(--g2b) 20%, var(--g2a) 62%, transparent);
+  filter: blur(18px);
+  animation: orbit 13s ease-in-out infinite alternate;
+}
+.g3 {
+  left: 46%;
+  top: 57%;
+  width: 20%;
+  height: 22%;
+  background: var(--g3);
+  filter: blur(12px);
+  animation: orbit 9s ease-in-out infinite alternate-reverse;
+}
+.room .g3,
+.phone[data-theme='dark'] .g3 {
+  mix-blend-mode: screen;
+}
+@keyframes orbit {
+  from {
+    transform: translate(-14px, -6px);
+  }
+  to {
+    transform: translate(12px, 8px);
+  }
+}
+
+/* ---- the bear ---- */
+.perch {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  clip-path: var(--pclip, inset(0px 0px 0px 0px round 0px));
+  transition:
+    clip-path 520ms var(--ease),
+    opacity 200ms ease-out;
+}
+.bx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateX(var(--bx));
+  transition: transform calc(640ms * var(--slow, 1)) cubic-bezier(0.4, 0, 0.6, 1);
+}
+.by {
+  transform: translateY(var(--by)) scale(var(--bs));
+  transform-origin: 0 0;
+  transition: transform calc(640ms * var(--slow, 1)) cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+.bear {
+  position: relative;
+  display: block;
+  width: 92px;
+  height: 92px;
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-user-drag: none;
+}
+.b-act,
+.b-live,
+.b-pose,
+.b-head,
+.b-pose img,
+.b-fx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+.b-act {
+  transform-origin: 50% 100%;
+}
+.b-live {
+  transform-origin: 50% 100%;
+  transform: translate(calc(var(--lx, 0) * 1%), calc(var(--ly, 0) * 1%)) rotate(calc(var(--lr, 0) * 1deg))
+    scale(calc(1 + var(--sx, 0)), calc(1 + var(--sy, 0)));
+}
+.b-head.split {
+  transform-origin: 50% var(--neck);
+  transform: translate(calc(var(--hx, 0) * 1%), calc(var(--hy, 0) * 1%)) rotate(calc(var(--hr, 0) * 1deg));
+}
+.b-pose img {
+  display: block;
+  pointer-events: none;
+}
+.b-fx {
+  pointer-events: none;
+}
+.b-live {
+  transition:
+    filter 400ms ease-out,
+    opacity 400ms ease-out;
+}
+.bear[data-dim] .b-live {
+  filter: grayscale(0.9) brightness(0.7);
+  opacity: 0.75;
+}
+.b-mark {
+  position: absolute;
+  right: -12%;
+  top: -8%;
+  width: 36%;
+  height: 36%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10%;
+  color: #fff;
+  pointer-events: none;
+}
+.b-mark[hidden] {
+  display: none;
+}
+.phone[data-at='island'] .b-mark {
+  display: none;
+}
+.b-mark svg {
+  width: 86%;
+  height: 86%;
+}
+.b-mark i {
+  width: 20%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot 1.2s ease-in-out infinite;
+}
+.b-mark i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.b-mark i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-30%);
+  }
+}
+.b-mark .tw {
+  animation: tw 1.6s ease-in-out infinite;
+  transform-origin: 50% 50%;
+}
+@keyframes tw {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(-10deg);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1) rotate(8deg);
+    opacity: 1;
+  }
+}
+.side h5 {
+  margin: 8px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a8a82;
+  width: 100%;
+}
+.lid {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+}
+.lid .lf {
+  transform: translateY(-104px);
+  transition: transform 110ms ease-out;
+}
+.lid .ll {
+  opacity: 0;
+  transition: opacity 60ms ease-out;
+}
+.bear[data-blink] .lf {
+  transform: none;
+  transition: transform 70ms ease-in;
+}
+.bear[data-blink] .ll {
+  opacity: 1;
+}
+.tr .av {
+  animation: avbob 1.3s ease-in-out infinite;
+}
+@keyframes avbob {
+  50% {
+    transform: translateY(-2px) rotate(-3deg);
+  }
+}
+.phone[data-call] {
+  --bx: 125px !important;
+  --by: 236px !important;
+  --bs: 1.52 !important;
+  --pclip: inset(0px 0px 0px 0px round 0px) !important;
+}
+.phone[data-call] .bear,
+[data-v='twins'] .bear {
+  -webkit-mask-image: linear-gradient(#000 74%, transparent 98%);
+  mask-image: linear-gradient(#000 74%, transparent 98%);
+}
+.phone[data-at='island'] {
+  --bx: 92px !important;
+  --by: 15px !important;
+  --bs: 0.325 !important;
+}
+.phone[data-at='island'] .perch {
+  clip-path: none !important;
+  z-index: 14;
+}
+.phone[data-at='island'] .bear {
+  animation: none;
+  pointer-events: none;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+.phone[data-at='gone'] .perch {
+  opacity: 0;
+}
+.phone[data-at='gone'] .bear {
+  pointer-events: none;
+}
+
+/* ---- 1. Window: Poki lives in a lit window. Its sill is the call; the bar below is for writing. ---- */
+[data-v='window'] {
+  --clip: inset(104px 16px 380px 16px round 40px);
+  --pclip: inset(104px 16px 446px 16px round 40px 40px 0px 0px);
+  --grest: translate(19px, 196px);
+  --bx: 137px;
+  --by: 289px;
+  --bs: 1.25;
+}
+.phone .sill {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 396px;
+  height: 68px;
+  border-radius: 0 0 40px 40px;
+  background: rgba(255, 255, 255, 0.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.14) inset;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 24px;
+  text-align: left;
+}
+.sill b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+.sill small {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.64);
+}
+.sill i {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-v='window'] .hello {
+  top: 496px;
+}
+[data-v='window'] .chips {
+  bottom: 102px;
+}
+/* ---- 2. Twins: one bar, two equal halves. The lit half calls, the plain half writes. ---- */
+[data-v='twins'] {
+  --clip: inset(734px 195px 30px 16px round 28px 0px 0px 28px);
+  --grest: translate(-96px, 640px) scale(0.5);
+  --bx: 125px;
+  --by: 176px;
+  --bs: 1.52;
+}
+[data-v='twins'] .ui > .glow {
+  left: 19px;
+  top: 86px;
+}
+[data-v='twins'] .hello {
+  top: 372px;
+  text-align: center;
+  font-size: 26px;
+}
+[data-v='twins'] .hello span {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.4;
+  margin-top: 8px;
+}
+[data-v='twins'] .chips {
+  bottom: 126px;
+  align-items: center;
+}
+.duo {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 30px;
+  height: 80px;
+  display: flex;
+}
+.phone .half {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  text-align: left;
+  border-radius: 28px 0 0 28px;
+}
+.phone .half.w {
+  background: var(--fill);
+  border-radius: 0 28px 28px 0;
+}
+.half.c {
+  color: #fff;
+}
+.half b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+.half small {
+  display: block;
+  font-size: 13px;
+  opacity: 0.64;
+}
+.field {
+  position: absolute;
+  inset: 0;
+  border-radius: 28px;
+  background: var(--fill);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 22px;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 150ms ease-out,
+    visibility 0s 150ms;
+}
+.phone[data-write] .field {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.field:focus-within {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+/* ---- 3. Card: a question and a writing card. The call is a lit pill inside it; Poki looks over the edge. ---- */
+[data-v='card'] {
+  --clip: inset(758px 214px 40px 26px round 23px);
+  --pclip: inset(0px 0px 178px 0px round 0px);
+  --grest: translate(-100px, 646px) scale(0.42);
+  --bx: 268px;
+  --by: 596px;
+  --bs: 0.86;
+}
+[data-v='card'] .ui > .glow {
+  left: 148px;
+  top: 486px;
+  transform: scale(0.82);
+}
+[data-v='card'] .hello {
+  top: 118px;
+  font-size: 30px;
+}
+[data-v='card'] .chips {
+  bottom: 198px;
+}
+.card {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 30px;
+  height: 150px;
+  border-radius: 26px;
+  background: var(--fill);
+  box-shadow: 0 0 0 1px var(--line) inset;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.card input {
+  flex: none;
+  padding: 0 10px;
+  width: 100%;
+}
+.card .rowb {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.phone .pillc {
+  width: 150px;
+  height: 46px;
+  border-radius: 23px;
+  color: #fff;
+  background:
+    radial-gradient(120% 170% at 34% 135%, var(--r2b), transparent 56%),
+    radial-gradient(170% 220% at 0% 100%, var(--r1b), transparent 72%), var(--room);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.phone .send.big {
+  width: 46px;
+  height: 46px;
+}
+
+/* ---- on a call ---- */
+.callui {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  color: #fff;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 200ms ease-out,
+    visibility 0s 200ms;
+}
+.phone[data-call] .callui {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 280ms, 0s;
+}
+.phone[data-at='island'] .callui {
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s;
+}
+.c-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 66px;
+  text-align: center;
+  font-weight: 600;
+}
+.c-top span {
+  display: block;
+  font-size: 15px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.64);
+  font-variant-numeric: tabular-nums;
+}
+.c-state {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 412px;
+  text-align: center;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.64);
+}
+.c-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 56px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+}
+.phone .c-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.phone .c-btn[aria-pressed='true'] {
+  background: #fff;
+  color: #111;
+}
+.phone .c-end {
+  height: 60px;
+  padding: 0 26px 0 22px;
+  border-radius: 30px;
+  background: #fff;
+  color: #111;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- every chat ---- */
+.l-title {
+  position: absolute;
+  left: 24px;
+  top: 104px;
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+}
+.l-find {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 160px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--fill);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--ink2);
+}
+.l-find:focus-within {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+.l-find input:focus-visible {
+  outline: none;
+}
+.l-scroll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 214px;
+  bottom: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 0 24px 120px;
+}
+.l-scroll::-webkit-scrollbar {
+  display: none;
+}
+.l-scroll h3 {
+  margin: 22px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+.phone .l-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 10px 0;
+  min-height: 60px;
+}
+.l-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.l-row b,
+.l-row small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.l-row b {
+  font-size: 17px;
+  font-weight: 600;
+}
+.l-row small {
+  font-size: 15px;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.l-row small svg {
+  vertical-align: -2px;
+  margin-right: 5px;
+}
+.l-row img {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+.l-none {
+  padding: 28px 0;
+  color: var(--ink2);
+  font-size: 15px;
+}
+.phone .l-new {
+  position: absolute;
+  right: 20px;
+  bottom: 34px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--btn);
+  color: var(--btnink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* ---- one chat, and the app Poki drives ---- */
+.chat {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: var(--bg);
+  transform: translateX(102%);
+  visibility: hidden;
+  transition:
+    transform 460ms var(--ease),
+    visibility 0s 460ms;
+  display: flex;
+  flex-direction: column;
+}
+.phone[data-chat] .chat {
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.chat .hd {
+  padding: 56px 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat .hd b {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.phone .mini {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background:
+    radial-gradient(circle at 64% 108%, var(--r2b), transparent 58%),
+    radial-gradient(circle at 16% 96%, var(--r1b), transparent 70%), var(--room);
+}
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 8px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.thread::-webkit-scrollbar {
+  display: none;
+}
+.thread > :first-child {
+  margin-top: auto;
+}
+.thread > * {
+  flex-shrink: 0;
+}
+.you {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--fill);
+  border-radius: 22px 22px 6px 22px;
+  padding: 10px 16px;
+  line-height: 1.38;
+  margin-top: 8px;
+}
+.poki {
+  align-self: flex-start;
+  max-width: 92%;
+  line-height: 1.45;
+  text-wrap: pretty;
+  padding: 0 4px;
+}
+.tr {
+  align-self: stretch;
+  padding: 2px 4px 2px 16px;
+  border-left: 1.5px solid var(--line);
+  margin: 2px 0 2px 6px;
+  font-size: 15px;
+  color: var(--ink2);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.tr.on {
+  padding-left: 10px;
+  gap: 10px;
+  color: var(--ink);
+}
+.tr .av {
+  width: 42px;
+  height: 42px;
+}
+.livet {
+  animation: live 1.5s ease-in-out infinite alternate;
+}
+@keyframes live {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.chat .bar {
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  margin: 0 16px 30px;
+  flex-shrink: 0;
+}
+.away {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  background: #fbfbf9;
+  color: #1a1a17;
+  padding: 72px 20px 0;
+  transform: translateX(102%);
+  visibility: hidden;
+  transition:
+    transform 480ms var(--ease),
+    visibility 0s 480ms;
+}
+.phone[data-away] .away {
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.away h3 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.away .sub {
+  font-size: 15px;
+  color: #6b6b63;
+  margin-bottom: 14px;
+}
+.row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 12px;
+  margin: 0 -12px;
+  border-radius: 16px;
+  transition: background-color 220ms ease-out;
+}
+.row + .row {
+  box-shadow: 0 -1px 0 rgba(0, 0, 0, 0.07);
+}
+.row i {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: #e4e4dd;
+  flex-shrink: 0;
+}
+.row .t {
+  flex: 1;
+  font-weight: 600;
+}
+.row .t span {
+  display: block;
+  font-size: 14px;
+  font-weight: 400;
+  color: #6b6b63;
+}
+.row .ck {
+  width: 28px;
+  height: 28px;
+  border-radius: 14px;
+  background: #1a1a17;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  opacity: 0;
+  transition: opacity 200ms ease-out;
+}
+.row[data-press] {
+  background: rgba(0, 0, 0, 0.07);
+}
+.row[data-in] .ck {
+  opacity: 1;
+}
+.phone .pay {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 44px;
+  height: 58px;
+  border-radius: 16px;
+  background: #1a1a17;
+  color: #fff;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 22px;
+  opacity: 0.35;
+  transition:
+    opacity 300ms ease-out,
+    scale 150ms ease-out;
+}
+.phone .pay[data-on] {
+  opacity: 1;
+}
+
+/* ---- settings: lives behind the gear on the chats page ---- */
+.set {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: var(--bg);
+  transform: translateX(102%);
+  visibility: hidden;
+  transition:
+    transform 460ms var(--ease),
+    visibility 0s 460ms;
+  display: flex;
+  flex-direction: column;
+}
+.phone[data-set] .set {
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+.set .hd {
+  padding: 56px 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.set .hd b {
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+.set .hd span {
+  width: 44px;
+}
+.s-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 8px 16px 48px;
+}
+.s-body::-webkit-scrollbar {
+  display: none;
+}
+.s-g {
+  background: var(--fill);
+  border-radius: 18px;
+  margin: 0 0 22px;
+  overflow: hidden;
+}
+.s-h {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
+  margin: 0 0 8px 14px;
+}
+.s-f {
+  font-size: 13px;
+  color: var(--ink2);
+  margin: -14px 14px 22px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.s-p {
+  font-size: 15px;
+  color: var(--ink2);
+  margin: 0 14px 18px;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.phone .s-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 8px 16px;
+  text-align: left;
+  position: relative;
+  font-size: 17px;
+}
+.s-row + .s-row::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--line);
+}
+.s-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.s-row b {
+  display: block;
+  font-weight: 500;
+}
+.s-row small {
+  display: block;
+  font-size: 13px;
+  color: var(--ink2);
+  line-height: 1.35;
+}
+.s-row em {
+  font-style: normal;
+  color: var(--ink2);
+  font-size: 15px;
+  white-space: nowrap;
+}
+.s-row .chev {
+  color: var(--ink2);
+  opacity: 0.6;
+  display: flex;
+}
+.s-row > svg {
+  flex-shrink: 0;
+}
+.sw {
+  width: 50px;
+  height: 30px;
+  border-radius: 15px;
+  background: var(--line);
+  position: relative;
+  flex-shrink: 0;
+  transition: background-color 200ms ease-out;
+}
+.sw::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 200ms var(--ease);
+}
+.s-row[aria-checked='true'] .sw {
+  background: var(--btn);
+}
+.s-row[aria-checked='true'] .sw::after {
+  transform: translateX(20px);
+  background: var(--btnink);
+}
+.mk {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  font-style: normal;
+  flex-shrink: 0;
+  background: var(--btn);
+  color: var(--btnink);
+}
+.mk.no {
+  background: none;
+  box-shadow: 0 0 0 1.5px var(--ink) inset;
+  color: var(--ink);
+}
+.mk.todo {
+  background: none;
+  box-shadow: 0 0 0 1.5px var(--line) inset;
+  color: var(--ink2);
+}
+.phone .s-card {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border-radius: 22px;
+  padding: 14px 16px 14px 12px;
+  margin: 0 0 22px;
+  color: #fff;
+  background:
+    radial-gradient(90% 150% at 18% 130%, var(--r2b), transparent 58%),
+    radial-gradient(120% 200% at 0% 100%, var(--r1b), transparent 72%), var(--room);
+}
+.s-card img {
+  width: 60px;
+  height: 60px;
+}
+.s-card span {
+  flex: 1;
+}
+.s-card b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+.s-card small {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.66);
+}
+.s-card .chev {
+  opacity: 0.6;
+  display: flex;
+}
+.lights {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px 20px;
+}
+.phone .lightb {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+.phone .lightb[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 3px var(--bg),
+    0 0 0 5px var(--ink);
+}
+.phone .l-warn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  background: var(--fill);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin: 14px 0 0;
+}
+.l-warn span {
+  flex: 1;
+}
+.l-warn b {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+.l-warn small {
+  display: block;
+  font-size: 13px;
+  color: var(--ink2);
+}
+/* ---- first run: the window is the stage, the steps sit under it ---- */
+.ob {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: var(--bg);
+  display: none;
+}
+.phone[data-ob] .ob {
+  display: block;
+}
+.phone[data-ob] .sb {
+  color: #fff;
+}
+.phone[data-ob='big'] {
+  --wt: 0px !important;
+  --wr: 0px !important;
+  --wb: 408px !important;
+  --wl: 0px !important;
+  --clip: inset(0px 0px 408px 0px round 0px 0px 44px 44px) !important;
+  --pclip: inset(0px 0px 408px 0px round 0px 0px 44px 44px) !important;
+  --grest: translate(19px, 170px) scale(1.25) !important;
+  --bx: 113px !important;
+  --by: 262px !important;
+  --bs: 1.78 !important;
+  --obt: 466px;
+}
+.phone[data-ob='small'] {
+  --wt: 0px !important;
+  --wr: 0px !important;
+  --wb: 602px !important;
+  --wl: 0px !important;
+  --clip: inset(0px 0px 602px 0px round 0px 0px 44px 44px) !important;
+  --pclip: inset(0px 0px 602px 0px round 0px 0px 44px 44px) !important;
+  --grest: translate(19px, 30px) scale(0.95) !important;
+  --bx: 137px !important;
+  --by: 132px !important;
+  --bs: 1.25 !important;
+  --obt: 270px;
+}
+.phone .ob-back {
+  position: absolute;
+  left: 10px;
+  top: 56px;
+  z-index: 6;
+  color: #fff !important;
+}
+.ob-in {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: var(--obt);
+  bottom: 34px;
+  display: flex;
+  flex-direction: column;
+}
+.ob-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.ob-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+.ob-dots i.on {
+  width: 18px;
+  background: var(--ink);
+}
+.ob-in h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+.ob-in > p {
+  margin: 0 0 18px;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink2);
+  text-wrap: pretty;
+}
+.ob-body {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -8px;
+}
+.ob-body .s-g {
+  margin-bottom: 0;
+}
+.ob-ol {
+  margin: 0 8px;
+  padding: 0;
+  list-style: none;
+  counter-reset: n;
+}
+.ob-ol li {
+  counter-increment: n;
+  display: flex;
+  gap: 12px;
+  padding: 9px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+.ob-ol li::before {
+  content: counter(n);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--fill);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.phone .btn {
+  height: 56px;
+  border-radius: 28px;
+  background: var(--btn);
+  color: var(--btnink);
+  font-weight: 600;
+  width: 100%;
+  flex-shrink: 0;
+}
+.phone .btn.q {
+  background: none;
+  color: var(--ink2);
+  height: 44px;
+  font-weight: 500;
+  margin-top: 4px;
+}
+/* ---- typing: a stand-in keyboard ---- */
+.kb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 300px;
+  background: #d5d7dd;
+  padding: 10px 4px 0;
+  display: none;
+}
+.phone[data-theme='dark'] .kb {
+  background: #2b2b2e;
+}
+.phone[data-kb] .kb {
+  display: block;
+}
+.phone[data-kb] .home .bar {
+  bottom: 312px;
+}
+.phone[data-kb] .chips,
+.phone[data-kb] .hello {
+  display: none;
+}
+.kb div {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 11px;
+}
+.kb i {
+  width: 32px;
+  height: 43px;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  font-style: normal;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+}
+.phone[data-theme='dark'] .kb i {
+  background: #6c6c70;
+  color: #fff;
+}
+.kb i.w {
+  width: 44px;
+  font-size: 14px;
+  background: #abb0bc;
+}
+.kb i.sp {
+  width: 186px;
+}
+.kb i.rt {
+  width: 92px;
+  font-size: 15px;
+  background: #abb0bc;
+}
+.phone[data-theme='dark'] .kb i.w,
+.phone[data-theme='dark'] .kb i.rt {
+  background: #48484b;
+}
+/* ---- in a chat: Poki asking, and Poki stuck ---- */
+.cask {
+  align-self: stretch;
+  background: var(--fill);
+  border-radius: 22px;
+  padding: 16px;
+  margin: 4px 0;
+}
+.cask b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+.cask p {
+  margin: 4px 0 14px;
+  color: var(--ink2);
+  line-height: 1.4;
+}
+.cask div {
+  display: flex;
+  gap: 8px;
+}
+.phone .cask button {
+  flex: 1;
+  height: 48px;
+  border-radius: 24px;
+  font-weight: 600;
+  box-shadow: 0 0 0 1.5px var(--line) inset;
+}
+.phone .cask button.pri {
+  background: var(--btn);
+  color: var(--btnink);
+  box-shadow: none;
+}
+.cask small {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.phone .again {
+  align-self: flex-start;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 20px;
+  box-shadow: 0 0 0 1.5px var(--line) inset;
+  font-size: 15px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+/* ---- the island asking. A stand-in until the island is designed. ---- */
+.islx {
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  top: 11px;
+  border-radius: 44px;
+  background: #000;
+  color: #fff;
+  z-index: 13;
+  padding: 22px 18px 18px;
+  display: none;
+}
+.phone[data-islx] .islx {
+  display: block;
+}
+.phone[data-islx] .isl {
+  display: none;
+}
+.phone[data-islx] .away {
+  padding-top: 196px;
+}
+.ix-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ix-top img {
+  width: 52px;
+  height: 52px;
+}
+.ix-top b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+}
+.ix-top small {
+  display: block;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.66);
+  line-height: 1.35;
+}
+.ix-row {
+  display: flex;
+  gap: 8px;
+}
+.phone .ix-row button {
+  flex: 1;
+  height: 48px;
+  border-radius: 24px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.phone .ix-row button.pri {
+  background: #fff;
+  color: #000;
+}
+.am {
+  max-width: 72%;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 20px;
+  margin: 8px 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.am.them {
+  background: #e9e9eb;
+}
+.am.me {
+  background: #1a1a17;
+  color: #fff;
+  margin-left: auto;
+}
+.afield {
+  height: 50px;
+  border-radius: 25px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16) inset;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 18px;
+  margin: 12px 0;
+  color: #1a1a17;
+}
+.afield i {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #1a1a17;
+  color: #fff;
+  font-style: normal;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.afield.sq {
+  border-radius: 14px;
+  padding: 0 16px;
+}
+.afield.dim {
+  color: #8a8a82;
+}
+.afield.foc {
+  box-shadow: 0 0 0 2px #1a1a17 inset;
+}
+/* ---- shown as a still frame on the board ---- */
+body.embed {
+  background: transparent;
+  gap: 0;
+}
+body.embed .side,
+body.embed .pickrow {
+  display: none !important;
+}
+body.embed #stage {
+  transform: none;
+}
+body.embed .phone {
+  box-shadow: none;
+  border-radius: 0;
+}
+body.embed *,
+body.embed *::after,
+body.embed *::before {
+  transition: none !important;
+  animation-play-state: paused !important;
+}
+.side a.allf {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a17;
+  text-decoration: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.side a.allf:focus-visible {
+  outline: 2px solid #1a1a17;
+}
+.side details {
+  margin-top: 14px;
+}
+.side summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6b63;
+  cursor: pointer;
+  padding: 4px 0;
+}
+/* harness */
+.side {
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 16px 4px;
+  scrollbar-width: none;
+}
+.side label {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+}
+.side label.ctl {
+  justify-content: space-between;
+}
+.side input[type='range'] {
+  width: 130px;
+  accent-color: #1a1a17;
+}
+.side input[type='checkbox'] {
+  accent-color: #1a1a17;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.side .seg button {
+  padding: 6px 9px;
+  font-size: 13px;
+}
+.side h4 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6b63;
+}
+.side h4:first-child {
+  margin-top: 0;
+}
+.side button {
+  font: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.3;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #1a1a17;
+}
+@media (hover: hover) and (pointer: fine) {
+  .side button:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+}
+.side button[aria-pressed='true'] {
+  background: #1a1a17;
+  color: #fff;
+}
+.side button:focus-visible {
+  outline: 2px solid #1a1a17;
+  outline-offset: 1px;
+}
+.seg {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.dots {
+  display: flex;
+  gap: 8px;
+  padding: 2px 10px;
+}
+.dots button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  padding: 0;
+}
+.dots button[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 2px #d9dad6,
+    0 0 0 4px #1a1a17;
+}
+.side p {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #6b6b63;
+  margin: 10px 0 0;
+}
+.pickrow {
+  display: none;
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 20;
+  gap: 8px;
+}
+.pickrow select {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border-radius: 18px;
+  border: 0;
+  padding: 0 12px;
+  font: 14px var(--f);
+  background: #1a1a17;
+  color: #fff;
+}
+@media (max-width: 820px) {
+  .side {
+    display: none;
+  }
+  .pickrow {
+    display: flex;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-in,
+  .glow i,
+  .livet,
+  .tr .av,
+  .b-mark i,
+  .b-mark .tw {
+    animation: none !important;
+  }
+  .bx,
+  .by,
+  .chat,
+  .away,
+  .isl,
+  .pager,
+  .perch,
+  .room,
+  .glow {
+    transition-duration: 1ms !important;
+  }
+}
+/* picker (verbatim spec) */
+.proto-picker {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 8px 24px rgba(0, 0, 0, 0.24),
+    0 2px 6px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.proto-picker-highlight {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  will-change: transform;
+}
+.proto-picker[data-ready] .proto-picker-highlight {
+  transition:
+    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .proto-picker[data-ready] .proto-picker-highlight {
+    transition: none;
+  }
+}
+.proto-picker-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  cursor: pointer;
+  transition: color 150ms ease-out;
+}
+.proto-picker-item:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+.proto-picker-item:active {
+  transform: scale(0.97);
+}
+.proto-picker-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+}
+.proto-picker-item[data-active] {
+  color: #fff;
+}
+.proto-picker-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.proto-picker-replay {
+  padding: 0 10px;
+  font-size: 14px;
+}
+.proto-picker[data-position='top'] {
+  bottom: auto;
+  top: 24px;
+}
+/* ================= Island: black pills on flat paper. The light is Horizon. ================= */
+@property --flow {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.3;
+}
+.phone {
+  --bg: #fafaf9;
+  --fill: #efefec;
+  --ink: #111110;
+  --ink2: #6f6f69;
+  --line: rgba(0, 0, 0, 0.13);
+  --btn: #000;
+  --btnink: #fff;
+  --room: #000;
+  --ring: 0 0 0 0 transparent;
+  --flow: 0.3;
+  transition: --flow 700ms ease-out;
+}
+.phone[data-theme='dark'] {
+  --bg: #0c0c0d;
+  --fill: #19191b;
+  --ink: #f4f4f1;
+  --ink2: #8d8d87;
+  --line: rgba(255, 255, 255, 0.16);
+  --btn: #000;
+  --btnink: #fff;
+  --room: #000;
+  --ring: 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+/* Horizon: a sky that fills the window over a dark ground. It tracks the window's rectangle as the window moves and shrinks. */
+.hz {
+  position: absolute;
+  inset: var(--wt, 104px) var(--wr, 16px) var(--wb, 380px) var(--wl, 16px);
+  transition: inset 460ms var(--ease);
+}
+.phone[data-drag] .hz {
+  transition: none;
+}
+.hz i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+}
+.hz .a0 {
+  inset: -16% -8%;
+  border-radius: 0;
+  background: linear-gradient(
+    in oklch,
+    var(--c-b0d) 0%,
+    var(--c-b0) 20%,
+    var(--c-b0l) 42%,
+    var(--c-b1) 60%,
+    var(--c-b2) 78%,
+    var(--c-w0) 100%
+  );
+  filter: blur(8px);
+  animation: sky 8s ease-in-out infinite;
+}
+.hz .a4 {
+  left: -20%;
+  top: 38%;
+  width: 80%;
+  height: 56%;
+  background: radial-gradient(closest-side, var(--c-b2), transparent);
+  filter: blur(30px);
+  animation: drift 11s ease-in-out infinite;
+}
+.hz .a1 {
+  left: 40%;
+  top: 50%;
+  width: 70%;
+  height: 58%;
+  background: radial-gradient(closest-side, var(--c-w1) 8%, var(--c-w0) 52%, transparent);
+  filter: blur(30px);
+  animation: pool 9s ease-in-out infinite;
+}
+.hz .a2 {
+  inset: 0;
+  border-radius: 0;
+  background:
+    linear-gradient(to top, var(--room) 0%, transparent 16%),
+    radial-gradient(130% 100% at 50% 70%, transparent 52%, var(--room) 118%);
+}
+.hz .a3 {
+  left: -55%;
+  right: -55%;
+  bottom: -44%;
+  height: 58%;
+  background: var(--room);
+  filter: blur(13px);
+  transform-origin: 50% 100%;
+  animation: ground 8s ease-in-out infinite;
+}
+.hz .grain {
+  inset: 0;
+  border-radius: 0;
+  mix-blend-mode: overlay;
+  opacity: 0.32;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>");
+}
+/* breathing: the brightness never changes. The colours rise, sink and drift, a little at rest and more as you speak (--flow) */
+@keyframes sky {
+  0%,
+  100% {
+    transform: translateY(calc(var(--flow) * 4%)) scaleY(1);
+  }
+  50% {
+    transform: translateY(calc(var(--flow) * -5%)) scaleY(calc(1 + var(--flow) * 0.08));
+  }
+}
+@keyframes pool {
+  0%,
+  100% {
+    transform: translate(calc(var(--flow) * -12%), calc(var(--flow) * 5%)) scale(1);
+  }
+  50% {
+    transform: translate(calc(var(--flow) * 10%), calc(var(--flow) * -9%)) scale(calc(1 + var(--flow) * 0.25));
+  }
+}
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(calc(var(--flow) * 14%), calc(var(--flow) * -6%)) scale(calc(1 + var(--flow) * 0.2));
+  }
+  50% {
+    transform: translate(calc(var(--flow) * -8%), calc(var(--flow) * 8%)) scale(1);
+  }
+}
+@keyframes ground {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(calc(1 + var(--flow) * 0.07));
+  }
+}
+/* one input, to write or to talk: a second island at the bottom of the screen */
+.phone .bar.comp {
+  height: 62px;
+  border-radius: 31px;
+  background: #000;
+  color: #fff;
+  padding: 0 7px;
+  gap: 4px;
+  box-shadow: var(--ring);
+}
+.phone .bar.comp:focus-within {
+  box-shadow:
+    var(--ring),
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--ink);
+}
+.phone .comp input {
+  color: #fff;
+  padding: 0 4px;
+}
+.phone .comp input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+.phone .comp .mini {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+}
+.phone .comp .plus {
+  color: rgba(255, 255, 255, 0.6);
+}
+.phone .comp .voice {
+  color: #fff;
+  background:
+    radial-gradient(120% 150% at 34% 130%, var(--c-w1), transparent 58%),
+    radial-gradient(160% 190% at 0% 100%, var(--c-b1), transparent 74%), #1c1c1e;
+}
+.phone .comp .send {
+  background: #fff;
+  color: #000;
+  display: none;
+}
+.phone .comp[data-typing] .send {
+  display: flex;
+}
+.phone .comp[data-typing] .voice {
+  display: none;
+}
+.comp .stop,
+.comp .hear {
+  display: none;
+}
+.comp .mic {
+  display: flex;
+}
+.phone[data-voice] .comp input,
+.phone[data-voice] .comp .plus,
+.phone[data-voice] .comp .mic,
+.phone[data-voice] .comp .send {
+  display: none;
+}
+.phone[data-voice] .comp .voice {
+  display: flex;
+}
+.phone[data-voice] .comp .stop {
+  display: block;
+}
+.phone[data-voice] .comp .hear {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  font-size: 17px;
+}
+.hear u {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  height: 20px;
+  text-decoration: none;
+}
+.hear u i {
+  width: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  height: 6px;
+  animation: lvl 1s ease-in-out infinite;
+}
+.hear u i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.hear u i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.hear u i:nth-child(4) {
+  animation-delay: 0.36s;
+}
+@keyframes lvl {
+  0%,
+  100% {
+    height: 5px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+.you svg {
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--ink2);
+}
+/* pills and outlines */
+.phone .btn {
+  box-shadow: var(--ring);
+}
+.phone .btn.q {
+  box-shadow: none;
+}
+.phone .chip {
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.cask {
+  border-radius: 28px;
+}
+.phone .cask button {
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+.phone .cask button.pri {
+  box-shadow: var(--ring);
+}
+.phone .again {
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+.l-find {
+  border-radius: 22px;
+}
+.phone .l-warn {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+  border-radius: 24px;
+}
+/* settings: flat rows between hairlines; the status card is an island with the sky in it */
+.s-body {
+  padding: 8px 22px 48px;
+}
+.s-g {
+  background: transparent;
+  border-radius: 0;
+  margin-bottom: 28px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.phone .s-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+.s-row + .s-row::before {
+  left: 0;
+}
+.s-h {
+  margin-left: 0;
+}
+.s-f {
+  margin: -18px 0 26px;
+}
+.s-p {
+  margin-left: 0;
+  margin-right: 0;
+}
+.s-row[aria-checked='true'] .sw {
+  background: var(--ink);
+}
+.s-row[aria-checked='true'] .sw::after {
+  background: var(--bg);
+}
+.mk {
+  background: var(--ink);
+  color: var(--bg);
+}
+.phone .s-card {
+  border-radius: 30px;
+  margin-bottom: 26px;
+  box-shadow: var(--ring);
+  background:
+    radial-gradient(70% 150% at 82% 150%, var(--c-w1), transparent 60%),
+    radial-gradient(110% 190% at 100% 110%, var(--c-b2), transparent 70%),
+    linear-gradient(in oklch, var(--c-b0d), var(--c-b0) 150%);
+}
+.ob-body .s-g {
+  margin-bottom: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hz i,
+  .hear u i {
+    animation: none !important;
+  }
+}
+/* ================= the input is the bear's blue, pressed in like the Soft field; what you press stays black ================= */
+.phone {
+  --bear: #c9d2fb;
+  --bear-ink: #1a2050;
+  --bear-ink2: rgba(26, 32, 80, 0.72);
+  --bear-sh:
+    inset 0 2px 5px rgba(52, 64, 150, 0.24), inset 0 0 0 1px rgba(52, 64, 150, 0.1),
+    0 1px 0 rgba(255, 255, 255, 0.85);
+}
+.phone[data-theme='dark'] {
+  --bear: #bdc8f8;
+  --bear-sh: inset 0 2px 6px rgba(30, 40, 120, 0.34), inset 0 0 0 1px rgba(30, 40, 120, 0.14);
+}
+.phone .bar.comp {
+  background: var(--bear);
+  color: var(--bear-ink);
+  box-shadow: var(--bear-sh);
+}
+.phone .bar.comp:focus-within {
+  box-shadow:
+    var(--bear-sh),
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--ink);
+}
+.phone .comp input {
+  color: var(--bear-ink);
+}
+.phone .comp input::placeholder {
+  color: var(--bear-ink2);
+}
+.phone .comp .plus {
+  color: var(--bear-ink2);
+}
+.phone .comp .voice {
+  background: #000;
+  color: #fff;
+}
+.phone .comp .send {
+  background: #000;
+  color: #fff;
+}
+/* New chat: a black pill. The sky stays behind on the front page; Poki rides along and minds its own business. */
+.hz {
+  opacity: var(--ho, 1);
+  transition:
+    inset 460ms var(--ease),
+    opacity 460ms var(--ease);
+}
+.phone .fab {
+  box-shadow: var(--ring);
+}
+/* ================= glass: the input is blue glass, the suggestions are the same glass, clear ================= */
+.phone {
+  --g-fill: rgba(196, 206, 251, 0.8);
+  --g-tint: rgba(92, 108, 214, 0.2);
+  --g-in:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 -8px 12px -8px rgba(64, 80, 186, 0.42), inset 0 10px 10px -10px rgba(255, 255, 255, 0.9);
+  --g-cast: 0 12px 26px -12px rgba(58, 74, 178, 0.55), 0 2px 4px -1px rgba(40, 52, 140, 0.16);
+  --g-halo: rgba(150, 166, 250, 0.34);
+  --c-fill: rgba(222, 227, 253, 0.5);
+  --c-ink: #262d63;
+  --c-in:
+    inset 0 1px 0 #fff, inset 0 0 0 1px rgba(126, 142, 236, 0.26),
+    inset 0 -5px 8px -5px rgba(64, 80, 186, 0.22);
+  --c-cast: 0 7px 14px -9px rgba(58, 74, 178, 0.45), 0 1px 2px rgba(40, 52, 140, 0.08);
+  --c-top: rgba(255, 255, 255, 0.95);
+  --c-mid: rgba(255, 255, 255, 0.3);
+}
+.phone[data-theme='dark'] {
+  --g-fill: rgba(182, 195, 250, 0.9);
+  --g-tint: rgba(70, 86, 196, 0.26);
+  --g-cast: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 34px -10px rgba(120, 140, 255, 0.5);
+  --g-halo: rgba(160, 176, 255, 0.3);
+  --c-fill: rgba(176, 190, 250, 0.12);
+  --c-ink: #e3e7ff;
+  --c-in:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.13),
+    inset 0 -5px 8px -5px rgba(0, 0, 0, 0.4);
+  --c-cast: 0 8px 18px -10px rgba(0, 0, 0, 0.7);
+  --c-top: rgba(255, 255, 255, 0.17);
+  --c-mid: rgba(255, 255, 255, 0.04);
+}
+.phone .bar.comp {
+  isolation: isolate;
+  background:
+    radial-gradient(34% 52% at 66% 106%, color-mix(in oklch, var(--c-w1) 58%, #fff), transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.05) 50%, var(--g-tint)),
+    var(--g-fill);
+  -webkit-backdrop-filter: blur(16px) saturate(1.7);
+  backdrop-filter: blur(16px) saturate(1.7);
+  box-shadow: var(--g-in), var(--g-cast);
+  transition: box-shadow 200ms ease-out;
+}
+.phone .bar.comp::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 10px;
+  right: 10px;
+  top: 3px;
+  height: 22px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0));
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 70%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 70%, transparent);
+  pointer-events: none;
+}
+/* the rim catches light at the top left and the bottom right, as a drop of glass does */
+.phone .bar.comp::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(
+    118deg,
+    #fff 0%,
+    rgba(255, 255, 255, 0.25) 26%,
+    rgba(255, 255, 255, 0) 48%,
+    rgba(255, 255, 255, 0.12) 74%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+.phone .bar.comp:focus-within {
+  box-shadow:
+    var(--g-in),
+    0 0 0 4px var(--g-halo),
+    var(--g-cast);
+}
+.phone .chip {
+  position: relative;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 20px;
+  color: var(--c-ink);
+  background: linear-gradient(180deg, var(--c-top), var(--c-mid) 58%, transparent), var(--c-fill);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  backdrop-filter: blur(12px) saturate(1.5);
+  box-shadow: var(--c-in), var(--c-cast);
+}
+.phone .chip::after {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+[data-v='window'] .chips {
+  bottom: 106px;
+  gap: 10px;
+}
+/* ---- the voice button opens two ways to speak ---- */
+.vmenu {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 278px;
+  padding: 6px;
+  border-radius: 28px;
+  background: #000;
+  color: #fff;
+  box-shadow:
+    var(--ring),
+    0 18px 40px -14px rgba(0, 0, 0, 0.5);
+  transform-origin: calc(100% - 31px) 100%;
+  opacity: 0;
+  scale: 0.92;
+  translate: 0 8px;
+  visibility: hidden;
+  transition:
+    opacity 140ms ease-in,
+    scale 140ms ease-in,
+    translate 140ms ease-in,
+    visibility 0s 140ms;
+}
+.comp[data-menu] .vmenu {
+  opacity: 1;
+  scale: 1;
+  translate: 0 0;
+  visibility: visible;
+  transition:
+    opacity 180ms var(--ease),
+    scale 220ms var(--ease),
+    translate 220ms var(--ease),
+    visibility 0s;
+}
+.phone .vmenu button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 62px;
+  padding: 0 14px 0 9px;
+  border-radius: 22px;
+  text-align: left;
+  color: #fff;
+  background: none;
+  transition:
+    scale 150ms ease-out,
+    background-color 150ms ease-out;
+}
+.vmenu i {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.15);
+}
+.vmenu [data-act='live'] i {
+  background:
+    radial-gradient(120% 150% at 60% 130%, var(--c-w1), transparent 58%),
+    radial-gradient(160% 190% at 0% 100%, var(--c-b1), transparent 74%), var(--c-b0);
+}
+.vmenu b {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.vmenu small {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.66);
+  line-height: 1.3;
+}
+@media (hover: hover) and (pointer: fine) {
+  .phone .vmenu button:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+.phone .vmenu button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+}
+.comp[data-menu] .voice {
+  background: var(--bear-ink);
+}
+/* ---- what the bar shows in each state ---- */
+.comp .lvl,
+.comp .tkm,
+.phone .comp .mute,
+.phone .comp .end {
+  display: none;
+}
+.comp .lvl {
+  gap: 3px;
+  align-items: center;
+  height: 20px;
+  padding: 0 4px 0 16px;
+  color: var(--bear-ink);
+  flex-shrink: 0;
+}
+.comp .lvl i {
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleY(0.3);
+  animation: lv2 1s ease-in-out infinite;
+}
+.comp .lvl i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.comp .lvl i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.comp .lvl i:nth-child(4) {
+  animation-delay: 0.36s;
+}
+@keyframes lv2 {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.phone[data-voice] .comp .plus,
+.phone[data-voice] .comp .send,
+.phone[data-voice] .comp .mic,
+.phone[data-voice] .comp .hear {
+  display: none;
+}
+.phone[data-voice] .comp input {
+  display: block;
+}
+.phone[data-voice] .comp .lvl {
+  display: flex;
+}
+.phone[data-voice] .comp .voice {
+  display: flex;
+}
+.phone[data-voice] .comp .stop {
+  display: block;
+}
+.phone[data-talk] .comp .plus,
+.phone[data-talk] .comp input,
+.phone[data-talk] .comp .voice,
+.phone[data-talk] .comp .send {
+  display: none;
+}
+.phone[data-talk] .comp .mute,
+.phone[data-talk] .comp .lvl {
+  display: flex;
+}
+.phone[data-talk] .comp .lvl {
+  padding-left: 6px;
+}
+.phone[data-talk] .comp .tkm {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 6px;
+  font-size: 17px;
+  color: var(--bear-ink);
+}
+.tkm b {
+  flex: 1;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tkm time {
+  font-variant-numeric: tabular-nums;
+  color: var(--bear-ink2);
+}
+.phone .comp .mute {
+  position: relative;
+  color: var(--bear-ink);
+  transition:
+    scale 150ms ease-out,
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.phone .comp .mute[aria-pressed='true'] {
+  background: var(--bear-ink);
+  color: #fff;
+}
+.phone .comp .mute[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  width: 26px;
+  height: 2.2px;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px var(--bear-ink);
+  rotate: 45deg;
+}
+.phone[data-talk] .comp .end {
+  display: block;
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 24px;
+  background: #000;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.phone[data-mute][data-hear='you'] .lvl i {
+  animation-play-state: paused;
+}
+/* ---- talking with Poki on the front page: the window stays, the words sit under it ---- */
+.live {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 490px;
+  display: none;
+}
+.phone[data-talk] .live {
+  display: block;
+}
+.phone[data-talk] .hello,
+.phone[data-talk] .chips {
+  display: none;
+}
+.live small {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
+  height: 18px;
+}
+.live p {
+  margin: 6px 0 0;
+  min-height: 56px;
+  font-size: 22px;
+  line-height: 1.24;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  text-wrap: pretty;
+  transition: color 300ms ease-out;
+}
+.phone[data-hear='you'] .live p {
+  color: var(--ink2);
+}
+.live ul,
+.tko {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.live ul {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.live li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  animation: came 320ms var(--ease) both;
+}
+.live li i,
+.tko i {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+@keyframes came {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+/* ---- a talk, kept in the chat: a small window, then what came of it ---- */
+.tkc {
+  align-self: stretch;
+  margin-top: 8px;
+  padding: 6px;
+  border-radius: 28px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.tkh {
+  position: relative;
+  overflow: hidden;
+  height: 72px;
+  border-radius: 22px;
+  padding: 0 84px 0 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: #fff;
+  background:
+    radial-gradient(60% 150% at 84% 150%, var(--c-w1), transparent 62%),
+    radial-gradient(110% 190% at 100% 110%, var(--c-b2), transparent 70%),
+    linear-gradient(in oklch, var(--c-b0d), var(--c-b0) 150%);
+}
+.tkh b {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.tkh small {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  font-variant-numeric: tabular-nums;
+}
+.tkh img {
+  position: absolute;
+  right: 14px;
+  bottom: -9px;
+  width: 62px;
+  height: 62px;
+  pointer-events: none;
+}
+.tks {
+  margin: 0;
+  padding: 12px 10px 4px;
+  font-size: 16px;
+  line-height: 1.4;
+  min-height: 62px;
+}
+.tks small {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink2);
+}
+.tko {
+  padding: 2px 10px 0;
+}
+.tko li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 0;
+}
+.tko li + li {
+  border-top: 1px solid var(--line);
+}
+.tko i {
+  margin-top: 1px;
+}
+.tko b {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.tko small {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.tkn {
+  margin: 0 10px;
+  padding: 10px 0 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink2);
+}
+.tkc[data-live] .tko li:last-child {
+  animation: came 320ms var(--ease) both;
+}
+body.embed .live li,
+body.embed .tkc .tko li,
+body.embed .comp .lvl i {
+  animation: none !important;
+}
+body.embed .comp .lvl i:nth-child(1) {
+  transform: scaleY(0.5);
+}
+body.embed .comp .lvl i:nth-child(2) {
+  transform: scaleY(1);
+}
+body.embed .comp .lvl i:nth-child(3) {
+  transform: scaleY(0.72);
+}
+body.embed .comp .lvl i:nth-child(4) {
+  transform: scaleY(0.4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .comp .lvl i,
+  .live li,
+  .tkc .tko li {
+    animation: none !important;
+  }
+  .comp .lvl i {
+    transform: scaleY(0.7);
+  }
+  .vmenu,
+  .comp[data-menu] .vmenu {
+    transition: none;
+  }
+}
+/* ================= a phone use, kept in the chat once it has ended ================= */
+.use {
+  align-self: stretch;
+  margin-top: 2px;
+  padding: 6px;
+  border-radius: 28px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.useh {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 10px;
+  text-align: left;
+  border-radius: 22px;
+}
+.usei {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.useh > span {
+  flex: 1;
+  min-width: 0;
+}
+.useh b {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.useh small {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.use .chev {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--ink2);
+  transition: transform 200ms var(--ease);
+}
+.use[data-open] .chev {
+  transform: rotate(90deg);
+}
+.usep {
+  list-style: none;
+  margin: 2px 10px 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.usep li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 11px 0;
+}
+.usep li + li {
+  border-top: 1px solid var(--line);
+}
+.usep i {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.usep li[data-m='x'] i,
+.usep li[data-m='you'] i {
+  background: none;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--ink2);
+}
+.usep b {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.usep small {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.usef {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% - 20px);
+  margin: 0 10px;
+  min-height: 44px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--ink2);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.usea {
+  margin: 0 10px;
+  padding: 0 0 8px;
+  border-top: 1px solid var(--line);
+}
+.usea h6 {
+  margin: 12px 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink2);
+}
+.usea ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.usea li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 30px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.usea li i {
+  width: 14px;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--ink2);
+}
+.usea li[data-m='x'] span,
+.usea li[data-m='you'] span {
+  color: var(--ink2);
+}
+.useh:focus-visible,
+.usef:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .use .chev {
+    transition: none;
+  }
+}
+/* settings: one list and a line of small print */
+.s-ver {
+  margin: 22px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink2);
+  font-variant-numeric: tabular-nums;
+}
+.s-field {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 18px;
+  margin: 0 0 10px;
+  border-radius: 26px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font:
+    15px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.s-field.sm {
+  font-size: 13px;
+}
+.phone .s-field + .s-f {
+  margin-top: 12px;
+}
+.s-qr {
+  display: block;
+  width: 148px;
+  height: 148px;
+  margin: 18px auto 12px;
+  color: var(--ink);
+}
+@property --t1 {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.5;
+}
+@property --t2 {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.7;
+}
+@property --bl {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 10px;
+}
+@property --br {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.7;
+}
+/* ================= the island: drawn by the design in island.html, inside its own shadow root ================= */
+.isle {
+  position: absolute;
+  inset: 0;
+  z-index: 13;
+  pointer-events: none;
+}
+.phone .sb {
+  transition: opacity 200ms ease-out;
+}
+.phone:has(.isle[data-wide]) .sb {
+  opacity: 0;
+}
+.phone .islx {
+  display: none !important;
+}
+.phone[data-islx] .away {
+  padding-top: 72px;
+}
+/* ================= the walkthrough ================= */
+.tour {
+  position: fixed;
+  right: 28px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 268px;
+  padding: 18px;
+  border-radius: 24px;
+  background: #111;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  z-index: 50;
+  display: none;
+}
+body[data-tour] .tour {
+  display: block;
+}
+.tour small {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+.tour b {
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.25;
+  margin-bottom: 4px;
+  text-wrap: balance;
+}
+.tour p {
+  margin: 0 0 14px;
+  color: rgba(255, 255, 255, 0.78);
+  min-height: 60px;
+  text-wrap: pretty;
+}
+.tour div {
+  display: flex;
+  gap: 8px;
+}
+.tour button {
+  flex: 1;
+  height: 40px;
+  border: 0;
+  border-radius: 20px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  touch-action: manipulation;
+  transition: scale 150ms ease-out;
+}
+.tour button:first-child {
+  background: #fff;
+  color: #000;
+}
+.tour button:active {
+  scale: 0.96;
+}
+.tour button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.tour i {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.tour i u {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #fff;
+  transition: width 400ms ease-out;
+}
+.tapdot {
+  position: fixed;
+  z-index: 60;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.28);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  opacity: 0;
+}
+.tapdot[data-on] {
+  animation: tapdot 520ms ease-out;
+}
+@keyframes tapdot {
+  0% {
+    opacity: 0;
+    scale: 1.5;
+  }
+  30% {
+    opacity: 1;
+    scale: 1;
+  }
+  70% {
+    opacity: 1;
+    scale: 0.86;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.86;
+  }
+}
+@media (max-width: 1180px) {
+  .tour {
+    right: 50%;
+    translate: 50% 0;
+    top: auto;
+    bottom: 12px;
+    width: min(92vw, 420px);
+  }
+  .tour p {
+    min-height: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tapdot[data-on] {
+    animation-duration: 1ms;
+  }
+  .tour i u {
+    transition: none;
+  }
+}
+
+/* ================= on a phone: the prototype fills the screen ================= */
+body.onphone {
+  align-items: flex-start;
+  background: #000;
+}
+body.onphone .side,
+body.onphone .pickrow {
+  display: none;
+}
+body.onphone #stage {
+  transform-origin: 50% 0;
+}
+body.onphone .phone {
+  border-radius: 0;
+  box-shadow: none;
+}
+/* from the Home Screen the real status bar is on top, so the drawn one steps aside */
+body.standalone .sb {
+  visibility: hidden;
+}
