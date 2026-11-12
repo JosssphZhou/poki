@@ -56,6 +56,9 @@ struct PokiActivityAttributes: ActivityAttributes {
         /// A short-lived event ("Started", "Now in WeChat", "Allowed") shown as the status word for a few
         /// seconds. ActivityController clears it.
         var event: Event?
+        /// A talk with Poki is going on and the microphone is open, also while Poki works in another app.
+        /// The island says so and carries the button that closes it (EndTalkIntent). Nil: no talk.
+        var talking: Bool?
 
         static let outcomeLimit = 12
     }

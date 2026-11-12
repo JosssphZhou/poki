@@ -111,7 +111,7 @@ final class SelfSigner {
     /// Why Poki cannot download the update by itself, when it cannot. Nil when it can.
     var updateBlocker: String? {
         guard updateNotReady else { return nil }
-        if !signedIn { return String(localized: "To download updates by itself, Poki needs your Apple Account: sign in under Signing Options. Or update Poki from Poki Setup on your Mac.") }
+        if !signedIn { return String(localized: "To download updates by itself, Poki needs your Apple Account: sign in under Signing options. Or update Poki from Poki Setup on your Mac.") }
         if phone() == nil { return String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.") }
         return nil
     }

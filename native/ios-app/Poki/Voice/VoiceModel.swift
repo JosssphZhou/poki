@@ -241,6 +241,8 @@ final class VoiceModel {
     private var lastEnd: Date?
     private var lastLines: [VoiceLine] = []
     private var inBackground = UIApplication.shared.applicationState == .background
+    /// The scripted talk's steps, for the Live Activity (the simulator only).
+    var mockStep: (@MainActor (String?) -> Void)?
 
     /// How long the conversation waits after an answer for the person to go on before it ends.
     static let followUp: Duration = .seconds(8)
@@ -289,6 +291,8 @@ final class VoiceModel {
                 guard let self else { return }
                 self.inBackground = true
                 guard self.isOn else { return }
+                // The scripted talk goes on, as a real one does while Poki works.
+                if self.mock != nil { return }
                 guard !self.answerDue else {
                     // Kept for what is still due, but not for ever: the wait for the server now has 30 s.
                     self.lastActivity = self.time.now()
@@ -310,7 +314,7 @@ final class VoiceModel {
     /// On from the tap: while the key is exchanged and the connection opens (a second or two, longer
     /// while AirPods switch to their microphone) the button and the bar already show it, and a second
     /// tap ends it instead of starting another one.
-    var isOn: Bool { link != nil || dictation != nil || isConnecting }
+    var isOn: Bool { link != nil || dictation != nil || isConnecting || mock != nil }
     private var isConnecting: Bool { if case .connecting = phase { return true }; return false }
 
     /// Voice can start: the OpenAI key on this iPhone (Realtime, no bridge), the Mac's voice bridge, or
@@ -319,10 +323,10 @@ final class VoiceModel {
 
     /// A live (Realtime) conversation can start: the OpenAI key on this iPhone or the voice bridge.
     /// Without one, voice is dictation into the message field, turn by turn.
-    var canTalkLive: Bool { VoiceDirect.apiKey != nil || bridge != nil }
+    var canTalkLive: Bool { VoiceDirect.apiKey != nil || bridge != nil || Self.mockAvailable }
 
     /// A live Realtime conversation is on (not the hold-to-dictate fallback).
-    var isLive: Bool { link != nil }
+    var isLive: Bool { link != nil || mock != nil }
 
     /// How voice runs now, for the settings screen.
     var route: String {
@@ -362,8 +366,68 @@ final class VoiceModel {
     }
     #endif
 
+    // MARK: A talk with no microphone (the simulator)
+
+    /// A simulator's development build has no key and no bridge to talk through. There, Talk with Poki
+    /// and Dictate play a scripted exchange, so the talking screens can be seen and checked. It never
+    /// listens, connects or acts, and nothing of it is kept.
+    static var mockAvailable: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        true
+        #else
+        false
+        #endif
+    }
+    private var mock: Task<Void, Never>?
+
+    private func startMock() {
+        lines.removeAll()
+        phase = .connecting
+        mock = Task { @MainActor [weak self] in
+            func wait(_ seconds: Double) async -> Bool { try? await Task.sleep(for: .seconds(seconds)); return !Task.isCancelled }
+            @MainActor func say(_ role: VoiceLine.Role, _ text: String) { self?.lines.append(VoiceLine(role: role, text: text)) }
+            /// The owner's words arrive one at a time, as a transcript does.
+            @MainActor func hear(_ text: String) async -> Bool {
+                self?.phase = .hearing
+                var said = ""
+                for word in text.split(separator: " ") {
+                    if !said.isEmpty, let self, self.lines.last?.role == .you { self.lines.removeLast() }
+                    said += (said.isEmpty ? "" : " ") + word
+                    say(.you, said)
+                    guard await wait(0.28) else { return false }
+                }
+                return true
+            }
+            guard await wait(0.7) else { return }
+            self?.phase = .speaking; say(.poki, "Hi. What do you need?")
+            guard await wait(1.8) else { return }
+            self?.phase = .listening
+            guard await wait(1.2), await hear("What’s on this afternoon?") else { return }
+            self?.phase = .thinking
+            guard await wait(1.2) else { return }
+            say(.tool, "Open Calendar"); self?.mockStep?("Open Calendar")
+            guard await wait(2.2) else { return }
+            say(.tool, "Look at the screen"); self?.mockStep?("Look at the screen")
+            guard await wait(2.2) else { return }
+            self?.phase = .speaking; say(.poki, "Two things: the dentist at 2:30, and spin class at 7:30."); self?.mockStep?(nil)
+            guard await wait(3.2) else { return }
+            self?.phase = .listening
+            guard await wait(1.5), await hear("Move spin class to eight.") else { return }
+            self?.phase = .thinking
+            guard await wait(1.2) else { return }
+            say(.tool, "Tap “Spin class”"); self?.mockStep?("Tap “Spin class”")
+            guard await wait(2.2) else { return }
+            say(.tool, "Type “8:00”"); self?.mockStep?("Type “8:00”")
+            guard await wait(2.2) else { return }
+            self?.phase = .speaking; say(.poki, "Done. Spin class is now at 8."); self?.mockStep?(nil)
+            guard await wait(2.6) else { return }
+            self?.phase = .listening
+        }
+    }
+
     func start(microphone: Bool = true) async {
-        guard link == nil, dictation == nil, !isConnecting else { return }
+        guard link == nil, dictation == nil, !isConnecting, mock == nil else { return }
+        if Self.mockAvailable, VoiceDirect.apiKey == nil, bridge == nil { return startMock() }
         // The OpenAI key on this iPhone first (no Mac needed), then the bridge, then dictation.
         let key = VoiceDirect.apiKey
         if key == nil, bridge == nil {
@@ -440,6 +504,14 @@ final class VoiceModel {
 
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
+        if let mock {
+            mock.cancel()
+            self.mock = nil
+            mockStep?(nil)
+            phase = .off
+            lines.removeAll()
+            return
+        }
         if let dictation {
             dictation.stopSpeaking()
             Task { _ = await dictation.finish() }

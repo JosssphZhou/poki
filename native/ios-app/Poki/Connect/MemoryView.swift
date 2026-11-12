@@ -15,59 +15,74 @@ struct MemoryView: View {
     @State private var message: String?
     @State private var exportURL: URL?
     @State private var bundleURL: URL?
-    @State private var advanced = false
     @State private var confirmClear = false
     private let store = RoutineStore.shared
 
+    /// The routine or note the owner tapped, to forget it.
+    @State private var forgetting: Forget?
+    private enum Forget: Identifiable {
+        case routine(String), note(MemoryNote)
+        var id: String { switch self { case .routine(let name): "r" + name; case .note(let note): "n\(note.id)" } }
+    }
+
     var body: some View {
-        Form {
-            Section {
-                if routines.isEmpty { Text("None yet").foregroundStyle(Color(.secondaryLabel)) }
+        PaperScroll {
+            PaperHeader(text: String(localized: "Routines"))
+            PaperRows {
+                if routines.isEmpty { PaperRow(String(localized: "None yet"), chevron: false).opacity(0.55) }
                 ForEach(routines, id: \.name) { r in
-                    RoutineRow(routine: r)
-                        .swipeActions { Button("Forget", role: .destructive) { _ = store.forget(r.name); reload() } }
+                    Button { forgetting = .routine(r.name) } label: { RoutineRow(routine: r) }
                 }
-            } header: {
-                Text("Routines")
-            } footer: {
-                Text("An agent saves a routine after a task that worked; the next time it repeats the task in one step and stops where the screen differs. Swipe a routine to forget it.")
             }
-
-            Section {
+            PaperFoot(text: String(localized: "An agent saves a routine after a task that worked. Next time it repeats the task in one step and stops where the screen differs."))
+            PaperHeader(text: String(localized: "Notes"))
+            PaperRows {
                 ForEach(notes, id: \.id) { n in
-                    LabeledContent(n.text, value: n.by)
-                        .swipeActions { Button("Forget", role: .destructive) { _ = store.forgetNote(n.id); reload() } }
+                    Button { forgetting = .note(n) } label: {
+                        PaperRow(n.text, detail: String(localized: "Added by \(n.by == "owner" ? String(localized: "you") : n.by)"), chevron: false)
+                    }
                 }
-                HStack {
-                    TextField("e.g., Mom is “Mama” in Contacts", text: $newNote).submitLabel(.done).onSubmit(addNote)
-                    Button("Add", action: addNote).disabled(!canAdd)
+                HStack(spacing: 12) {
+                    TextField("Add a note, e.g. Mom is “Mama” in Contacts", text: $newNote).font(.system(size: 17)).submitLabel(.done).onSubmit(addNote)
+                    Button(action: addNote) {
+                        Text("Add").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.page)
+                            .padding(.horizontal, 14).frame(height: 34).background(Paper.ink, in: Capsule())
+                    }
+                    .disabled(!canAdd).opacity(canAdd ? 1 : 0.3)
                 }
-            } header: {
-                Text("Notes")
-            } footer: {
-                Text("Every agent sees these notes before a task. They stay on this iPhone.")
+                .frame(minHeight: 54)
             }
-
-            Section {
-                if let exportURL { ShareLink("Export Memory", item: exportURL) }
-                Button("Import Memory") { importing = true }
-            } header: {
-                Text("Move or Back Up")
-            } footer: {
-                Text(message ?? String(localized: "One file with every routine and note. Importing merges it in; the newer copy of a routine wins. Poki Setup on your computer can back it up and put it back."))
+            PaperFoot(text: String(localized: "Every agent sees these notes before a task. They stay on this iPhone."))
+            PaperHeader(text: String(localized: "Move or back up"))
+            PaperRows {
+                if let exportURL { ShareLink(item: exportURL) { PaperRow(String(localized: "Export memory")) } }
+                Button { importing = true } label: { PaperRow(String(localized: "Import memory")) }
             }
-
-            Section {
-                DisclosureGroup("Advanced", isExpanded: $advanced) {
-                    if let bundleURL { ShareLink("Share Run Log for Maintainers", item: bundleURL) }
-                    Button("Clear Memory", role: .destructive) { confirmClear = true }
+            PaperFoot(text: message ?? String(localized: "One file with every routine and note. Importing merges it in; the newer copy of a routine wins. Poki Setup on your computer can back it up and put it back."))
+            PaperHeader(text: String(localized: "Advanced"))
+            PaperRows {
+                if let bundleURL {
+                    ShareLink(item: bundleURL) {
+                        PaperRow(String(localized: "Share the run log"), detail: String(localized: "For the Poki maintainers. No typed text"))
+                    }
                 }
-            } footer: {
-                if advanced { Text("The run log lists each routine run, where it stopped and how long it took, with no typed text. It helps the Poki maintainers make routines more reliable.") }
+                Button { confirmClear = true } label: { PaperRow(String(localized: "Clear memory"), chevron: false) }
+            }
+        }
+        .confirmationDialog(forgetTitle, isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }), titleVisibility: .visible) {
+            Button("Forget", role: .destructive) {
+                switch forgetting {
+                case .routine(let name): _ = store.forget(name)
+                case .note(let note): _ = store.forgetNote(note.id)
+                case nil: break
+                }
+                forgetting = nil
+                reload()
             }
         }
         .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
+        .paperPage()
         .onAppear(perform: reload)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             switch result {
@@ -86,7 +101,15 @@ struct MemoryView: View {
             }
         }
         .confirmationDialog("Clear all routines and notes on this iPhone?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Clear Memory", role: .destructive) { store.clearAll(); reload() }
+            Button("Clear memory", role: .destructive) { store.clearAll(); reload() }
+        }
+    }
+
+    private var forgetTitle: String {
+        switch forgetting {
+        case .routine(let name): String(localized: "Forget “\(name)”?")
+        case .note(let note): String(localized: "Forget “\(note.text)”?")
+        case nil: ""
         }
     }
 
@@ -115,16 +138,7 @@ struct MemoryView: View {
 private struct RoutineRow: View {
     var routine: Routine
     var body: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: routine.name)
-                Text(detail).font(.footnote).foregroundStyle(routine.stale ? Color.red : Color.secondary)
-            }
-            Spacer()
-            if let ms = routine.lastMs {
-                Text(verbatim: String(format: "%.1f s", Double(ms) / 1000)).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
-            }
-        }
+        PaperRow(routine.name, detail: detail, value: routine.lastMs.map { String(format: "%.1f s", Double($0) / 1000) }, chevron: false)
     }
 
     private var detail: String {

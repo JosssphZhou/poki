@@ -16,201 +16,210 @@ import WidgetKit
 
 /// Sizes (HIG, iPhone): the Lock Screen presentation and the expanded island are 84 to 160 points tall
 /// and 371 or 408 wide. Every view here draws one `ActivityFace`, so the four presentations say the
-/// same thing in the same order: the state glyph, the status word, then the content line.
+/// same thing in the same order: Poki in the state's pose, the status word, then the content line.
+///
+/// The look is the app's: black, white words, and Poki. Poki's pose carries the state (on the phone,
+/// asking, hiding its eyes, pleased, worried), so no state needs a colour of its own. What you can
+/// press is white on the black, as it is black on the app's white pages.
 enum ActivityMetrics {
-    /// The Lock Screen's margins: the system's standard 14 points, 16 at the sides so the glyph and
-    /// the buttons stay clear of the rounded corners.
-    static let lockInsets = EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
+    /// The Lock Screen's margins: 16 at the sides so Poki and the buttons stay clear of the rounded
+    /// corners, and room at the bottom for Poki's light.
+    static let lockInsets = EdgeInsets(top: 16, leading: 16, bottom: 20, trailing: 16)
     /// The card's corner as iOS draws it (the in-app preview's frame).
     static let lockCorner: CGFloat = 24
     /// The expanded island's margins inside its 44 point corners: content never runs to the edge.
-    static let islandInsets = EdgeInsets(top: 18, leading: 24, bottom: 22, trailing: 24)
+    static let islandInsets = EdgeInsets(top: 8, leading: 22, bottom: 22, trailing: 22)
     static let islandCorner: CGFloat = 44
     /// The row beside the camera sits a little further from the island's rounded sides.
     static let islandRowInset: CGFloat = 4
-    static let glyph: CGFloat = 15
+    /// Poki on the content line, in the compact island, and in the minimal one.
+    static let pose: CGFloat = 40
+    static let compactPose: CGFloat = 24
+    /// Stop's circle; its touch area is 44 points.
     static let stop: CGFloat = 32
+    /// The buttons under the content line.
+    static let button: CGFloat = 44
 }
 
 // MARK: Lock Screen
 
-/// The Lock Screen (and banner) presentation: the status row, the content line in the large size,
-/// and at most one action under it.
+/// The Lock Screen (and banner) presentation: the same card as the expanded island, on black.
 struct LockScreenCard: View {
     var face: ActivityFace
     @Environment(\.isLuminanceReduced) private var dimmed
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            StatusRow(face: face, surface: .lockScreen)
-            ContentRow(face: face)
-            StepBar(face: face, surface: .lockScreen)
-            ActionRow(face: face, surface: .lockScreen)
+        ActivityCard(face: face)
+            .padding(ActivityMetrics.lockInsets)
+            .background(alignment: .bottom) { LightGlow().opacity(dimmed ? 0 : 1) }
+            .environment(\.colorScheme, .dark)
+            // No animation in Always On (HIG).
+            .animation(dimmed ? nil : ActivityMotion.phase, value: face)
+            .accessibilityElement(children: .contain)
+    }
+}
+
+/// What both large presentations draw. One line while Poki works or has finished: Poki, the action in
+/// hand in the app's own words, and Stop. A heading with a quiet line under it, and one row of buttons,
+/// when Poki needs the owner or could not go on.
+private struct ActivityCard: View {
+    var face: ActivityFace
+    private let theme = ActivityTheme.current
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                PoseMark(pose: face.pose, size: ActivityMetrics.pose)
+                if let detail = face.detail {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(face.status)
+                            .font(face.contentIsCode ? theme.heading.monospacedDigit().weight(.bold) : theme.heading)
+                            .foregroundStyle(theme.text).lineLimit(1).minimumScaleFactor(0.8)
+                            .contentTransition(face.contentIsCode ? .numericText() : .interpolate)
+                        Text(detail).font(theme.detail).foregroundStyle(theme.quiet).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    line.frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if let caller = face.caller { CallerBadge(name: caller, size: 20) }
+                if face.talking { TalkButton().transition(.scale.combined(with: .opacity)) }
+                accessory
+            }
+            ActionRow(face: face)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(ActivityMetrics.lockInsets)
-        // No animation in Always On (HIG).
-        .animation(dimmed ? nil : ActivityMotion.phase, value: face)
-        .accessibilityElement(children: .contain)
     }
-}
 
-/// The glyph, the status word and the meta value.
-private struct StatusRow: View {
-    var face: ActivityFace
-    var surface: ActivitySurface
-    private let theme = ActivityTheme.current
-    var body: some View {
-        HStack(spacing: 6) {
-            StateGlyph(face: face)
-            Text(face.status)
-                .font(theme.status)
-                .foregroundStyle(theme.palette(surface).color(face.tone))
-                .lineLimit(1)
-                .contentTransition(.interpolate)
-            Spacer(minLength: 8)
-            MetaView(meta: face.meta, surface: surface)
-            if let caller = face.caller { CallerBadge(name: caller, size: 20) }
+    /// The one line. While Poki works, the action's first word is quiet and its object is not: "Scroll"
+    /// to “Checkout”.
+    private var line: some View {
+        let words = face.content.split(separator: " ", maxSplits: 1).map(String.init)
+        let lead = face.bottom == .stop && words.count == 2
+        return (lead ? Text(words[0] + " ").foregroundStyle(theme.quiet) + Text(words[1]).foregroundStyle(theme.text)
+                     : Text(face.content).foregroundStyle(face.stale ? theme.quiet : theme.text))
+            .font(theme.content)
+            .lineLimit(1).minimumScaleFactor(0.8)
+            .contentTransition(.interpolate)
+    }
+
+    /// At the right of the row: Stop while working, the approval's time running down, a tick when done.
+    @ViewBuilder private var accessory: some View {
+        if face.bottom == .stop {
+            StopButton().transition(.opacity)
+        } else if let range = face.timer {
+            ProgressView(timerInterval: range, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
+                .progressViewStyle(.circular).tint(theme.text)
+                .frame(width: 24, height: 24)
+        } else if case .glyph(let symbol) = face.compact, symbol != "mic.fill" {
+            Image(systemName: symbol).font(.system(size: 15, weight: .bold)).foregroundStyle(theme.text)
+                .frame(width: 24, height: 24).transition(.scale.combined(with: .opacity))
+        } else if case .elapsed(let since) = face.meta {
+            ElapsedText(since: since, width: 48)
         }
     }
 }
 
-/// The content line and, while working, Stop beside it.
-private struct ContentRow: View {
-    var face: ActivityFace
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            ContentLine(face: face)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if face.bottom == .stop { StopButton().transition(.opacity) }
-        }
-    }
-}
-
-/// The one thing in the large size, up to two lines.
-private struct ContentLine: View {
-    var face: ActivityFace
-    private let theme = ActivityTheme.current
-    var body: some View {
-        Text(face.content)
-            .font(face.contentIsCode ? theme.content.monospacedDigit().weight(.bold) : theme.content)
-            .foregroundStyle(face.stale ? AnyShapeStyle(HierarchicalShapeStyle.secondary) : AnyShapeStyle(HierarchicalShapeStyle.primary))
-            .lineLimit(face.contentIsCode ? 1 : 2)
-            .minimumScaleFactor(0.85)
-            .fixedSize(horizontal: false, vertical: true)
-            .contentTransition(face.contentIsCode ? .numericText() : .interpolate)
-    }
-}
-
-/// Under the content line: the approval's decision, Done for a handoff, or setup's progress bar.
+/// Under the row: the approval's decision, Done for a handoff, Open Poki, or setup's progress bar.
 private struct ActionRow: View {
     var face: ActivityFace
-    var surface: ActivitySurface
     private let theme = ActivityTheme.current
     var body: some View {
         switch face.bottom {
         case .none, .stop:
             EmptyView()
         case .approval(let id):
-            ApprovalButtons(approvalID: id, surface: surface)
-                .padding(.top, 4)
-                .transition(.activityRow)
+            ApprovalButtons(approvalID: id).transition(.activityRow)
         case .handoff(let id):
-            HandoffDoneButton(handoffID: id, surface: surface)
-                .padding(.top, 4)
+            HandoffDoneButton(handoffID: id).transition(.activityRow)
+        case .open:
+            Link(destination: face.link) { ActionLabel(title: String(activity: "Open Poki"), main: true) }
                 .transition(.activityRow)
         case .progress(let fraction):
             ProgressView(value: min(1, max(0, fraction)))
-                .tint(theme.palette(surface).accent)
-                .padding(.top, 4)
+                .tint(theme.text)
                 .transition(.activityRow)
         }
+    }
+}
+
+/// Poki's light, low in the island: a soft band of the owner's colours along the bottom edge. It is the
+/// one colour here, as it is in the app.
+struct LightGlow: View {
+    var body: some View {
+        let colors = PokiLight.chosen.palette
+        LinearGradient(stops: [.init(color: .clear, location: 0.03), .init(color: colors.low, location: 0.2), .init(color: colors.skyLight, location: 0.4),
+                               .init(color: colors.warm, location: 0.62), .init(color: colors.warmLight, location: 0.8), .init(color: .clear, location: 0.97)],
+                       startPoint: .leading, endPoint: .trailing)
+            .frame(height: 26)
+            .blur(radius: 12)
+            .offset(y: 14)
+            .opacity(0.9)
+            .accessibilityHidden(true)
     }
 }
 
 // MARK: Dynamic Island, expanded
 
-/// Beside the camera, left: the glyph and the short status word.
-struct IslandLeading: View {
-    var face: ActivityFace
-    private let theme = ActivityTheme.current
-    var body: some View {
-        HStack(spacing: 6) {
-            StateGlyph(face: face)
-            Text(face.shortStatus)
-                .font(theme.status)
-                .foregroundStyle(theme.island.color(face.tone))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .contentTransition(.interpolate)
-        }
-        .padding(.leading, ActivityMetrics.islandRowInset)
-        .frame(maxHeight: .infinity, alignment: .center)
-        .environment(\.colorScheme, .dark)
-    }
-}
-
-/// Beside the camera, right: the meta value.
-struct IslandTrailing: View {
-    var face: ActivityFace
-    var body: some View {
-        HStack(spacing: 6) {
-            MetaView(meta: face.meta, surface: .island)
-            if let caller = face.caller { CallerBadge(name: caller, size: 20) }
-        }
-            .padding(.trailing, ActivityMetrics.islandRowInset)
-            .frame(maxHeight: .infinity, alignment: .center)
-            .environment(\.colorScheme, .dark)
-    }
-}
-
-/// Under the camera: the content line (with Stop) and the action, as on the Lock Screen.
+/// Under the camera: the card, with Poki's light along the bottom edge.
 struct IslandBottom: View {
     var face: ActivityFace
     @Environment(\.isLuminanceReduced) private var dimmed
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ContentRow(face: face)
-            StepBar(face: face, surface: .island)
-            ActionRow(face: face, surface: .island)
-        }
-        .padding(.bottom, face.hasAction ? 0 : 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .environment(\.colorScheme, .dark)
-        .animation(dimmed ? nil : ActivityMotion.phase, value: face)
+        ActivityCard(face: face)
+            .padding(.bottom, ActivityMetrics.islandInsets.bottom)
+            .background(alignment: .bottom) { LightGlow() }
+            .environment(\.colorScheme, .dark)
+            .animation(dimmed ? nil : ActivityMotion.phase, value: face)
     }
 }
 
 // MARK: Dynamic Island, compact and minimal
 
-/// The state glyph: the same mark as in the other presentations, so the compact island reads as the
-/// same activity at a glance.
+/// Poki in the state's pose: the same Poki as in the other presentations, so the compact island reads
+/// as the same activity at a glance.
 struct CompactLeading: View {
     var face: ActivityFace
     var body: some View {
-        RingGlyph(face: face).padding(.leading, 2).environment(\.colorScheme, .dark)
+        HStack(spacing: 3) {
+            PoseMark(pose: face.pose, size: ActivityMetrics.compactPose)
+            // The microphone is open: said in the small island too.
+            if face.talking, face.compact != .glyph("mic.fill") {
+                Image(systemName: "mic.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(ActivityTheme.current.text)
+            }
+        }
+        .padding(.leading, 2).environment(\.colorScheme, .dark)
     }
 }
 
-/// A short value rather than a sentence, so it never truncates.
+/// A glyph or a short value rather than a sentence, so it never truncates.
 struct CompactTrailing: View {
     var face: ActivityFace
     private let theme = ActivityTheme.current
     var body: some View {
-        let palette = theme.island
         Group {
             switch face.compact {
-            case .text(let text, let tone):
-                Text(text).font(theme.compact).foregroundStyle(palette.color(tone))
+            case .dot:
+                // One beat as each action comes in: the island's update animates the dot's content.
+                Circle().fill(theme.text).frame(width: 8, height: 8).padding(.trailing, 4)
+                    .id(face.content).transition(.scale(scale: 0.4).combined(with: .opacity))
+                    .accessibilityLabel(Text(face.content))
+            case .glyph(let symbol):
+                Image(systemName: symbol).font(.system(size: 13, weight: .bold)).foregroundStyle(theme.text)
+                    .contentTransition(.symbolEffect(.replace))
+                    .accessibilityLabel(Text(face.content))
+            case .text(let text, let quiet):
+                Text(text).font(theme.compact).foregroundStyle(quiet ? theme.quiet : theme.text)
                     .lineLimit(1).minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
             case .code(let code):
-                Text(code).font(theme.compactCode).foregroundStyle(palette.accent)
+                Text(code).font(theme.compactCode).foregroundStyle(theme.text)
                     .lineLimit(1).minimumScaleFactor(0.7)
             case .countdown(let until):
-                CountdownText(until: until, color: palette.approval, width: 44)
+                CountdownText(until: until, width: 44)
             case .elapsed(let since):
-                ElapsedText(since: since, color: palette.approval, width: 44)
+                ElapsedText(since: since, width: 44)
             }
         }
         .frame(maxWidth: 64, alignment: .trailing)
@@ -219,146 +228,68 @@ struct CompactTrailing: View {
     }
 }
 
-/// Another activity shares the island: the state glyph alone, which changes with the state.
+/// Another activity shares the island: Poki alone, in the state's pose. While an approval waits, its
+/// time runs down in a ring around Poki (counted by the system).
 struct MinimalView: View {
     var face: ActivityFace
     var body: some View {
-        RingGlyph(face: face).environment(\.colorScheme, .dark)
-    }
-}
-
-/// The state glyph inside a round status ring: the run's steps filling it while working, full when
-/// done, the approval's time running down (counted by the system). Without a ring, the glyph alone.
-struct RingGlyph: View {
-    var face: ActivityFace
-    static let size: CGFloat = 24
-    private let theme = ActivityTheme.current
-    var body: some View {
-        let color = theme.island.color(face.tone)
         ZStack {
-            switch face.ring {
-            case .none:
-                EmptyView()
-            case .fraction(let value):
-                Circle().stroke(color.opacity(0.25), lineWidth: 2.5)
-                Circle().trim(from: 0, to: max(0.04, min(1, value)))
-                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-            case .timer(let range):
+            if let range = face.timer {
                 ProgressView(timerInterval: range, countsDown: true, label: { EmptyView() }, currentValueLabel: { EmptyView() })
                     .progressViewStyle(.circular)
-                    .tint(color)
+                    .tint(ActivityTheme.current.text)
             }
-            Image(systemName: face.symbol)
-                .font(.system(size: face.ring == .none ? ActivityMetrics.glyph : 11, weight: .bold))
-                .foregroundStyle(color)
-                .contentTransition(.symbolEffect(.replace))
+            PoseMark(pose: face.pose, size: face.timer == nil ? ActivityMetrics.compactPose : 15)
         }
-        .frame(width: Self.size, height: Self.size)
-        .accessibilityHidden(true)
-    }
-}
-
-/// The run's latest steps as one bar of segments: each step that went through in the state's colour,
-/// one that did not in red, the step under way pulsing faintly. A finished run turns green.
-private struct StepBar: View {
-    var face: ActivityFace
-    var surface: ActivitySurface
-    @Environment(\.isLuminanceReduced) private var dimmed
-    private let theme = ActivityTheme.current
-    var body: some View {
-        if !face.steps.isEmpty || face.stepUnderWay {
-            let palette = theme.palette(surface)
-            let shown = Array(face.steps.suffix(PokiState.outcomeLimit - (face.stepUnderWay ? 1 : 0)))
-            let ok = face.finished ? palette.done : palette.accent
-            HStack(spacing: 3) {
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, went in
-                    Capsule().fill(went ? ok : palette.problem).frame(height: 5)
-                }
-                if face.stepUnderWay {
-                    Capsule().fill(ok.opacity(dimmed ? 0.5 : 0.35)).frame(height: 5)
-                }
-                // One segment per step so far and no empty places: three steps are three segments,
-                // and the bar splits as each new step comes in.
-            }
-            .padding(.top, 2)
-            .accessibilityElement()
-            .accessibilityLabel(Text(verbatim: "\(face.steps.filter { $0 }.count) of \(face.steps.count)"))
-        }
+        .frame(width: ActivityMetrics.compactPose, height: ActivityMetrics.compactPose)
+        .environment(\.colorScheme, .dark)
     }
 }
 
 // MARK: Pieces
 
-/// The state's SF Symbol in its colour: no container, no app icon (HIG).
-struct StateGlyph: View {
-    var face: ActivityFace
-    private let theme = ActivityTheme.current
+/// Poki in one pose. The pictures are the app's (Poki/BearPoses), made small for the widget extension by
+/// scripts/make-assets.sh.
+struct PoseMark: View {
+    var pose: String
+    var size: CGFloat
     var body: some View {
-        Image(systemName: face.symbol)
-            .font(.system(size: ActivityMetrics.glyph, weight: .semibold))
-            .foregroundStyle(theme.lock.color(face.tone))
-            .contentTransition(.symbolEffect(.replace))
+        Image("Pose-\(pose)").resizable().scaledToFit()
+            .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 }
 
-/// The top-right value: a count, the approval's countdown, a time of day, or the time waited.
-private struct MetaView: View {
-    var meta: ActivityFace.Meta
-    var surface: ActivitySurface
+/// A button under the content line: a capsule, white for the one that goes on and a quiet fill for the
+/// one that does not.
+private struct ActionLabel: View {
+    var title: String
+    var main: Bool
     private let theme = ActivityTheme.current
     var body: some View {
-        let palette = theme.palette(surface)
-        switch meta {
-        case .none:
-            EmptyView()
-        case .text(let text):
-            Text(text).font(theme.meta).foregroundStyle(palette.quiet)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .contentTransition(.numericText())
-        case .countdown(let until):
-            CountdownText(until: until, color: palette.approval, width: 48)
-        case .clock(let date):
-            Text(date, style: .time).font(theme.meta).foregroundStyle(palette.quiet)
-                .lineLimit(1)
-        case .elapsed(let since):
-            ElapsedText(since: since, color: palette.approval, width: 48)
-        }
+        Text(title).lineLimit(1).minimumScaleFactor(0.85)
+        .font(theme.button)
+        .foregroundStyle(main ? Color.black : theme.text)
+        .frame(maxWidth: .infinity).frame(height: ActivityMetrics.button)
+        .background(main ? theme.text : theme.fill, in: Capsule())
+        .contentShape(.capsule)
     }
 }
 
-/// Deny and Allow: one decision, in the system's button styles. Allow asks for Face ID first (see
-/// ApproveActionIntent), so it carries the Face ID glyph, in the button's own text colour.
+/// Don’t allow and Allow: one decision. Allow asks for Face ID first (see ApproveActionIntent).
 struct ApprovalButtons: View {
     var approvalID: String
-    var surface: ActivitySurface
-    private let theme = ActivityTheme.current
 
     var body: some View {
         HStack(spacing: 8) {
             Button(intent: DenyActionIntent(approvalID: approvalID)) {
-                Text(String(activity: "Deny"))
-                    .font(theme.button)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .frame(maxWidth: .infinity)
+                ActionLabel(title: String(activity: "Don’t allow"), main: false)
             }
-            .buttonStyle(.bordered)
-            .tint(.secondary)
-            .foregroundStyle(.primary)
             Button(intent: ApproveActionIntent(approvalID: approvalID)) {
-                Label(String(activity: "Allow"), systemImage: "checkmark")
-                    .font(theme.button)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .frame(maxWidth: .infinity)
+                ActionLabel(title: String(activity: "Allow"), main: true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette(surface).approval)
         }
-        .buttonBorderShape(.capsule)
-        .controlSize(.regular)
+        .buttonStyle(.plain)
     }
 }
 
@@ -366,37 +297,42 @@ struct ApprovalButtons: View {
 /// agent carries on (HandoffDoneIntent).
 struct HandoffDoneButton: View {
     var handoffID: String
-    var surface: ActivitySurface
-    private let theme = ActivityTheme.current
 
     var body: some View {
         Button(intent: HandoffDoneIntent(handoffID: handoffID)) {
-            Label(String(activity: "Done, carry on"), systemImage: "checkmark")
-                .font(theme.button)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
+            ActionLabel(title: String(activity: "Done, carry on"), main: true)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        .controlSize(.regular)
-        .tint(theme.palette(surface).approval)
+        .buttonStyle(.plain)
+    }
+}
+
+/// The open microphone of a talk with Poki, which stays open while Poki works in another app. A tap ends
+/// the talk and closes it.
+struct TalkButton: View {
+    var body: some View {
+        Button(intent: EndTalkIntent()) {
+            Image(systemName: "mic.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(ActivityTheme.current.text)
+                .frame(width: ActivityMetrics.stop, height: ActivityMetrics.stop)
+                .background(ActivityTheme.current.fill, in: Circle())
+                .frame(width: 40, height: 44).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(activity: "End talk"))
     }
 }
 
 /// Stop runner: stops the runner, and with it iOS's automation banner, until the agent's next request.
-/// The stop symbol, no word; VoiceOver reads "Stop".
+/// A white square in a quiet circle, no word; VoiceOver reads "Stop".
 struct StopButton: View {
     var body: some View {
         Button(intent: StopRunnerIntent()) {
-            Image(systemName: "stop.fill")
-                .font(.system(size: 13, weight: .bold))
-                .frame(width: ActivityMetrics.stop - 12, height: ActivityMetrics.stop - 12)
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous).fill(ActivityTheme.current.text)
+                .frame(width: 10, height: 10)
+                .frame(width: ActivityMetrics.stop, height: ActivityMetrics.stop)
+                .background(ActivityTheme.current.fill, in: Circle())
+                .frame(width: 44, height: 44).contentShape(.rect)
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
-        .tint(.secondary)
-        .foregroundStyle(.primary)
+        .buttonStyle(.plain)
         .accessibilityLabel(String(activity: "Stop"))
     }
 }
@@ -404,12 +340,11 @@ struct StopButton: View {
 /// An approval's time left, counted down by the system between updates.
 private struct CountdownText: View {
     var until: Date
-    var color: Color
     var width: CGFloat
     var body: some View {
         // No fixedSize on timer text: it blanks the whole card on iOS 26.
         Text(timerInterval: Countdown.range(until), countsDown: true)
-            .font(ActivityTheme.current.countdown).foregroundStyle(color)
+            .font(ActivityTheme.current.countdown).foregroundStyle(ActivityTheme.current.text)
             .multilineTextAlignment(.trailing)
             .frame(width: width, alignment: .trailing)
     }
@@ -418,11 +353,10 @@ private struct CountdownText: View {
 /// How long the agent has waited for the person, counted up by the system.
 private struct ElapsedText: View {
     var since: Date
-    var color: Color
     var width: CGFloat
     var body: some View {
         Text(timerInterval: since...since.addingTimeInterval(12 * 3600), countsDown: false)
-            .font(ActivityTheme.current.countdown).foregroundStyle(color)
+            .font(ActivityTheme.current.countdown).foregroundStyle(ActivityTheme.current.text)
             .multilineTextAlignment(.trailing)
             .frame(width: width, alignment: .trailing)
     }
@@ -435,7 +369,7 @@ enum Countdown {
 }
 
 /// The bear, round, like the website's avatar (the app's own screens; the Live Activity uses
-/// `StateGlyph`).
+/// `PoseMark`).
 struct BearMark: View {
     var size: CGFloat
     var body: some View {

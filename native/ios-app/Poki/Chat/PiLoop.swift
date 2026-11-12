@@ -45,7 +45,7 @@ final class PiLoop {
 
     /// The owner's message under this task's instructions, then pi's loop until the model answers
     /// without tools, `stop()` or `maxTurns` model turns. `onText` gets each finished text block.
-    func run(_ text: String, instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
+    func run(_ text: String, pictures: [Data] = [], instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
         use(instructions)
         let turns = Counter()
@@ -69,7 +69,7 @@ final class PiLoop {
         }
         defer { unsubscribe() }
         do {
-            try await agent.prompt(text)
+            try await agent.prompt(text, images: pictures.map { ImageContent(data: $0.base64EncodedString(), mimeType: "image/jpeg") })
         } catch {
             failure.set(error.localizedDescription)
         }
@@ -110,8 +110,8 @@ final class PiLoop {
     /// The provider's message for the owner. pi never puts the key in it; a sign-in that ran out says so.
     private static func words(_ message: String, provider: ModelProvider) -> String {
         if message.contains("No API key") || message.contains("missingApiKey") || message.isEmpty && !ModelKeys.hasKey(provider) {
-            return provider.signsIn ? String(localized: "Sign in to ChatGPT again: tap my picture, then Model.")
-                                    : String(localized: "Add your \(provider.name) key: tap my picture, then Model.")
+            return provider.signsIn ? String(localized: "Sign in to ChatGPT again: open Settings, then Model.")
+                                    : String(localized: "Add your \(provider.name) key: open Settings, then Model.")
         }
         return String(localized: "\(provider.name): \(message.isEmpty ? String(localized: "the request failed.") : message)")
     }

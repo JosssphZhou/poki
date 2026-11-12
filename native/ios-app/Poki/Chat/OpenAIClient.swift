@@ -18,6 +18,13 @@ final class OpenAIClient: ModelClient {
 
     func say(_ text: String) { input.append(["role": "user", "content": text]) }
 
+    func say(_ text: String, pictures: [Data]) {
+        guard !pictures.isEmpty else { return say(text) }
+        var content: [[String: Any]] = [["type": "input_text", "text": text]]
+        for jpeg in pictures { content.append(["type": "input_image", "image_url": "data:image/jpeg;base64,\(jpeg.base64EncodedString())"]) }
+        input.append(["role": "user", "content": content])
+    }
+
     func answer(_ call: ToolCall, _ result: PokiCore.ToolAnswer) {
         var output: [[String: Any]] = [["type": "input_text", "text": result.text]]
         if let jpeg = result.jpeg {
@@ -50,7 +57,7 @@ final class OpenAIClient: ModelClient {
             let text = apiErrorText(json, data, key: key)
             let code = (json?["error"] as? [String: Any])?["code"] as? String
             let words: String = switch status {
-            case 401: String(localized: "OpenAI did not accept the key. Check it in Poki › Model.")
+            case 401: String(localized: "OpenAI did not accept the key. Check it in Settings › Model.")
             case 403, 404: String(localized: "This OpenAI key can’t use \(ModelKeys.selectedModelName).")
             case 429 where code == "insufficient_quota": String(localized: "This OpenAI key has no credit left. Check billing at platform.openai.com.")
             case 429: String(localized: "OpenAI says the key has hit its rate limit. Try again in a minute.")

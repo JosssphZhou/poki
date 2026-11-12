@@ -20,13 +20,13 @@ struct PokiLiveActivity: Widget {
             let face = context.face
             LockScreenCard(face: face)
                 .activityBackgroundTint(ActivityTheme.current.lockBackground)
+                .activitySystemActionForegroundColor(ActivityTheme.current.text)
                 .widgetURL(face.link)
         } dynamicIsland: { context in
             let face = context.face
             let insets = ActivityMetrics.islandInsets
             return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) { IslandLeading(face: face) }
-                DynamicIslandExpandedRegion(.trailing) { IslandTrailing(face: face) }
+                // Everything is under the camera: one card, as on the Lock Screen.
                 DynamicIslandExpandedRegion(.bottom) { IslandBottom(face: face) }
             } compactLeading: {
                 CompactLeading(face: face)
@@ -36,12 +36,13 @@ struct PokiLiveActivity: Widget {
                 MinimalView(face: face)
             }
             .widgetURL(face.link)
-            // The outline takes the state's blue while the person is needed; otherwise the system's own.
+            // The outline turns white while the person is needed; otherwise the system's own.
             .keylineTint(face.outlined ? ActivityTheme.current.approvalOutline : nil)
             .contentMargins(.leading, insets.leading, for: .expanded)
             .contentMargins(.trailing, insets.trailing, for: .expanded)
             .contentMargins(.top, insets.top, for: .expanded)
-            .contentMargins(.bottom, insets.bottom, for: .expanded)
+            // The card pads its own bottom, so Poki's light can reach the island's edge.
+            .contentMargins(.bottom, 0, for: .expanded)
         }
     }
 }

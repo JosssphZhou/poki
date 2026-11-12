@@ -16,19 +16,28 @@ struct MessageBubble: View {
             if direction == .outgoing {
                 Spacer(minLength: .messageInsetPadding)
             }
-            Text(rendered)
-                .font(.system(size: 17))
-                .tint(direction == .incoming ? Site.blue : .white)
-                .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(foregroundStyle)
-                .padding(.vertical, .messageVerticalPadding)
-                .padding(.horizontal, 14)
-                .background(backgroundStyle, in: shape)
-                .contentShape(.contextMenuPreview, shape)
-                .contextMenu {
-                    copyButton { UIPasteboard.general.string = text }
-                }
-                .frame(maxWidth: 280, alignment: direction == .incoming ? .leading : .trailing)
+            // Yours is a quiet bubble on the right; Poki's is plain words on the page.
+            if direction == .outgoing {
+                Text(rendered)
+                    .font(.system(size: 17))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(Paper.ink)
+                    .padding(.vertical, 11)
+                    .padding(.horizontal, 16)
+                    .background(Paper.fill, in: shape)
+                    .contentShape(.contextMenuPreview, shape)
+                    .contextMenu { copyButton { UIPasteboard.general.string = text } }
+                    .frame(maxWidth: 280, alignment: .trailing)
+            } else {
+                Text(rendered)
+                    .font(.system(size: 17)).lineSpacing(3)
+                    .tint(Paper.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(Paper.ink)
+                    .padding(.vertical, 4)
+                    .contextMenu { copyButton { UIPasteboard.general.string = text } }
+                    .frame(maxWidth: 330, alignment: .leading)
+            }
             if direction == .incoming {
                 Spacer(minLength: .messageInsetPadding)
             }
@@ -57,44 +66,28 @@ struct MessageBubble: View {
             Label("Copy", systemImage: "doc.on.doc")
         }
     }
-
-    private var foregroundStyle: AnyShapeStyle {
-        switch direction {
-        case .incoming: AnyShapeStyle(Color(.label))
-        case .outgoing: AnyShapeStyle(.white)
-        }
-    }
-
-    private var backgroundStyle: AnyShapeStyle {
-        switch direction {
-        case .incoming: AnyShapeStyle(ChatColor.incoming)
-        case .outgoing: AnyShapeStyle(Site.blue)
-        }
-    }
 }
 
 extension CGFloat {
-    static let cornerRadius: CGFloat = 20
+    static let cornerRadius: CGFloat = 22
     static let tailRadius: CGFloat = 6
     static let messageInsetPadding: CGFloat = 60
     static let messageVerticalPadding: CGFloat = 9
 }
 
-/// The chat's greys. The boards draw iMessage's light colours, which are iOS's own system colours, so
-/// these follow them (and dark mode) instead of fixed values.
+/// The chat's greys. What the conversation itself draws takes the front's paper and ink (`Paper`); the
+/// system colours are left for the older pages that still read them.
 enum ChatColor {
     /// #E9E9EB on the board (iMessage's incoming bubble): systemGray5, #E5E5EA.
-    static let incoming = Color(.systemGray5)
-    /// #8E8E93: times, "Delivered", the grey notes, values.
-    static let secondary = Color(.systemGray)
-    /// #6B6B70: a step not done yet (Site.text2 on the board).
-    static let pending = Color(.secondaryLabel)
+    static let incoming = Paper.fill
+    /// Times, the grey notes, an agent's own steps.
+    static let secondary = Paper.ink2
     /// #34C759.
     static let green = Color(.systemGreen)
     /// #D1D1D6: the message field's edge.
     static let fieldEdge = Color(.systemGray4)
-    /// #A1A1A6: the placeholder.
-    static let placeholder = Color(.placeholderText)
+    /// The bear's own pale blue, as a tint for the message field's glass.
+    static let bearBlue = Color(red: 0.72, green: 0.77, blue: 0.98).opacity(0.5)
     /// #C6C6C8: the header's bottom line and the rows' separators.
     static let separator = Color(.opaqueSeparator)
 }

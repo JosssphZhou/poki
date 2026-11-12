@@ -49,6 +49,7 @@ struct SavedSession: Codable, Identifiable, Equatable {
         for entry in entries.reversed() {
             switch entry.kind {
             case .poki(let text): return text
+            case .you(let text, _) where text.isEmpty: return String(localized: "Picture")
             case .you(let text, _), .request(let text, _): return text
             case .step(let text, let ok): return ok == false ? String(localized: "\(text), failed") : text
             case .plan(let steps):
@@ -246,6 +247,7 @@ final class SessionStore {
     }
 
     func delete(_ id: String) {
+        if let session = session(id) { ChatPictures.delete(ChatPictures.names(in: session.entries)) }
         sessions.removeAll { $0.id == id }
         try? FileManager.default.removeItem(at: file(id))
     }
@@ -386,7 +388,10 @@ final class SessionStore {
     private func trim() {
         guard sessions.count > Self.limit else { return }
         let sorted = sessions.sorted { $0.updated > $1.updated }
-        for old in sorted[Self.limit...] { try? FileManager.default.removeItem(at: file(old.id)) }
+        for old in sorted[Self.limit...] {
+            ChatPictures.delete(ChatPictures.names(in: old.entries))
+            try? FileManager.default.removeItem(at: file(old.id))
+        }
         sessions = Array(sorted.prefix(Self.limit))
     }
 

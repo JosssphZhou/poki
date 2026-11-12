@@ -116,18 +116,19 @@ struct ChatGPTSignIn: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            List {
+                PaperSection {
                     Button("Continue with ChatGPT") { login.inApp = true; run { try await login.signIn() } }.disabled(working)
                     Button("Continue in Safari") { login.inApp = false; run { try await login.signIn() } }.disabled(working)
                 } footer: {
                     Text("Poki uses your ChatGPT Plus or Pro plan through OpenAI’s Sign in with ChatGPT. The sign-in stays in this iPhone’s Keychain. An OpenAI API key works too, as a backup: add it under OpenAI.")
                 }
-                if let problem { Text(verbatim: problem).foregroundStyle(Color(.systemRed)) }
+                if let problem { PaperSection { Text(verbatim: problem).font(Paper.value).padding(.vertical, 12) } }
                 if ChatGPTAccount.signedIn {
-                    Section { Button("Sign Out", role: .destructive) { ModelKeys.remove(.chatgpt); dismiss() } }
+                    PaperSection { Button("Sign out") { ModelKeys.remove(.chatgpt); dismiss() } }
                 }
             }
+            .paperList()
             .navigationTitle(Text(verbatim: "ChatGPT"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }

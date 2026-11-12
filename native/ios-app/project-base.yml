@@ -36,6 +36,8 @@ targets:
     platform: iOS
     sources:
       - path: Poki
+        # Poki's poses go into the asset catalog (scripts/make-assets.sh), not into the app as loose files.
+        excludes: [BearPoses]
       - path: Shared
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift
@@ -51,12 +53,9 @@ targets:
         # follows the iPhone's language.
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, zh-Hans, zh-Hant]
-        # Every page is the website's blue (or the night blue): white status bar text throughout.
-        UIStatusBarStyle: UIStatusBarStyleLightContent
-        UIViewControllerBasedStatusBarAppearance: false
         UILaunchScreen:
-          UIColorName: AccentColor
-          UIImageName: Bear
+          UIColorName: Paper
+          UIImageName: Pose-rest
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:

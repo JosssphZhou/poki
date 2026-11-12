@@ -8,6 +8,8 @@ struct ChatEntry: Identifiable, Equatable, Codable {
         /// "Today 9:41 AM" above a conversation.
         case time(Date)
         case you(String, delivered: Bool)
+        /// The pictures the owner sent with the message after it: file names (ChatPictures).
+        case pictures([String])
         case poki(String)
         /// The steps of a task, in one Poki bubble.
         case plan([PlanStep])
@@ -155,6 +157,7 @@ final class ChatModel {
     var title: String {
         for entry in entries {
             switch entry.kind {
+            case .you(let text, _) where text.isEmpty: return String(localized: "Picture")
             case .you(let text, _), .request(let text, _): return text
             default: continue
             }
@@ -164,13 +167,21 @@ final class ChatModel {
 
     // MARK: Sending
 
-    func send(_ text: String) { send(text, again: false) }
+    func send(_ text: String) { send(text, pictures: [], again: false) }
+
+    /// A message with pictures (JPEGs from `ChatPictures.jpeg`), or pictures alone.
+    func send(_ text: String, pictures: [Data]) { send(text, pictures: pictures, again: false) }
 
     /// The last message again, after a problem (the Retry button under it).
     func retry() {
         guard !running, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), case .you(let text, _) = last.kind else { return }
         while let tail = entries.last, case .note(.problem) = tail.kind { entries.removeLast() }
-        send(text, again: true)
+        // The pictures that went with it sit in the entry right before it.
+        var pictures: [Data] = []
+        if let i = entries.firstIndex(where: { $0.id == last.id }), i > 0, case .pictures(let names) = entries[i - 1].kind {
+            pictures = names.compactMap(ChatPictures.data)
+        }
+        send(text, pictures: pictures, again: true)
     }
 
     /// The conversation ended on a problem the owner can try again.
@@ -193,12 +204,20 @@ final class ChatModel {
         }
     }
 
-    private func send(_ text: String, again: Bool) {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !running else { return }
+    private func send(_ shown: String, pictures: [Data], again: Bool) {
+        let shown = shown.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !shown.isEmpty || !pictures.isEmpty, !running else { return }
+        // Pictures alone: the chat shows only them, and the model is told there were no words.
+        let text = shown.isEmpty ? "(The owner sent \(pictures.count == 1 ? "a picture" : "pictures") with no message.)" : shown
+        /// The pictures' entry, in front of the message they go with.
+        func keepPictures() {
+            let names = pictures.compactMap(ChatPictures.save)
+            if !names.isEmpty { entries.append(ChatEntry(.pictures(names))) }
+        }
         // Another conversation (an outside agent's hand-off) is working the phone: one task at a time.
         if kind == .poki, let busy = ChatModel.delegatedBusy {
-            entries.append(ChatEntry(.you(text, delivered: false)))
+            keepPictures()
+            entries.append(ChatEntry(.you(shown, delivered: false)))
             add(.note(.problem(String(localized: "Poki is working on a task for \(busy). Try again when it’s done."))))
             return
         }
@@ -208,20 +227,21 @@ final class ChatModel {
         if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
             you = last
         } else {
-            you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+            keepPictures()
+            you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(shown, delivered: false))
             entries.append(you)
         }
         lastOwnerText = text
         if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
         guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
-            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first: tap my picture, then Model.")
-                                       : String(localized: "Add a model key first: tap my picture, then Model.")))
+            add(.poki(provider.signsIn ? String(localized: "Sign in to ChatGPT first: open Settings, then Model.")
+                                       : String(localized: "Add a model key first: open Settings, then Model.")))
             return
         }
         let model = ModelKeys.selectedModel
         // The first message names the chat: a few words from the chat's own model, in the background.
-        if kind == .poki, !again, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
+        if kind == .poki, !again, !shown.isEmpty, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
            let piModel = provider.piModel(model) {
             let id = sessionID
             Task { if let name = await SessionNamer.name(for: text, provider: provider, model: piModel) { SessionStore.shared.setAutoName(id, name) } }
@@ -237,7 +257,7 @@ final class ChatModel {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
             }
             guard let client else { return }
-            client.say(text)
+            client.say(text, pictures: pictures)
             began("direct", provider, model)
             task = Task { [weak self] in
                 await self?.run(client, instructions: instructions, delivered: you.id)
@@ -263,7 +283,7 @@ final class ChatModel {
         guard let loop else { return }
         began("pi", provider, model)
         task = Task { [weak self] in
-            let outcome = await loop.run(text, instructions: instructions, maxTurns: Self.maxTurns) { text in
+            let outcome = await loop.run(text, pictures: pictures, instructions: instructions, maxTurns: Self.maxTurns) { text in
                 self?.markDelivered(you.id)
                 self?.awaitingModel = false
                 self?.add(.poki(text))

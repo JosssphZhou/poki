@@ -10,10 +10,17 @@ Build numbers are the GitHub Actions run number of the release workflow.
 ## [Unreleased]
 
 ### Added
-- 
+- A first run: Poki says what it is, you pick its light, and it walks you through this iPhone, a model and the microphone. Each step can wait.
+- Pictures in a message: the plus on the message field takes up to four from Photos or Files.
+- Settings › Appearance: Poki’s light (five to choose from) and Light or Dark.
+- During a talk with Poki, the Live Activity shows the open microphone and a button that ends the talk.
 
 ### Changed
-- 
+- A new look for the whole app: a New chat page with Poki in its window, a Chats page one swipe away, and Settings behind the gear. The tab bar is gone; Setup is now Settings › Connection, and Accounts is Settings › Model.
+- Every page is flat on paper with black for what you press; Poki’s light is the only colour. The Dynamic Island and the Lock Screen card are black, with Poki’s pose for what it is doing.
+- While Poki uses the phone the chat stays as it is; afterwards one “Used your iPhone” card lists what it did.
+- One button on the message field opens Dictate and Talk with Poki.
+- A new app icon.
 
 ### Fixed
 - 

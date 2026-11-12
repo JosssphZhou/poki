@@ -1,11 +1,13 @@
 #!/bin/bash
-# Makes the asset catalogs from docs/images/poki-icon.png (macOS, needs swift): the app icon (the bear
-# full-bleed: the logo flattened on brand blue, no margin; iOS applies its own corner mask) and the Bear image for the app and the Live Activity. They are generated, not
-# checked in, so the one source image stays the only copy. Run before xcodegen.
+# Makes the asset catalogs (macOS, needs swift): the app icon from docs/images/poki-app-icon.png (the bear
+# on the front page's sky, full-bleed, no margin; iOS applies its own corner mask), from
+# docs/images/poki-icon.png the Bear image for the app and the Live Activity, and Poki's poses for both. They are generated, not
+# checked in, so the source images stay the only copies. Run before xcodegen.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 ICON="$ROOT/docs/images/poki-icon.png"
+APPICON="$ROOT/docs/images/poki-app-icon.png"
 COMPOSE="$ROOT/native/ios-runner/branding/compose.swift"
 BLUE="#2084FD"
 meta='{"info":{"version":1,"author":"poki"}}'
@@ -20,10 +22,14 @@ bear() {
 APP="$HERE/Poki/Assets.xcassets"
 catalog "$APP"
 mkdir -p "$APP/AppIcon.appiconset"
-swift "$COMPOSE" "$ICON" "$APP/AppIcon.appiconset/icon-1024.png" 1024 1.0 "$BLUE"
+# The colour only makes the PNG opaque, which an app icon must be: the picture covers all of it.
+swift "$COMPOSE" "$APPICON" "$APP/AppIcon.appiconset/icon-1024.png" 1024 1.0 "$BLUE"
 echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"version":1,"author":"poki"}}' > "$APP/AppIcon.appiconset/Contents.json"
 mkdir -p "$APP/AccentColor.colorset"
-echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x20","green":"0x84","blue":"0xFD","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
+echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x11","green":"0x11","blue":"0x10","alpha":"1.000"}}},{"idiom":"universal","appearances":[{"appearance":"luminosity","value":"dark"}],"color":{"color-space":"srgb","components":{"red":"0xF4","green":"0xF4","blue":"0xF1","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
+# The launch screen's ground: the page's own paper (Paper.page), so the first frame does not flash.
+mkdir -p "$APP/Paper.colorset"
+echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0xFA","green":"0xFA","blue":"0xF9","alpha":"1.000"}}},{"idiom":"universal","appearances":[{"appearance":"luminosity","value":"dark"}],"color":{"color-space":"srgb","components":{"red":"0x0C","green":"0x0C","blue":"0x0D","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/Paper.colorset/Contents.json"
 bear "$APP"
 # Provider logos (Poki/ProviderIcons, see its README) as vector template images.
 logos() {
@@ -43,9 +49,24 @@ for png in "$HERE"/Poki/ProxyIcons/*.png; do
   echo '{"images":[{"filename":"icon@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/$name.imageset/Contents.json"
 done
 
+# Poki's poses (Poki/BearPoses): the bear in its window, on the New chat pill and in Settings.
+for png in "$HERE"/Poki/BearPoses/*.png; do
+  name="Pose-$(basename "$png" .png)"
+  mkdir -p "$APP/$name.imageset"
+  cp "$png" "$APP/$name.imageset/pose@3x.png"
+  echo '{"images":[{"filename":"pose@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/$name.imageset/Contents.json"
+done
+
 WIDGET="$HERE/PokiWidgets/Assets.xcassets"
 catalog "$WIDGET"
 bear "$WIDGET"
 # The calling agent's logo on the Live Activity.
 logos "$WIDGET"
+# Poki's poses for the Live Activity, small: the largest it draws is 40 points.
+for png in "$HERE"/Poki/BearPoses/*.png; do
+  name="Pose-$(basename "$png" .png)"
+  mkdir -p "$WIDGET/$name.imageset"
+  sips -Z 132 "$png" --out "$WIDGET/$name.imageset/pose@3x.png" >/dev/null
+  echo '{"images":[{"filename":"pose@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$WIDGET/$name.imageset/Contents.json"
+done
 echo "assets in $APP and $WIDGET"

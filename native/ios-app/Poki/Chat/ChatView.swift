@@ -1,5 +1,7 @@
 import AVFoundation
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The chat page (ESP-171 boards "M Chat empty", "M Chat working", "M Chat approved"): Poki's picture and
 /// name on top, the bubbles, and the message field. Approvals happen in the Dynamic Island, which iOS
@@ -19,7 +21,8 @@ struct ChatView: View {
     @State private var newName = ""
 
     var body: some View {
-        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry) {
+        ChatTranscript(entries: chat.entries, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry,
+                       sessionID: chat.sessionID, working: chat.running) {
             if needsSetup { SetupBubble(paired: model.pairingPath != nil, openSetup: openSetup) }
             if !ApprovalClassifier.isOn, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
@@ -28,26 +31,16 @@ struct ChatView: View {
         }
         // The header and the message field are insets of the conversation, so the field sits right on
         // the keyboard (or the home indicator) and the bubbles scroll under both, as in Messages.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if voice.isOn { LiveVoiceBar(voice: voice).transition(.move(edge: .top).combined(with: .opacity)) }
-        }
-        .animation(.snappy, value: voice.isOn)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice, openModel: openModel,
-                              newConversation: chat.newConversation)
+            ComposerInputView(running: chat.running, send: chat.send, sendPictures: chat.send, stop: chat.stop, openVoice: openVoice,
+                              openModel: openModel, newConversation: chat.newConversation)
         }
-        .background(Color(.systemBackground))
-        // The conversation's name (the one Poki gave it, or the owner's) is the title, and its title
-        // menu renames it; the chat model is the subtitle on iOS 26.
+        .background(Paper.page)
+        .toolbarBackground(Paper.page, for: .navigationBar)
+        // The conversation's name (the one Poki gave it, or the owner's) is the title; More renames it.
         .navigationTitle(Text(verbatim: SessionStore.shared.session(chat.sessionID)?.name ?? "Poki"))
         .navigationBarTitleDisplayMode(.inline)
-        .sessionSubtitle(ModelKeys.selectedModelName)
-        .toolbarTitleMenu {
-            if SessionStore.shared.session(chat.sessionID) != nil {
-                Button("Rename", systemImage: "pencil") { newName = SessionStore.shared.session(chat.sessionID)?.name ?? ""; renaming = true }
-            }
-        }
-        .alert("Rename Conversation", isPresented: $renaming) {
+        .alert("Rename conversation", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Cancel", role: .cancel) {}
             Button("Save") { SessionStore.shared.rename(chat.sessionID, to: newName) }
@@ -55,8 +48,11 @@ struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("New Conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
-                    Menu("Chat Model: \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
+                    Button("New conversation", systemImage: "square.and.pencil", action: chat.newConversation).disabled(chat.running)
+                    if SessionStore.shared.session(chat.sessionID) != nil {
+                        Button("Rename", systemImage: "pencil") { newName = SessionStore.shared.session(chat.sessionID)?.name ?? ""; renaming = true }
+                    }
+                    Menu("Chat model: \(ModelKeys.selectedModelName)", systemImage: "bubble.left.and.text.bubble.right") {
                         ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
                             Section(provider.name) {
                                 ForEach(ModelCatalog.available(provider)) { choice in
@@ -72,7 +68,7 @@ struct ChatView: View {
                         }
                     }
                     if VoiceDirect.apiKey != nil {
-                        Menu("Voice Model: \(VoiceDirect.model)", systemImage: "waveform") {
+                        Menu("Voice model: \(VoiceDirect.model)", systemImage: "waveform") {
                             ForEach(ModelCatalog.voiceAvailable) { choice in
                                 Button { ModelCatalog.voiceModel = choice.id } label: {
                                     if VoiceDirect.model == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
@@ -80,13 +76,13 @@ struct ChatView: View {
                             }
                         }
                     }
-                    Button("Accounts", systemImage: "person.crop.circle", action: openModel)
-                    Button("Status and Settings", systemImage: "gearshape", action: openDetails)
+                    Button("Model", systemImage: "person.crop.circle", action: openModel)
+                    Button("Settings", systemImage: "gearshape", action: openDetails)
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel(Text("More"))
             }
         }
-        // Full screen on iPhone; beside the sessions in a wide window, with the tabs kept.
+        // Full screen on iPhone; beside the chats in a wide window.
     }
 
     /// Setup is not finished (nothing paired yet, or a step left after pairing, such as UI Automation):
@@ -101,6 +97,10 @@ struct ChatTranscript<Footer: View>: View {
     var typing = false
     var canRetry = false
     var retry: () -> Void = {}
+    /// The session these entries belong to, so a phone use can list its actions from the Activity Log.
+    var sessionID: String? = nil
+    /// A task is under way: its record is not drawn until it has ended.
+    var working = false
     @ViewBuilder var footer: () -> Footer
 
     var body: some View {
@@ -115,13 +115,19 @@ struct ChatTranscript<Footer: View>: View {
                         .padding(.top, 4).transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottomLeading)))
                 }
                 if canRetry {
-                    Button(action: retry) { Label("Try Again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold)) }
-                        .buttonStyle(.bordered).buttonBorderShape(.capsule).tint(Site.blue).padding(.top, 2).padding(.bottom, 6)
+                    Button(action: retry) {
+                        Text("Try again").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.ink)
+                            .padding(.horizontal, 18).frame(height: 40)
+                            .overlay(Capsule().strokeBorder(Paper.ink, lineWidth: 1.5)).contentShape(.capsule)
+                    }
+                    .buttonStyle(PressStyle())
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 4).padding(.top, 4).padding(.bottom, 6)
                 }
                 footer()
             }
-            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+            .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 10)
             .frame(maxWidth: .infinity)
+            .hidesKeyboardOnTap()
             .animation(PlanMotion.enter, value: entries)
             .animation(.easeOut(duration: 0.2), value: typing)
         }
@@ -132,23 +138,23 @@ struct ChatTranscript<Footer: View>: View {
         .defaultScrollAnchor(.bottom, for: .alignment)
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
+        .onAppear { ActionLog.shared.load() }
     }
 
     @ViewBuilder private func row(_ entry: ChatEntry, at i: Int) -> some View {
         switch entry.kind {
-        case .time(let date):
-            Text(ChatTime.header(date))
-                .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-                .padding(.bottom, 6).frame(maxWidth: .infinity)
+        case .time:
+            // A chat is a record of what was asked and done; the list of chats gives the day.
+            EmptyView()
+        case .pictures(let names):
+            PictureBubbles(names: names)
+                .padding(.top, startsRun(i) ? 10 : 0).padding(.bottom, 2)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         case .you(let text, let delivered):
             let last = isLast(i, poki: false)
             VStack(alignment: .trailing, spacing: 4) {
-                MessageBubble(direction: .outgoing, text: text, tail: last)
-                if last, delivered {
-                    Text("Delivered").font(.system(size: 11, weight: .medium)).foregroundStyle(ChatColor.secondary)
-                        .padding(.horizontal, 4).padding(.bottom, 8)
-                        .transition(.opacity)
-                }
+                // Pictures sent alone have no words to draw.
+                if !text.isEmpty { MessageBubble(direction: .outgoing, text: text, tail: last) }
             }
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -167,12 +173,13 @@ struct ChatTranscript<Footer: View>: View {
                 .padding(.top, startsRun(i) ? 10 : 0)
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
-            HStack {
-                PlanBubble(steps: steps, tail: isLast(i, poki: true))
-                Spacer(minLength: .messageInsetPadding)
+            // Nothing is drawn while Poki uses the phone: the person is in the other app. Once the
+            // task has ended, the chat keeps one card of it.
+            if !(working && isLastPlan(i)) {
+                UseCard(steps: steps, actions: actions(for: i))
+                    .padding(.top, startsRun(i) ? 12 : 6).padding(.bottom, 8)
+                    .transition(.opacity)
             }
-            .padding(.top, startsRun(i) ? 10 : 0)
-            .transition(PlanMotion.stepTransition)
         case .note(let note):
             NoteLine(note: note)
         case .step(let text, let ok):
@@ -180,12 +187,26 @@ struct ChatTranscript<Footer: View>: View {
         }
     }
 
+    private func isLastPlan(_ i: Int) -> Bool {
+        !entries[(i + 1)...].contains { if case .plan = $0.kind { true } else { false } }
+    }
+
+    /// The actions of the phone use whose plan is at `i`: the session's entries in the Activity Log from
+    /// the owner's message before it up to their next one.
+    private func actions(for i: Int) -> [ActionLog.Entry] {
+        guard let sessionID else { return [] }
+        func isYou(_ entry: ChatEntry) -> Bool { if case .you = entry.kind { true } else { false } }
+        let start = entries[..<i].last(where: isYou)?.at ?? entries[i].at
+        let end = entries[(i + 1)...].first(where: isYou)?.at ?? .distantFuture
+        return ActionLog.shared.entries.filter { $0.session == sessionID && $0.at >= start && $0.at < end }
+    }
+
     /// The last bubble from that side in the conversation has the small corner (the boards).
     private func isLast(_ i: Int, poki: Bool) -> Bool {
         !entries[(i + 1)...].contains { entry in
             switch entry.kind {
             case .poki, .plan: poki
-            case .you, .request: !poki
+            case .you, .request, .pictures: !poki
             default: false
             }
         }
@@ -242,6 +263,7 @@ enum ChatTime {
 
 /// Three dots that rise in turn: the model is working on its answer.
 struct TypingBubble: View {
+    @Environment(\.accessibilityReduceMotion) private var still
     /// Dot i's height in 0...1 at time t. Typed step by step: as one expression inside the view
     /// builder it can exceed the type checker's time limit on a busy CI runner.
     static func phase(_ t: Double, _ i: Int) -> Double {
@@ -256,7 +278,7 @@ struct TypingBubble: View {
             HStack(spacing: 4) {
                 ForEach(0..<3) { i in
                     let phase = TypingBubble.phase(t, i)
-                    Circle().fill(ChatColor.secondary.opacity(0.45 + 0.45 * phase)).frame(width: 8, height: 8).offset(y: -3 * phase)
+                    Circle().fill(ChatColor.secondary.opacity(0.45 + 0.45 * phase)).frame(width: 8, height: 8).offset(y: still ? 0 : -3 * phase)
                 }
             }
             .padding(.vertical, 13).padding(.horizontal, 15)
@@ -274,8 +296,8 @@ private struct StepLine: View {
     var body: some View {
         HStack(spacing: 5) {
             switch ok {
-            case true?: Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(ChatColor.green)
-            case false?: Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(.systemRed))
+            case true?: Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Paper.ink2)
+            case false?: Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Paper.ink)
             case nil: ProgressView().controlSize(.mini)
             }
             Text(text).lineLimit(2)
@@ -291,76 +313,18 @@ private struct StepLine: View {
 // MARK: Header
 
 
-/// The bear in a round frame, as the ESP-171 boards draw it (`PokiFace.png` is the boards' own image: the
-/// app icon's bear, closer up).
+/// Poki, small and round, where a list says who did something: its resting picture on the quiet fill.
 struct PokiAvatar: View {
     var size: CGFloat
-    static let face = UIImage(named: "PokiFace")
     var body: some View {
-        Group {
-            if let face = Self.face { Image(uiImage: face).resizable().scaledToFill() } else { Image("Bear").resizable().scaledToFill() }
-        }
-        .frame(width: size, height: size).clipShape(.circle)
-        .accessibilityHidden(true)
+        Image("Pose-rest").resizable().scaledToFit().padding(size * 0.1)
+            .frame(width: size, height: size)
+            .background(Paper.fill, in: .circle)
+            .accessibilityHidden(true)
     }
 }
 
 // MARK: Plan
-
-/// The steps of a task in one Poki bubble: done steps ticked, the step under way typing its words.
-struct PlanBubble: View {
-    var steps: [PlanStep]
-    var tail: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(steps) { step in
-                PlanRow(step: step).transition(PlanMotion.stepTransition)
-            }
-        }
-        .animation(PlanMotion.enter, value: steps)
-        .padding(.vertical, 10).padding(.horizontal, 14)
-        .frame(width: 250, alignment: .leading)
-        .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: tail ? .tailRadius : .cornerRadius,
-                                                                    bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct PlanRow: View {
-    var step: PlanStep
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            ZStack {
-                switch step.state {
-                case .done:
-                    DrawingCheck(color: ChatColor.green).frame(width: 12, height: 12).transition(PlanMotion.swapTransition)
-                case .failed:
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Color(.systemRed)).transition(PlanMotion.swapTransition)
-                case .current, .waiting:
-                    Circle().strokeBorder(ChatColor.secondary.opacity(0.6), lineWidth: 1).frame(width: 13, height: 13).transition(PlanMotion.swapTransition)
-                }
-            }
-            .frame(width: 13)
-            .animation(PlanMotion.swap, value: step.state)
-            Group {
-                switch step.state {
-                case .current, .waiting:
-                    TypewriterText(text: step.state == .waiting ? String(localized: "\(step.text), waiting for you") : step.text,
-                                   font: .system(size: 15), color: ChatColor.pending)
-                case .done, .failed:
-                    Text(step.text).font(.system(size: 15)).foregroundStyle(Color(.label))
-                        .transition(PlanMotion.swapTransition.animation(PlanMotion.swap.delay(PlanMotion.stagger)))
-                }
-            }
-            .animation(PlanMotion.complete, value: step.state)
-        }
-        .lineLimit(2)
-    }
-}
-
-// MARK: Notes
 
 /// One grey line about an approval, centred under the steps.
 private struct NoteLine: View {
@@ -370,34 +334,31 @@ private struct NoteLine: View {
             switch note {
             case .waiting:
                 // The Dynamic Island, small.
-                Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
+                // The island, small: black in both schemes, with an edge so it shows on the dark page.
+                Capsule().fill(Color(hex: 0x1C1C1E)).overlay(Capsule().strokeBorder(Paper.line, lineWidth: 1)).frame(width: 22, height: 8)
                 Text("Waiting for your approval")
             case .approved(let at):
-                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
-                Text("Approved, \(at.formatted(date: .omitted, time: .shortened))")
+                Text("You allowed this at \(at.formatted(date: .omitted, time: .shortened))")
             case .declined:
-                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
-                Text("Not approved, so Poki skipped that step")
+                Text("Not allowed, so Poki skipped that step")
             case .expired:
                 Text("The approval ran out, so Poki skipped that step")
             case .problem(let text):
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(.systemOrange))
                 Text(text)
             case .modelChecking:
                 ProgressView().controlSize(.mini)
                 Text("The model is checking this step")
             case .modelApproved(let why):
-                Text(verbatim: "✓").fontWeight(.semibold).foregroundStyle(ChatColor.green)
                 Text(why.isEmpty ? String(localized: "Approved by model") : String(localized: "Approved by model: \(why)"))
             case .modelDeclined(let why):
-                Text(verbatim: "✕").fontWeight(.semibold).foregroundStyle(Color(.systemRed))
                 Text(why.isEmpty ? String(localized: "Not approved by model. Say yes in the chat to let it through.") : String(localized: "Not approved by model: \(why). Say yes in the chat to let it through."))
             }
         }
-        .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-        .multilineTextAlignment(.center)
-        .padding(.top, note == .waiting ? 12 : 10).padding(.bottom, note == .waiting ? 2 : 10)
-        .frame(maxWidth: .infinity)
+        // A quiet line on Poki's side of the page, in ink like everything else.
+        .font(Paper.note).foregroundStyle(Paper.ink2)
+        .multilineTextAlignment(.leading)
+        .padding(.horizontal, 4).padding(.top, 2).padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .transition(.opacity)
     }
 }
@@ -413,7 +374,7 @@ private struct SetupBubble: View {
                     Text(paired ? "Finish setting up this iPhone." : "First, set up this iPhone. About 5 minutes.")
                     Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                 }
-                .font(.system(size: 17)).foregroundStyle(Site.blue)
+                .font(.system(size: 17, weight: .medium)).foregroundStyle(Paper.ink)
                 .padding(.vertical, .messageVerticalPadding).padding(.horizontal, 14)
                 .background(ChatColor.incoming, in: UnevenRoundedRectangle(topLeadingRadius: .cornerRadius, bottomLeadingRadius: .tailRadius,
                                                                             bottomTrailingRadius: .cornerRadius, topTrailingRadius: .cornerRadius, style: .continuous))
@@ -437,6 +398,8 @@ struct ComposerInputView: View {
     @Environment(AppModel.self) private var model
     var running: Bool
     var send: (String) -> Void
+    /// Sends words with pictures. Without it the field takes no attachments (an outside agent's session).
+    var sendPictures: ((String, [Data]) -> Void)? = nil
     var stop: () -> Void
     /// Starts the live voice conversation.
     var openVoice: () -> Void
@@ -446,100 +409,219 @@ struct ComposerInputView: View {
     @State private var dictation = FieldDictation()
     @FocusState private var focused: Bool
     @State private var liveNote: String?
+    @State private var drafts: [PictureDraft] = []
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var pickingPhotos = false
+    @State private var pickingFiles = false
+    @State private var speaking = false
+    @State private var talkStarted: Date?
+    @AppStorage(PokiLight.key) private var lightChoice = PokiLight.firstLight.rawValue
+    private var light: PokiLight { PokiLight(rawValue: lightChoice) ?? .firstLight }
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Something to send: words, or pictures alone.
+    private var canSend: Bool { hasText || !drafts.isEmpty }
+    private var room: Int { ChatPictures.limit - drafts.count }
 
     var body: some View {
         VStack(spacing: 4) {
             if dictation.on {
                 HStack(spacing: 6) {
-                    Circle().fill(Color(.systemRed)).frame(width: 7, height: 7)
-                    Text("Dictating. Your words go into the message; tap Send when it reads right.")
+                    Circle().fill(Paper.ink).frame(width: 7, height: 7)
+                    Text("Your words become text. Nothing is sent until you send it.")
                 }
                 .font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
                 .transition(.opacity)
             } else if let liveNote {
-                Text(liveNote).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
-                    .onTapGesture { self.liveNote = nil; openModel() }
+                // The note leads to Model: a button, with room for a finger.
+                Button { self.liveNote = nil; openModel() } label: {
+                    Text(liveNote).font(.system(size: 12)).foregroundStyle(Paper.ink2).multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 20).contentShape(.rect)
+                }
+                .buttonStyle(.plain)
             } else if let problem = dictation.problem {
-                Text(problem).font(.system(size: 12)).foregroundStyle(Color(.systemRed))
+                Text(problem).font(.system(size: 12)).foregroundStyle(Paper.ink)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                HStack(alignment: .bottom, spacing: 4) {
-                    TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Message Poki").foregroundStyle(ChatColor.placeholder), axis: .vertical) { Text("Message Poki") }
-                        .font(.system(size: 17))
+            VStack(alignment: .leading, spacing: 0) {
+                // Pictures waiting to go, above the words, inside the same field.
+                if !drafts.isEmpty { PictureDraftRow(drafts: $drafts).padding(.leading, 14).transition(.opacity) }
+                if voice.isLive { talkRow } else {
+                HStack(alignment: .bottom, spacing: 0) {
+                    if sendPictures != nil { attach.frame(height: 62) }
+                    if dictation.on {
+                        Image(systemName: "waveform").font(.system(size: 17, weight: .semibold)).foregroundStyle(Paper.ink)
+                            .symbolEffect(.variableColor.iterative, isActive: true).frame(height: 62).padding(.trailing, 10)
+                    }
+                    TextField(text: $input, prompt: Text(dictation.on ? "Listening…" : "Ask Poki").foregroundStyle(Paper.ink2), axis: .vertical) { Text("Ask Poki") }
+                        .font(.system(size: 17)).foregroundStyle(Paper.ink)
                         .focused($focused)
                         .multilineTextAlignment(.leading)
                         .lineLimit(1...6)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 20)
+                        .padding(.leading, sendPictures == nil && !dictation.on ? 18 : 0).padding(.trailing, 4)
                         .submitLabel(.send)
                         .onSubmit(submit)
-                    trailing.frame(height: 40)
+                    trailing.frame(height: 62)
                 }
-                .padding(.leading, 16).padding(.trailing, 4)
-                .frame(minHeight: 40)
-                .composerGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
             }
-            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
+            .padding(.leading, 6).padding(.trailing, 7)
+            .frame(minHeight: 62)
+            .background(alignment: .bottom) {
+                // Poki's light, low in the field: the one colour, where you speak to it.
+                Ellipse().fill(light.palette.warm.opacity(0.55)).frame(height: 26).padding(.horizontal, 70).offset(y: 12).blur(radius: 14)
+            }
+            .composerGlass(in: RoundedRectangle(cornerRadius: 31, style: .continuous), tint: Paper.field)
+            .clipShape(RoundedRectangle(cornerRadius: 31, style: .continuous))
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+        }
+        .photosPicker(isPresented: $pickingPhotos, selection: $picked, maxSelectionCount: max(1, room), matching: .images)
+        .onChange(of: picked) { _, items in
+            guard !items.isEmpty else { return }
+            picked = []
+            Task {
+                let new = await PicturePicking.load(items, room: room)
+                withAnimation(.snappy(duration: 0.2)) { drafts.append(contentsOf: new.prefix(max(0, room))) }
+            }
+        }
+        .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            let new = PicturePicking.load(urls, room: room)
+            withAnimation(.snappy(duration: 0.2)) { drafts.append(contentsOf: new) }
         }
         .animation(.snappy, value: dictation.on)
+        .animation(.snappy, value: voice.isLive)
+        .onChange(of: voice.isLive, initial: true) { _, live in talkStarted = live ? Date() : nil }
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
         .onDisappear { dictation.stop(model) }
     }
 
-    @ViewBuilder private var trailing: some View {
-        HStack(spacing: 2) {
-            if running {
-                Button(action: stop) {
-                    Image(systemName: "stop.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
-                }
-                .accessibilityLabel(Text("Stop"))
-            } else {
-                // Dictation: the words appear in the field; nothing is sent until you tap Send.
-                Button { dictation.on ? dictation.stop(model) : dictation.start(model, after: input) } label: {
-                    Image(systemName: dictation.on ? "mic.fill" : "mic")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(dictation.on ? Color(.systemRed) : ChatColor.secondary)
-                        .symbolEffect(.pulse, isActive: dictation.on)
-                        .frame(width: 34, height: 40).contentShape(.rect)
-                }
-                .disabled(voice.isOn)
-                .accessibilityLabel(Text(dictation.on ? "Stop Dictation" : "Dictate"))
-                if hasText {
-                    Button(action: submit) {
-                        Image(systemName: "arrow.up.circle.fill").resizable().scaledToFit().frame(width: 30, height: 30).foregroundStyle(.white, Site.blue)
-                    }
-                    .accessibilityLabel(Text("Send"))
-                } else {
-                    // The live voice conversation: Poki listens and answers out loud. It ends 8 s after an answer if nobody speaks, in the background, or when you end it.
-                    Button {
-                        if voice.isOn { voice.stop() }
-                        else if !voice.canTalkLive {
-                            liveNote = String(localized: "Live voice needs an OpenAI API key (tap here for Model) or the voice bridge. The microphone in the field dictates with any model.")
-                        } else { liveNote = nil; dictation.stop(model); openVoice() }
-                    } label: {
-                        Image(systemName: voice.isOn ? "waveform.circle.fill" : "waveform.circle")
-                            .resizable().scaledToFit().frame(width: 30, height: 30)
-                            .foregroundStyle(voice.isOn ? AnyShapeStyle(Site.blue) : AnyShapeStyle(ChatColor.secondary))
-                            .symbolEffect(.variableColor.iterative, isActive: voice.isOn)
-                    }
-                    // A tap is felt at once, before the connection is up.
-                    .sensoryFeedback(.impact(weight: .medium), trigger: voice.isOn)
-                    .accessibilityLabel(Text(voice.isOn ? "End Live Voice" : "Live Voice"))
-                }
+    /// While you talk with Poki the field is the talk's own bar: the microphone (a tap mutes Poki's voice),
+    /// who has the word, how long it has been, and End.
+    private var talkRow: some View {
+        HStack(spacing: 10) {
+            Button { voice.muted.toggle() } label: {
+                Image(systemName: voice.muted ? "speaker.slash.fill" : "mic.fill").font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Paper.ink).frame(width: 44, height: 44).contentShape(.rect)
             }
+            .accessibilityLabel(Text(voice.muted ? "Unmute Poki’s voice" : "Mute Poki’s voice"))
+            Image(systemName: "waveform").font(.system(size: 17, weight: .semibold)).foregroundStyle(Paper.ink)
+                .symbolEffect(.variableColor.iterative, isActive: voice.phase == .hearing || voice.phase == .speaking)
+            Text(verbatim: talkWord).font(.system(size: 17, weight: .medium)).foregroundStyle(Paper.ink).lineLimit(1)
+                .contentTransition(.interpolate)
+            Spacer(minLength: 4)
+            if let talkStarted {
+                Text(talkStarted, style: .timer).font(.system(size: 15)).monospacedDigit().foregroundStyle(Paper.ink2)
+            }
+            Button { voice.stop() } label: {
+                Text("End").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.page)
+                    .padding(.horizontal, 22).frame(height: 48).background(Paper.ink, in: Capsule())
+            }
+            .buttonStyle(PressStyle())
+        }
+        .padding(.leading, 2).frame(height: 62)
+    }
+
+    private var talkWord: String {
+        switch voice.phase {
+        case .connecting: String(localized: "Connecting")
+        case .thinking: String(localized: "Working")
+        case .speaking: String(localized: "Speaking")
+        case .lost(let why): why
+        default: String(localized: "Listening")
         }
     }
 
+    /// In front of the words: add pictures, from Photos or from Files. Up to four go with one message.
+    private var attach: some View {
+        Menu {
+            Button("Photos", systemImage: "photo.on.rectangle") { pickingPhotos = true }
+            Button("Files", systemImage: "folder") { pickingFiles = true }
+        } label: {
+            Image(systemName: "plus").font(.system(size: 19, weight: .medium))
+                .foregroundStyle(Paper.ink.opacity(room > 0 ? 1 : 0.3))
+                .frame(width: 44, height: 44).contentShape(.rect)
+        }
+        .disabled(room <= 0)
+        .accessibilityLabel(Text("Add pictures"))
+    }
+
+    /// What you press is black: stop while a task runs, send once there are words, and otherwise one
+    /// button that offers the two ways to speak.
+    @ViewBuilder private var trailing: some View {
+        HStack(spacing: 4) {
+            if running {
+                Button(action: stop) { pill("stop.fill") }.accessibilityLabel(Text("Stop"))
+            } else {
+                if dictation.on {
+                    // Dictation: the words appear in the field; nothing is sent until you tap Send.
+                    Button { dictation.stop(model) } label: { pill("stop.fill") }
+                        .accessibilityLabel(Text("Stop dictation"))
+                } else if canSend {
+                    Button(action: submit) { pill("arrow.up") }.accessibilityLabel(Text("Send"))
+                } else if voice.isOn {
+                    Button { voice.stop() } label: { pill("waveform").symbolEffect(.variableColor.iterative, isActive: true) }
+                        .accessibilityLabel(Text("End live voice"))
+                } else if !dictation.on {
+                    // One black button for both ways to speak; it opens the two of them.
+                    Button { speaking = true } label: { pill("waveform") }
+                        // A tap is felt at once, before the connection is up.
+                        .sensoryFeedback(.impact(weight: .medium), trigger: voice.isOn)
+                        .accessibilityLabel(Text("Speak"))
+                        .popover(isPresented: $speaking, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                speakRow("mic.fill", String(localized: "Dictate"), String(localized: "Speak, and it becomes text"), tint: .white.opacity(0.16)) {
+                                    dictation.start(model, after: input)
+                                }
+                                // The live voice conversation: Poki listens and answers out loud.
+                                speakRow("waveform", String(localized: "Talk with Poki"), String(localized: "A live conversation, out loud"), tint: light.palette.skyLight) {
+                                    if !voice.canTalkLive {
+                                        liveNote = String(localized: "Talking with Poki needs an OpenAI key (tap here for Model) or the voice bridge. Dictate works with any model.")
+                                    } else { liveNote = nil; openVoice() }
+                                }
+                            }
+                            .padding(8)
+                            .presentationCompactAdaptation(.popover)
+                            .presentationBackground(.black)
+                        }
+                }
+            }
+        }
+        .buttonStyle(PressStyle())
+    }
+
+    private func speakRow(_ symbol: String, _ title: String, _ detail: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button { speaking = false; action() } label: {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 40, height: 40).background(tint, in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: title).font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    Text(verbatim: detail).font(.system(size: 13)).foregroundStyle(.white.opacity(0.64))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8).frame(width: 248, height: 58).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func pill(_ symbol: String) -> some View {
+        Image(systemName: symbol).font(.system(size: 17, weight: .bold))
+            .foregroundStyle(Paper.page)
+            .frame(width: 48, height: 48).background(Paper.ink, in: Circle())
+            .frame(width: 48, height: 48).contentShape(.rect)
+    }
+
     private func submit() {
-        guard !running, hasText else { return }
+        guard !running, canSend else { return }
         dictation.stop(model)
-        send(input)
+        if let sendPictures, !drafts.isEmpty { sendPictures(input, drafts.map(\.jpeg)) } else { send(input) }
         input = ""
+        drafts = []
     }
 }
 
@@ -553,6 +635,7 @@ final class FieldDictation {
     private(set) var base = ""
     private(set) var problem: String?
     private var engine: Dictation?
+    private var mock: Task<Void, Never>?
 
     func start(_ model: AppModel, after current: String) {
         guard !on else { return }
@@ -560,6 +643,20 @@ final class FieldDictation {
         let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
         base = trimmed.isEmpty ? "" : trimmed + " "
         text = ""
+        // The simulator has no microphone worth listening to: sample words arrive as speech would.
+        if VoiceModel.mockAvailable {
+            on = true
+            mock = Task { [weak self] in
+                var said = ""
+                for word in "Reorder my usual lunch from Green Bowl".split(separator: " ") {
+                    try? await Task.sleep(for: .milliseconds(320))
+                    if Task.isCancelled { return }
+                    said += (said.isEmpty ? "" : " ") + word
+                    self?.text = said
+                }
+            }
+            return
+        }
         Task {
             guard await Dictation.allowed() else {
                 problem = String(localized: "Poki needs the microphone and speech recognition: allow them in Settings › Poki.")
@@ -580,6 +677,12 @@ final class FieldDictation {
     }
 
     func stop(_ model: AppModel) {
+        if let mock {
+            mock.cancel()
+            self.mock = nil
+            on = false
+            return
+        }
         guard on, let engine else { return }
         on = false
         self.engine = nil
@@ -593,108 +696,91 @@ final class FieldDictation {
 
 // MARK: Live voice
 
-/// Under the header while a live conversation is on: whether Poki is listening, hearing you, working or
-/// speaking, and the buttons to quiet it or end it.
-struct LiveVoiceBar: View {
+/// A live talk inside a chat: one card with Poki's sky on top, who has the word, the words, and what Poki
+/// has done so far. The field under the chat carries the talk's state and End.
+struct LiveVoiceTranscript: View {
     var voice: VoiceModel
+    @AppStorage(PokiLight.key) private var light = PokiLight.firstLight.rawValue
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                .symbolEffect(.variableColor.iterative, isActive: voice.phase == .hearing || voice.phase == .speaking)
-                .frame(width: 30, height: 30).background(tint, in: .circle)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(voice.isLive ? "Live Voice" : "Voice, turn by turn").font(.system(size: 15, weight: .semibold))
-                Text(detail).font(.system(size: 13)).foregroundStyle(ChatColor.secondary).lineLimit(1)
+        if voice.isLive {
+            let colors = (PokiLight(rawValue: light) ?? .firstLight).palette
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Talking with Poki").font(.system(size: 16, weight: .semibold))
+                        if let started = voice.lines.first?.at { Text(started, style: .timer).font(Paper.note).monospacedDigit().opacity(0.8) }
+                    }
+                    Spacer()
+                    PokiBear(pose: TalkWords.pose(voice)).frame(width: 50, height: 50)
+                }
+                .foregroundStyle(.white)
+                .padding(.leading, 16).padding(.trailing, 12).frame(height: 62)
+                .background(LinearGradient(colors: [colors.deep, colors.sky], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 1.6)))
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                TalkWords(voice: voice, size: 17).padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 10)
             }
-            Spacer(minLength: 4)
-            if voice.phase == .speaking {
-                Button { voice.stopTalking() } label: { Image(systemName: "speaker.slash.fill") }
-                    .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel(Text("Stop Talking"))
-            }
-            Button("End", role: .destructive) { voice.stop() }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color(.systemRed)).controlSize(.small)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .composerGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 4)
-    }
-
-    private var symbol: String {
-        switch voice.phase {
-        case .hearing: "waveform"
-        case .thinking: "ellipsis"
-        case .speaking: "speaker.wave.2.fill"
-        case .connecting: "antenna.radiowaves.left.and.right"
-        case .lost: "exclamationmark"
-        default: "mic.fill"
-        }
-    }
-
-    private var tint: Color {
-        switch voice.phase {
-        case .hearing: Color(.systemRed)
-        case .lost: Color(.systemOrange)
-        default: Site.blue
-        }
-    }
-
-    private var detail: String {
-        switch voice.phase {
-        case .connecting: String(localized: "Connecting…")
-        case .listening: voice.isLive ? String(localized: "Listening. Just talk; Poki answers when you pause.") : String(localized: "Ready")
-        case .hearing: String(localized: "Hearing you…")
-        case .thinking: String(localized: "Working on it…")
-        case .speaking: String(localized: "Speaking")
-        case .off: String(localized: "Off")
-        case .lost(let why): why
+            .padding(6)
+            .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Paper.line, lineWidth: 1.5))
+            .padding(.top, 10)
+            .transition(.opacity)
         }
     }
 }
 
-/// What was said in the live conversation, as bubbles under the chat: your words (grey while Poki is
-/// still hearing them), Poki's answers, and its steps as grey lines.
-struct LiveVoiceTranscript: View {
+/// What a live talk shows: who has the word ("Listening" while you speak, "Poki" while it answers), the
+/// words in the large size, and under them what Poki has done since you last spoke.
+struct TalkWords: View {
     var voice: VoiceModel
+    var size: CGFloat = 22
+
+    /// Poki's pose for the moment of the talk.
+    static func pose(_ voice: VoiceModel) -> String {
+        switch voice.phase {
+        case .speaking: "speak"
+        case .thinking: "think"
+        default: "listen"
+        }
+    }
 
     var body: some View {
-        if voice.isOn || !voice.lines.isEmpty {
-            let lines = voice.lines
-            VStack(spacing: 4) {
-                if !lines.isEmpty {
-                    Label("Voice conversation", systemImage: "waveform")
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(ChatColor.secondary)
-                        .padding(.top, 12).padding(.bottom, 4).frame(maxWidth: .infinity)
+        let lines = voice.lines
+        // The owner has the word from their last line until Poki answers it, through whatever Poki does
+        // in between.
+        let you = lines.lastIndex { $0.role == .you }, poki = lines.lastIndex { $0.role == .poki }
+        let yours = you.flatMap { $0 > (poki ?? -1) ? lines[$0].text : nil }
+        let pokis = poki.map { lines[$0].text }
+        // What Poki did after the owner's last words.
+        let done = lines[((lines.lastIndex { $0.role == .you } ?? -1) + 1)...].filter { $0.role == .tool }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(yours != nil || pokis == nil ? "Listening" : "Poki").font(Paper.header).foregroundStyle(Paper.ink2)
+            Text(verbatim: yours ?? pokis ?? String(localized: "Go ahead."))
+                .font(.system(size: size, weight: .semibold)).tracking(size > 20 ? -0.4 : 0)
+                .foregroundStyle(yours == nil && pokis != nil ? Paper.ink : Paper.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.interpolate)
+            ForEach(done) { line in
+                HStack(spacing: 10) {
+                    PaperMark(kind: .done, size: 20)
+                    Text(verbatim: ActivityWords.label(line.text)).font(.system(size: 15)).foregroundStyle(Paper.ink)
                 }
-                ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
-                    let pending = i == lines.count - 1 && line.role == .you && voice.phase == .hearing
-                    switch line.role {
-                    case .you:
-                        MessageBubble(direction: .outgoing, text: line.text, tail: true).opacity(pending ? 0.55 : 1)
-                    case .poki:
-                        MessageBubble(direction: .incoming, text: line.text, tail: true)
-                    case .tool, .note:
-                        Text(line.text).font(.system(size: 12)).foregroundStyle(ChatColor.secondary)
-                            .multilineTextAlignment(.center).lineLimit(2).padding(.vertical, 3).frame(maxWidth: .infinity)
-                    }
-                }
-                if voice.phase == .hearing, lines.last?.role != .you {
-                    MessageBubble(direction: .outgoing, text: String(localized: "Listening…"), tail: true).opacity(0.55)
-                }
+                .padding(.top, 4)
+                .transition(.opacity.combined(with: .offset(y: 6)))
             }
-            .animation(PlanMotion.enter, value: voice.lines)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.snappy(duration: 0.25), value: lines)
     }
 }
 
 extension View {
-    /// Liquid Glass on iOS 26 and later; the bar material with a hairline edge before it.
-    @ViewBuilder func composerGlass<S: Shape>(in shape: S) -> some View {
+    /// Liquid Glass on iOS 26 and later; before it, the bar material with a hairline edge. A tint colours
+    /// either one, as the message field's blue does.
+    @ViewBuilder func composerGlass<S: Shape>(in shape: S, tint: Color? = nil) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: shape)
+            self.glassEffect(.regular.tint(tint).interactive(), in: shape)
         } else {
-            self.background(.bar, in: shape).overlay(shape.stroke(ChatColor.fieldEdge, lineWidth: 0.5))
+            self.background(tint ?? .clear, in: shape).background(.bar, in: shape).overlay(shape.stroke(ChatColor.fieldEdge, lineWidth: 0.5))
         }
     }
 }

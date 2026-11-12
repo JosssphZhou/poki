@@ -551,15 +551,41 @@ final class AppModel {
 
     /// The one thing to do for the local connection, for the person, as the installer says it.
     var loopbackSentence: String {
-        if tunnel.available { return "In Poki, open Setup > Connect to this iPhone and turn on Poki's own connection." }
+        if tunnel.available { return "In Poki, open Settings > Connection > Loopback and turn on Poki's own connection." }
         guard let app = ProxyApps.all.first(where: \.isInstalled) else {
-            return "Install a VPN app that can reach 10.7.0.1 (Karing, Surge, Loon or Shadowrocket), then in Poki open Setup > Connect to this iPhone."
+            return "Install a VPN app that can reach 10.7.0.1 (Karing, Surge, Loon or Shadowrocket), then in Poki open Settings > Connection > Loopback."
         }
         switch app.install {
-        case .url: return "In Poki, open Setup > Connect to this iPhone > \(app.name), tap Install, then confirm in \(app.name)."
+        case .url: return "In Poki, open Settings > Connection > Loopback > \(app.name), tap Install, then confirm in \(app.name)."
         case .toggle(let setting): return "In \(app.name), set \(setting), and keep \(app.name) connected."
-        case .snippet: return "In Poki, open Setup > Connect to this iPhone > \(app.name) and add the lines it shows to \(app.name)."
+        case .snippet: return "In Poki, open Settings > Connection > Loopback > \(app.name) and add the lines it shows to \(app.name)."
         }
+    }
+
+    /// The Live Activity follows a talk with Poki: while one is on it shows the open microphone, in front
+    /// and while a step of the talk has Poki working in another app. A talk needs a model and not Poki
+    /// being on, so the activity is started for it and ended with it when Poki is off.
+    private func watchTalk() {
+        withObservationTracking { _ = voice.isLive } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let live = self.voice.isLive
+                if live { self.activity.start(deviceName: self.deviceName) }
+                self.activity.update { $0.talking = live ? true : nil }
+                // Setup's own activity (a pairing code, a step's guide) is not the talk's to end.
+                if !live, !self.sessionOn, self.activity.state.phase != .setup { self.activity.end() }
+                self.watchTalk()
+            }
+        }
+        #if DEBUG && targetEnvironment(simulator)
+        // The scripted talk shows its steps as a real task would.
+        voice.mockStep = { [weak self] label in
+            self?.activity.update { state in
+                if let label { state.phase = .working; state.headline = label; state.app = "Calendar" }
+                else if state.phase == .working { state.phase = .idle; state.headline = "Waiting for agent"; state.app = nil }
+            }
+        }
+        #endif
     }
 
     /// In the background the loopback is still watched while Poki is on (the agent's runner depends on
@@ -1336,6 +1362,15 @@ final class AppModel {
         CFNotificationCenterAddObserver(center, observer, { _, observer, _, _, _ in
             guard let observer else { return }
             let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
+            Task { @MainActor in
+                model.log.add("voice", "the talk was ended from the Live Activity")
+                model.voice.stop()
+            }
+        }, ApprovalMailbox.endTalk as CFString, nil, .deliverImmediately)
+        watchTalk()
+        CFNotificationCenterAddObserver(center, observer, { _, observer, _, _, _ in
+            guard let observer else { return }
+            let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
             Task { @MainActor in model.handoffDone() }
         }, ApprovalMailbox.handoffDone as CFString, nil, .deliverImmediately)
     }
@@ -1626,7 +1661,7 @@ final class AppModel {
 
     var setupComplete: Bool { SetupStep.shown.allSatisfy(isDone) }
 
-    /// A step as Home, the tab badge and the status pill show it: the loopback's first check after
+    /// A step as the Chats page and the card in Settings show it: the loopback's first check after
     /// launch (a connection was chosen before) counts as done until it says otherwise, so Poki shows
     /// Ready rather than Paused and a warning for the second it takes. The Setup page keeps isDone.
     func looksDone(_ step: SetupStep) -> Bool {
