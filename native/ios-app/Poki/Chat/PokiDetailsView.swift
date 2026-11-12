@@ -417,10 +417,21 @@ struct HandsView: View {
 /// under the hood (diagnostics, the log, testing options).
 struct HealthView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(AppAppearance.defaultsKey) private var appearance: AppAppearance = .system
 
     var body: some View {
         List {
             Section {
+                Picker(selection: $appearance) {
+                    Text("Follow System").tag(AppAppearance.system)
+                    Text("Light").tag(AppAppearance.light)
+                    Text("Dark").tag(AppAppearance.dark)
+                } label: {
+                    SettingsLabel("Appearance", systemImage: "circle.lefthalf.filled")
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("moreSettings.appearance")
+
                 // Main's "Updates" (the version, a new build, signing until and Signing Options), by its own name.
                 NavigationLink(value: DetailsRoute.updates) {
                     LabeledContent {

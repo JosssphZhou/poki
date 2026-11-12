@@ -1,8 +1,10 @@
 import PokiCore
 import SwiftUI
+import UIKit
 
 @main
 struct PokiApp: App {
+    @AppStorage(AppAppearance.defaultsKey) private var appearance: AppAppearance = .system
     @State private var model: AppModel
     @State private var chat: ChatModel
 
@@ -41,6 +43,43 @@ struct PokiApp: App {
     var body: some Scene {
         WindowGroup {
             RootView().environment(model).environment(chat)
+                .background {
+                    WindowAppearance(style: appearance.interfaceStyle)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+        }
+    }
+}
+
+/// Apply the trait to this scene's window, including native presentations. Explicitly clearing the
+/// window override lets an already-presented Settings page follow iOS again immediately.
+private struct WindowAppearance: UIViewRepresentable {
+    let style: UIUserInterfaceStyle
+
+    func makeUIView(context: Context) -> Anchor {
+        let anchor = Anchor()
+        anchor.style = style
+        return anchor
+    }
+
+    func updateUIView(_ anchor: Anchor, context: Context) {
+        anchor.style = style
+    }
+
+    final class Anchor: UIView {
+        var style: UIUserInterfaceStyle = .unspecified {
+            didSet { applyStyle() }
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            applyStyle()
+        }
+
+        private func applyStyle() {
+            guard let window, window.overrideUserInterfaceStyle != style else { return }
+            window.overrideUserInterfaceStyle = style
         }
     }
 }
