@@ -292,3 +292,99 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertTrue(failed.contains("owner needs to enter the iPhone passcode"), failed)
     }
 }
+
+/// Issue 208: Poki's own session did not open because the developer disk image's XCTest library
+/// would not load (developer_framework_unavailable), and the agent was told to have the owner enter
+/// the passcode. Poki starts the launcher again by itself, which mounts the image where it is
+/// missing, and the agent is told to wait. Where no retry can help, the agent hears it at once.
+@MainActor
+final class InProcessRepairTests: XCTestCase {
+    private var saved: (relay: String?, relayEnabled: Any?, setup: SetupState, gate: InProcessWDA.OpenGate)!
+    private var model: AppModel!
+    private var launcher: FakeLauncher!
+    private var session: FakeAutomation!
+    /// The 208 log cuts the loader's error off after "dlopen(/System/Developer/u"; the rest is a stand-in.
+    private let frameworkUnavailable: [String: Any] = ["ok": false, "code": "developer_framework_unavailable",
+        "detail": "developer_framework_unavailable (dlopen(/System/Developer/usr/lib/lib_TestingInterop.dylib, 0x000A): the loader's reason)", "seconds": 0.03]
+
+    override func setUp() async throws {
+        try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
+        saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load(), InProcessWDA.gate.withLock { $0 })
+        session = FakeAutomation()
+        launcher = FakeLauncher()
+        model = AppModel(launcher: launcher, pairer: FakePairing(), automation: session)
+        model.loopback.simulate(.working(ms: 9))
+        model.setup.loopback = .proxy
+        XCTAssertTrue(model.setRelay("https://relay.invalid"))
+        model.startSession()
+        XCTAssertTrue(model.sessionOn)
+    }
+
+    override func tearDown() async throws {
+        session?.answer(nil)
+        guard let saved, let model else { return }
+        model.stopSession()
+        UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
+        UserDefaults.standard.set(saved.relayEnabled, forKey: "relayEnabled")
+        saved.setup.save()
+        InProcessWDA.gate.withLock { $0 = saved.gate }
+    }
+
+    private func waitFor(_ what: String, _ condition: @escaping () -> Bool) async {
+        let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+        done.expectationDescription = what
+        await fulfillment(of: [done], timeout: 5)
+    }
+
+    /// The launcher runs (the disk image is mounted), so Poki opens its session.
+    private func launcherRunning() async {
+        model.wakeRunner()
+        // On the simulator the launcher is WebDriverAgent on the Mac; its answer comes first.
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+    }
+
+    func testAFrameworkThatWouldNotLoadIsOpenedAgainAfterTheLauncherStartsAgain() async {
+        session.holdNextOpen()
+        await launcherRunning()
+        let restartsBefore = launcher.restarts
+        session.answer(frameworkUnavailable)
+
+        await waitFor("Poki starts the launcher again by itself, which mounts the developer disk image") { self.launcher.restarts > restartsBefore }
+        let waiting = model.host.currentRunner.describe
+        XCTAssertTrue(waiting.hasPrefix("starting"), "the agent waits while Poki tries again: \(waiting)")
+        XCTAssertFalse(waiting.contains("passcode"), waiting)
+
+        model.runnerChanged(RunnerStatus(state: "connecting"))
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the session opened on the second try") { self.model.host.currentRunner.isRunning }
+    }
+
+    /// Cellular only: the loopback does not answer, so a launcher started again could not reconnect,
+    /// while the one running lets the session open. A failed open is answered at once, as before
+    /// Poki tried again by itself, and the launcher is left running.
+    func testWithoutTheLoopbackAFailedOpenIsAnsweredAtOnceAndTheLauncherKeepsRunning() async {
+        session.holdNextOpen()
+        await launcherRunning()
+        model.loopback.simulate(.noAnswer)
+        let restartsBefore = launcher.restarts
+        session.answer(frameworkUnavailable)
+
+        await waitFor("the agent hears the failure at once") { self.model.host.currentRunner.describe.hasPrefix("failed") }
+        XCTAssertEqual(launcher.restarts, restartsBefore, "the launcher is not started again without the loopback")
+    }
+
+    /// iOS asks for the passcode before the first automation of a boot, only with Poki open, so an
+    /// open from the background is refused (open_poki_first). Only the owner changes that: the agent
+    /// is told at once to have them open Poki, and the launcher is left running.
+    func testAnOpenRefusedWithPokiInTheBackgroundAsksTheOwnerToOpenPoki() async {
+        InProcessWDA.gate.withLock { $0.startedThisBoot = false; $0.inFront = false }
+        let restartsBefore = launcher.restarts
+        await launcherRunning()
+
+        await waitFor("the agent hears the refusal at once") { self.model.host.currentRunner.describe.hasPrefix("failed") }
+        let text = model.host.currentRunner.describe
+        XCTAssertTrue(text.contains("Open Poki and, if iOS asks, enter the passcode"), text)
+        XCTAssertEqual(launcher.restarts, restartsBefore, "nothing is started again for a refusal")
+    }
+}
