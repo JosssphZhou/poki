@@ -315,7 +315,8 @@ final class VoiceModel {
 
     /// Voice can start: the OpenAI key on this iPhone (Realtime, no bridge), the Mac's voice bridge, or
     /// dictation into the chat with whichever model Poki uses.
-    var canTalk: Bool { VoiceDirect.apiKey != nil || bridge != nil || VoiceDirect.canDictate }
+    private var canDictate: Bool { (AskPoki.chat?.selection ?? ModelKeys.defaultSelection).route != nil }
+    var canTalk: Bool { VoiceDirect.apiKey != nil || bridge != nil || canDictate }
 
     /// A live (Realtime) conversation can start: the OpenAI key on this iPhone or the voice bridge.
     /// Without one, voice is dictation into the message field, turn by turn.
@@ -328,7 +329,8 @@ final class VoiceModel {
     var route: String {
         if VoiceDirect.apiKey != nil { return String(localized: "Your OpenAI key, straight from this iPhone") }
         if let bridge { return String(localized: "Voice bridge at \(bridge.display)") }
-        if VoiceDirect.canDictate { return String(localized: "Dictation to \(ModelKeys.selectedModelName); Poki reads the answer aloud") }
+        let selection = AskPoki.chat?.selection ?? ModelKeys.defaultSelection
+        if selection.route != nil { return String(localized: "Dictation to \(selection.displayName), Poki reads the answer aloud") }
         return String(localized: "Not set up")
     }
 
@@ -367,7 +369,7 @@ final class VoiceModel {
         // The OpenAI key on this iPhone first (no Mac needed), then the bridge, then dictation.
         let key = VoiceDirect.apiKey
         if key == nil, bridge == nil {
-            if VoiceDirect.canDictate, microphone { await startDictation() } else { phase = .lost(VoiceError.noBridge.localizedDescription) }
+            if canDictate, microphone { await startDictation() } else { phase = .lost(VoiceError.noBridge.localizedDescription) }
             return
         }
         phase = .connecting

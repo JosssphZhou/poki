@@ -43,10 +43,14 @@ enum ApprovalClassifier {
     }
 
     /// A chat model with a key: without one there is nobody to ask.
-    static var hasModel: Bool {
-        let provider = ModelKeys.selectedProvider
-        return provider.wired && (ModelKeys.key(provider) != nil || provider == .custom) && provider.piModel(ModelKeys.selectedModel) != nil
+    static var modelRoute: ModelRoute? {
+        if let chat = AskPoki.chat, chat.running || chat.activeRoute != nil {
+            return chat.activeRoute
+        }
+        return ModelKeys.defaultSelection.route
     }
+
+    static var hasModel: Bool { modelRoute != nil }
 
     /// Who answers an approval first.
     enum Route: Equatable {
@@ -130,21 +134,20 @@ enum ApprovalClassifier {
     /// The latest decisions by approval id, for the chat's grey line.
     private(set) static var verdicts: [String: Verdict] = [:]
 
-    static func decide(_ approval: PendingApproval, level: Level, voice: [VoiceLine]) async -> Verdict {
-        let verdict = await ask(approval, level: level, voice: voice)
+    static func decide(_ approval: PendingApproval, level: Level, voice: [VoiceLine], route: ModelRoute?) async -> Verdict {
+        let verdict = await ask(approval, level: level, voice: voice, route: route)
         verdicts[approval.id] = verdict
         if verdicts.count > 50 { verdicts.removeAll() }
         return verdict
     }
 
-    private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine]) async -> Verdict {
-        let provider = ModelKeys.selectedProvider
-        guard provider.wired, ModelKeys.key(provider) != nil || provider == .custom,
-              let model = provider.piModel(ModelKeys.selectedModel) else {
+    private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine], route: ModelRoute?) async -> Verdict {
+        guard let route else {
             return Verdict(allowed: false, reason: "no chat model to ask")
         }
-        var said: [String] = AskPoki.chat?.ownerContext ?? []
-        for line in voice.suffix(12) {
+        let chat = AskPoki.chat
+        var said = chat?.activeRoute?.sameAccount(as: route) == true ? chat?.ownerContext ?? [] : []
+        for line in (chat?.activeRoute == nil ? voice.suffix(12) : []) {
             switch line.role {
             case .you: said.append("Owner (live call): \(line.text)")
             case .poki: said.append("Assistant (live call): \(line.text)")
@@ -162,7 +165,7 @@ enum ApprovalClassifier {
         Conversation, oldest first:
         \(String(conversation.suffix(4000)))
         """
-        let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
+        let loop = PiLoop(route: route, tools: []) { _ in
             .init(text: "No tools.", jpeg: nil, isError: true)
         }
         // The first of the model's reply and the deadline answers; a late reply is dropped.

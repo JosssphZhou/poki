@@ -100,7 +100,7 @@ final class ComposerReturnTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = CGRect(x: 0, y: 0, width: 393, height: 200)
-        window.rootViewController = UIHostingController(rootView: Host(draft: draft).environment(app))
+        window.rootViewController = UIHostingController(rootView: Host(draft: draft).environment(app).environment(ChatModel(app: app)))
         window.makeKeyAndVisible()
         self.window = window
         settle { Self.textView(in: window) != nil }

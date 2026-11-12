@@ -22,6 +22,7 @@ struct PokiApp: App {
             UINavigationBar.appearance().titleTextAttributes = [.font: inline]
         }
         #if DEBUG && targetEnvironment(simulator)
+        ModelTestTransport.installIfGiven()
         TestCredential.importIfGiven()
         #endif
         // A memory backup Poki Setup put back (Documents/AgentBackup) is merged in before any agent asks.

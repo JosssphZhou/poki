@@ -1159,6 +1159,7 @@ struct ModeLabels: View {
 // stops.
 struct ComposerInputView: View {
     @Environment(AppModel.self) private var model
+    @Environment(ChatModel.self) private var chat
     /// The message being written; the greeting's suggestions fill it.
     @Binding var input: String
     /// The message field has the keyboard; the home page's suggestions set it.
@@ -1254,7 +1255,12 @@ struct ComposerInputView: View {
             Divider()
             Button("Dictate", systemImage: "mic") { dictation.start(model, after: input) }.disabled(voice.isOn || dictation.on)
             hands
-            modelMenu
+            if running {
+                Text("Model selection is available when the task ends.")
+                    .accessibilityIdentifier("composer.model.busy")
+            } else {
+                modelMenu
+            }
             Divider()
             Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
             Button("Poki Details", systemImage: "gearshape", action: openDetails)
@@ -1273,21 +1279,22 @@ struct ComposerInputView: View {
     /// set up and the voice model. With no account yet it is a plain button straight to adding one.
     @ViewBuilder private var modelMenu: some View {
         // A screenshot's sample scene shows the menu as it reads with an account, whatever the simulator has.
-        if ModelKeys.hasUsableKey || sample {
+        if !ModelProfiles.shared.all.isEmpty || !ChatGPTProfiles.shared.all.isEmpty || sample {
             Menu {
-                ForEach(ModelProvider.allCases.filter { ModelAccounts.isSetUp($0) && ModelAccounts.canChat($0) }) { provider in
-                    Section(provider.name) {
-                        ForEach(ModelCatalog.available(provider)) { choice in
-                            Button {
-                                ModelKeys.selectedProvider = provider
-                                ModelKeys.selectedModel = choice.id
-                                ModelKeys.saved += 1
-                            } label: {
-                                if ModelKeys.selectedProvider == provider && ModelKeys.selectedModel == choice.id { Label(choice.name, systemImage: "checkmark") } else { Text(choice.name) }
+                ForEach(ModelProvider.allCases.filter(ModelAccounts.isSetUp)) { provider in
+                    Menu(provider.name) {
+                        if provider == .chatgpt {
+                            ForEach(ChatGPTProfiles.shared.all) { profile in
+                                profileMenu(provider, id: profile.id, title: profile.title)
+                            }
+                        } else {
+                            ForEach(ModelProfiles.shared.all.filter { $0.provider == provider }) { profile in
+                                profileMenu(provider, id: profile.id, title: profile.title)
                             }
                         }
                     }
                 }
+                Button("Accounts and Models", systemImage: "person.crop.circle", action: openModel)
                 if VoiceDirect.apiKey != nil {
                     Menu("Voice Model \(VoiceDirect.model)", systemImage: "waveform") {
                         ForEach(ModelCatalog.voiceAvailable) { choice in
@@ -1298,12 +1305,32 @@ struct ComposerInputView: View {
                     }
                 }
             } label: {
-                Label("Chat Model \(ModelKeys.selectedModelName)", systemImage: "cpu")
+                Label("Chat Model \(chat.selection.displayName)", systemImage: "cpu")
             }
             .id(modelVersion)
+            .accessibilityIdentifier("composer.model")
+            .disabled(running)
         } else {
             Button("Add Model", systemImage: "plus", action: openModel)
                 .accessibilityIdentifier("composer.addModel")
+        }
+    }
+
+    private func profileMenu(_ provider: ModelProvider, id: UUID, title: String) -> some View {
+        let choices = ModelProfiles.shared.available(id)
+        return Menu {
+            ForEach(choices) { choice in
+                let selection = ModelSelection(provider: provider, modelID: choice.id, profileID: id)
+                Button { chat.selectModel(selection) } label: {
+                    Label(choice.name, systemImage: chat.selection == selection ? "checkmark.circle.fill" : "circle")
+                }
+                .disabled(running)
+                .accessibilityAddTraits(chat.selection == selection ? .isSelected : [])
+            }
+            if choices.isEmpty { Text("No available models. Check this profile in Accounts.") }
+        } label: {
+            Label(choices.isEmpty ? "\(title) (\(String(localized: "Unavailable")))" : title,
+                  systemImage: chat.selection.profileID == id && choices.contains { $0.id == chat.selection.modelID } ? "checkmark.circle.fill" : "circle")
         }
     }
 

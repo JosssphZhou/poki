@@ -4,6 +4,7 @@ import Foundation
 /// as GPT-6.1 Terra and Claude Haiku first), plus whatever the provider's own model list returns for
 /// the owner's key, which start switched off. The owner switches models on and off in Accounts ›
 /// the account › Text Chat; the chat's model menu offers only the ones switched on.
+@MainActor
 enum ModelCatalog {
     /// The defaults, switched on until the owner turns them off.
     static func defaults(_ provider: ModelProvider) -> Set<String> {
@@ -13,40 +14,8 @@ enum ModelCatalog {
         case .deepseek: ["deepseek-flash"]
         case .gemini: ["gemini-3.8-flash"]
         case .openrouter: ["anthropic/claude-sonnet-5.5", "google/gemini-3.8-flash"]
-        case .custom: Set(provider.models.map(\.id))
+        case .custom: []
         }
-    }
-
-    /// The account's models: the built-in ones, fast first, then the listed ones.
-    static func all(_ provider: ModelProvider) -> [ChatModelChoice] {
-        let builtIn = provider.models.sorted { fast($0.id) && !fast($1.id) }
-        let known = Set(builtIn.map(\.id))
-        return builtIn + listed(provider).filter { !known.contains($0.id) }
-    }
-
-    static func available(_ provider: ModelProvider) -> [ChatModelChoice] {
-        let on = enabled(provider)
-        return all(provider).filter { on.contains($0.id) }
-    }
-
-    static func enabled(_ provider: ModelProvider) -> Set<String> {
-        if let saved = UserDefaults.standard.stringArray(forKey: "models.enabled.\(provider.rawValue)") { return Set(saved) }
-        return defaults(provider)
-    }
-
-    static func set(_ id: String, on: Bool, for provider: ModelProvider) {
-        var ids = enabled(provider)
-        if on { ids.insert(id) } else { ids.remove(id) }
-        UserDefaults.standard.set(Array(ids), forKey: "models.enabled.\(provider.rawValue)")
-        // The chat's model is always one that is switched on.
-        if ModelKeys.selectedProvider == provider, !ids.contains(ModelKeys.selectedModel), let first = available(provider).first {
-            ModelKeys.selectedModel = first.id
-        }
-        ModelKeys.saved += 1
-    }
-
-    static func listed(_ provider: ModelProvider) -> [ChatModelChoice] {
-        (UserDefaults.standard.stringArray(forKey: "models.listed.\(provider.rawValue)") ?? []).map { ChatModelChoice(id: $0, name: $0) }
     }
 
     /// No-thinking, fast models first: Terra, Haiku, Flash.
@@ -54,25 +23,13 @@ enum ModelCatalog {
         ["terra", "haiku", "flash", "mini"].contains { id.lowercased().contains($0) }
     }
 
-    /// Reads the provider's model list with the owner's key (sent only to that provider).
-    static func refresh(_ provider: ModelProvider) async throws -> Int {
-        guard let request = request(provider) else { return 0 }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else { throw URLError(.badServerResponse) }
-        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        let items = (json?["data"] as? [[String: Any]]) ?? (json?["models"] as? [[String: Any]]) ?? []
-        var ids = items.compactMap { ($0["id"] as? String) ?? ($0["name"] as? String) }
+    static func decodeModels(_ data: Data, provider: ModelProvider) throws -> [ChatModelChoice] {
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let items = (json?["data"] as? [[String: Any]]) ?? (json?["models"] as? [[String: Any]]) else { throw URLError(.cannotParseResponse) }
+        let ids = items.compactMap { ($0["id"] as? String) ?? ($0["name"] as? String) }
             .map { $0.hasPrefix("models/") ? String($0.dropFirst(7)) : $0 }
             .filter { usable($0, provider) }
-        if provider == .openai {
-            let voice = items.compactMap { $0["id"] as? String }.filter { $0.contains("realtime") && !$0.contains("transcribe") }.sorted()
-            UserDefaults.standard.set(voice, forKey: "models.listed.voice")
-        }
-        ids = Array(Set(ids)).sorted { fast($0) == fast($1) ? $0 < $1 : fast($0) }
-        UserDefaults.standard.set(ids, forKey: "models.listed.\(provider.rawValue)")
-        ModelKeys.saved += 1
-        return ids.count
+        return Set(ids).sorted().map { ChatModelChoice(id: $0, name: $0) }
     }
 
     /// Chat models only: no embeddings, speech, images or moderation.
@@ -88,8 +45,7 @@ enum ModelCatalog {
         }
     }
 
-    private static func request(_ provider: ModelProvider) -> URLRequest? {
-        let key = ModelKeys.key(provider)
+    static func request(_ provider: ModelProvider, key: String?, endpoint: String? = nil) -> URLRequest? {
         var request: URLRequest
         switch provider {
         case .openai:
@@ -113,7 +69,7 @@ enum ModelCatalog {
             request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/models")!)
             if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         case .custom:
-            let base = ModelKeys.customURL.trimmingCharacters(in: .whitespaces)
+            let base = (endpoint ?? ModelKeys.customURL).trimmingCharacters(in: .whitespaces)
             guard let url = URL(string: base)?.appending(path: "models") else { return nil }
             request = URLRequest(url: url)
             if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
@@ -131,18 +87,26 @@ enum ModelCatalog {
     static let voiceDefault = "gpt-realtime-2.1"
 
     static var voiceAll: [ChatModelChoice] {
-        let listed = (UserDefaults.standard.stringArray(forKey: "models.listed.voice") ?? []).filter { $0 != voiceDefault }
+        let listed = (VoiceDirect.profileID.flatMap { ModelProfiles.shared.profile($0)?.voiceModels } ?? []).filter { $0 != voiceDefault }
         return [ChatModelChoice(id: voiceDefault, name: "GPT Realtime 2.1")] + listed.map { ChatModelChoice(id: $0, name: $0) }
     }
 
+    private static func voiceSetting(_ key: String) -> String {
+        guard let id = VoiceDirect.profileID else { return key }
+        return "\(key).\(id.uuidString)"
+    }
+
     static var voiceEnabled: Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: "models.enabled.voice") ?? [voiceDefault])
+        if let saved = UserDefaults.standard.stringArray(forKey: voiceSetting("models.enabled.voice")) { return Set(saved) }
+        if let id = VoiceDirect.profileID, ModelProfiles.shared.profile(id)?.legacy == true,
+           let legacy = UserDefaults.standard.stringArray(forKey: "models.enabled.voice") { return Set(legacy) }
+        return [voiceDefault]
     }
 
     static func setVoice(_ id: String, on: Bool) {
         var ids = voiceEnabled
         if on { ids.insert(id) } else { ids.remove(id) }
-        UserDefaults.standard.set(Array(ids), forKey: "models.enabled.voice")
+        UserDefaults.standard.set(Array(ids), forKey: voiceSetting("models.enabled.voice"))
         if !ids.contains(voiceModel) { voiceModel = voiceAll.first { ids.contains($0.id) }?.id ?? voiceDefault }
         ModelKeys.saved += 1
     }
@@ -152,9 +116,11 @@ enum ModelCatalog {
     /// The live voice model.
     static var voiceModel: String {
         get {
-            let saved = UserDefaults.standard.string(forKey: "voice.model") ?? voiceDefault
+            let legacy = VoiceDirect.profileID.flatMap { ModelProfiles.shared.profile($0) }?.legacy == true
+                ? UserDefaults.standard.string(forKey: "voice.model") : nil
+            let saved = UserDefaults.standard.string(forKey: voiceSetting("voice.model")) ?? legacy ?? voiceDefault
             return voiceEnabled.contains(saved) ? saved : voiceAvailable.first?.id ?? voiceDefault
         }
-        set { UserDefaults.standard.set(newValue, forKey: "voice.model"); ModelKeys.saved += 1 }
+        set { UserDefaults.standard.set(newValue, forKey: voiceSetting("voice.model")); ModelKeys.saved += 1 }
     }
 }

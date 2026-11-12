@@ -1366,8 +1366,9 @@ final class AppModel {
                 // The chat model checks it first: no Live Activity card, no notification, no tap. The chat shows it.
                 checking.append(approval)
                 log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); asking the auto-classifier")
+                let route = ApprovalClassifier.modelRoute
                 Task { [weak self] in
-                    let verdict = await ApprovalClassifier.decide(approval, level: ApprovalClassifier.Level.saved, voice: self?.voice.lines ?? [])
+                    let verdict = await ApprovalClassifier.decide(approval, level: ApprovalClassifier.Level.saved, voice: self?.voice.lines ?? [], route: route)
                     guard let self, self.checking.contains(where: { $0.id == approval.id }) else { return }
                     self.log.add("approval", "auto-classifier \(verdict.allowed ? "allowed" : "refused") \(approval.id): \(verdict.reason)")
                     if verdict.allowed || reply {

@@ -11,6 +11,7 @@ import XCTest
 final class ChatHarnessTests: XCTestCase {
     private var saved: [String: Any?] = [:]
     private var app: AppModel?
+    private var profileIDs: [UUID] = []
     private var notes: [String] = []
     private static let settings = ["chat.provider", "chat.customURL", "chat.customModel"]
 
@@ -21,6 +22,7 @@ final class ChatHarnessTests: XCTestCase {
     override func tearDown() async throws {
         for key in Self.settings { UserDefaults.standard.set(saved[key] ?? nil, forKey: key) }
         for text in notes { _ = await app?.runTool("routines", arguments: Self.json(["action": "forget_note", "id": text])) }
+        for id in profileIDs { try ModelProfiles.shared.remove(id) }
         ChatModel.afterTask = nil
     }
 
@@ -29,7 +31,10 @@ final class ChatHarnessTests: XCTestCase {
     private func chat(on server: FakeCompletions) -> ChatModel {
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
         ModelKeys.customModel = "fake-model"
-        ModelKeys.selectedProvider = .custom
+        let profile = try! ModelProfiles.shared.save(nil, provider: .custom, label: "Fixture \(UUID())", key: nil,
+                                                    endpoint: ModelKeys.customURL, model: ModelKeys.customModel)
+        profileIDs.append(profile.id)
+        ModelProfiles.shared.choose(profile.id)
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         app.inProcessReadyForProbe()
         self.app = app
@@ -38,6 +43,28 @@ final class ChatHarnessTests: XCTestCase {
 
     private static func json(_ object: [String: Any]) -> String {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+    }
+
+    func testSwitchingConnectionsKeepsVisibleHistoryWithoutSendingItToAnotherEndpoint() async throws {
+        let first = try FakeCompletions(replies: [FakeCompletions.text("First answer")])
+        let second = try FakeCompletions(replies: [FakeCompletions.text("Second answer")])
+        let chat = chat(on: first)
+        let privateText = "private-first-connection-\(UUID())"
+        _ = await chat.runDelegated(privateText)
+        let profile = try ModelProfiles.shared.save(nil, provider: .custom, label: "Second fixture \(UUID())", key: "fixture-second",
+                                                   endpoint: "http://127.0.0.1:\(second.port)/v1", model: "fake-model")
+        profileIDs.append(profile.id)
+        chat.selectModel(.init(provider: .custom, modelID: "fake-model", profileID: profile.id))
+        _ = await chat.runDelegated("new connection question")
+        XCTAssertEqual(first.requests.count, 1)
+        XCTAssertEqual(second.requests.count, 1)
+        XCTAssertFalse(first.requestHeaders.joined().lowercased().contains("authorization:"))
+        XCTAssertTrue(second.requestHeaders.joined().lowercased().contains("authorization: bearer fixture-second"))
+        let payload = String(decoding: try JSONSerialization.data(withJSONObject: second.requests), as: UTF8.self)
+        XCTAssertFalse(payload.contains(privateText))
+        XCTAssertFalse(payload.contains("First answer"))
+        XCTAssertTrue(chat.ownerContext.contains { $0.contains("new connection question") })
+        XCTAssertTrue(chat.entries.contains { entry in if case .request(let text, _) = entry.kind { return text == privateText }; return false })
     }
 
     /// A note the agent saved during one task reaches the model with the next task of the same
@@ -122,13 +149,13 @@ final class ChatHarnessTests: XCTestCase {
         while chat.awaitingModel { try await Task.sleep(for: .milliseconds(50)) }
         let stopped = ContinuousClock.now
         chat.stop()
-        XCTAssertEqual(said().last, "Stopping…")
+        XCTAssertEqual(said().last, String(localized: "Stopping…"))
         while chat.savedCalls.isEmpty, ContinuousClock.now - stopped < .seconds(20) { try await Task.sleep(for: .milliseconds(100)) }
         let after = ContinuousClock.now - stopped
         XCTAssertLessThan(after, .seconds(3), "the do call ended \(after) after Stop")
-        while said().last != "Stopped.", ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
-        XCTAssertEqual(said().last, "Stopped.")
-        XCTAssertFalse(said().contains("Stopping…"))
+        while said().last != String(localized: "Stopped."), ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertEqual(said().last, String(localized: "Stopped."))
+        XCTAssertFalse(said().contains(String(localized: "Stopping…")))
     }
 
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
@@ -151,9 +178,11 @@ final class FakeCompletions: @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [String]
     private var bodies: [[String: Any]] = []
+    private var heads: [String] = []
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
     var requests: [[String: Any]] { lock.withLock { bodies } }
+    var requestHeaders: [String] { lock.withLock { heads } }
 
     init(replies: [String]) throws {
         self.replies = replies
@@ -178,7 +207,12 @@ final class FakeCompletions: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [weak self] data, _, done, error in
             guard let self else { return }
             let received = received + (data ?? Data())
-            if let body = Self.body(received) { return self.answer(connection, body) }
+            if let body = Self.body(received) {
+                if let end = received.range(of: Data("\r\n\r\n".utf8)) {
+                    self.lock.withLock { self.heads.append(String(decoding: received[..<end.lowerBound], as: UTF8.self)) }
+                }
+                return self.answer(connection, body)
+            }
             if done || error != nil { return connection.cancel() }
             self.read(connection, received)
         }
