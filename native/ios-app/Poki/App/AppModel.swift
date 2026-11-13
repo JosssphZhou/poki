@@ -1499,6 +1499,33 @@ final class AppModel {
         }
     }
 
+    /// The chat's model asked the owner something (ask_user) and waits: the Live Activity says so until
+    /// the answer comes, and one notification reminds the owner after ten minutes, never more.
+    func chatQuestionAsked(id: String, text: String) {
+        activity.update { state in
+            state.question = .init(id: id, text: String(text.prefix(160)), since: Date())
+            state.phase = .question
+        }
+        QuestionNotice.schedule(text: text)
+    }
+
+    /// The question was answered, or its task stopped: the run goes on, or ends as a stopped task does.
+    func chatQuestionEnded(id: String, answered: Bool) {
+        QuestionNotice.cancel()
+        activity.update { state in
+            guard state.question?.id == id else { return }
+            state.question = nil
+            guard state.phase == .question else { return }
+            // Unanswered (stopped) before any step: nothing ran, so nothing is left showing as working.
+            if !answered, state.stepCount == 0 {
+                state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil
+            } else {
+                state.phase = .working
+                if answered { state.headline = "Thinking" }
+            }
+        }
+    }
+
     /// End the task, return to Poki and finish its Live Activity.
     func chatTaskEnded(reply: String?, session: String, acted: Bool) {
         lastShot = nil

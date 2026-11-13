@@ -24,16 +24,19 @@ final class ChatHarnessTests: XCTestCase {
         ChatModel.afterTask = nil
     }
 
-    /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer
+    /// A conversation handed over by an outside agent (or with `.poki` the in-app chat, new), on the fake endpoint. The phone's tools answer
     /// without a session (the Debug probe's call), so routines reaches the app's own memory.
-    private func chat(on server: FakeCompletions) -> ChatModel {
+    private func chat(on server: FakeCompletions, kind: SavedSession.Kind = .handoff) -> ChatModel {
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
         ModelKeys.customModel = "fake-model"
         ModelKeys.selectedProvider = .custom
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         app.inProcessReadyForProbe()
         self.app = app
-        return ChatModel(app: app, kind: .handoff, requester: "Test agent")
+        guard kind == .poki else { return ChatModel(app: app, kind: .handoff, requester: "Test agent") }
+        let chat = ChatModel(app: app, kind: .poki)
+        chat.newConversation()
+        return chat
     }
 
     private static func json(_ object: [String: Any]) -> String {
@@ -57,6 +60,7 @@ final class ChatHarnessTests: XCTestCase {
 
         let requests = server.requests
         XCTAssertEqual(requests.count, 5)
+        XCTAssertFalse(Self.toolNames(requests[0]).contains("ask_user"), "an outside agent's task has nobody to answer a question")
         XCTAssertFalse(FakeCompletions.system(requests[0]).contains(note))
         XCTAssertTrue(FakeCompletions.system(requests[3]).contains(note), "the second task's prompt has the note the first saved")
     }
@@ -129,6 +133,83 @@ final class ChatHarnessTests: XCTestCase {
         while said().last != "Stopped.", ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
         XCTAssertEqual(said().last, "Stopped.")
         XCTAssertFalse(said().contains("Stopping…"))
+    }
+
+    private func until(_ seconds: Double, _ done: () -> Bool) async throws {
+        let end = ContinuousClock.now + .seconds(seconds)
+        while !done(), ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(50)) }
+    }
+
+    private static func messages(_ request: [String: Any]) -> String {
+        String(decoding: try! JSONSerialization.data(withJSONObject: request["messages"] ?? []), as: UTF8.self)
+    }
+
+    private static func toolNames(_ request: [String: Any]) -> [String] {
+        (request["tools"] as? [[String: Any]] ?? []).compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
+    }
+
+    /// A question from the model (ask_user) waits for the owner, as long as it takes: the task stays
+    /// open, nothing is chosen for the owner and the model is not asked again until the owner picks an
+    /// option. The answer goes back as the call's result, says it is no approval, never reaches the
+    /// approval model's view of the chat, and the question and the answer stay in the saved conversation.
+    func testAQuestionWaitsForTheOwnersAnswer() async throws {
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("ask_user", ["question": "Damai isn’t installed. Search on the web, or install it first?",
+                                              "options": [["label": "Install it first"], ["label": "Search on the web", "recommended": true, "app": "com.apple.mobilesafari"]]]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Found the shows.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Saturday has two shows."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+
+        chat.send("Find Saturday’s concert tickets on Damai")
+        try await until(10) { chat.waitingQuestion != nil }
+        let question = try XCTUnwrap(chat.waitingQuestion)
+        XCTAssertEqual(question.options.map(\.label), ["Search on the web", "Install it first"], "the suggested option comes first")
+        XCTAssertTrue(question.suggested)
+        XCTAssertTrue(Self.toolNames(server.requests[0]).contains("ask_user"), "the in-app chat's model may ask")
+        // Nobody answers: the task waits where it is.
+        try await Task.sleep(for: .seconds(3))
+        XCTAssertTrue(chat.running)
+        XCTAssertEqual(server.requests.count, 1, "the model is not asked again while the question waits")
+        XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } }, "nothing is answered for the owner")
+
+        chat.answer("Search on the web", picked: true)
+        try await until(10) { !chat.running }
+
+        let answered = Self.messages(server.requests[1])
+        XCTAssertTrue(answered.contains("The owner chose: Search on the web"), answered)
+        XCTAssertTrue(answered.contains("not an approval"), answered)
+        XCTAssertNil(chat.waitingQuestion)
+        XCTAssertFalse(chat.ownerContext.contains { $0.contains("Search on the web") || $0.contains("Damai isn’t installed") },
+                       "the question and its answer are not the owner's words for approvals: \(chat.ownerContext)")
+        // Reopened, the conversation still shows the question, answered, and the answer.
+        let saved = try XCTUnwrap(SessionStore.shared.session(chat.sessionID))
+        let reread = try JSONDecoder().decode(SavedSession.self, from: JSONEncoder().encode(saved))
+        let reopened = ChatModel(app: app!, kind: .poki)
+        reopened.restore(reread)
+        let kinds = reopened.entries.map(\.kind)
+        XCTAssertTrue(kinds.contains { if case .question(let q) = $0 { q.state == .answered && q.text.hasPrefix("Damai") } else { false } })
+        XCTAssertTrue(kinds.contains(.answer("Search on the web")))
+    }
+
+    /// Stop while a question waits ends the task with the question unanswered and its options gone.
+    func testStopEndsAWaitingQuestionUnanswered() async throws {
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("ask_user", ["question": "A train ticket, or a flight?",
+                                              "options": [["label": "Train ticket", "emoji": "🚄"], ["label": "Flight", "emoji": "✈️"]]]),
+            FakeCompletions.text("Stopped."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+
+        chat.send("Book a ticket to Shanghai for tomorrow")
+        try await until(10) { chat.waitingQuestion != nil }
+        chat.stop()
+        try await until(5) { !chat.running }
+
+        XCTAssertFalse(chat.running)
+        XCTAssertNil(chat.waitingQuestion)
+        XCTAssertTrue(chat.entries.contains { if case .question(let q) = $0.kind { q.state == .stopped } else { false } })
+        XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } })
     }
 
     /// The system prompt names no tool the model does not have (the app has no unlock_device or

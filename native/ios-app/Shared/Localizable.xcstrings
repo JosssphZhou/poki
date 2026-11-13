@@ -666,6 +666,22 @@
         }
       }
     },
+    "A train ticket, or a flight?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订火车票，还是机票？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "訂火車票，還是機票？"
+          }
+        }
+      }
+    },
     "ADDRESSES" : {
       "localizations" : {
         "zh-Hans" : {
@@ -700,6 +716,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AGENTS"
+          }
+        }
+      }
+    },
+    "Answered" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已回答"
           }
         }
       }
@@ -1723,6 +1755,22 @@
         }
       }
     },
+    "Book a ticket to Shanghai for tomorrow" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "订明天去上海的票"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "訂明天去上海的票"
+          }
+        }
+      }
+    },
     "BUILT-IN CONNECTION" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2651,6 +2699,22 @@
         }
       }
     },
+    "Damai isn’t installed. Search on the web, or install it first?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有安装大麦。用网页版查，还是先去安装？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有安裝大麥。用網頁版查，還是先去安裝？"
+          }
+        }
+      }
+    },
     "Debugging" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3079,6 +3143,22 @@
         }
       }
     },
+    "Ele.me" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "饿了么"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "餓了麼"
+          }
+        }
+      }
+    },
     "Enable Local Connection" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3395,6 +3475,54 @@
         }
       }
     },
+    "Find concert tickets" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查演唱会门票"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查演唱會門票"
+          }
+        }
+      }
+    },
+    "Find Saturday’s concert tickets on Damai" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在大麦查周六的演唱会门票"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在大麥查週六的演唱會門票"
+          }
+        }
+      }
+    },
+    "Find Saturday’s shows" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找到周六的场次"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找到週六的場次"
+          }
+        }
+      }
+    },
     "Finish setting up this iPhone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3499,6 +3627,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fix the item below so agents can use this iPhone."
+          }
+        }
+      }
+    },
+    "Flight" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "机票"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "機票"
           }
         }
       }
@@ -3952,6 +4096,22 @@
         }
       }
     },
+    "Install it first" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先去安装"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先去安裝"
+          }
+        }
+      }
+    },
     "IPv6 present, %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4384,6 +4544,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輪到你操作時，我不會點按或輸入。"
+          }
+        }
+      }
+    },
+    "JD" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "京东外卖"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "京東外賣"
           }
         }
       }
@@ -5076,6 +5252,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "確保該外掛已啟用且 Loon 的 VPN 已開啟。"
+          }
+        }
+      }
+    },
+    "Meituan Waimai" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "美团外卖"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "美團外賣"
+          }
+        }
+      }
+    },
+    "Meituan Waimai, Ele.me and JD can all deliver it. Which one?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "美团外卖、饿了么和京东外卖都能点。用哪个？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "美團外賣、餓了麼和京東外賣都能點。用哪個？"
           }
         }
       }
@@ -5890,6 +6098,22 @@
         }
       }
     },
+    "Open Damai’s website in Safari" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Safari 打开大麦网页版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Safari 打開大麥網頁版"
+          }
+        }
+      }
+    },
     "OR USE AN AGENT YOU ALREADY RUN" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5929,6 +6153,22 @@
         }
       }
     },
+    "Order my usual beef noodles" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点一份常吃的牛肉面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點一份常吃的牛肉麵"
+          }
+        }
+      }
+    },
     "Order my usual lunch" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5942,6 +6182,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "訂購常用午餐"
+          }
+        }
+      }
+    },
+    "Other answer" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他回答"
           }
         }
       }
@@ -6992,6 +7248,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已點一杯大杯燕麥拿鐵，9:10 到店自取。"
+          }
+        }
+      }
+    },
+    "Pick the seats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选座位"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選座位"
           }
         }
       }
@@ -8944,6 +9216,22 @@
         }
       }
     },
+    "Search on the web" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用网页版查"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用網頁版查"
+          }
+        }
+      }
+    },
     "SIGNING · OPTIONAL" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10133,6 +10421,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在停止…"
+          }
+        }
+      }
+    },
+    "Suggested" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推荐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推薦"
           }
         }
       }
@@ -11686,6 +11990,22 @@
         }
       }
     },
+    "Train ticket" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "火车票"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "火車票"
+          }
+        }
+      }
+    },
     "Try Again" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12138,6 +12458,22 @@
         }
       }
     },
+    "Type another answer" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入其他回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輸入其他回答"
+          }
+        }
+      }
+    },
     "Type it on the Pair with Poki screen in Settings" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12150,6 +12486,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「設定」的「與 Poki 配對」頁面輸入"
+          }
+        }
+      }
+    },
+    "Type your own answer in the message field" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在输入框里输入你自己的回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在輸入框裡輸入你自己的回答"
           }
         }
       }

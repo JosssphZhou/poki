@@ -67,7 +67,7 @@ final class ActivityController {
     private struct Tally { var sent = 0, answered = 0, reported = 0, withoutActivity = 0, longestWait = 0.0 }
     /// The phase and step iOS last reported holding for the activity.
     private var held: (phase: PokiState.Phase, step: Int)?
-    private static let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding, .handoff]
+    private static let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding, .handoff, .question]
     private var justRecorded = false
 
     var enabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
@@ -181,7 +181,7 @@ final class ActivityController {
             AttentionNotice.post(title: banner.title, body: banner.body)
         }
         attention = nil
-        if state.handoff == nil, state.phase != .problem, old.handoff != nil || old.phase == .problem { AttentionNotice.clear() }
+        if state.handoff == nil, state.question == nil, state.phase != .problem, old.handoff != nil || old.question != nil || old.phase == .problem { AttentionNotice.clear() }
         send(alert: alert, critical: Self.isCritical(state, after: old))
     }
     /// The hand-off or problem this change pops up for (`update` posts a banner when no activity runs).
@@ -241,6 +241,12 @@ final class ActivityController {
         if state.handoff == nil, old.handoff != nil, state.phase == .working {
             setEvent(.resumed, "Resumed")
         }
+        // The chat's question: pops up and lights the screen once, as a hand-off does. The run waits
+        // for the answer, which is given in the chat (the reminder is a notification, QuestionNotice).
+        if let question = state.question, question.id != old.question?.id {
+            alert = critical(StatusWord.needsAnswer.text, question.text)
+            attention = (StatusWord.needsAnswer.text, question.text)
+        }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
             alert = critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence)
@@ -272,13 +278,13 @@ final class ActivityController {
         }
         if state.stepCount != old.stepCount { inStep = false }
         // The finish timer: re-armed by every change during a run; never fires in the middle of a step.
-        if state.phase == .working, state.approval == nil, state.handoff == nil, state.stepCount > 0 { armFinish() } else { finishTimer?.cancel() }
+        if state.phase == .working, state.approval == nil, state.handoff == nil, state.question == nil, state.stepCount > 0 { armFinish() } else { finishTimer?.cancel() }
         return alert
     }
 
     /// Updates that change what the person must do or know go out at once, ahead of plain progress.
     private static func isCritical(_ state: PokiState, after old: PokiState) -> Bool {
-        state.phase != old.phase || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin
+        state.phase != old.phase || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin || state.question?.id != old.question?.id
     }
 
     /// iOS shows an alert's expanded island for a few seconds only. Halfway to the deadline, while the
@@ -310,7 +316,7 @@ final class ActivityController {
     /// the chat tells the owner itself (its reply notification).
     func finishNow(alert: Bool) {
         finishTimer?.cancel()
-        guard state.phase == .working, state.approval == nil, state.handoff == nil else {
+        guard state.phase == .working, state.approval == nil, state.handoff == nil, state.question == nil else {
             if Self.runPhases.contains(state.phase) { AppLog.shared.add("activity", "the run was not marked finished: the activity shows \(state.phase.rawValue)") }
             return
         }
@@ -463,7 +469,7 @@ final class ActivityController {
         // An approval goes stale when it expires. A run goes stale when no update has come for ten
         // minutes (Poki was closed or suspended), and then says it is not updating.
         let stale = state.approval?.expires ?? (state.phase == .working ? Date.now.addingTimeInterval(600) : nil)
-        return ActivityContent(state: state, staleDate: stale, relevanceScore: state.approval == nil && state.handoff == nil ? 50 : 100)
+        return ActivityContent(state: state, staleDate: stale, relevanceScore: state.approval == nil && state.handoff == nil && state.question == nil ? 50 : 100)
     }
 
     private static func shrink(_ data: Data, maxPixels: Int) -> Data? {

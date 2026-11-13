@@ -13,8 +13,10 @@ struct PokiActivityAttributes: ActivityAttributes {
         /// run of steps; `deciding` by AppModel the moment Allow or Deny is tapped on the Live Activity,
         /// until PokiCore has the answer. `handoff`: the agent cannot act on this screen (a passcode, a
         /// verification, a payment) and the person has to; the agent keeps polling meanwhile. See `Handoff`.
+        /// `question`: the chat's model asked the owner something (ask_user) and waits for the answer, which
+        /// is given in the chat. See `Question`.
         enum Phase: String, Codable, Hashable {
-            case idle, working, approval, deciding, pairing, setup, problem, done, handoff
+            case idle, working, approval, deciding, pairing, setup, problem, done, handoff, question
 
             /// The phases a person has to answer: a step from the agent never replaces them.
             var holdsApproval: Bool { self == .approval || self == .deciding }
@@ -41,6 +43,8 @@ struct PokiActivityAttributes: ActivityAttributes {
         var decision: Bool?
         /// What the person has to do themselves, while phase is `handoff`.
         var handoff: Handoff?
+        /// The chat's question, while phase is `question`. Its options stay in the chat.
+        var question: Question? = nil
         /// The pairing PIN while on-device pairing is waiting for it.
         var pin: String?
         /// The runner is stopped while no agent uses the phone (no automation banner); the next
@@ -96,6 +100,14 @@ struct PokiActivityAttributes: ActivityAttributes {
         var kind: Kind
         var text: String?
         var app: String?
+        var since: Date
+    }
+    /// A question the chat's model asked the owner (ask_user). Only the sentence: the options are
+    /// answered in the chat, never on the Lock Screen, so a locked phone cannot answer for the owner.
+    struct Question: Codable, Hashable {
+        var id: String
+        /// The model's sentence, at most 160 characters (the payload is capped at 4 KB).
+        var text: String
         var since: Date
     }
     struct Guide: Codable, Hashable {

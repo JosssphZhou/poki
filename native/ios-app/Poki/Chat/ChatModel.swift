@@ -17,6 +17,11 @@ struct ChatEntry: Identifiable, Equatable, Codable {
         case step(String, ok: Bool?)
         /// An outside agent's request to Poki (`ask_poki`), on the requester's side.
         case request(String, from: String)
+        /// A question from the chat's model (ask_user), with its options while it waits.
+        case question(ChatQuestion)
+        /// The owner's answer to a question: drawn as their message, but never read as a request or a
+        /// yes to a step (`ownerContext` leaves it out), since the model wrote what it answers.
+        case answer(String)
     }
     let id: UUID
     var kind: Kind
@@ -34,7 +39,64 @@ struct ChatEntry: Identifiable, Equatable, Codable {
     var attachments: [Data]?
     init(_ kind: Kind) { id = UUID(); self.kind = kind }
 
-    var isPoki: Bool { switch kind { case .poki, .plan: true; default: false } }
+    var isPoki: Bool { switch kind { case .poki, .plan, .question: true; default: false } }
+}
+
+/// A question the chat's model asked the owner with ask_user: one sentence, two or three options (the
+/// suggested one first), and how it ended. The model wrote all of it, so it never goes on an approval
+/// card and answers nothing an approval asks.
+struct ChatQuestion: Equatable, Codable {
+    enum State: String, Codable { case asking, answered, stopped }
+    struct Option: Equatable, Codable {
+        var label: String
+        /// The app the option is to use, as the model named it (a bundle ID or a name): its icon leads
+        /// the option when Poki has one.
+        var app: String?
+        /// One emoji leading an option that is not an app, when the model gave one.
+        var emoji: String?
+    }
+    var id: String
+    var text: String
+    var options: [Option]
+    /// The first option is the one the model suggests.
+    var suggested: Bool
+    /// The owner may type an answer of their own.
+    var other: Bool
+    var state: State = .asking
+
+    /// ask_user's arguments, or nil when they are not one question with two or three labelled options.
+    init?(id: String, arguments args: [String: Any]) {
+        guard let text = (args["question"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
+              let list = args["options"] as? [[String: Any]], (2...3).contains(list.count) else { return nil }
+        var options: [Option] = []
+        var pick: Int?
+        for item in list {
+            guard let label = (item["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !label.isEmpty else { return nil }
+            let app = (item["app"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            options.append(Option(label: label, app: app?.isEmpty == false ? app : nil, emoji: Self.emoji(item["emoji"])))
+            if item["recommended"] as? Bool == true, pick == nil { pick = options.count - 1 }
+        }
+        if let pick { options.insert(options.remove(at: pick), at: 0) }
+        self.id = id
+        self.text = text
+        self.options = options
+        suggested = pick != nil
+        other = args["allow_other"] as? Bool ?? true
+    }
+
+    init(id: String, text: String, options: [Option], suggested: Bool, other: Bool = true, state: State = .asking) {
+        self.id = id; self.text = text; self.options = options; self.suggested = suggested; self.other = other; self.state = state
+    }
+
+    /// One emoji as the option's icon; anything else (words, several emoji, a digit) is dropped.
+    static func emoji(_ value: Any?) -> String? {
+        guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), text.count == 1,
+              let character = text.first else { return nil }
+        let scalars = character.unicodeScalars
+        let isEmoji = scalars.contains { $0.properties.isEmojiPresentation }
+            || (scalars.first?.properties.isEmoji == true && scalars.contains { $0.value == 0xFE0F })
+        return isEmoji ? text : nil
+    }
 }
 
 struct PlanStep: Identifiable, Equatable, Codable {
@@ -151,6 +213,9 @@ final class ChatModel {
     /// Counts tasks. Stop moves it on, so what a stopped task still does while its last step ends is
     /// not written into the chat or over the next task.
     private var runToken = 0
+    /// The question the task under way waits on (ask_user), and the model's call that waits with it.
+    private(set) var waitingQuestion: ChatQuestion?
+    private var questionAnswer: CheckedContinuation<(text: String, picked: Bool)?, Never>?
     /// The plan bubble of the task under way.
     private var planID: UUID?
     private var noteID: UUID?
@@ -242,11 +307,16 @@ final class ChatModel {
 
     // MARK: Sending
 
-    func send(_ text: String) { send(text, again: false) }
+    func send(_ text: String) {
+        // Words typed while a question waits are the owner's own answer to it.
+        if waitingQuestion != nil { answer(text, picked: false); return }
+        send(text, again: false)
+    }
 
     /// A message with photos or PDFs from the plus menu: the model reads their pictures with the words.
     /// The words may be left out.
     func send(_ text: String, attachments: [ChatAttachment]) {
+        if waitingQuestion != nil { answer(text, picked: false); return }
         lastImages = attachments.flatMap(\.images)
         send(text, again: false, thumbnails: attachments.map(\.thumbnail))
     }
@@ -282,7 +352,9 @@ final class ChatModel {
         }
     }
 
-    private func send(_ text: String, again: Bool, thumbnails: [Data] = []) {
+    /// `answer`: the owner's answer to a question whose task has ended (Poki was closed while it
+    /// waited), already in the chat: it starts a new task with the question, and adds no message.
+    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], answer: ChatEntry? = nil) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Pictures may go without words, and Try Again sends them again.
         guard !text.isEmpty || !thumbnails.isEmpty || (again && !lastImages.isEmpty), !running else { return }
@@ -296,7 +368,9 @@ final class ChatModel {
         // A pause of half an hour or more gets its own time line, as in Messages.
         if !again, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
         let you: ChatEntry
-        if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
+        if let answer {
+            you = answer
+        } else if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
             you = last
         } else {
             var entry = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
@@ -325,7 +399,7 @@ final class ChatModel {
         planID = nil; noteID = nil; modelPlan = nil
         sendTo = nil; lastTyped = nil; typedAtDo = 0; doCalls = 0; askWords = [:]; taskApp = nil
         taskApps = TaskApps(); taskRequest = text
-        let instructions = Harness.instructions(for: text)
+        let instructions = Harness.instructions(for: text, asking: asks)
         let images = lastImages
         if Self.direct, provider == .anthropic || provider == .openai {
             // Another model starts a new conversation on the model's side; the chat on screen stays.
@@ -357,7 +431,7 @@ final class ChatModel {
         }
         // Another model starts a new loop that carries the conversation over.
         if loop?.provider != provider || loop?.model.id != piModel.id {
-            loop = PiLoop(provider: provider, model: piModel, tools: Harness.tools,
+            loop = PiLoop(provider: provider, model: piModel, tools: tools,
                           carrying: loop?.messages ?? []) { [weak self] call in
                 guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
                 return await self.perform(call)
@@ -387,6 +461,11 @@ final class ChatModel {
             self.lastOutcome = outcome
         }
     }
+
+    /// The model may ask the owner (ask_user) in the in-app chat only: an outside agent's task waits for
+    /// its end and has nobody to answer.
+    private var asks: Bool { kind == .poki }
+    private var tools: [ToolSpec] { asks ? Harness.chatTools : Harness.tools }
 
     /// Every provider runs on pi. `-chatEngine direct` sends Anthropic and OpenAI through their own APIs
     /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
@@ -468,6 +547,8 @@ final class ChatModel {
         stopAsked = true
         loop?.stop()
         task?.cancel()
+        // A question waiting for its answer holds the task: it ends unanswered.
+        endQuestion(nil)
         // A step waiting for an approval would hold the task until the approval ran out.
         if kind == .poki, ChatModel.delegatedBusy == nil { for approval in app.approvals { app.resolve(approval, approved: false) } }
         finishPlan()
@@ -496,7 +577,7 @@ final class ChatModel {
         for _ in 0..<Self.maxTurns {
             let turn: ModelTurn
             do {
-                turn = try await client.next(instructions: instructions, tools: Harness.tools)
+                turn = try await client.next(instructions: instructions, tools: tools)
             } catch {
                 client.forgetUnansweredQuestion()
                 if stopped { return }
@@ -565,6 +646,11 @@ final class ChatModel {
             if let title { nameTask(title) }
             if let to { sendTo = to }
             return PokiCore.ToolAnswer(text: Harness.planPublished, jpeg: nil, isError: false)
+        case "ask_user":
+            guard asks, waitingQuestion == nil, let question = ChatQuestion(id: call.id, arguments: args) else {
+                return PokiCore.ToolAnswer(text: Harness.invalidQuestion, jpeg: nil, isError: true)
+            }
+            return await ask(question)
         case "finish_task":
             guard let result = try? JSONDecoder().decode(TaskResult.self, from: Data(call.arguments.utf8)) else {
                 return PokiCore.ToolAnswer(text: Harness.invalidResult, jpeg: nil, isError: true)
@@ -580,6 +666,66 @@ final class ChatModel {
             defer { phoneStepUnderWay = false }
             return await app.runTool(call.name, arguments: call.arguments)
         }
+    }
+
+    // MARK: Questions
+
+    /// Shows the model's question in the chat and waits, with no time limit, for the owner's answer: an
+    /// option, their own words, or nothing when the task is stopped. The Live Activity says a question
+    /// waits; one notification reminds the owner after ten minutes.
+    private func ask(_ question: ChatQuestion) async -> PokiCore.ToolAnswer {
+        entries.append(ChatEntry(.question(question)))
+        Haptics.received()
+        waitingQuestion = question
+        app.chatQuestionAsked(id: question.id, text: question.text)
+        AppLog.shared.add("chat", "asked the owner (\(question.options.count) options)")
+        let answer = await withCheckedContinuation { questionAnswer = $0 }
+        guard let answer else { return PokiCore.ToolAnswer(text: Harness.questionStopped, jpeg: nil, isError: true) }
+        return PokiCore.ToolAnswer(text: Harness.answered(answer.text, picked: answer.picked), jpeg: nil, isError: false)
+    }
+
+    /// The owner's answer to the latest question: an option they tapped (`picked`) or their own words.
+    /// The options fold away and the answer stays in the chat as their message. A question whose task
+    /// has ended (Poki was closed while it waited) starts a new task with the question and the answer.
+    func answer(_ text: String, picked: Bool) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isSample,
+              let i = entries.lastIndex(where: { if case .question(let q) = $0.kind { q.state == .asking } else { false } }),
+              case .question(var question) = entries[i].kind else { return }
+        let live = waitingQuestion?.id == question.id
+        guard live || !running, picked || question.other else { return }
+        question.state = .answered
+        entries[i].kind = .question(question)
+        let reply = ChatEntry(.answer(text))
+        entries.append(reply)
+        Haptics.sent()
+        AppLog.shared.add("chat", "the owner answered (\(picked ? "an option" : "own words"))")
+        if live {
+            waitingQuestion = nil
+            app.chatQuestionEnded(id: question.id, answered: true)
+            if running { awaitingModel = true }
+            questionAnswer?.resume(returning: (text, picked))
+            questionAnswer = nil
+        } else {
+            // The model's side of that task is gone with it: the request goes along with the question.
+            let request = entries[..<i].reversed().lazy.compactMap { entry -> String? in if case .you(let said, _) = entry.kind { said } else { nil } }.first
+            let asked = [request.map { "Your task: \($0)" }, "You asked: \(question.text)", "The owner's answer: \(text)"].compactMap { $0 }
+            send(asked.joined(separator: "\n"), again: false, answer: reply)
+        }
+    }
+
+    /// The question's task stopped: the question stays in the chat without its options, unanswered.
+    private func endQuestion(_ answer: (text: String, picked: Bool)?) {
+        guard let question = waitingQuestion else { return }
+        waitingQuestion = nil
+        if let i = entries.lastIndex(where: { if case .question(let q) = $0.kind { q.id == question.id } else { false } }),
+           case .question(var shown) = entries[i].kind {
+            shown.state = .stopped
+            entries[i].kind = .question(shown)
+        }
+        app.chatQuestionEnded(id: question.id, answered: false)
+        questionAnswer?.resume(returning: answer)
+        questionAnswer = nil
     }
 
     /// The bubble shows the model's steps up to the current one: those before it done, it under way. A step
@@ -801,6 +947,7 @@ final class ChatModel {
             switch scene {
             case "handoff": "Blue Door Coffee"
             case "demo": "Messages"
+            case "answered": "Safari"
             default: "WhatsApp"
             }
         }
@@ -813,6 +960,32 @@ final class ChatModel {
         static var lunchDeleted: ApprovalNote {
             ApprovalNote(id: "lunch-delete", summary: "Tap “Delete”, then tap “Delete”", app: "Lunch", why: "multiple sensitive actions: action 1: deleting (\"delete\"); action 2: deleting (\"delete\")",
                          byModel: false, state: .allowed, answered: Date().addingTimeInterval(-30), ask: "Delete in Lunch", byAgent: false, kinds: ["deleting"])
+        }
+        /// `-pokiChat question|questionApps|questionMeaning|answered`: the questions of the boards.
+        static var concert: String { String(localized: "Find Saturday’s concert tickets on Damai") }
+        static var concertQuestion: ChatQuestion {
+            ChatQuestion(id: "sample-question", text: String(localized: "Damai isn’t installed. Search on the web, or install it first?"),
+                         options: [.init(label: String(localized: "Search on the web"), app: "com.apple.mobilesafari"),
+                                   .init(label: String(localized: "Install it first"))], suggested: true)
+        }
+        static var concertSteps: [String] {
+            [String(localized: "Open Damai’s website in Safari"), String(localized: "Find Saturday’s shows"), String(localized: "Pick the seats")]
+        }
+        static func question(_ scene: String) -> (asked: String, question: ChatQuestion) {
+            switch scene {
+            case "questionApps":
+                (String(localized: "Order my usual beef noodles"),
+                 ChatQuestion(id: "sample-apps", text: String(localized: "Meituan Waimai, Ele.me and JD can all deliver it. Which one?"),
+                              options: [.init(label: String(localized: "Meituan Waimai"), app: "com.meituan.itakeaway"),
+                                        .init(label: String(localized: "Ele.me"), app: "me.ele.ios.eleme"),
+                                        .init(label: String(localized: "JD"), app: "com.360buy.jdmobile")], suggested: true))
+            case "questionMeaning":
+                (String(localized: "Book a ticket to Shanghai for tomorrow"),
+                 ChatQuestion(id: "sample-meaning", text: String(localized: "A train ticket, or a flight?"),
+                              options: [.init(label: String(localized: "Train ticket"), emoji: "🚄"),
+                                        .init(label: String(localized: "Flight"), emoji: "✈️")], suggested: false))
+            default: (concert, concertQuestion)
+            }
         }
         /// The step a scene's approval card asks about.
         static var approval: PendingApproval {
@@ -855,6 +1028,20 @@ final class ChatModel {
             // The phone is back with you for the passcode: the step waits, the card says it is your turn.
             modelPlan = Sample.coffeeSteps
             entries = [ChatEntry(.time(start)), ChatEntry(.you(Sample.coffee, delivered: true)), onIt, steps(Sample.coffeeSteps, done: 2, then: .waiting)]
+        case "question", "questionApps", "questionMeaning":
+            // Poki asked and waits: the options under its question, the message field takes an answer.
+            let (asked, question) = Sample.question(scene)
+            waitingQuestion = question
+            entries = [ChatEntry(.time(start)), ChatEntry(.you(asked, delivered: true)), ChatEntry(.question(question))]
+        case "answered":
+            // The owner tapped the suggested option: the question stays, the answer under it, the task goes on.
+            var question = Sample.concertQuestion
+            question.state = .answered
+            modelPlan = Sample.concertSteps
+            var plan = steps(Sample.concertSteps, done: 0, then: .current)
+            plan.title = String(localized: "Find concert tickets")
+            entries = [ChatEntry(.time(start)), ChatEntry(.you(Sample.concert, delivered: true)), ChatEntry(.question(question)),
+                       ChatEntry(.answer(question.options[0].label)), plan]
         case "failed":
             var plan = ChatEntry(.plan([PlanStep(String(localized: "Open Notification Center"), state: .done),
                                         PlanStep(String(localized: "Tap Clear All"), state: .failed)]))

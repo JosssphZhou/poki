@@ -93,7 +93,8 @@ extension ActivityFace.Bottom {
     /// A run with a plan draws its steps as segments.
     var hasLine: Bool { if case .progress(_, let total, _) = self { total != nil } else { false } }
     var isProgress: Bool { if case .progress = self { true } else { false } }
-    var isHandoff: Bool { if case .handoff = self { true } else { false } }
+    /// One button across the card (Continue, Answer in Poki): the time goes beside it.
+    var isHandoff: Bool { switch self { case .handoff, .answer: true; default: false } }
     var isApproval: Bool { switch self { case .approval, .deciding: true; default: false } }
 }
 
@@ -395,6 +396,9 @@ struct CompactTrailing: View {
         case .symbol(let name, let tone):
             StateSymbol(name: name, tone: tone, palette: palette, size: name == "checkmark" ? 15.5 : name.hasPrefix("exclamationmark") ? 16 : 15)
                 .frame(width: side, height: side)
+        case .waiting:
+            StateSymbol(name: "questionmark", tone: .accent, palette: palette, size: 15)
+                .frame(width: side, height: side)
         default:
             EmptyView()
         }
@@ -431,6 +435,16 @@ struct CompactTrailing: View {
                         .lineLimit(1).minimumScaleFactor(0.7)
                     // No fixedSize on timer text (see TimerText): a fixed frame instead.
                     Text(timerInterval: Countdown.range(until), countsDown: true)
+                        .font(theme.compactCount).foregroundStyle(palette.quiet)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: ActivityMetrics.compactWords, height: 13, alignment: .trailing)
+                }
+                .frame(width: ActivityMetrics.compactWords, alignment: .trailing)
+            case .waiting(let text, let since):
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(text).font(theme.compact).foregroundStyle(palette.accent).frame(height: 15)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(timerInterval: since...since.addingTimeInterval(12 * 3600), countsDown: false)
                         .font(theme.compactCount).foregroundStyle(palette.quiet)
                         .multilineTextAlignment(.trailing)
                         .frame(width: ActivityMetrics.compactWords, height: 13, alignment: .trailing)
@@ -694,9 +708,9 @@ private struct Control: View {
         case .handoff(let id):
             HandoffDoneButton(handoffID: id, surface: surface)
                 .transition(.activityRow)
-        case .openPoki:
+        case .openPoki, .answer:
             Link(destination: face.link) {
-                Text(String(activity: "Open Poki"))
+                Text(face.bottom == .answer ? String(activity: "Answer in Poki") : String(activity: "Open Poki"))
                     .font(theme.button)
                     .foregroundStyle(palette.text)
                     .frame(maxWidth: .infinity, minHeight: ActivityMetrics.button, maxHeight: ActivityMetrics.button)

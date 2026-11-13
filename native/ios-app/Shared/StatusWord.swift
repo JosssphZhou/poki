@@ -7,7 +7,7 @@ import Foundation
 /// which cannot see the app's `PokiMood`, the Dynamic Island, the Lock Screen card and their alerts.
 enum StatusWord: CaseIterable {
     case ready, thinking, running, checking
-    case needsApproval, needsYourAction
+    case needsApproval, needsYourAction, needsAnswer
     case done, error, paused, off
     case disconnected, starting, notStarted, notSetUp
     case listening, speaking
@@ -22,6 +22,8 @@ enum StatusWord: CaseIterable {
         case .checking: String(localized: "Checking", table: Self.table)
         case .needsApproval: String(localized: "Needs approval", table: Self.table)
         case .needsYourAction: String(localized: "Needs your action", table: Self.table)
+        // A question from the chat's model waits for the owner's pick (ask_user).
+        case .needsAnswer: String(localized: "Needs answer", table: Self.table)
         case .done: String(localized: "Done", table: Self.table)
         case .error: String(localized: "Error", table: Self.table)
         case .paused: String(localized: "Paused", table: Self.table)

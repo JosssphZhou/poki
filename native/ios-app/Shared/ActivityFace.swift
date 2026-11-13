@@ -56,6 +56,9 @@ struct ActivityFace: Hashable {
         /// island opens by itself when the approval comes and folds back after a few seconds; folded,
         /// it still says what it waits for.
         case asking(String, Date)
+        /// The chat's question waits for the owner: a word saying so ("Answer?") over how long it has
+        /// waited, counted up. There is no deadline: the question waits until it is answered.
+        case waiting(String, Date)
         case countdown(Date)
         case symbol(String, ActivityTone)
     }
@@ -71,6 +74,8 @@ struct ActivityFace: Hashable {
         case handoff(id: String)
         /// Open Poki to fix a stopped runner or pairing error.
         case openPoki
+        /// "Answer in Poki": the chat's question is answered in the chat, so the one button opens it.
+        case answer
         /// The setup steps: done, the current one, the rest.
         case segments(number: Int, count: Int)
     }
@@ -211,7 +216,7 @@ extension PokiState {
             face.event = event.kind == .app ? (app.map { ActivityWords.local($0) } ?? event.text) : ActivityWords.local(event.text)
             face.eventTone = event.tone
         }
-        if stale, phase == .working || phase == .handoff {
+        if stale, phase == .working || phase == .handoff || phase == .question {
             // The app stopped updating (closed, or iOS suspended it): say so, and drop the action,
             // which needs the app.
             face.symbol = "clock.badge.exclamationmark"
@@ -335,6 +340,16 @@ extension PokiState {
                 subtitle: handoff.detail, subtitleLines: 2,
                 bottom: .handoff(id: handoff.id),
                 compact: .symbol("hand.tap.fill", .accent))
+        case .question:
+            guard let question else { return quietFace }
+            return ActivityFace(
+                symbol: "questionmark.bubble.fill",
+                bear: .thinking, size: .asking,
+                kicker: StatusWord.needsAnswer.text,
+                meta: .elapsed(question.since),
+                content: question.text,
+                bottom: .answer,
+                compact: .waiting(String(activity: "Answer?"), question.since))
         case .idle:
             if let voice {
                 let (line, hint, bear): (String, String, ActivityBear) = switch voice {

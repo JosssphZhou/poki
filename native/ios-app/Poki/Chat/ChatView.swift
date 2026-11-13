@@ -61,7 +61,7 @@ struct ChatView: View {
 
     /// Poki is at work (or the sample scene shows it at work): the message field offers Stop.
     private var busy: Bool {
-        chat.running || ["working", "approval", "lunch", "handoff"].contains(sampleScene ?? "")
+        chat.running || ["working", "approval", "lunch", "handoff", "question", "questionApps", "questionMeaning", "answered"].contains(sampleScene ?? "")
     }
 
     /// A newer Poki is on the channel, or downloaded and ready to install: its version, for the home
@@ -92,7 +92,8 @@ struct ChatView: View {
                            live: live, waiting: !model.approvals.isEmpty || sampleScene == "approval" || sampleScene == "lunch" || chat.demoAsk != nil,
                            handedOver: model.handoffText != nil || sampleScene == "handoff",
                            plan: chat.planSteps, app: sampleScene == nil ? chat.taskApp : ChatModel.Sample.app(sampleScene),
-                           shot: shot, rise: reduceMotion || !(sampleScene == nil || sampleScene == "demo") ? nil : rise) {
+                           shot: shot, rise: reduceMotion || !(sampleScene == nil || sampleScene == "demo") ? nil : rise,
+                           waitingQuestion: chat.waitingQuestion?.id, answer: { chat.answer($0, picked: true) }, otherAnswer: { writing = true }) {
                 if !home, let hint = currentSetupHint {
                     SetupHintLine(hint: hint, openSetupStep: openSetupStep, openSetup: openSetup, openModel: openModel)
                 }
@@ -125,7 +126,7 @@ struct ChatView: View {
         .bottomBar {
             if !bare { VStack(spacing: 8) {
                 asks
-                ComposerInputView(input: $draft, focused: $writing, running: busy, progress: progress,
+                ComposerInputView(input: $draft, focused: $writing, running: busy, answering: chat.waitingQuestion?.other == true, progress: progress,
                                   send: { chat.send($0, attachments: $1) }, stop: chat.stop, openVoice: openVoice)
             }
             .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
@@ -520,6 +521,10 @@ struct ChatTranscript<Footer: View>: View {
     /// How far your first words rise out of the message field when they open the conversation
     /// (the chat only); nil where a first message just appears.
     var rise: CGFloat? = nil
+    /// The question the task under way waits on, and what its options and Other Answer do.
+    var waitingQuestion: String? = nil
+    var answer: (String) -> Void = { _ in }
+    var otherAnswer: () -> Void = {}
     @ViewBuilder var footer: () -> Footer
 
     /// Your first message is all there is: its bubble rises from the message field, and Poki's dots
@@ -533,7 +538,7 @@ struct ChatTranscript<Footer: View>: View {
 
     /// Your newest message: when it changes you have just sent one.
     private var lastSent: UUID? {
-        entries.last { if case .you = $0.kind { true } else { false } }?.id
+        entries.last { switch $0.kind { case .you, .answer: true; default: false } }?.id
     }
 
     var body: some View {
@@ -653,6 +658,23 @@ struct ChatTranscript<Footer: View>: View {
             MessageBubble(direction: .incoming, text: text, tail: isLast(i, poki: true))
                 .padding(.top, startsRun(i) ? 10 : 0)
                 .transition(PlanMotion.stepTransition)
+        case .question(let question):
+            // The options can be tapped while the question waits: for the task under way, or for a task
+            // that has ended (Poki was closed) when no other task runs.
+            let open = question.state == .asking && (waitingQuestion == question.id || !live)
+            QuestionCard(question: question, open: open, tail: isLast(i, poki: true), answer: answer, other: otherAnswer)
+                .padding(.top, startsRun(i) ? 10 : 0)
+                .transition(PlanMotion.stepTransition)
+        case .answer(let text):
+            // Your answer to Poki's question: your bubble, marked as an answer.
+            VStack(alignment: .trailing, spacing: 4) {
+                MessageBubble(direction: .outgoing, text: text, tail: isLast(i, poki: false))
+                Text("Answered").font(.caption2.weight(.medium)).foregroundStyle(Color(.secondaryLabel))
+                    .padding(.horizontal, 4).padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.top, startsRun(i) ? 10 : 0)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         case .plan(let steps):
             let ask = asking(at: i)
             let current = live && isLastPlan(i)
@@ -708,8 +730,8 @@ struct ChatTranscript<Footer: View>: View {
     private func isLast(_ i: Int, poki: Bool) -> Bool {
         !entries[(i + 1)...].contains { entry in
             switch entry.kind {
-            case .poki, .plan: poki
-            case .you, .request: !poki
+            case .poki, .plan, .question: poki
+            case .you, .request, .answer: !poki
             default: false
             }
         }
@@ -1138,6 +1160,9 @@ struct ComposerInputView: View {
     /// The message field has the keyboard; the home page's suggestions set it.
     @Binding var focused: Bool
     var running: Bool
+    /// A question from Poki waits and takes the owner's own words: what is typed is the answer, sent
+    /// with the arrow while the task keeps running.
+    var answering = false
     /// How far the running task is, 0 to 1, for the ring around Stop; nil when unknown.
     var progress: Double? = nil
     var send: (String, [ChatAttachment]) -> Void
@@ -1188,7 +1213,7 @@ struct ComposerInputView: View {
                              onSwipe: { up in if up { focused = true } else if focused { focused = false } }, onSubmit: submit)
                     .overlay(alignment: .topLeading) {
                         if input.isEmpty {
-                            Text(dictation.on ? "Listening…" : attachments.isEmpty ? "Message Poki" : "Add a message")
+                            Text(dictation.on ? "Listening…" : answering ? "Type another answer" : attachments.isEmpty ? "Message Poki" : "Add a message")
                                 .foregroundStyle(Tint.homePlaceholder).lineLimit(1)
                                 .padding(.top, 6).allowsHitTesting(false).accessibilityHidden(true)
                         }
@@ -1347,7 +1372,9 @@ struct ComposerInputView: View {
     /// blue while it is yours to press for Poki; ink while it stops a task, with the task's progress
     /// as a ring around it.
     private var mainButton: some View {
-        Button {
+        // While a question waits, words in the field send it as the answer; empty, the button stops.
+        let running = self.running && !(answering && hasText)
+        return Button {
             if running { stop() } else if canSend { submit() } else { openVoice() }
         } label: {
             Image(systemName: running ? "stop.fill" : canSend ? "arrow.up" : "waveform")
@@ -1381,7 +1408,7 @@ struct ComposerInputView: View {
     }
 
     private func submit() {
-        guard !running, canSend else { return }
+        guard !running || answering && hasText, canSend else { return }
         dictation.cancel(model)
         let text = input
         send(text, attachments)

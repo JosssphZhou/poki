@@ -100,6 +100,8 @@ struct PokiStatus: Equatable {
         }
         if !model.approvals.isEmpty { return PokiStatus(.needsYou) }
         if model.handoffText != nil { return PokiStatus(.yourTurn) }
+        // The model asked the owner something and waits: the thinking bear, Poki's blue dot, its own word.
+        if chat.waitingQuestion != nil { return PokiStatus(.thinking, word: StatusWord.needsAnswer.text) }
         if chat.running { return PokiStatus(running(chat.entries)) }
         // An outside agent has the phone (its own MCP session, or a task it handed to Poki).
         if model.currentCaller != nil { return PokiStatus(.onYourPhone) }
@@ -120,7 +122,7 @@ struct PokiStatus: Equatable {
         var acted = false
         for entry in entries.reversed() {
             switch entry.kind {
-            case .you, .request: return acted ? .onYourPhone : .thinking
+            case .you, .request, .answer: return acted ? .onYourPhone : .thinking
             case .note(.modelChecking): if !acted { return .checking }
             case .note(.approval(let note)): if !acted, note.state == .asking, note.byModel { return .checking }
             case .plan, .step: acted = true
@@ -138,6 +140,8 @@ struct PokiStatus: Equatable {
         case "working": return PokiStatus(.onYourPhone)
         case "approval": return PokiStatus(.needsYou)
         case "handoff": return PokiStatus(.yourTurn)
+        case "question", "questionApps", "questionMeaning": return PokiStatus(.thinking, word: StatusWord.needsAnswer.text)
+        case "answered": return PokiStatus(.onYourPhone)
         case "failed", "setupHint": return PokiStatus(.tripped)
         case "paused": return PokiStatus(.paused)
         default: return PokiStatus(.done)

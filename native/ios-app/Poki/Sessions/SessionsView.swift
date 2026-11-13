@@ -331,7 +331,8 @@ extension SavedSession {
             case .plan(let steps): return steps.contains { $0.state == .waiting }
             case .note(.waiting): return true
             case .note(.approval(let note)): return note.state == .asking && !note.byModel
-            case .you, .request: return false
+            case .question(let question): return question.state == .asking
+            case .you, .request, .answer: return false
             default: continue
             }
         }

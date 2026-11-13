@@ -123,3 +123,29 @@ enum AttentionNotice {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
     }
 }
+
+/// The one reminder for the chat's question: ten minutes after it was asked, if it still waits. The
+/// Live Activity says the question at once; this banner comes once and never again. Scheduled with the
+/// system, so it comes while Poki is in the background too.
+enum QuestionNotice {
+    static let id = "poki-question"
+    static let after: TimeInterval = 600
+
+    @MainActor static func schedule(text: String) {
+        let content = UNMutableNotificationContent()
+        content.title = StatusWord.needsAnswer.text
+        content.body = text
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.add(UNNotificationRequest(identifier: id, content: content,
+                                         trigger: UNTimeIntervalNotificationTrigger(timeInterval: after, repeats: false)))
+    }
+
+    @MainActor static func cancel() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+    }
+}
