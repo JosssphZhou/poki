@@ -358,23 +358,6 @@
         }
       }
     },
-    "Deny" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拒绝"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拒絕"
-          }
-        }
-      }
-    },
     "Developer Mode" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -477,6 +460,23 @@
         }
       }
     },
+    "Don’t allow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "不允许"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "不允許"
+          }
+        }
+      }
+    },
     "Drag" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -490,6 +490,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拖動"
+          }
+        }
+      }
+    },
+    "End talk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "结束对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "結束對話"
           }
         }
       }
@@ -647,6 +664,23 @@
         }
       }
     },
+    "Listening" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在听"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在聆聽"
+          }
+        }
+      }
+    },
     "Look at the screen" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -796,6 +830,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 %@"
+          }
+        }
+      }
+    },
+    "Open Poki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打開 Poki"
           }
         }
       }
@@ -1408,23 +1459,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟動執行器"
-          }
-        }
-      }
-    },
-    "Step %lld" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "第 %lld 步"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "第 %lld 步"
           }
         }
       }

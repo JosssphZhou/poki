@@ -2,7 +2,7 @@
 
 One app for everything a user does on the phone: setup (Developer Mode, on-device pairing, UI
 Automation, the loopback, the first-session passcode), starting and stopping a session, the Live
-Activity with Approve/Deny for sensitive actions, the MCP address for each client (text, QR, copy),
+Activity with Allow and Don’t allow for sensitive actions, the MCP address for each client (text, QR, copy),
 and a Debug tab (the former Poki Probe). Native SwiftUI on the iOS 26 SDK with Liquid Glass.
 
 Poki automates the phone in its own process: it opens the XCTest automation session itself
@@ -270,7 +270,7 @@ Turned on
 - [ ] Runner path only: no banner until an agent's first call starts the runner; opening Poki Runner while in use shows "Poki is using this iPhone"; Stop on the Live Activity or in Poki takes the banner away within seconds and the next call starts it again; after the idle time with no calls, the banner goes away by itself.
 - [ ] Ten minutes in the background: the location pill shows and agents still reach the phone.
 - [ ] Close Poki from the app switcher: the banner goes away within seconds.
-- [ ] A sensitive action shows Approve/Deny in the Live Activity; Approve asks for Face ID.
+- [ ] A sensitive action shows Allow and Don’t allow in the Live Activity; Allow asks for Face ID.
 
 Connect
 - [ ] Add a connector: the sheet shows the URL, a QR that scans to the same URL, and Copy works.

@@ -61,78 +61,31 @@ enum Site {
     #endif
 }
 
-/// What a piece of the Live Activity is coloured by. Each face picks one; the surface's palette says
-/// what it is, so the blue card and the black island can colour the same word differently.
-enum ActivityTone: Hashable {
-    /// Secondary: the app's name while working, the meta values.
-    case quiet
-    /// The text colour itself.
-    case plain
-    case accent, approval, done, problem
-}
-
-/// The Lock Screen card is the website's blue with glass on it; the Dynamic Island is always black.
-enum ActivitySurface { case lockScreen, island }
-
-struct ActivityPalette {
-    var text = Color.white
-    var quiet: Color
-    var accent: Color
-    var approval: Color
-    var done: Color
-    var problem: Color
-    /// Secondary buttons (Stop, Deny).
-    var buttonFill = Color(.tertiarySystemFill)
-    /// The setup steps already done, and those still to do.
-    var segmentDone: Color
-    var track: Color
-    /// The step line of a finished run.
-    var finished: Color
-    /// The one main button (Allow, Open Poki): a white capsule with blue text.
-    var primaryFill = Color.blue
-    var primaryText = Color.white
-
-    func color(_ tone: ActivityTone) -> Color {
-        switch tone {
-        case .quiet: quiet
-        case .plain: text
-        case .accent: accent
-        case .approval: approval
-        case .done: done
-        case .problem: problem
-        }
-    }
-}
-
-/// Every colour, font and size the Live Activity draws with. Restrained: the system's label colours
-/// and one colour per kind of state (blue when Poki needs you or is busy, green when done, red for a
-/// problem), the same on the Lock Screen and in the island. The Lock Screen uses the system's own
-/// background, light or dark; the island is always dark, so the same semantic colours read on both.
+/// Every colour, font and size the Live Activity draws with. Black, white words and Poki, on the Lock
+/// Screen and in the island alike: the app's own look, with what you can press in white. Poki's pose
+/// says the state, so no state has a colour.
 struct ActivityTheme {
-    private static let palette = ActivityPalette(
-        text: .primary, quiet: .secondary, accent: .blue, approval: .blue, done: .green,
-        problem: .red, segmentDone: .green, track: Color(.tertiarySystemFill), finished: .green)
-    var lock = ActivityTheme.palette
-    var island = ActivityTheme.palette
-    /// nil: the system's own background.
-    var lockBackground: Color? = nil
-    var glassEdge = Color(.separator)
+    /// The words, the main button's fill, Stop's square.
+    var text = Color.white
+    /// Second-level words: the status word, the meta value.
+    var quiet = Color.white.opacity(0.64)
+    /// The fill of what you can press that is not the main button: Stop, Deny.
+    var fill = Color.white.opacity(0.17)
+    /// The Lock Screen card, black like the island.
+    var lockBackground = Color.black
     /// The island's outline while the person is needed.
-    var approvalOutline = Color.blue
-    var primaryIcon = Color.white
+    var approvalOutline = Color.white
 
     // Text styles, medium weight or heavier (HIG): the content line large, everything else one size.
-    // Geist (Prominent) for the status word and the content line, as in the app's titles.
-    var status = Prominent.font(.subheadline, .semibold)
-    var meta = Font.system(.subheadline, weight: .medium).monospacedDigit()
-    var button = Font.system(.subheadline, weight: .semibold)
+    var button = Font.system(.callout, weight: .semibold)
     var compact = Font.system(.subheadline, weight: .semibold).monospacedDigit()
     var compactCode = Font.system(.subheadline, weight: .bold).monospacedDigit()
     var countdown = Font.system(.subheadline, weight: .semibold).monospacedDigit()
-    var content = Prominent.font(.title3, .semibold)
-    var contentTracking: CGFloat = 0
-
-    func palette(_ surface: ActivitySurface) -> ActivityPalette { surface == .lockScreen ? lock : island }
+    /// The one line (18 semibold in the prototype), a card's heading, and the quiet line under it. The
+    /// system's own face, as on the app's pages.
+    var content = Font.system(size: 18, weight: .semibold)
+    var heading = Font.system(size: 20, weight: .semibold)
+    var detail = Font.system(size: 14)
 
     static let current = ActivityTheme()
 }

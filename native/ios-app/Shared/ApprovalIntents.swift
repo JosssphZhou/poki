@@ -84,6 +84,19 @@ struct StopRunnerIntent: LiveActivityIntent {
     }
 }
 
+/// The microphone on the Live Activity while a talk with Poki goes on: a tap ends the talk and closes the
+/// microphone. Poki's task, if one is running, goes on; Stop is for that.
+struct EndTalkIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "End talk"
+    static let openAppWhenRun = false
+    static let isDiscoverable = false
+    init() {}
+    func perform() async throws -> some IntentResult {
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(ApprovalMailbox.endTalk as CFString), nil, nil, true)
+        return .result()
+    }
+}
+
 /// Done on the Live Activity's "your turn" card: the person finished what the agent could not do
 /// (a passcode, a verification, a payment). The app passes it on to PokiCore, which tells the agent.
 /// No authentication: it only says "carry on".
@@ -119,6 +132,7 @@ struct NoTapIntent: LiveActivityIntent {
 enum ApprovalMailbox {
     static let notification = SharedContainer.appGroup + ".approval"
     static let stopRunner = SharedContainer.appGroup + ".stop-runner"
+    static let endTalk = SharedContainer.appGroup + ".end-talk"
     static let handoffDone = SharedContainer.appGroup + ".handoff-done"
     static let handoffKey = "handoff.done"
 

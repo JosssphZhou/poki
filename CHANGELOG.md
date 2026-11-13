@@ -10,10 +10,11 @@ Build numbers are the GitHub Actions run number of the release workflow.
 ## [Unreleased]
 
 ### Added
-- 
+- During a talk with Poki, the Live Activity shows the open microphone and a button that ends the talk.
 
 ### Changed
 - A new app icon: Poki on the front page’s sky.
+- The Dynamic Island and the Lock Screen card are black, with Poki’s pose for what it is doing, the step in words, and Stop.
 
 ### Fixed
 - PokiTests run to the end on the iOS 26.3 simulator: a tunnel that went away no longer stopped the run.

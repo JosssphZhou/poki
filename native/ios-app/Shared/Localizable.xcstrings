@@ -2734,22 +2734,6 @@
         }
       }
     },
-    "Deny" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拒绝"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拒絕"
-          }
-        }
-      }
-    },
     "Deny action" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2975,6 +2959,22 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
+            "value" : "不允許"
+          }
+        }
+      }
+    },
+    "Don’t allow" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "不允许"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
             "value" : "不允許"
           }
         }
@@ -5463,7 +5463,7 @@
       },
       "extractionState" : "manual"
     },
-    "Next Step" : {
+    "Next step" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9045,7 +9045,7 @@
         }
       }
     },
-    "Runner Asleep" : {
+    "Runner asleep" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9984,22 +9984,6 @@
       },
       "extractionState" : "manual"
     },
-    "Step %lld" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "第 %lld 步"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "第 %lld 步"
-          }
-        }
-      }
-    },
     "Step %lld, in %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10326,6 +10310,38 @@
         }
       }
     },
+    "Talking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "对话中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "對話中"
+          }
+        }
+      }
+    },
+    "Talking, working" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "对话中，正在操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "對話中，正在操作"
+          }
+        }
+      }
+    },
     "Tap **Pair with Poki** and enter the code shown here and on the Lock Screen." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10542,7 +10558,7 @@
         }
       }
     },
-    "Task Started" : {
+    "Task started" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -12734,23 +12750,6 @@
       },
       "extractionState" : "manual"
     },
-    "Your Turn" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "轮到你了"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "輪到你了"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Your agents can use this iPhone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -12831,6 +12830,23 @@
           }
         }
       }
+    },
+    "Your turn" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轮到你了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輪到你了"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "a connector" : {
       "localizations" : {

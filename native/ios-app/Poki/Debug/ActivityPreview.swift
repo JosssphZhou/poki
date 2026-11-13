@@ -51,20 +51,22 @@ struct ActivityPreview: View {
 
     private static func title(_ name: String) -> String {
         switch name {
-        case "start": String(localized: "Task Started")
+        case "start": String(localized: "Task started")
         case "working": String(localized: "Working")
-        case "step": String(localized: "Next Step")
+        case "step": String(localized: "Next step")
         case "approval": String(localized: "Approval")
         case "deciding": String(localized: "Approved")
-        case "yourturn": String(localized: "Your Turn")
+        case "yourturn": String(localized: "Your turn")
         case "passcode": String(localized: "Passcode")
         case "done": String(localized: "Done")
         case "ready": String(localized: "Ready")
-        case "idle": String(localized: "Runner Asleep")
+        case "idle": String(localized: "Runner asleep")
         case "problem": String(localized: "Problem")
         case "pairing": String(localized: "Pairing")
-        case "code": String(localized: "Pairing Code")
+        case "code": String(localized: "Pairing code")
         case "setup": String(localized: "Setup")
+        case "talking": String(localized: "Talking")
+        case "talkwork": String(localized: "Talking, working")
         default: name.capitalized
         }
     }
@@ -130,8 +132,15 @@ struct ActivityPreview: View {
         var setup = PokiState(phase: .setup, headline: "Setting up Poki", thumbnailVersion: 0)
         setup.guide = .init(number: 2, count: SetupStep.shown.count, title: SetupStep.developerMode.activityTitle)
 
+        // A talk with Poki: the microphone is open while it listens, and while a step of the talk runs.
+        var talking = ready
+        talking.talking = true
+        var talkWork = step
+        talkWork.talking = true
+
         return [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
-                ("ready", ready), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup)]
+                ("ready", ready), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup),
+                ("talking", talking), ("talkwork", talkWork)]
     }()
 
     /// A stand-in screenshot (a chat screen) for the thumbnail, drawn here so the preview needs no files.
@@ -162,7 +171,7 @@ private struct LockScreenFrame: View {
         let card = RoundedRectangle(cornerRadius: ActivityMetrics.lockCorner, style: .continuous)
         LockScreenCard(face: state.face)
             .frame(maxWidth: 371)
-            .background(ActivityTheme.current.lockBackground ?? Color(.secondarySystemGroupedBackground), in: card)
+            .background(ActivityTheme.current.lockBackground, in: card)
             .containerShape(card)
             .clipShape(card)
             .overlay(alignment: .bottomTrailing) { HeightBadge() }
@@ -178,12 +187,9 @@ private struct IslandExpandedFrame: View {
         let shape = RoundedRectangle(cornerRadius: ActivityMetrics.islandCorner, style: .continuous)
         // The row beside the camera and the gap under it as iOS lays them out (measured on the
         // iPhone 17 Pro simulator), so the height badge matches the real island.
+        // The camera's row is empty; the card sits under it, as iOS lays the bottom region out.
         VStack(spacing: 4) {
-            HStack(spacing: 0) {
-                IslandLeading(face: state.face).frame(width: 110, height: 25)
-                Spacer(minLength: 120)
-                IslandTrailing(face: state.face).frame(width: 110, height: 25)
-            }
+            Color.clear.frame(height: 25)
             IslandBottom(face: state.face)
         }
         .padding(insets)

@@ -562,6 +562,23 @@ final class AppModel {
         }
     }
 
+    /// The Live Activity follows a talk with Poki: while one is on it shows the open microphone, in front
+    /// and while a step of the talk has Poki working in another app. A talk needs a model and not Poki
+    /// being on, so the activity is started for it and ended with it when Poki is off.
+    private func watchTalk() {
+        withObservationTracking { _ = voice.isLive } onChange: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                let live = self.voice.isLive
+                if live { self.activity.start(deviceName: self.deviceName) }
+                self.activity.update { $0.talking = live ? true : nil }
+                // Setup's own activity (a pairing code, a step's guide) is not the talk's to end.
+                if !live, !self.sessionOn, self.activity.state.phase != .setup { self.activity.end() }
+                self.watchTalk()
+            }
+        }
+    }
+
     /// In the background the loopback is still watched while Poki is on (the agent's runner depends on
     /// it): every 6 s, light enough for the location-kept background time.
     func wentToBackground() {
@@ -1333,6 +1350,15 @@ final class AppModel {
             let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
             Task { @MainActor in model.pauseRunner(reason: "Stopped from the Live Activity") }
         }, ApprovalMailbox.stopRunner as CFString, nil, .deliverImmediately)
+        CFNotificationCenterAddObserver(center, observer, { _, observer, _, _, _ in
+            guard let observer else { return }
+            let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
+            Task { @MainActor in
+                model.log.add("voice", "the talk was ended from the Live Activity")
+                model.voice.stop()
+            }
+        }, ApprovalMailbox.endTalk as CFString, nil, .deliverImmediately)
+        watchTalk()
         CFNotificationCenterAddObserver(center, observer, { _, observer, _, _, _ in
             guard let observer else { return }
             let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
