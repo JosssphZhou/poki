@@ -40,7 +40,7 @@ struct PokiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView().environment(model).environment(chat)
+            RootView().overlay { LaunchCover() }.environment(model).environment(chat)
         }
     }
 }
