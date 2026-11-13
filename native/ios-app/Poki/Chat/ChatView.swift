@@ -1630,7 +1630,7 @@ struct LiveVoiceTranscript: View {
             let lines = voice.lines
             VStack(spacing: 4) {
                 Label(voice.isOn ? LocalizedStringKey("Talk with Poki") : LocalizedStringKey("Voice conversation"), systemImage: "waveform")
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(ChatColor.secondary)
+                    .font(.caption.weight(.medium)).foregroundStyle(ChatColor.secondary)
                     .padding(.top, 12).padding(.bottom, 4).frame(maxWidth: .infinity)
                 ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
                     let pending = i == lines.count - 1 && line.role == .you && voice.phase == .hearing

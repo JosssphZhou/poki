@@ -22,6 +22,7 @@ struct SessionsView: View {
     @State private var newName = ""
     @Environment(\.inThreadsDrawer) private var inDrawer
     @Environment(\.drawerSliding) private var sliding
+    @ScaledMetric(relativeTo: .title) private var headerIcon = 32.0
 
     private var store: SessionStore { SessionStore.shared }
     private var sampleHome: String? { UserDefaults.standard.string(forKey: "pokiHome") }
@@ -62,10 +63,11 @@ struct SessionsView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        let iconSide = min(44, headerIcon)
+        return HStack(spacing: 10) {
             // The app's icon, small, rounded in the system's proportion for app icons.
-            Image("PokiIcon").resizable().scaledToFit().frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 32 * 0.225, style: .continuous))
+            Image("PokiIcon").resizable().scaledToFit().frame(width: iconSide, height: iconSide)
+                .clipShape(RoundedRectangle(cornerRadius: iconSide * 0.225, style: .continuous))
                 .accessibilityHidden(true)
             Text(verbatim: "Poki").font(Prominent.font(size: 28, relativeTo: .title, .bold)).foregroundStyle(Color(.label))
                 .accessibilityAddTraits(.isHeader)
@@ -73,38 +75,45 @@ struct SessionsView: View {
         }
         .padding(.horizontal, 32).padding(.top, 8).padding(.bottom, 12)
         .background(Tint.sidebar)
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     /// Floating over the list's foot: a new conversation, in the leading corner, and Settings in the trailing one.
     private var controls: some View {
-        HStack(alignment: .center) {
+        HStack(spacing: 12) {
             Button {
                 guard !sliding else { return }
                 if !chat.running { chat.newConversation() }
                 openChat()
             } label: {
-                Label("New Conversation", systemImage: "square.and.pencil")
-                    .labelStyle(PillLabelStyle())
-                    .font(.body.weight(.semibold)).foregroundStyle(.white)
-                    // One line: "New Conversation" in English is the longest, and in a narrow drawer it
-                    // shrinks a little rather than wrapping.
-                    .lineLimit(1).minimumScaleFactor(0.8)
-                    .padding(.horizontal, 18).frame(minHeight: 48)
-                    .contentShape(.capsule)
+                ViewThatFits(in: .horizontal) {
+                    Label("New Conversation", systemImage: "square.and.pencil")
+                        .labelStyle(PillLabelStyle())
+                        .fixedSize()
+                        .padding(.horizontal, 18)
+                    Image(systemName: "square.and.pencil")
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .frame(minWidth: 48)
+                }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.vertical, 8)
+                .frame(minHeight: 48)
+                .contentShape(.capsule)
             }
             .buttonStyle(.plain)
             // Poki's blue, the send button's own.
             .glassSurface(in: Capsule(), tint: Tint.blue, interactive: true)
             .opacity(chat.running ? 0.5 : 1)
             .disabled(chat.running)
+            .accessibilityLabel(Text("New Conversation"))
             .accessibilityIdentifier("threads.newChat")
-            Spacer(minLength: 12)
+            .accessibilityShowsLargeContentViewer()
+            Spacer(minLength: 0)
             SettingsEntryButton()
+                .fixedSize()
         }
         .glassGroup(spacing: 8)
         .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 4)
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     private func heading(_ day: Day) -> some View {
@@ -156,7 +165,8 @@ struct SessionsView: View {
                 if needs { Circle().fill(Tint.amber).frame(width: 8, height: 8).accessibilityHidden(true) }
                 else if let trouble {
                     Image(systemName: trouble == .failed ? "exclamationmark.circle.fill" : "pause.circle.fill")
-                        .font(.system(size: 14)).foregroundStyle(trouble == .failed ? Tint.red : Color.secondary)
+                        .font(.subheadline).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .foregroundStyle(trouble == .failed ? Tint.red : Color.secondary)
                         .accessibilityHidden(true)
                 }
             }
@@ -368,13 +378,14 @@ struct ConversationTitle: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var nameSize: CGFloat = 18
+    @ScaledMetric(relativeTo: .body) private var iconSize = 22.0
 
     var body: some View {
         let app = app ?? session.app
         HStack(spacing: 12) {
-            if let app, AppIconStore.shared.icon(app, dark: scheme == .dark) != nil { AppIconView(app: app, size: 22) }
+            if let app, AppIconStore.shared.icon(app, dark: scheme == .dark) != nil { AppIconView(app: app, size: min(34, iconSize)) }
             Text(verbatim: session.name).font(.system(size: nameSize)).foregroundStyle(Color(.label))
-                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
         }
         .task(id: app) { if let app { await AppIconStore.shared.load(app) } }
     }

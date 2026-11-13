@@ -81,6 +81,7 @@ struct SignerActivityRows: View {
 
 /// The Setup page's signing section: when Poki stops opening, the build that is ready, and Install.
 struct SigningSection: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(AppModel.self) private var model
     private var signer: SelfSigner { model.signer }
 
@@ -93,9 +94,10 @@ struct SigningSection: View {
             }
             LabeledContent {
                 if let expiry = signer.expiry {
-                    // One line: the date, and how long is left in the warning colour when it is close.
+                    // The date and its countdown stay readable when the row needs more room.
                     (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("No Profile").foregroundStyle(Color(.secondaryLabel))
                 }
@@ -108,7 +110,8 @@ struct SigningSection: View {
                 LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             } else if let next = signer.next {
                 LabeledContent {
-                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day().year()))").lineLimit(1)
+                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day().year()))")
+                        .fixedSize(horizontal: false, vertical: true)
                 } label: {
                     Label(next.kind == "update" ? "Update Ready" : "Refresh Ready", systemImage: "checkmark.seal")
                 }

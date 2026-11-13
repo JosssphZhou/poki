@@ -88,8 +88,8 @@ private struct InUseCard: View {
             }
             .accessibilityElement(children: .combine)
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) { uses(has: has, provider: provider) }
-                VStack(alignment: .leading, spacing: 6) { uses(has: has, provider: provider) }
+                HStack(spacing: 6) { uses(has: has, provider: provider, singleLine: true) }
+                VStack(alignment: .leading, spacing: 6) { uses(has: has, provider: provider, singleLine: false) }
             }
             if !has {
                 SettingsPill(title: "Add Account", symbol: "plus", prominent: true, action: add)
@@ -99,21 +99,20 @@ private struct InUseCard: View {
         .padding(.vertical, 8)
     }
 
-    @ViewBuilder private func uses(has: Bool, provider: ModelProvider) -> some View {
-        chip("Text Chat", has ? provider.name : String(localized: "No Account"))
-        chip("Live Voice", VoiceDirect.apiKey != nil ? String(localized: "OpenAI") : String(localized: "No Account"))
-        chip("Dictation", String(localized: "On This iPhone"))
+    @ViewBuilder private func uses(has: Bool, provider: ModelProvider, singleLine: Bool) -> some View {
+        chip("Text Chat", has ? provider.name : String(localized: "No Account"), singleLine: singleLine)
+        chip("Live Voice", VoiceDirect.apiKey != nil ? String(localized: "OpenAI") : String(localized: "No Account"), singleLine: singleLine)
+        chip("Dictation", String(localized: "On This iPhone"), singleLine: singleLine)
     }
 
-    private func chip(_ title: LocalizedStringKey, _ value: String) -> some View {
+    private func chip(_ title: LocalizedStringKey, _ value: String, singleLine: Bool) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(title).font(.caption).foregroundStyle(Color(.secondaryLabel))
             Text(verbatim: value).font(.footnote.weight(.semibold)).foregroundStyle(Color(.label))
         }
-        .lineLimit(1)
-        // A chip never gets less than its words need: the row gives a long value (Dictation's
-        // "On This iPhone") its width from the shorter ones, and stacks the chips when they can't all fit.
-        .fixedSize(horizontal: true, vertical: false)
+        .lineLimit(singleLine ? 1 : nil)
+        // Measure the row at its natural width. The stacked fallback can wrap long values.
+        .fixedSize(horizontal: singleLine, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Tint.blueSoft.opacity(0.6), in: .rect(cornerRadius: 12, style: .continuous))

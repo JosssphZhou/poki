@@ -319,7 +319,9 @@ struct UpdatePill: View {
                 Image(systemName: "arrow.down.circle.fill").foregroundStyle(Tint.blue)
                 Text("Update Available").foregroundStyle(Color(.label))
             }
-            .font(.subheadline.weight(.medium)).lineLimit(1).minimumScaleFactor(0.8)
+            .font(.subheadline.weight(.medium))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 8)
             .padding(.horizontal, 16).frame(minHeight: 44)
             .contentShape(.capsule)
         }
@@ -446,6 +448,7 @@ struct HomePage<Footer: View>: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.coveredByDrawer) private var covered
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.dynamicTypeSize) private var typeSize
     private let shortcutStore = HomeShortcutStore.shared
     /// Picked as the page comes in, so it does not change while you look at it.
     @State private var greetedAt = Date.now
@@ -489,14 +492,19 @@ struct HomePage<Footer: View>: View {
                     if !writing, !editorTyping {
                         VStack(spacing: 8) {
                             let shortcuts = shortcutStore.shortcuts
-                            // Three on top, or the larger half of more than six.
-                            let top = max(3, (shortcuts.count + 1) / 2)
-                            row(Array(shortcuts.prefix(top)), at: 0, speed: HomeMotion.pillSpeeds.top, start: 64)
-                            if shortcuts.count > top { row(Array(shortcuts.dropFirst(top)), at: 1, speed: HomeMotion.pillSpeeds.bottom, start: 0) }
+                            if typeSize.isAccessibilitySize {
+                                ForEach(shortcuts) { idea in shortcut(idea, row: 0) }
+                            } else {
+                                // Three on top, or the larger half of more than six.
+                                let top = max(3, (shortcuts.count + 1) / 2)
+                                row(Array(shortcuts.prefix(top)), at: 0, speed: HomeMotion.pillSpeeds.top, start: 64)
+                                if shortcuts.count > top { row(Array(shortcuts.dropFirst(top)), at: 1, speed: HomeMotion.pillSpeeds.bottom, start: 0) }
+                            }
                         }
                         .padding(.top, 2)
+                        .padding(.horizontal, typeSize.isAccessibilitySize ? 18 : 0)
                         // A sideways drag on the rows scrolls them; it does not pull the drawer out.
-                        .scrollsSideways(home)
+                        .scrollsSideways(home && !typeSize.isAccessibilitySize)
                         .opacity(home ? 1 : 0)
                         .offset(y: home || reduceMotion ? 0 : 14)
                         .animation(HomeMotion.pills(home, reduceMotion), value: home)
@@ -556,16 +564,18 @@ struct HomePage<Footer: View>: View {
     private func row(_ ideas: [HomeShortcut], at index: Int, speed: Double, start: CGFloat) -> some View {
         Marquee(speed: speed, spacing: 8, start: start, edgeFade: 32, running: !reduceMotion && !DeviceStrain.shared.resting && !writing && !PerfSwitch.on(.pillsStill),
                 active: home && scenePhase == .active && !covered, loops: !voiceOver, stopped: busy) {
-            ForEach(ideas) { idea in
-                ShortcutPill(idea: idea, row: index, locked: busy, pick: { pick(idea.prompt) },
-                             hold: { frame in
-                                 guard home, !busy else { return }
-                                 holds += 1
-                                 held = HeldShortcut(shortcut: idea, frame: frame)
-                             },
-                             edit: { edit(idea) }, forget: { shortcutStore.forget(idea) })
-            }
+            ForEach(ideas) { idea in shortcut(idea, row: index) }
         }
+    }
+
+    private func shortcut(_ idea: HomeShortcut, row: Int) -> some View {
+        ShortcutPill(idea: idea, row: row, locked: busy, pick: { pick(idea.prompt) },
+                     hold: { frame in
+                         guard home, !busy else { return }
+                         holds += 1
+                         held = HeldShortcut(shortcut: idea, frame: frame)
+                     },
+                     edit: { edit(idea) }, forget: { shortcutStore.forget(idea) })
     }
 
     /// A pill's menu or its Edit popup is open, or about to: the rows stand still, and no pill is tapped.
@@ -596,19 +606,27 @@ private struct ShortcutPill: View {
     var edit: () -> Void
     var forget: () -> Void
     @State private var place = ScreenPlace.Probe()
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .subheadline) private var iconSide = 24.0
 
     var body: some View {
         Button { if !locked { pick() } } label: {
             HStack(spacing: 8) {
-                AppIconView(app: idea.app, size: 24, alwaysLight: true)
-                HStack(spacing: 5) {
+                AppIconView(app: idea.app, size: min(40, iconSide), alwaysLight: true)
+                let layout = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                    : AnyLayout(HStackLayout(spacing: 5))
+                layout {
                     if !idea.appName.isEmpty {
                         Text(verbatim: idea.appName).font(.subheadline.weight(.semibold)).foregroundStyle(Color(.label))
                     }
                     Text(verbatim: idea.text).font(.subheadline).foregroundStyle(Color(.label).opacity(0.7))
                 }
-                .lineLimit(1)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.vertical, typeSize.isAccessibilitySize ? 10 : 0)
+            .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
             .padding(.leading, 12).padding(.trailing, 18).frame(minHeight: 48)
             .contentShape(.capsule)
         }
@@ -623,8 +641,6 @@ private struct ShortcutPill: View {
         .accessibilityAction(named: Text("Edit"), edit)
         .accessibilityAction(named: Text("Forget"), forget)
         .accessibilityIdentifier("home.idea." + (idea.app.isEmpty ? "poki" : idea.app))
-        // Said here and not on the row: the pills live in the scroll view's own hosting view.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 }
 
