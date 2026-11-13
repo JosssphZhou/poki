@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// The launch screen once more, as the app's first frame: the same ground and the same bear in the same place
-/// as LaunchScreen.storyboard, so iOS's launch screen turns into the app with nothing moving. It then fades to
-/// the page beneath it, so the blue does not jump to the home page's white or near-black. It waits for nothing.
-/// With Reduce Motion it is not drawn at all. Touches go through it.
+/// The launch screen once more, as the app's first frame: LaunchScreen.storyboard itself, so iOS's launch screen
+/// turns into the app with nothing moving. It then fades to the page beneath it, so the launch screen's blue does
+/// not jump to the home page's white or near-black. It waits for nothing. With Reduce Motion it is not drawn at
+/// all. Touches go through it.
 struct LaunchCover: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var gone = false
@@ -30,25 +30,20 @@ struct LaunchCover: View {
 /// rest of a cold start can hold the app for longer than the whole fade: it measured as already two thirds over
 /// when the first frame showed, and the blue then jumped to the page.
 private final class LaunchCoverView: UIView, CAAnimationDelegate {
-    /// The bear's side on the launch screen, as in LaunchScreen.storyboard.
-    private static let bearSide: CGFloat = 136
     /// `-pokiSlow 20` stretches it, to catch a frame of it in a screenshot.
     private static let duration = 0.35 * HomeMotion.slow
 
-    /// Holds both pictures and is what fades: SwiftUI owns this view's own opacity.
-    private let pictures = UIView()
-    private let ground = UIImageView(image: UIImage(named: "LaunchGround"))
-    private let bear = UIImageView(image: UIImage(named: "ActivityBear-ready"))
+    /// The launch screen's own view, and what fades: SwiftUI owns this view's own opacity.
+    private let pictures: UIView
     private let done: () -> Void
     private var started = false
 
     init(done: @escaping () -> Void) {
         self.done = done
+        pictures = UIStoryboard(name: "LaunchScreen", bundle: nil).instantiateInitialViewController()?.view ?? UIView()
         super.init(frame: .zero)
         isUserInteractionEnabled = false
-        ground.contentMode = .scaleToFill
-        pictures.addSubview(ground)
-        pictures.addSubview(bear)
+        pictures.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(pictures)
     }
 
@@ -57,9 +52,6 @@ private final class LaunchCoverView: UIView, CAAnimationDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         pictures.frame = bounds
-        ground.frame = bounds
-        bear.bounds = CGRect(x: 0, y: 0, width: Self.bearSide, height: Self.bearSide)
-        bear.center = CGPoint(x: bounds.midX, y: bounds.midY)
     }
 
     override func didMoveToWindow() {

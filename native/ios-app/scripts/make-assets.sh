@@ -25,12 +25,19 @@ cp "$ICON" "$APP/AppIcon.appiconset/icon-1024.png"
 echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"},{"appearances":[{"appearance":"luminosity","value":"dark"}],"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"version":1,"author":"poki"}}' > "$APP/AppIcon.appiconset/Contents.json"
 mkdir -p "$APP/AccentColor.colorset"
 echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x20","green":"0x84","blue":"0xFD","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
-# The launch screen's ground (LaunchScreen.storyboard, and LaunchCover in the app): the icon's own ground, night
-# blue down to sky blue, read from the icon and stretched over the whole screen. One picture for light and dark.
-mkdir -p "$APP/LaunchGround.imageset"
-swift "$HERE/scripts/launch-ground.swift" "$ICON" "$APP/LaunchGround.imageset/ground.png"
-echo '{"images":[{"filename":"ground.png","idiom":"universal","scale":"1x"}],"info":{"version":1,"author":"poki"}}' > "$APP/LaunchGround.imageset/Contents.json"
 bear "$APP"
+# The launch screen (LaunchScreen.storyboard) is the Bear picture in the middle of a ground that meets it on every
+# side, so the square does not show: scripts/launch-ground.swift reads the ground from the picture's own edge.
+# One set of pictures for light and dark. POKI_LAUNCH_FEATHER, in pixels of the 360-pixel picture, fades the
+# bear into the ground where the picture's left and bottom edges cut it off; 0 leaves the picture as it is.
+launch="$(mktemp -d)"
+swift "$HERE/scripts/launch-ground.swift" "$APP/Bear.imageset/bear@3x.png" "$launch" "${POKI_LAUNCH_FEATHER:-0}"
+for part in band top bottom bear; do
+  mkdir -p "$APP/Launch-$part.imageset"
+  mv "$launch/$part.png" "$APP/Launch-$part.imageset/$part@3x.png"
+  echo '{"images":[{"filename":"'"$part"'@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/Launch-$part.imageset/Contents.json"
+done
+rmdir "$launch"
 # The app icon as a picture for the app's own pages (the conversations' header), small: 64 points at 3x.
 mkdir -p "$APP/PokiIcon.imageset"
 sips -Z 192 "$ICON" --out "$APP/PokiIcon.imageset/icon@3x.png" >/dev/null
