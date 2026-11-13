@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The screen iOS shows while Poki opens: the app icon's own ground (LaunchGround, made by scripts/make-assets.sh)
+     stretched over the whole screen, and the ready bear in the middle, 136 points. Both are laid out against the
+     whole screen, not the safe area, as LaunchCover lays them out again in the app's first frame. -->
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="22155" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launch">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="22131"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <scenes>
+        <scene sceneID="scene">
+            <objects>
+                <viewController id="launch" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="root">
+                        <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleToFill" image="LaunchGround" translatesAutoresizingMaskIntoConstraints="NO" id="ground">
+                                <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+                            </imageView>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="ActivityBear-ready" translatesAutoresizingMaskIntoConstraints="NO" id="bear">
+                                <rect key="frame" x="128.5" y="358" width="136" height="136"/>
+                            </imageView>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="safe"/>
+                        <color key="backgroundColor" red="0.1803921568627451" green="0.39215686274509803" blue="0.77254901960784317" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+                        <constraints>
+                            <constraint firstItem="ground" firstAttribute="top" secondItem="root" secondAttribute="top" id="gt"/>
+                            <constraint firstItem="ground" firstAttribute="bottom" secondItem="root" secondAttribute="bottom" id="gb"/>
+                            <constraint firstItem="ground" firstAttribute="leading" secondItem="root" secondAttribute="leading" id="gl"/>
+                            <constraint firstItem="ground" firstAttribute="trailing" secondItem="root" secondAttribute="trailing" id="gr"/>
+                            <constraint firstItem="bear" firstAttribute="centerX" secondItem="root" secondAttribute="centerX" id="cx"/>
+                            <constraint firstItem="bear" firstAttribute="centerY" secondItem="root" secondAttribute="centerY" id="cy"/>
+                            <constraint firstItem="bear" firstAttribute="width" constant="136" id="w"/>
+                            <constraint firstItem="bear" firstAttribute="height" constant="136" id="h"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="first" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="ActivityBear-ready" width="136" height="136"/>
+        <image name="LaunchGround" width="16" height="1024"/>
+    </resources>
+</document>
