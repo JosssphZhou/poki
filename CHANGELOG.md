@@ -19,6 +19,7 @@ Build numbers are the GitHub Actions run number of the release workflow.
 - The chat is flat on paper. While Poki uses the phone the chat stays as it is; afterwards one “Used your iPhone” card lists what it did.
 - One button on the message field opens Dictate and Talk with Poki; during a talk the field is the talk’s own bar.
 - The Model page says what runs the text chat, live voice and dictation, then lists the accounts; it and the Voice and account pages are flat on paper.
+- The Memory page is flat on paper: a tap on a routine or a note asks whether to forget it, and notes are added in place.
 
 ### Fixed
 - PokiTests run to the end on the iOS 26.3 simulator: a tunnel that went away no longer stopped the run.

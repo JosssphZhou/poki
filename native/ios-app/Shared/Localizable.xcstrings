@@ -746,6 +746,22 @@
         }
       }
     },
+    "Add a note, e.g. Mom is “Mama” in Contacts" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加备忘，例如：妈妈在通讯录里叫“Mama”"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新增備忘，例如：媽媽在聯絡人裡叫「Mama」"
+          }
+        }
+      }
+    },
     "Add an Account" : {
       "localizations" : {
         "zh-Hans" : {
@@ -922,6 +938,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增日期"
+          }
+        }
+      }
+    },
+    "Added by %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "由%@添加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "由%@新增"
           }
         }
       }
@@ -1400,6 +1432,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "An agent saves a routine after a task that worked. Next time it repeats the task in one step and stops where the screen differs." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "任务成功后，智能体会保存一个例程。下次它会一步重复该任务，并在屏幕不同的地方停下。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "任務成功後，AI 代理會儲存一個例行程序。下次它會一步重複該任務，並在螢幕不同的地方停下。"
+          }
+        }
+      }
     },
     "An approval is waiting for you." : {
       "localizations" : {
@@ -2173,23 +2221,6 @@
         }
       }
     },
-    "Clear Memory" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除记忆"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清除記憶"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Clear all routines and notes on this iPhone?" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2206,6 +2237,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Clear memory" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "清除记忆"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "清除記憶"
+          }
+        }
+      }
     },
     "Close" : {
       "localizations" : {
@@ -3406,22 +3453,21 @@
         }
       }
     },
-    "Export Memory" : {
+    "Export memory" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "导出记忆"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "匯出記憶"
+            "state" : "needs_review",
+            "value" : "輸出記憶"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "External Agents" : {
       "localizations" : {
@@ -3650,6 +3696,22 @@
         }
       }
     },
+    "For the Poki maintainers. No typed text" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "供 Poki 维护者使用，不含输入的文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "供 Poki 維護者使用，不含輸入的文字"
+          }
+        }
+      }
+    },
     "Forget" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3666,6 +3728,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Forget “%@”?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要忘记“%@”吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "要忘記「%@」嗎？"
+          }
+        }
+      }
     },
     "Free on the App Store" : {
       "localizations" : {
@@ -4009,23 +4087,6 @@
         }
       }
     },
-    "Import Memory" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导入记忆"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "匯入記憶"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Import Pairing File" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4038,6 +4099,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "匯入配對檔案"
+          }
+        }
+      }
+    },
+    "Import memory" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "导入记忆"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "輸入記憶"
           }
         }
       }
@@ -5224,22 +5301,21 @@
         }
       }
     },
-    "Move or Back Up" : {
+    "Move or back up" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "迁移或备份"
+            "state" : "needs_review",
+            "value" : "转移或备份"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "遷移或備份"
+            "state" : "needs_review",
+            "value" : "轉移或備份"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Mute Poki's voice" : {
       "localizations" : {
@@ -9508,22 +9584,21 @@
       },
       "extractionState" : "manual"
     },
-    "Share Run Log for Maintainers" : {
+    "Share the run log" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "与维护者共享运行日志"
+            "state" : "needs_review",
+            "value" : "共享运行日志"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "與維護者共享執行日誌"
+            "state" : "needs_review",
+            "value" : "分享執行記錄"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Shows every action" : {
       "localizations" : {
@@ -11310,23 +11385,6 @@
           }
         }
       }
-    },
-    "The run log lists each routine run, where it stopped and how long it took, with no typed text. It helps the Poki maintainers make routines more reliable." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行日志列出每次例程运行、停止的位置和耗时，不含键入的文本。它帮助 Poki 维护者让例程更可靠。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "執行日誌列出每次例程執行、停止的位置和耗時，不含鍵入的文字。它幫助 Poki 維護者讓例程更可靠。"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "The runner starts when an agent asks." : {
       "localizations" : {
@@ -13123,23 +13181,6 @@
       },
       "extractionState" : "manual"
     },
-    "e.g., Mom is “Mama” in Contacts" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "例如，妈妈在通讯录中叫“Mama”"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "例如，媽媽在通訊錄中叫「Mama」"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "failed: nothing changed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13515,6 +13556,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請求失敗。"
+          }
+        }
+      }
+    },
+    "you" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你"
           }
         }
       }
