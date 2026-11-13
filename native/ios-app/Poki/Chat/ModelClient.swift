@@ -23,6 +23,8 @@ protocol ModelClient: AnyObject {
     /// Where this conversation runs, so the chat starts a new one when the owner picks another model.
     var signature: String { get }
     func say(_ text: String)
+    /// The owner's words with the pictures they attached (JPEGs).
+    func say(_ text: String, pictures: [Data])
     func next(instructions: String, tools: [ToolSpec]) async throws -> ModelTurn
     func answer(_ call: ToolCall, _ result: PokiCore.ToolAnswer)
     /// A request failed before the model saw the owner's last message: it goes again with the next one.
@@ -76,6 +78,18 @@ final class AnthropicClient: ModelClient {
 
     func say(_ text: String) { addUser(["type": "text", "text": text], plain: text) }
 
+    func say(_ text: String, pictures: [Data]) {
+        guard !pictures.isEmpty else { return say(text) }
+        for jpeg in pictures {
+            addUser(["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": jpeg.base64EncodedString()]], plain: nil)
+        }
+        addUser(["type": "text", "text": text], plain: nil)
+        ownerTurn = history.count - 1
+    }
+
+    /// The turn that holds the owner's pictures, so a failed request can take it back.
+    private var ownerTurn: Int?
+
     func answer(_ call: ToolCall, _ result: PokiCore.ToolAnswer) {
         var parts: [[String: Any]] = [["type": "text", "text": result.text]]
         if let jpeg = result.jpeg {
@@ -100,7 +114,8 @@ final class AnthropicClient: ModelClient {
     }
 
     func forgetUnansweredQuestion() {
-        if history.last?["role"] as? String == "user", history.last?["content"] is String { history.removeLast() }
+        if history.last?["role"] as? String == "user", history.last?["content"] is String || ownerTurn == history.count - 1 { history.removeLast() }
+        ownerTurn = nil
     }
 
     func next(instructions: String, tools: [ToolSpec]) async throws -> ModelTurn {

@@ -814,6 +814,22 @@
         }
       }
     },
+    "Add pictures" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "加入圖片"
+          }
+        }
+      }
+    },
     "Add them to the tun section of your Clash Mi profile, import it, then connect." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3490,6 +3506,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Files" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "檔案"
+          }
+        }
+      }
     },
     "Finish setting up this iPhone." : {
       "localizations" : {
@@ -7381,6 +7413,38 @@
       },
       "extractionState" : "manual"
     },
+    "Photos" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "照片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "照片"
+          }
+        }
+      }
+    },
+    "Picture" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "圖片"
+          }
+        }
+      }
+    },
     "Point the camera at the code Poki Setup shows on your computer." : {
       "localizations" : {
         "zh-Hans" : {
@@ -8854,6 +8918,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除金鑰"
+          }
+        }
+      }
+    },
+    "Remove picture" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移除图片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移除圖片"
           }
         }
       }

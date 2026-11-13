@@ -11,6 +11,7 @@ Build numbers are the GitHub Actions run number of the release workflow.
 
 ### Added
 - During a talk with Poki, the Live Activity shows the open microphone and a button that ends the talk.
+- Pictures in a message: the plus on the message field takes up to four from Photos or Files.
 
 ### Changed
 - A new app icon: Poki on the front page’s sky.

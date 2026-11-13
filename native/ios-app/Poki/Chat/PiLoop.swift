@@ -45,7 +45,7 @@ final class PiLoop {
 
     /// The owner's message under this task's instructions, then pi's loop until the model answers
     /// without tools, `stop()` or `maxTurns` model turns. `onText` gets each finished text block.
-    func run(_ text: String, instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
+    func run(_ text: String, pictures: [Data] = [], instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
         use(instructions)
         let turns = Counter()
@@ -69,7 +69,7 @@ final class PiLoop {
         }
         defer { unsubscribe() }
         do {
-            try await agent.prompt(text)
+            try await agent.prompt(text, images: pictures.map { ImageContent(data: $0.base64EncodedString(), mimeType: "image/jpeg") })
         } catch {
             failure.set(error.localizedDescription)
         }

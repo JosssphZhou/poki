@@ -18,6 +18,13 @@ final class OpenAIClient: ModelClient {
 
     func say(_ text: String) { input.append(["role": "user", "content": text]) }
 
+    func say(_ text: String, pictures: [Data]) {
+        guard !pictures.isEmpty else { return say(text) }
+        var content: [[String: Any]] = [["type": "input_text", "text": text]]
+        for jpeg in pictures { content.append(["type": "input_image", "image_url": "data:image/jpeg;base64,\(jpeg.base64EncodedString())"]) }
+        input.append(["role": "user", "content": content])
+    }
+
     func answer(_ call: ToolCall, _ result: PokiCore.ToolAnswer) {
         var output: [[String: Any]] = [["type": "input_text", "text": result.text]]
         if let jpeg = result.jpeg {

@@ -1,5 +1,7 @@
 import AVFoundation
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The chat page (ESP-171 boards "M Chat empty", "M Chat working", "M Chat approved"): Poki's picture and
 /// name on top, the bubbles, and the message field. Approvals happen in the Dynamic Island, which iOS
@@ -30,7 +32,7 @@ struct ChatView: View {
         // The header and the message field are insets of the conversation, so the field sits right on
         // the keyboard (or the home indicator) and the bubbles scroll under both, as in Messages.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComposerInputView(running: chat.running, send: chat.send, stop: chat.stop, openVoice: openVoice,
+            ComposerInputView(running: chat.running, send: chat.send, sendPictures: chat.send, stop: chat.stop, openVoice: openVoice,
                               openModel: openModel, newConversation: chat.newConversation)
         }
         .background(Paper.page)
@@ -144,10 +146,15 @@ struct ChatTranscript<Footer: View>: View {
         case .time:
             // A chat is a record of what was asked and done; the list of chats gives the day.
             EmptyView()
+        case .pictures(let names):
+            PictureBubbles(names: names)
+                .padding(.top, startsRun(i) ? 10 : 0).padding(.bottom, 2)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         case .you(let text, let delivered):
             let last = isLast(i, poki: false)
             VStack(alignment: .trailing, spacing: 4) {
-                MessageBubble(direction: .outgoing, text: text, tail: last)
+                // Pictures sent alone have no words to draw.
+                if !text.isEmpty { MessageBubble(direction: .outgoing, text: text, tail: last) }
             }
             .padding(.top, startsRun(i) ? 10 : 0)
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -199,7 +206,7 @@ struct ChatTranscript<Footer: View>: View {
         !entries[(i + 1)...].contains { entry in
             switch entry.kind {
             case .poki, .plan: poki
-            case .you, .request: !poki
+            case .you, .request, .pictures: !poki
             default: false
             }
         }
@@ -391,6 +398,8 @@ struct ComposerInputView: View {
     @Environment(AppModel.self) private var model
     var running: Bool
     var send: (String) -> Void
+    /// Sends words with pictures. Without it the field takes no attachments (an outside agent's session).
+    var sendPictures: ((String, [Data]) -> Void)? = nil
     var stop: () -> Void
     /// Starts the live voice conversation.
     var openVoice: () -> Void
@@ -400,6 +409,10 @@ struct ComposerInputView: View {
     @State private var dictation = FieldDictation()
     @FocusState private var focused: Bool
     @State private var liveNote: String?
+    @State private var drafts: [PictureDraft] = []
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var pickingPhotos = false
+    @State private var pickingFiles = false
     @State private var speaking = false
     @State private var talkStarted: Date?
     @AppStorage(PokiLight.key) private var lightChoice = PokiLight.firstLight.rawValue
@@ -407,7 +420,9 @@ struct ComposerInputView: View {
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    private var canSend: Bool { hasText }
+    /// Something to send: words, or pictures alone.
+    private var canSend: Bool { hasText || !drafts.isEmpty }
+    private var room: Int { ChatPictures.limit - drafts.count }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -431,8 +446,11 @@ struct ComposerInputView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20)
             }
             VStack(alignment: .leading, spacing: 0) {
+                // Pictures waiting to go, above the words, inside the same field.
+                if !drafts.isEmpty { PictureDraftRow(drafts: $drafts).padding(.leading, 14).transition(.opacity) }
                 if voice.isLive { talkRow } else {
                 HStack(alignment: .bottom, spacing: 0) {
+                    if sendPictures != nil { attach.frame(height: 62) }
                     if dictation.on {
                         Image(systemName: "waveform").font(.system(size: 17, weight: .semibold)).foregroundStyle(Paper.ink)
                             .symbolEffect(.variableColor.iterative, isActive: true).frame(height: 62).padding(.trailing, 10)
@@ -443,7 +461,7 @@ struct ComposerInputView: View {
                         .multilineTextAlignment(.leading)
                         .lineLimit(1...6)
                         .padding(.vertical, 20)
-                        .padding(.leading, dictation.on ? 0 : 18).padding(.trailing, 4)
+                        .padding(.leading, sendPictures == nil && !dictation.on ? 18 : 0).padding(.trailing, 4)
                         .submitLabel(.send)
                         .onSubmit(submit)
                     trailing.frame(height: 62)
@@ -459,6 +477,20 @@ struct ComposerInputView: View {
             .composerGlass(in: RoundedRectangle(cornerRadius: 31, style: .continuous), tint: Paper.field)
             .clipShape(RoundedRectangle(cornerRadius: 31, style: .continuous))
             .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 8)
+        }
+        .photosPicker(isPresented: $pickingPhotos, selection: $picked, maxSelectionCount: max(1, room), matching: .images)
+        .onChange(of: picked) { _, items in
+            guard !items.isEmpty else { return }
+            picked = []
+            Task {
+                let new = await PicturePicking.load(items, room: room)
+                withAnimation(.snappy(duration: 0.2)) { drafts.append(contentsOf: new.prefix(max(0, room))) }
+            }
+        }
+        .fileImporter(isPresented: $pickingFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            let new = PicturePicking.load(urls, room: room)
+            withAnimation(.snappy(duration: 0.2)) { drafts.append(contentsOf: new) }
         }
         .animation(.snappy, value: dictation.on)
         .animation(.snappy, value: voice.isLive)
@@ -501,6 +533,20 @@ struct ComposerInputView: View {
         case .lost(let why): why
         default: String(localized: "Listening")
         }
+    }
+
+    /// In front of the words: add pictures, from Photos or from Files. Up to four go with one message.
+    private var attach: some View {
+        Menu {
+            Button("Photos", systemImage: "photo.on.rectangle") { pickingPhotos = true }
+            Button("Files", systemImage: "folder") { pickingFiles = true }
+        } label: {
+            Image(systemName: "plus").font(.system(size: 19, weight: .medium))
+                .foregroundStyle(Paper.ink.opacity(room > 0 ? 1 : 0.3))
+                .frame(width: 44, height: 44).contentShape(.rect)
+        }
+        .disabled(room <= 0)
+        .accessibilityLabel(Text("Add pictures"))
     }
 
     /// What you press is black: stop while a task runs, send once there are words, and otherwise one
@@ -573,8 +619,9 @@ struct ComposerInputView: View {
     private func submit() {
         guard !running, canSend else { return }
         dictation.stop(model)
-        send(input)
+        if let sendPictures, !drafts.isEmpty { sendPictures(input, drafts.map(\.jpeg)) } else { send(input) }
         input = ""
+        drafts = []
     }
 }
 

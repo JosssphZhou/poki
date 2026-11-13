@@ -88,7 +88,9 @@ function entryLine(kind) {
   const first = value._0;
   switch (name) {
     case 'time': return null;
-    case 'you': return `You: ${first}`;
+    // A message that was pictures alone has no words; the pictures have their own entry before it.
+    case 'you': return first ? `You: ${first}` : null;
+    case 'pictures': return `You sent ${(first ?? []).length === 1 ? 'a picture' : `${(first ?? []).length} pictures`}`;
     case 'poki': return `Poki: ${first}`;
     case 'request': return `${value.from ?? 'An agent'} asked Poki: ${first}`;
     case 'step': return `  · ${first}${value.ok === false ? ' (failed)' : value.ok == null ? ' (running)' : ''}`;
