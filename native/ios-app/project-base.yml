@@ -153,6 +153,7 @@ targets:
     sources:
       - path: PokiWidgets
       - path: Shared
+      - path: Poki/ActivityBears
     info:
       path: PokiWidgets/Info.plist
       properties:

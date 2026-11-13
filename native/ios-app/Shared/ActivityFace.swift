@@ -5,7 +5,7 @@ typealias PokiState = PokiActivityAttributes.ContentState
 /// Which bear the Live Activity draws (ESP-344): no round avatar any more, the bear itself stands on
 /// the island's black or the card's blue and says the state by its pose. The pictures are square;
 /// where the head and hand sit in each is the design's own measurement (`MEC` in its source).
-enum ActivityBear: String, Hashable {
+enum ActivityBear: String, Hashable, Codable {
     case phone, needs, turn, done, tripped, ready, paused, thinking, checking
 
     var image: String { "ActivityBear-\(rawValue)" }
