@@ -6,7 +6,7 @@ name: PR checks
 
 on:
   pull_request:
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', dev/esp-460-beta-preview]
 
 concurrency:
   group: pr-checks-${{ github.event.pull_request.number }}
