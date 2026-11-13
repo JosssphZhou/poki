@@ -29,16 +29,21 @@ struct SessionsView: View {
     var body: some View {
         let groups = grouped
         List {
-            ForEach(groups, id: \.day) { group in
-                if groups.count > 1 { heading(group.day) }
-                ForEach(group.sessions) { session in
-                    row(session)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+            // One section with its own separators hidden: a plain list draws a line above its first row
+            // and under its last, which showed while the drawer slid or the list was pulled.
+            Section {
+                ForEach(groups, id: \.day) { group in
+                    if groups.count > 1 { heading(group.day) }
+                    ForEach(group.sessions) { session in
+                        row(session)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
                 }
+                if groups.isEmpty { empty }
             }
-            if groups.isEmpty { empty }
+            .listSectionSeparator(.hidden)
         }
         .listStyle(.plain)
         .environment(\.defaultMinListRowHeight, 0)
