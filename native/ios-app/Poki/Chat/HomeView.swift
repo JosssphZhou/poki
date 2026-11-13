@@ -356,6 +356,20 @@ enum HomeIdea {
 
     static var examples: [HomeShortcut] { examples(for: .current) }
 
+    /// Starring Poki on GitHub, second on the home page from the first open, for a new owner and one
+    /// who updates alike: the list is worked out again at each launch, so nothing is stored for it.
+    /// Like every pill it reads as an icon, a name in bold and an action (GitHub's mark, GitHub,
+    /// starring Poki), but it has no app this iPhone opens: the task runs in Poki's own browser. Signed
+    /// out, the owner is handed GitHub's sign-in page itself, not the repository with a note to find
+    /// it. Its key does not change with the language, so Forget holds after the iPhone's language changes.
+    static var star: HomeShortcut {
+        HomeShortcut(key: "starpokiongithub", app: "", appName: "GitHub", text: String(localized: "Star Poki"),
+                     prompt: String(localized: """
+                     Open https://github.com/JosssphZhou/poki in the built-in browser and star it. If I am not signed in to \
+                     GitHub, open https://github.com/login?return_to=/JosssphZhou/poki and hand that page to me
+                     """), icon: "github")
+    }
+
     static func examples(for language: AppLanguage) -> [HomeShortcut] {
         language == .simplifiedChinese ? simplifiedChinese : english
     }
@@ -633,7 +647,7 @@ private struct ShortcutPill: View {
     var body: some View {
         Button { if !locked { pick() } } label: {
             HStack(spacing: 8) {
-                AppIconView(app: idea.app, size: min(40, iconSide), alwaysLight: true)
+                AppIconView(app: idea.app, size: min(40, iconSide), alwaysLight: true, carried: idea.icon)
                 let layout = typeSize.isAccessibilitySize
                     ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
                     : AnyLayout(HStackLayout(spacing: 5))
@@ -663,7 +677,7 @@ private struct ShortcutPill: View {
         // What the menu offers, for VoiceOver, which has no long press.
         .accessibilityAction(named: Text("Edit"), edit)
         .accessibilityAction(named: Text("Forget"), forget)
-        .accessibilityIdentifier("home.idea." + (idea.app.isEmpty ? "poki" : idea.app))
+        .accessibilityIdentifier("home.idea." + (idea.app.isEmpty ? idea.icon ?? "poki" : idea.app))
     }
 }
 
