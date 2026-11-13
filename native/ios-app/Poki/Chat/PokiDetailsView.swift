@@ -254,29 +254,20 @@ private struct ConversationsSettingsView: View {
 
 // MARK: The card
 
-/// Poki on the settings home (ESP-469 board "01 设置首页"): the bear's face, the name and where Poki
-/// stands, then Pause (or Resume, or Turn On), Voice and Activity, what you reach for most.
+/// Poki on the settings home: Poki's app icon, small, the name and where Poki stands, then Pause (or
+/// Resume, or Turn On), Voice and Activity, what you reach for most.
 private struct PokiSettingsCard: View {
     var status: PokiStatus
     var power: PowerTile
     var act: (PowerTile) -> Void
     var openVoice: () -> Void
     var openActivity: () -> Void
-    @ScaledMetric(relativeTo: .title2) private var face = 64.0
+    @ScaledMetric(relativeTo: .title2) private var icon = 52.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 14) {
-                Group {
-                    if let image = PokiMood.cutout(status.mood, small: true) {
-                        Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
-                    }
-                }
-                .frame(width: face, height: face)
-                .background(status.mood == .paused ? Tint.night : Tint.portrait, in: .circle)
-                .clipShape(.circle)
-                .overlay(Circle().strokeBorder(Tint.ring, lineWidth: 1))
-                .accessibilityHidden(true)
+                PokiAppIcon(size: icon)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: "Poki").font(Prominent.font(.title2, .bold)).foregroundStyle(Color(.label))
                         .accessibilityAddTraits(.isHeader)
