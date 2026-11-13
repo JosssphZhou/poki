@@ -128,6 +128,7 @@ struct RootView: View {
             openSetup: { fix(.setup, split: split) },
             openSetupStep: { fix(.step($0), split: split) },
             openModel: { fix(.model, split: split) },
+            openVoiceKey: { openDetails([DetailsRoute.voiceKey]) },
             openThreads: split ? nil : { withAnimation(ThreadsDrawerMotion.settle) { threadsOpen = true } },
             openAgents: { fix(.agents, split: split) },
             openUpdates: { fix(.updates, split: split) }
@@ -256,7 +257,7 @@ struct RootView: View {
             if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
         }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
-        // the setup step, or the Activity Log for a problem; `poki://voice` opens the voice page.
+        // the setup step, or the Activity Log for a problem; `poki://voice` opens the ways to speak.
         .onOpenURL { url in open(link: url) }
         // On the window, not the view: sheets and full-screen covers take it too, and Automatic hands back to iOS.
         .onChange(of: appearance, initial: true) { _, value in
@@ -270,7 +271,7 @@ struct RootView: View {
             #if DEBUG
             // Development builds: `-pokiVoiceLink "poki://voice?…"` at launch starts a silent test run.
             if let link = UserDefaults.standard.string(forKey: "pokiVoiceLink"), let url = URL(string: link), url.host() == "voice" {
-                show(.voice)
+                show(.chat)
                 model.voice.openAtLaunch(url)
             }
             #endif
@@ -299,17 +300,23 @@ struct RootView: View {
         } else if url.host() == "voice" {
             detailsOpen = false
             model.voice.open(url)
-            show(.voice)
+            show(.chat)
+            // A link never turns on the microphone by itself: it opens the ways to speak, or, during a
+            // talk, only brings the chat with it to the front.
+            if !model.voice.isOn { model.voice.waysAsked = model.voice.canTalkLive ? .choose : .needsKey }
         } else {
             detailsOpen = false
             show(.chat)
         }
     }
 
-    /// Opens the full-screen Voice page over Poki's chat and starts the live voice conversation if ready.
+    /// Talk with Poki: a live conversation starts in the chat, which stays in front (pull request #250's
+    /// way). Without a live voice (no OpenAI key, no voice bridge) the message field says so, with the
+    /// way to the key in Settings.
     private func openLiveVoice() {
-        show(.voice)
-        if !model.voice.isOn, model.voice.canTalkLive {
+        show(.chat)
+        guard model.voice.canTalkLive else { model.voice.waysAsked = .needsKey; return }
+        if !model.voice.isOn {
             ApprovalNotice.requestPermission()
             Task { await model.voice.start() }
         }

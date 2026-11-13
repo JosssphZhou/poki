@@ -19,6 +19,8 @@ final class BridgeStub: URLProtocol {
 /// The Realtime connection: the test plays the server's events in and sees what was sent and whether it was closed.
 final class FakeConnection: VoiceConnection, @unchecked Sendable {
     var onEvent: (@MainActor ([String: Any]) -> Void)?
+    /// The connection dropping, with the reason.
+    var onClosed: (@MainActor (String) -> Void)?
     private(set) var closed = false
     private(set) var sent: [[String: Any]] = []
     func connect(secret: String, microphone: Bool, direct: Bool) async throws {}
@@ -97,7 +99,7 @@ final class VoiceModelTests: XCTestCase {
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
-                               connection: { onEvent, _ in let link = made(); link.onEvent = onEvent; return link }, time: time.clock)
+                               connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
             made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
@@ -441,5 +443,119 @@ final class VoiceLanguageTests: XCTestCase {
         let transcription = ((session["audio"] as? [String: Any])?["input"] as? [String: Any])?["transcription"] as? [String: Any]
         XCTAssertNotNil(transcription)
         XCTAssertNil(transcription?["language"], "a fixed transcription language would mishear a user who switches")
+    }
+}
+
+/// The Live Activity during a talk: it says what the talk is doing in the state's own `voice` field,
+/// its End ends the talk, and an approval is never pushed aside by it.
+extension VoiceModelTests {
+    private func following(_ h: Harness) -> (ActivityController, TalkActivity) {
+        let activity = ActivityController()
+        return (activity, TalkActivity(voice: h.voice, activity: activity, deviceName: { "Test iPhone" }, keepsActivity: { false }))
+    }
+
+    func testTheLiveActivitySaysWhatTheTalkIsDoing() async {
+        let h = Harness()
+        let (activity, watcher) = following(h)
+        await h.talk()
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .listening)
+        XCTAssertEqual(activity.state.face.content, StatusWord.listening.text)
+        XCTAssertTrue(activity.state.face.endsTalk)
+        XCTAssertTrue(activity.state.face.talkGlow, "the island's brand band shows while a talk is on")
+
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "conversation.item.input_audio_transcription.completed", "transcript": "What iOS version is this?"],
+                    ["type": "response.created", "response": ["id": "r1"]], ["type": "output_audio_buffer.started"])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .speaking)
+        XCTAssertEqual(activity.state.face.content, StatusWord.speaking.text)
+
+        h.voice.stop()
+        await h.time.settle()
+        XCTAssertNil(activity.state.voice)
+        XCTAssertFalse(activity.state.face.endsTalk)
+        XCTAssertFalse(activity.state.face.talkGlow)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testEndOnTheLiveActivityEndsTheTalk() async throws {
+        let h = Harness()
+        let (activity, watcher) = following(h)
+        await h.talk()
+        XCTAssertTrue(h.voice.isOn)
+        let ended = expectation(for: NSPredicate { _, _ in !h.voice.isOn }, evaluatedWith: nil)
+        _ = try await EndTalkIntent().perform()
+        await fulfillment(of: [ended], timeout: 2)
+        XCTAssertTrue(h.link.closed)
+        await h.time.settle()
+        XCTAssertNil(activity.state.voice)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testAnApprovalDuringATalkKeepsTheLiveActivity() async {
+        let h = Harness()
+        let (activity, watcher) = following(h)
+        await h.talk()
+        await h.time.settle()
+        let approval = PendingApproval(id: "a1", app: "Messages", summary: "Tap “Send”", reason: "sending", expires: Date().addingTimeInterval(120))
+        activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?" }
+
+        // Poki speaks while the approval waits: the approval keeps the card and the island, with no End.
+        h.link.play(["type": "response.created", "response": ["id": "r1"]], ["type": "output_audio_buffer.started"])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.phase, .approval)
+        XCTAssertEqual(activity.state.face.bottom, .approval(id: "a1"))
+        XCTAssertFalse(activity.state.face.endsTalk)
+
+        // Answered: the talk is back on the Live Activity, with End.
+        activity.update { $0.phase = .idle; $0.approval = nil; $0.headline = "Waiting for agent" }
+        XCTAssertEqual(activity.state.face.content, StatusWord.speaking.text)
+        XCTAssertTrue(activity.state.face.endsTalk)
+
+        // A talk that ends while an approval waits leaves the approval where it is.
+        activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?" }
+        h.voice.stop()
+        await h.time.settle()
+        XCTAssertEqual(activity.state.phase, .approval)
+        XCTAssertEqual(activity.state.approval, approval)
+        XCTAssertNil(activity.state.voice)
+        withExtendedLifetime(watcher) {}
+    }
+}
+
+/// What the talk's screens say: one state, read by the message field's bar, the light along the bottom
+/// edge and Poki's picture.
+extension VoiceModelTests {
+    /// A step that has Poki on the phone is not thinking, speech over an answer is not plain listening,
+    /// and a dropped connection is still a state, with its reason, until it is put away.
+    func testATalkSaysWhenPokiIsOnThePhoneIsSpokenOverOrIsCutOff() async {
+        let (step, stepDone) = AsyncStream<Void>.makeStream()
+        let h = Harness(phoneTool: { _, _ in for await _ in step { break }; return ("done", false) })
+        XCTAssertNil(h.voice.talkState)
+        await h.talk()
+        XCTAssertEqual(h.voice.talkState, .listening)
+
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"])
+        XCTAssertEqual(h.voice.talkState, .thinking)
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": #"{"goal":"open Settings"}"#]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        XCTAssertEqual(h.voice.talkState, .acting)
+        stepDone.finish()
+        await h.time.settle()
+        XCTAssertEqual(h.voice.talkState, .thinking)
+
+        h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"])
+        XCTAssertEqual(h.voice.talkState, .speaking)
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "output_audio_buffer.cleared"])
+        XCTAssertEqual(h.voice.talkState, .interrupted)
+        await h.time.advance(1.4)
+        XCTAssertEqual(h.voice.talkState, .hearing)
+
+        h.link.onClosed?("gone")
+        XCTAssertEqual(h.voice.talkState, .failed(TalkState.connectionLost))
+        h.voice.dismissProblem()
+        XCTAssertNil(h.voice.talkState)
     }
 }
