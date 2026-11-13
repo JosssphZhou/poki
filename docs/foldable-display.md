@@ -99,7 +99,8 @@ Still open:
 - `launch_app` on the inner panel reported that it could not confirm the
   launch, although the app opened.
 - Rotations of 180 and 270 degrees and folding or unfolding during a session
-  were tried later. The last section records that run.
+  were tried later. The section on the hardware run after the one-panel change
+  records that run.
 
 ## Second rebase onto main
 
@@ -113,18 +114,18 @@ were all in `native/bridge/src/ax.rs`:
 - The reply to the phone's `hostAPIVersion` call still carries 7, as on main.
   At that point the branch still sent it as a DTX object reply (payload type 3)
   and accepted `hostApiVersion` as a second spelling. Both were removed later;
-  see the last section.
+  see the section on phones with one built-in panel.
 - Main's `stream_tests` and this branch's live-query tests are both kept.
 
 `main` now compiles `ax.rs` into the launcher too, so the launcher also compiles
 `display.rs`. At that point its accessibility reads asked for the active display
 in the same way as the bridge while its touch path still used the main
-touchscreen. The last section removes that mismatch. `ax::Direct` does not ask
-for the active display.
+touchscreen. The section on phones with one built-in panel removes that
+mismatch. `ax::Direct` does not ask for the active display.
 
-The hardware acceptance above was done before this rebase. The last section
-records a run on the current code. The launcher has only been compiled and
-unit-tested on a Mac.
+The hardware acceptance above was done before this rebase. The section on the
+hardware run after the one-panel change records a later run. The launcher has
+only been compiled and unit-tested on a Mac.
 
 ## Phones with one built-in panel keep main's path
 
@@ -157,11 +158,13 @@ AX subscription and a 4 s read before text input.
 
 The reply to `hostAPIVersion` is main's again: payload type 0, and only that
 spelling is answered. Nothing observed on hardware required the other form.
+The third rebase changed this again; see that section.
 
 The launcher keeps main's path on every phone. It compiles the shared files with
 `ROUTES_BY_PANEL` off, so its AX reads use the cached subscription and its taps
 go to the main touchscreen, as before this branch. It does not follow the
-active panel of a two-panel phone.
+active panel of a two-panel phone. After the third rebase the branch no longer
+changes the launcher at all.
 
 The limit of 256 elements in a live read is unchanged. A longer screen on a
 second panel still fails with `AX tree exceeded 256 elements`.
@@ -216,3 +219,31 @@ Not run on hardware:
 - The inner panel at `rot0`.
 - A screen with more than 256 elements. The Settings root has 24.
 - The launcher.
+
+## Third rebase onto main
+
+`main` moved on to `291a904`. The temporary rollback in #189 removed code that
+the second rebase had merged with, so the branch was rebased onto current
+`main` again. Where the two conflicted, `main`'s version was kept:
+
+- `ax.rs` on `main` no longer treats an initial or destroyed dump as a reset of
+  the cached graph, and its `stream_tests` are gone. The branch does not bring
+  either back. The commit that kept the display orientation through that reset
+  had nothing left to change and was dropped, together with its test.
+- `acknowledge` is `main`'s text. On `main` it sends no value in any reply,
+  `hostAPIVersion` included. The live reads on a phone with a second panel go
+  through the same function, so they no longer answer `hostAPIVersion` with 7.
+  The prototype in #47 added that answer, and no run since has read a live tree
+  without it.
+- The launcher on `main` no longer compiles `ax.rs` or any other bridge file,
+  so the branch no longer changes `native/launcher`. The commit that added
+  `display.rs` to the launcher was dropped, and so was `ROUTES_BY_PANEL = false`
+  in its `lib.rs`. The constant remains in the bridge's `main.rs`, set to true.
+
+The other changed files rebased without edits: for each of them, the diff
+against `main` adds and removes the same lines as the diff against `ce504ac`
+did. Every line that `main` added to `ax.rs` since `ce504ac` is in the rebased
+file.
+
+The hardware run in the previous section was on the code before this rebase.
+It has not been repeated on the rebased code yet.
