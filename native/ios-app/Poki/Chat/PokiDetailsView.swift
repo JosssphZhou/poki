@@ -179,7 +179,7 @@ struct PokiDetailsView: View {
                 } }
                 .settingsPage()
             }
-            .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0) }
+            .navigationDestination(for: SetupStep.self) { SetupStepPage(step: $0).settingsPage() }
             .navigationDestination(for: SettingsRoute.self) { route in
                 SettingsDestination(route: route, push: { path.append($0) }, pop: { if !path.isEmpty { path.removeLast() } })
                     .settingsPage()
@@ -307,8 +307,8 @@ private struct ConversationsSettingsView: View {
 /// The first row of Settings: the bear's face where the rows under it have their icon, and Poki's name.
 private struct PokiNameRow: View {
     var mood: PokiMood
-    @ScaledMetric(relativeTo: .body) private var face = 34.0
-    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
+    @ScaledMetric(relativeTo: .body) private var face = SettingsRowMetrics.iconSize
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = SettingsRowMetrics.iconSpacing
 
     var body: some View {
         HStack(spacing: min(18, iconSpacing)) {
@@ -317,18 +317,16 @@ private struct PokiNameRow: View {
                     Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
                 }
             }
-            .frame(width: min(44, face), height: min(44, face))
+            .frame(width: min(SettingsRowMetrics.maximumIconSize, face), height: min(SettingsRowMetrics.maximumIconSize, face))
             .background(mood == .paused ? Tint.night : Tint.portrait, in: .circle)
             .clipShape(.circle)
             .overlay(Circle().strokeBorder(Tint.ring, lineWidth: 1))
-            // As the rows' icons: the face does not make the row taller.
-            .padding(.vertical, -4)
+            .padding(.vertical, SettingsRowMetrics.iconLineInset)
             .accessibilityHidden(true)
             Text(verbatim: "Poki").font(.body.weight(.semibold)).foregroundStyle(Color(.label))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 8)
         }
-        .modifier(SettingsRowPadding())
         .animation(.easeInOut(duration: 0.3), value: mood)
     }
 }
@@ -525,25 +523,54 @@ enum Appearance: String, CaseIterable, Identifiable {
             .filter { $0.activationState == .foregroundActive }
             .flatMap(\.windows)
             .filter { $0.isKeyWindow && !$0.isHidden }
-        let snapshots: [(window: UIWindow, view: UIView)] = reduceMotion ? [] : windows.compactMap { window in
-            guard let view = window.snapshotView(afterScreenUpdates: false) else { return nil }
-            view.frame = window.bounds
-            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            view.isUserInteractionEnabled = false
-            view.accessibilityElementsHidden = true
-            window.addSubview(view)
-            return (window, view)
-        }
-        // The outgoing frame includes the old checkmark. Reveal the new selection and colors together.
-        updatePreference()
-        for window in windows { window.overrideUserInterfaceStyle = style }
-        for (window, view) in snapshots {
-            window.layoutIfNeeded()
-            UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
-                view.alpha = 0
-            } completion: { _ in
-                view.removeFromSuperview()
+        let transitions = reduceMotion ? [] : windows.compactMap { AppearanceFade(window: $0) }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction, updatePreference)
+        UIView.performWithoutAnimation {
+            for window in windows {
+                window.overrideUserInterfaceStyle = style
+                window.layoutIfNeeded()
             }
+        }
+        transitions.forEach { $0.start() }
+    }
+}
+
+@MainActor
+private final class AppearanceFade: UIView {
+    // Keep the outgoing frame opaque until SwiftUI has rendered the new list selection and UIKit
+    // has presented the new traits. Layout alone does not commit a frame to the display.
+    private var framesUntilReveal = 3
+
+    init?(window: UIWindow) {
+        guard let snapshot = window.snapshotView(afterScreenUpdates: false) else { return nil }
+        super.init(frame: window.bounds)
+        for case let previous as AppearanceFade in window.subviews { previous.removeFromSuperview() }
+        autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+        snapshot.frame = bounds
+        snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(snapshot)
+        window.addSubview(self)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func start() {
+        CADisplayLink(target: self, selector: #selector(reveal(_:))).add(to: .main, forMode: .common)
+    }
+
+    @objc private func reveal(_ link: CADisplayLink) {
+        guard superview != nil else { link.invalidate(); return }
+        framesUntilReveal -= 1
+        guard framesUntilReveal == 0 else { return }
+        link.invalidate()
+        UIView.animate(withDuration: 0.24, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
+            self.alpha = 0
+        } completion: { _ in
+            self.removeFromSuperview()
         }
     }
 }
@@ -564,14 +591,20 @@ struct AppearanceView: View {
                         HStack {
                             Text(option.title).foregroundStyle(Color(.label))
                             Spacer()
+                            // Keep the same view and layout when the selection moves. A list row
+                            // can animate an inserted symbol independently of the window's fade.
                             Image(systemName: "checkmark")
                                 .font(.body.weight(.semibold))
-                                .foregroundStyle(Tint.blueText)
-                                .opacity(option.rawValue == choice ? 1 : 0)
+                                .foregroundStyle(option.rawValue == choice ? Tint.blueText : Color.clear)
+                                .transaction {
+                                    $0.animation = nil
+                                    $0.disablesAnimations = true
+                                }
                                 .accessibilityHidden(true)
                         }
                         .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                     .accessibilityAddTraits(option.rawValue == choice ? .isSelected : [])
                     .accessibilityIdentifier("appearance.\(option == .automatic ? "automatic" : option.rawValue)")
                 }

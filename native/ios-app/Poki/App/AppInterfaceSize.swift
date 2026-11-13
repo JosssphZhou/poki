@@ -56,7 +56,6 @@ enum AppInterfaceSize {
 struct InterfaceSizeSettingsView: View {
     @AppStorage(AppInterfaceSize.defaultsKey) private var preference = AppInterfaceSize.system
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var controlsHeight: CGFloat = 0
 
     private var followsSystem: Bool { AppInterfaceSize.category(for: preference) == nil }
     private var index: Int {
@@ -66,58 +65,48 @@ struct InterfaceSizeSettingsView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        controls
-                        Text("Preview").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                    }
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlsHeight = $0 }
-                    InterfaceSizePreview()
-                        // Fill the available space; at large sizes the whole page can scroll instead
-                        // of compressing the production preview into an unusable strip.
-                        .frame(height: max(520, geometry.size.height - controlsHeight - 44))
+            List {
+                Section {
+                    controls
                 }
-                .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 12)
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
+                Section {
+                    InterfaceSizePreview()
+                        // Leave enough room for the real chat components at accessibility sizes.
+                        .frame(height: max(520, geometry.size.height * 0.72))
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                } header: {
+                    SettingsHeader("Preview")
+                }
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .settingsPage()
-        .navigationTitle(String(localized: "Interface Size"))
+        .navigationTitle("Interface Size")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var controls: some View {
-        VStack(spacing: 0) {
-            Toggle("Follow System", isOn: Binding(
-                get: { followsSystem },
-                set: { preference = $0 ? AppInterfaceSize.system : UIContentSizeCategory(typeSize).rawValue }
-            ))
-            .frame(minHeight: 44)
-            .accessibilityIdentifier("interfaceSize.followSystem")
-            if !followsSystem {
-                Divider().padding(.vertical, 8)
-                Slider(value: Binding(
-                    get: { Double(index) },
-                    set: { preference = AppInterfaceSize.categories[Int($0.rounded())].rawValue }
-                ), in: 0...Double(AppInterfaceSize.categories.count - 1), step: 1) {
-                    Text("Interface Size")
-                } minimumValueLabel: {
-                    endpoint("Interface Size Minimum", size: 14)
-                } maximumValueLabel: {
-                    endpoint("Interface Size Maximum", size: 18)
-                }
-                .sensoryFeedback(.selection, trigger: preference)
-                .tint(Color(.secondaryLabel))
-                .accessibilityValue(Text("Size \(index + 1) of \(AppInterfaceSize.categories.count)"))
-                .accessibilityIdentifier("interfaceSize.slider")
+    @ViewBuilder private var controls: some View {
+        Toggle("Follow System", isOn: Binding(
+            get: { followsSystem },
+            set: { preference = $0 ? AppInterfaceSize.system : UIContentSizeCategory(typeSize).rawValue }
+        ))
+        .accessibilityIdentifier("interfaceSize.followSystem")
+        if !followsSystem {
+            Slider(value: Binding(
+                get: { Double(index) },
+                set: { preference = AppInterfaceSize.categories[Int($0.rounded())].rawValue }
+            ), in: 0...Double(AppInterfaceSize.categories.count - 1), step: 1) {
+                Text("Interface Size")
+            } minimumValueLabel: {
+                endpoint("Interface Size Minimum", size: 14)
+            } maximumValueLabel: {
+                endpoint("Interface Size Maximum", size: 18)
             }
+            .sensoryFeedback(.selection, trigger: preference)
+            .tint(Color(.secondaryLabel))
+            .accessibilityValue(Text("Size \(index + 1) of \(AppInterfaceSize.categories.count)"))
+            .accessibilityIdentifier("interfaceSize.slider")
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 24))
     }
 
     private func endpoint(_ label: LocalizedStringKey, size: CGFloat) -> some View {

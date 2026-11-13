@@ -8,8 +8,16 @@ import SwiftUI
 // The settings home's order (the profile on top, then groups of rows) is element-hq/element-x-ios (commit
 // 4447399a), ElementX/Sources/Screens/Settings/SettingsScreen/View/SettingsScreen.swift.
 // Changed (ESP-469): Poki's round blue-soft ground (amber when the row needs you) instead of Compound's
-// rounded square, Poki's Tint colours instead of Compound's tokens, a 34 pt icon on the home page, and the
-// rows kept inside the system List, so navigation, swipe actions, search and Dynamic Type stay the system's.
+// rounded square and Poki's Tint colours. The system List provides navigation, swipe actions, search
+// and Dynamic Type.
+
+enum SettingsRowMetrics {
+    static let iconSize: CGFloat = 28
+    static let iconSpacing: CGFloat = 12
+    static let maximumIconSize: CGFloat = 44
+    // The circle can extend slightly beyond the text's line box within the system row insets.
+    static let iconLineInset: CGFloat = -3
+}
 
 /// A settings icon: the symbol in Poki's blue on its soft round ground; amber while the row needs you.
 struct SettingsIcon: View {
@@ -18,11 +26,11 @@ struct SettingsIcon: View {
     /// Grey instead of blue, for the entry at the bottom of the conversations.
     var neutral = false
     private let maximumSize: CGFloat
-    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 30
-    @ScaledMetric(relativeTo: .body) private var glyph: CGFloat = 13.5
+    @ScaledMetric(relativeTo: .body) private var size = SettingsRowMetrics.iconSize
+    @ScaledMetric(relativeTo: .body) private var glyph = SettingsRowMetrics.iconSize / 2
 
-    init(symbol: String, warns: Bool = false, neutral: Bool = false, size: CGFloat = 30) {
-        maximumSize = max(44, size * 1.5)
+    init(symbol: String, warns: Bool = false, neutral: Bool = false, size: CGFloat = SettingsRowMetrics.iconSize) {
+        maximumSize = max(SettingsRowMetrics.maximumIconSize, size * 1.5)
         self.symbol = symbol
         self.warns = warns
         self.neutral = neutral
@@ -36,8 +44,6 @@ struct SettingsIcon: View {
             .foregroundStyle(warns ? Tint.amberInk : neutral ? Color(.label) : Tint.blueText)
             .frame(width: min(size, maximumSize), height: min(size, maximumSize))
             .background(warns ? Tint.amberSoft : neutral ? Color(.tertiarySystemFill) : Tint.blueSoft, in: .circle)
-            // Compound's: the ground does not make the row taller.
-            .padding(.vertical, -4)
             .accessibilityHidden(true)
     }
 }
@@ -56,15 +62,16 @@ struct SettingsRow: View {
     /// that leaves Poki (the system's own chevron ends the rows that open a page).
     var accessory: Accessory? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = SettingsRowMetrics.iconSpacing
 
     enum Accessory { case done, leaves }
 
     var body: some View {
         HStack(spacing: min(18, iconSpacing)) {
-            SettingsIcon(symbol: symbol, size: 34)
+            SettingsIcon(symbol: symbol)
+                .padding(.vertical, SettingsRowMetrics.iconLineInset)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body.weight(.semibold)).foregroundStyle(Color(.label))
+                Text(title).font(.body).foregroundStyle(Color(.label))
                 if let caption { Text(caption).font(.footnote).foregroundStyle(Color(.secondaryLabel)) }
                 // At the accessibility sizes the value goes under the caption, as in Settings.
                 if typeSize.isAccessibilitySize, let value { valueView(value) }
@@ -81,7 +88,6 @@ struct SettingsRow: View {
             case nil: EmptyView()
             }
         }
-        .modifier(SettingsRowPadding())
     }
 
     @ViewBuilder private func valueView(_ value: String) -> some View {
@@ -102,14 +108,13 @@ struct SettingsRow: View {
 /// size, with the same gap, weight and height (`SettingsRow`), so every page under Settings draws its
 /// rows one way.
 struct SettingsLabelStyle: LabelStyle {
-    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = SettingsRowMetrics.iconSpacing
 
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: min(18, iconSpacing)) {
             SettingsLabelIcon { configuration.icon }
-            configuration.title.fontWeight(.semibold)
+            configuration.title
         }
-        .modifier(SettingsRowPadding())
     }
 }
 
@@ -118,7 +123,7 @@ struct SettingsLabelStyle: LabelStyle {
 struct SettingsLabel<Title: View, Icon: View>: View {
     var title: Title
     var icon: Icon
-    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = SettingsRowMetrics.iconSpacing
 
     init(@ViewBuilder title: () -> Title, @ViewBuilder icon: () -> Icon) {
         self.title = title()
@@ -128,9 +133,8 @@ struct SettingsLabel<Title: View, Icon: View>: View {
     var body: some View {
         HStack(spacing: min(18, iconSpacing)) {
             SettingsLabelIcon { icon }
-            title.fontWeight(.semibold)
+            title
         }
-        .modifier(SettingsRowPadding())
     }
 }
 
@@ -142,40 +146,26 @@ extension SettingsLabel where Title == Text, Icon == Image {
 
 private struct SettingsLabelIcon<Icon: View>: View {
     @Environment(\.isEnabled) private var isEnabled
-    @ScaledMetric(relativeTo: .body) private var size = 34.0
-    @ScaledMetric(relativeTo: .body) private var glyph = 17.0
+    @ScaledMetric(relativeTo: .body) private var size = SettingsRowMetrics.iconSize
+    @ScaledMetric(relativeTo: .body) private var glyph = SettingsRowMetrics.iconSize / 2
     @ViewBuilder var icon: Icon
     var body: some View {
         icon
-            .font(.system(size: glyph * min(1, 44 / size), weight: .semibold))
+            .font(.system(size: glyph * min(1, SettingsRowMetrics.maximumIconSize / size), weight: .semibold))
             .foregroundStyle(Tint.blueText)
-            .frame(width: min(size, 44), height: min(size, 44))
+            .frame(width: min(size, SettingsRowMetrics.maximumIconSize), height: min(size, SettingsRowMetrics.maximumIconSize))
             .background(Tint.blueSoft, in: .circle)
             // A row that can't be used yet (Add Agent before the relay) greys its icon too.
             .opacity(isEnabled ? 1 : 0.4)
-            .padding(.vertical, -4)
-    }
-}
-
-/// Extra breathing room within the native grouped list's insets.
-struct SettingsRowPadding: ViewModifier {
-    @ScaledMetric(relativeTo: .body) private var inset = 4.0
-
-    func body(content: Content) -> some View {
-        content.padding(.vertical, min(6, inset))
+            .padding(.vertical, SettingsRowMetrics.iconLineInset)
     }
 }
 
 private struct SettingsPageStyle: ViewModifier {
-    @ScaledMetric(relativeTo: .body) private var sectionSpacing = 16.0
-
     func body(content: Content) -> some View {
         content
             .labelStyle(SettingsLabelStyle())
             .listStyle(.insetGrouped)
-            .listSectionSpacing(min(24, sectionSpacing))
-            .environment(\.defaultMinListRowHeight, 44)
-            .contentMargins(.top, 4, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .background { HomeBackdrop(home: true, working: false, frozen: true) }
     }

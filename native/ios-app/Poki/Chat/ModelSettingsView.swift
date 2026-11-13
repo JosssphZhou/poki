@@ -50,7 +50,6 @@ struct ModelSettingsView: View {
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
         // (a rebuild dropped taps and the sheets it was presenting).
         .background { Color.clear.accessibilityHidden(true).id(version) }
-        .listStyle(.insetGrouped)
         .navigationTitle("Models")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
@@ -220,6 +219,7 @@ private struct AccountDetail: View {
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
         // (a rebuild dropped taps and the sheets it was presenting).
         .background { Color.clear.accessibilityHidden(true).id(version) }
+        .settingsPage()
         .navigationTitle(Text(verbatim: provider.name))
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
@@ -258,6 +258,7 @@ private struct TextChatFeature: View {
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
         // (a rebuild dropped taps and the sheets it was presenting).
         .background { Color.clear.accessibilityHidden(true).id(version) }
+        .settingsPage()
         .navigationTitle("Text Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
@@ -303,6 +304,7 @@ private struct LiveVoiceFeature: View {
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
         // (a rebuild dropped taps and the sheets it was presenting).
         .background { Color.clear.accessibilityHidden(true).id(version) }
+        .settingsPage()
         .navigationTitle("Live Voice")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
@@ -337,6 +339,7 @@ struct AddAccount: View {
                     Text("Text chat works with every account. Live voice needs an OpenAI API key.")
                 }
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Add Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
