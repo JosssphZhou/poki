@@ -59,8 +59,14 @@ struct InterfaceSizeSettingsView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pendingIndex: Int?
     @State private var dragging = false
+    @State private var toggleHeight: CGFloat = 52
+    @State private var previewTitleHeight: CGFloat = 18
 
     private let sliderHeight: CGFloat = 52
+    private let sectionSpacing: CGFloat = 20
+    private let previewSpacing: CGFloat = 8
+    private let topInset: CGFloat = 20
+    private let bottomInset: CGFloat = 12
 
     private var followsSystem: Bool { AppInterfaceSize.category(for: preference) == nil }
     private var index: Int {
@@ -70,26 +76,30 @@ struct InterfaceSizeSettingsView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let controlsHeight = toggleHeight + (followsSystem ? 0 : sliderHeight)
+            let reservedHeight = topInset + controlsHeight + sectionSpacing + previewTitleHeight + previewSpacing + bottomInset
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: sectionSpacing) {
                     VStack(spacing: 0) {
                         controls
                     }
                     .padding(.horizontal, 20)
                     .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 25))
 
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: previewSpacing) {
                         SettingsHeader("Preview")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 20)
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { previewTitleHeight = $0 }
                         InterfaceSizePreview()
                             .dynamicTypeSize(previewSize)
-                            .frame(height: max(520, geometry.size.height * 0.72) + (followsSystem ? sliderHeight : 0))
+                            .frame(height: max(520, geometry.size.height - reservedHeight))
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 20)
+                .padding(.top, topInset)
+                .padding(.bottom, bottomInset)
                 .frame(maxWidth: 720)
                 .frame(maxWidth: .infinity)
                 .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: followsSystem)
@@ -114,6 +124,7 @@ struct InterfaceSizeSettingsView: View {
         ))
         .padding(.vertical, 10)
         .frame(minHeight: 52)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { toggleHeight = $0 }
         .accessibilityIdentifier("interfaceSize.followSystem")
         VStack(spacing: 0) {
             Divider()
