@@ -91,7 +91,9 @@ private struct OptionButton: View {
             .padding(.leading, lead ? 10 : 18).padding(.trailing, suggested ? 8 : 18)
             .frame(minHeight: 46)
             .background(suggested ? Tint.blue : Tint.blueSoft, in: .capsule)
-            .overlay { if !suggested { Capsule().strokeBorder(Tint.blueLine, lineWidth: 1) } }
+            // A blue block as the task card draws one: a hairline in dark, a soft blue shadow in light.
+            .overlay { Capsule().strokeBorder(suggested ? Tint.ring : Tint.blueLine, lineWidth: 1) }
+            .shadow(color: suggested ? Tint.blueShadow : .clear, radius: 9, y: 6)
             .contentShape(.capsule)
         }
         .buttonStyle(.plain)
