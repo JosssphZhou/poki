@@ -39,12 +39,18 @@ final class UnresponsiveAppTests: XCTestCase {
     }
 
     func testSensitiveStepsStillAskAndDenialSendsNothingAfterRecovery() async throws {
-        for label in ["Send", "Pay", "Delete"] {
-            try await runScenario(name: "deny-\(label.lowercased())", delay: 8, label: label)
-        }
+        try await runScenario(name: "deny-send", delay: 8, label: "Send")
     }
 
-    private func runScenario(name: String, delay: Double?, label: String) async throws {
+    func testPaymentWaitsForApprovalAfterRecovery() async throws {
+        try await runScenario(name: "ask-pay", delay: 8, label: "Pay", cardOnly: true)
+    }
+
+    func testDeletionWaitsForApprovalAfterRecovery() async throws {
+        try await runScenario(name: "ask-delete", delay: 8, label: "Delete", cardOnly: true)
+    }
+
+    private func runScenario(name: String, delay: Double?, label: String, cardOnly: Bool = false) async throws {
         let phone = try SilentAppServer(delay: delay, label: label)
         defer { phone.stop() }
         let sensitive = label != "Continue"
@@ -99,7 +105,7 @@ final class UnresponsiveAppTests: XCTestCase {
         var captured = Set<Int>()
         ChatModel.afterTask = { result in
             record = result
-            Task { @MainActor in await Task.yield(); done.fulfill() }
+            if !cardOnly { Task { @MainActor in await Task.yield(); done.fulfill() } }
         }
         app.addShellObserver { [weak self, weak app] event in
             switch event {
@@ -118,6 +124,7 @@ final class UnresponsiveAppTests: XCTestCase {
                 Task { @MainActor in
                     await Task.yield()
                     await self?.capture("\(name)-approval")
+                    if cardOnly { done.fulfill() }
                 }
             case .approvalEnded(_, let approved):
                 if approved == false { denials += 1 }
@@ -126,6 +133,15 @@ final class UnresponsiveAppTests: XCTestCase {
         }
         chat.send("Open the test app and \(label.lowercased()).")
         await fulfillment(of: [done], timeout: 100)
+        if cardOnly {
+            XCTAssertEqual(approvals, 1, "\(label) still needs the owner's approval")
+            XCTAssertEqual(app.approvals.count, 1, "the displayed card is waiting for the owner")
+            XCTAssertEqual(phone.touches, 0, "the pending approval must keep \(label) from reaching the app")
+            print("SIM_APPROVAL_CARD \(name) approvals=\(approvals) pending=\(app.approvals.count) touches=\(phone.touches) launch_to_first_tree=\(phone.firstReadSeconds.map { String(format: "%.3f", $0) } ?? "none")")
+            ChatModel.afterTask = nil
+            chat.stop()
+            return
+        }
         await Task.yield()
         await capture("\(name)-finished")
         let result = try XCTUnwrap(record)
