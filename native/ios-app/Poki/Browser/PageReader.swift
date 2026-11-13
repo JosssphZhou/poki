@@ -366,14 +366,21 @@ enum PageReader {
     const el = element(ref);
     if (!el) return null;
     const form = el.form;
-    const submitting = submit || !!(form && ['BUTTON', 'INPUT'].includes(el.tagName) && ['submit', 'image'].includes(el.type));
+    const submitter = !!(form && ['BUTTON', 'INPUT'].includes(el.tagName) && ['submit', 'image'].includes(el.type));
+    const submitting = submit || submitter;
     const submitters = form ? [...form.elements].filter((control) =>
       ['BUTTON', 'INPUT'].includes(control.tagName) && ['submit', 'image'].includes(control.type) && !control.disabled) : [];
     const labels = [name(el), ...(submitting ? submitters.map((control) => name(control)) : [])];
     const prompt = ownerBox(el);
     if (prompt && !restrictedPrompt(prompt) && GO.test(name(el)) && !REJECT.test(name(el))) labels.push('pay');
+    // A search form is sent with GET and every field to type in is a search field, whatever its button
+    // says. A form that also holds a message, an amount or any other text field is not one.
+    const fields = form ? [...form.elements, ...form.querySelectorAll('[contenteditable]')].filter(typable) : [];
+    const method = (submitter && el.getAttribute('formmethod') || form?.getAttribute('method') || 'get').toLowerCase();
+    const searchForm = method === 'get' && fields.length > 0 &&
+      fields.every((field) => field.type === 'search' || field.getAttribute('role') === 'searchbox');
     const searching = form?.getAttribute('role') === 'search' ||
-      (submitting && (submitters.length ? submitters.every((control) => /^(search|搜索|搜尋|查询|查詢)$/i.test(name(control))) : role(el) === 'searchbox'));
+      (submitting && (searchForm || (submitters.length ? submitters.every((control) => /^(search|搜索|搜尋|查询|查詢)$/i.test(name(control))) : role(el) === 'searchbox')));
     const details = { documentID, ref, labels, submitting, searching, href: el.href || '',
       formAction: form?.action || '', formMethod: form?.method || '', type: el.type || '' };
     return { labels, submitting, searching, fingerprint: JSON.stringify(details) };
