@@ -58,11 +58,12 @@ struct PokiDetailsView: View {
                 // What Poki works with.
                 Section {
                     NavigationLink(value: DetailsRoute.connection) {
-                        SettingsRow(title: "Connection", symbol: "iphone.gen3", value: connectionValue)
+                        SettingsRow(title: "Connection", symbol: "iphone.gen3", value: connectionValue,
+                                    valueIsAction: !isSample && !model.setupComplete)
                     }
                     .accessibilityIdentifier("details.hands")
                     NavigationLink(value: DetailsRoute.model) {
-                        SettingsRow(title: "Models", symbol: "sparkles", value: brainValue)
+                        SettingsRow(title: "Models", symbol: "sparkles", value: brainValue, valueIsAction: !hasModel)
                             .id(modelVersion)
                     }
                     .accessibilityIdentifier("details.accountsAndModels")
@@ -191,14 +192,14 @@ struct PokiDetailsView: View {
     private var hasModel: Bool { isSample || ModelKeys.hasUsableKey }
     private var brainValue: String {
         if isSample { return "GPT-6.1 Terra" }
-        return hasModel ? ModelKeys.selectedModelName : String(localized: "Not Set")
+        return hasModel ? ModelKeys.selectedModelName : String(localized: "Add Model")
     }
 
     /// Setup first, then whether Poki is on.
     private var connectionValue: String {
         if isSample { return String(localized: "On") }
         if !model.setupComplete {
-            return String(localized: "Incomplete")
+            return String(localized: "Finish Setup")
         }
         if !model.sessionOn { return String(localized: "Off") }
         return model.ownerPaused ? String(localized: "Paused") : String(localized: "On")

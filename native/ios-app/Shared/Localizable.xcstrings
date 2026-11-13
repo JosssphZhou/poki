@@ -1,19 +1,19 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Incomplete" : {
+    "Finish Setup" : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未完成"
+            "value" : "完成设置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未完成"
+            "value" : "完成設定"
           }
         }
       }

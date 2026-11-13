@@ -56,6 +56,8 @@ struct SettingsRow: View {
     var symbol: String
     var value: String? = nil
     var warns = false
+    /// A next action offered by the destination, such as finishing setup.
+    var valueIsAction = false
     /// A coloured dot before the value (the relay's state on External Agents).
     var dot: Color? = nil
     /// What ends the row in place of a value: a green tick for a thing that is done, an arrow for a row
@@ -98,7 +100,8 @@ struct SettingsRow: View {
         } else {
             HStack(spacing: 6) {
                 if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-                Text(verbatim: value).font(.subheadline).foregroundStyle(Color(.secondaryLabel))
+                Text(verbatim: value).font(.subheadline)
+                    .foregroundStyle(valueIsAction ? Tint.blueText : Color(.secondaryLabel))
             }
         }
     }
