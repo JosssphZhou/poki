@@ -41,6 +41,7 @@ struct TaskCard: View {
     /// The outside agent that asked; nil when you did.
     var asker: String? = nil
     var app: String? = nil
+    var usedBrowser = false
     var started: Date
     /// What the core last saw of the screen, for the task under way. Never stored with the conversation.
     var shot: Image? = nil
@@ -151,13 +152,20 @@ struct TaskCard: View {
                 .clipShape(.rect(cornerRadius: 10, style: .continuous))
         case .needsYou: PokiAvatar(size: 34, mood: .needsYou)
         case .yourTurn: PokiAvatar(size: 34, mood: .yourTurn)
-        // Over, the app Poki did it in: its real icon, or the placeholder tile when none is known.
-        case .done, .failed, .stopped: AppIconView(app: app ?? "", size: 32)
+        case .done, .failed, .stopped:
+            if let app, !app.isEmpty {
+                AppIconView(app: app, size: 32)
+            } else if usedBrowser {
+                BrowserIcon()
+            } else {
+                BearAvatar(size: 32)
+            }
         }
     }
 
     /// "Messages, 0:42" while the card is open and alive; where it is or how it ended otherwise.
     @ViewBuilder private var subline: some View {
+        let app = AppName.display(self.app)
         let at = min(finished + 1, max(total, 1))
         switch state {
         case .done:

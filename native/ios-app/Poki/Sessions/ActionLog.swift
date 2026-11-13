@@ -306,7 +306,7 @@ struct ActionLogView: View {
                 if let detail = entry.detail {
                     Text(verbatim: detail).font(.footnote).foregroundStyle(entry.ok ? Color(.secondaryLabel) : Color.orange).lineLimit(2)
                 }
-                Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: ", "))
+                Text([AppName.display(entry.app), entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: ", "))
                     .font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
             }
             Spacer(minLength: 4)

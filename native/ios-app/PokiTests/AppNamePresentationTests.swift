@@ -66,15 +66,21 @@ final class AppNamePresentationTests: XCTestCase {
         for (app, expected) in [("com.tencent.xin", Optional(weChat)), ("org.example.unlisted", nil), ("My Reader", "My Reader")] {
             var state = PokiState(phase: .working, headline: "Thinking", thumbnailVersion: 0)
             state.app = app
+            state.plan = .init(steps: ["Open the app"], current: 1, title: "Open the app")
+            state.since = Date(timeIntervalSince1970: 0)
+            state.endedAt = Date(timeIntervalSince1970: 13)
             XCTAssertEqual(state.face.kicker, expected)
             state.event = .init(kind: .app, text: app)
-            XCTAssertEqual(state.face.event, expected)
+            XCTAssertNil(state.face.event, "App switches are already named by the kicker")
             state.phase = .done
-            XCTAssertFalse(state.face.content.contains(app) && app.contains("."))
-            if let expected { XCTAssertTrue(state.face.content.contains(expected)) }
+            XCTAssertEqual(state.face.content, "Open the app", "The completed task keeps its title")
+            XCTAssertTrue(state.face.subtitle?.contains("0:13") == true, "The duration stays visible with no app")
+            if let expected { XCTAssertTrue(state.face.subtitle?.contains(expected) == true) }
+            XCTAssertFalse(state.face.subtitle?.contains(app) == true && app.contains("."))
             state.app = nil
             state.headline = "Finished in \(app)"
-            XCTAssertFalse(state.doneTitle.contains(app) && app.contains("."))
+            XCTAssertEqual(state.doneTitle, "Open the app")
+            XCTAssertFalse(state.face.subtitle?.contains(app) == true)
             XCTAssertFalse(ActivityWords.label("Open \(app)").contains(app) && app.contains("."))
             XCTAssertFalse(ActivityWords.reason("input in \(app)").contains(app) && app.contains("."))
         }

@@ -23,19 +23,6 @@ import UIKit
 //    request carries the bundle ID and the store's country only. A miss is remembered for a day.
 // Without any of these the view draws one placeholder: a grey tile in the icon's shape with an app glyph.
 
-/// The language the iPhone names apps in, from its first preferred language: Simplified or Traditional
-/// Chinese, or English for any other. Apps' names (`AppIconStore.name`) and the home page's default
-/// quick actions (`HomeIdea`) follow it.
-enum AppLanguage {
-    case english, simplifiedChinese, traditionalChinese
-
-    static var current: AppLanguage {
-        let language = Locale.preferredLanguages.first ?? "en"
-        if language.hasPrefix("zh-Hant") || language.hasPrefix("zh-TW") || language.hasPrefix("zh-HK") { return .traditionalChinese }
-        return language.hasPrefix("zh") ? .simplifiedChinese : .english
-    }
-}
-
 /// Icons of apps, found once and kept for the app's run.
 @MainActor @Observable
 final class AppIconStore {

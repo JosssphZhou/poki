@@ -684,7 +684,7 @@ struct ChatTranscript<Footer: View>: View {
                      state: TaskCardState(steps: steps, live: current, waiting: waiting, handedOver: handedOver),
                      upcoming: current ? Array((plan ?? []).dropFirst(steps.count)) : [],
                      planned: !current || plan != nil,
-                     asker: ask.from, app: current ? app : entry.app, started: entry.at, shot: current ? shot : nil,
+                     asker: ask.from, app: current ? app : entry.app, usedBrowser: ChatEntry.taskUsedBrowser(in: entries, at: i), started: entry.at, shot: current ? shot : nil,
                      ended: current ? nil : entry.ended, plannedTotal: entry.total)
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 26, style: .continuous))
 
@@ -1074,7 +1074,7 @@ struct ApprovalNoteCard: View {
     /// "Messages · sending a message": the app and PokiCore's reason, without its quoted word.
     private var context: String {
         let why = ActivityWords.reason(note.why)
-        let app = note.app.isEmpty || note.app == "unknown" || note.app.contains("(") ? nil : note.app
+        let app = note.app.contains("(") ? nil : AppName.display(note.app)
         return [app, why.isEmpty ? nil : why].compactMap { $0 }.joined(separator: ", ")
     }
 
