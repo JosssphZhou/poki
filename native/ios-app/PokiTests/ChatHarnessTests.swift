@@ -277,7 +277,11 @@ final class FakeCompletions: @unchecked Sendable {
 
     private func answer(_ connection: NWConnection, _ body: Data) {
         let events = lock.withLock { () -> String in
-            if let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] { bodies.append(json) }
+            let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+            // A Poki conversation is named by its own short turn (SessionNamer) beside the task's: it
+            // gets a title and leaves the task's scripted turns alone.
+            if let json, Self.system(json).hasPrefix("You name chat conversations") { return Self.text("Concert tickets") }
+            if let json { bodies.append(json) }
             return replies.isEmpty ? Self.text("No more scripted turns.") : replies.removeFirst()
         }
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
