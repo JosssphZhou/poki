@@ -2260,6 +2260,22 @@
         }
       }
     },
+    "Check the network, then try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请检查网络后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請檢查網路後再試。"
+          }
+        }
+      }
+    },
     "CHECKS" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2438,7 +2454,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在“设置 › 隐私与安全性 › 开发者模式”中开启开发者模式，并确认系统为 iOS 17.4 或更高版本。"
+            "value" : "请在“设置 › 隐私与安全 › 开发者模式”中开启开发者模式，并确认系统为 iOS 17.4 或更高版本。"
           }
         },
         "zh-Hant" : {
@@ -2833,6 +2849,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在連線此 iPhone…"
+          }
+        }
+      }
+    },
+    "Connection lost. Nothing is sent again. Talk again to hear how running steps ended." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接中断。已发出的内容不会重发，重新对话可以了解步骤的结果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連線中斷。已送出的內容不會重送，重新對話可以了解步驟的結果。"
           }
         }
       }
@@ -3692,6 +3724,22 @@
       }
     },
     "End conversation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束對話"
+          }
+        }
+      }
+    },
+    "End Talk" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4634,6 +4682,60 @@
         }
       }
     },
+    "In the chat, the waveform button starts a live conversation: Poki listens, acts and answers out loud, also while you are in another app. It ends by itself 8 seconds after an answer if nobody speaks. Tap End to stop sooner. The microphone in the message field only dictates." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In chat, tap the waveform button to start Live Voice. Poki listens, acts, and replies aloud, also while you are in another app. It ends automatically if nobody speaks for 8 seconds after an answer. Tap End to stop early. The message field mic is for dictation only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在对话中轻点波形按钮即可开启实时语音，Poki 会边听边操作并朗读回答，切到其他应用后对话继续。回答后 8 秒内无人说话会自动结束；轻点“结束”可提前停止。输入框麦克风仅用于听写。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在對話中輕點波形按鈕即可開啟即時語音，Poki 會邊聽邊操作並朗讀回答，切到其他 App 後對話繼續。回答後 8 秒內無人說話會自動結束；輕點「結束」可提前停止。輸入框麥克風僅用於聽寫。"
+          }
+        }
+      }
+    },
+    "Interrupt" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打断"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打斷"
+          }
+        }
+      }
+    },
+    "Interrupted" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已打断"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已打斷"
+          }
+        }
+      }
+    },
     "IPv6 present, %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5208,6 +5310,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "金鑰僅儲存在本機鑰匙串中，且僅傳送給對應服務商。"
+          }
+        }
+      }
+    },
+    "Live Voice Is Off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "實時語音已關閉"
           }
         }
       }
@@ -6477,6 +6595,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "沒有代理 App？請安裝專為此設計的免費迴環 App LocalDevVPN。"
+          }
+        }
+      }
+    },
+    "No Voice Key Set Up" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有配置语音密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有設定語音金鑰"
           }
         }
       }
@@ -8569,7 +8703,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请依次检查：“配置 › 回环”（LocalDevVPN 或代理已连接且配好 10.7.0.1）、“配置 › 配对”（开启回环后重配）、“设置 › 隐私与安全性”中的开发者模式。Poki 无法连接此 iPhone。"
+            "value" : "请依次检查：“配置 › 回环”（LocalDevVPN 或代理已连接且配好 10.7.0.1）、“配置 › 配对”（开启回环后重配）、“设置 › 隐私与安全”中的开发者模式。Poki 无法连接此 iPhone。"
           }
         },
         "zh-Hant" : {
@@ -8591,7 +8725,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在“设置 › 隐私与安全性 › 麦克风”中允许访问麦克风。"
+            "value" : "请在“设置 › 隐私与安全 › 麦克风”中允许访问麦克风。"
           }
         },
         "zh-Hant" : {
@@ -9149,7 +9283,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "即将打开“设置”。请前往“**隐私与安全性 › 开发者模式**”，轻点“**与 Poki 配对**”。"
+            "value" : "即将打开系统“设置”首页。请前往“**隐私与安全 › 开发者模式**”，轻点“**与 Poki 配对**”。"
           }
         },
         "zh-Hant" : {
@@ -9161,7 +9295,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Settings will open. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**."
+            "value" : "Poki opens the main Settings page. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**."
           }
         }
       }
@@ -9368,7 +9502,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“隐私与安全性”›“开发者模式”›“与 Poki 配对”。"
+            "value" : "“隐私与安全”›“开发者模式”›“与 Poki 配对”。"
           }
         },
         "en" : {
@@ -9390,7 +9524,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“隐私与安全性”›“开发者模式”，然后重启。"
+            "value" : "“隐私与安全”›“开发者模式”，然后重启。"
           }
         },
         "en" : {
@@ -9412,7 +9546,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“隐私与安全性”›“开发者模式”。重启后轻点“打开”。"
+            "value" : "“隐私与安全”›“开发者模式”。重启后轻点“打开”。"
           }
         },
         "en" : {
@@ -9499,6 +9633,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新载入"
+          }
+        }
+      }
+    },
+    "Remove Address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除地址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除地址"
+          }
+        }
+      }
+    },
+    "Remove the Mac voice bridge address?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要移除 Mac 语音桥接地址吗？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要移除 Mac 語音橋接地址嗎？"
           }
         }
       }
@@ -10039,6 +10205,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "簽名（可選）"
+          }
+        }
+      }
+    },
+    "Speak" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "說話"
+          }
+        }
+      }
+    },
+    "Speak live; Poki answers and acts" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音对话，Poki 回答并操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時語音對話，Poki 回答並操作"
           }
         }
       }
@@ -11430,6 +11628,70 @@
         }
       }
     },
+    "Talk with Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 對話"
+          }
+        }
+      }
+    },
+    "Talk with Poki needs an OpenAI API key. Add one in Settings. Dictate works without it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 对话需要 OpenAI API 密钥，请在设置里添加。听写不需要密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 對話需要 OpenAI API 金鑰，請在設定裡新增。聽寫不需要金鑰。"
+          }
+        }
+      }
+    },
+    "Talk with Poki then needs an OpenAI API key, or the address entered again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除后，和 Poki 对话需要 OpenAI API 密钥，或者重新输入这个地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除後，和 Poki 對話需要 OpenAI API 金鑰，或者重新輸入這個地址。"
+          }
+        }
+      }
+    },
+    "Talk with Poki uses Live Voice on your OpenAI account. Turn it on in Settings. Dictate works without it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 对话用的是 OpenAI 账户的实时语音，请在设置里打开。听写不需要它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 對話用的是 OpenAI 帳戶的實時語音，請在設定裡開啟。聽寫不需要它。"
+          }
+        }
+      }
+    },
     "Talk Instead of Typing" : {
       "localizations" : {
         "en" : {
@@ -11654,6 +11916,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 正在用的页面。连按两下接手。"
+          }
+        }
+      }
+    },
+    "The server did not answer. The talk ended." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务器没有响应，对话已结束。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伺服器沒有回應，對話已結束。"
           }
         }
       }
@@ -13841,6 +14119,22 @@
         }
       }
     },
+    "Unmute Poki’s Voice" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消 Poki 的语音静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消 Poki 的語音靜音"
+          }
+        }
+      }
+    },
     "USE YOUR PROXY APP" : {
       "localizations" : {
         "zh-Hans" : {
@@ -14982,6 +15276,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請求失敗。"
+          }
+        }
+      }
+    },
+    "Your words appear in the message field" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说的话写进输入框"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "說的話寫進輸入框"
           }
         }
       }
@@ -16250,24 +16560,24 @@
         }
       }
     },
-    "Open Setup and tap Install when Poki isn't running a task." : {
+    "Open Settings > Connection > Signing & Updates and install the prepared build when Poki isn't running a task." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 未执行任务时，打开“配置”并轻点“安装”。"
+            "value" : "Poki 未执行任务时，打开“设置 > 连接 > 签名与更新”，安装已准备好的版本。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 未執行任務時，開啟「設定精靈」並輕點「安裝」。"
+            "value" : "Poki 未執行任務時，開啟「設定 > 連線 > 簽署與更新」，安裝已準備好的版本。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Setup and tap Install when Poki isn’t running a task."
+            "value" : "Open Settings > Connection > Signing & Updates and install the prepared build when Poki isn't running a task."
           }
         }
       }
@@ -16895,19 +17205,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 会同 Poki Setup 一样提前从此更新通道下载并签名更新。Stable 仅含正式版，Beta、Alpha 和 Pre-alpha 提供先行测试版。"
+            "value" : "Poki 会从此通道及更稳定的通道准备更新。如果均无可用版本，会使用下一个有版本的较不稳定通道。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 會同 Poki Setup 一樣提前從此更新通道下載並簽名更新。Stable 僅含正式版，Beta、Alpha 和 Pre-alpha 提供先行測試版。"
+            "value" : "Poki 會從此通道及更穩定的通道準備更新。如果均無可用版本，會使用下一個有版本的較不穩定通道。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki downloads and signs updates from this release channel ahead of time, just like Poki Setup. Stable receives full releases only; Beta, Alpha, and Pre-alpha get earlier builds."
+            "value" : "Poki prepares updates from this channel and more stable channels. If none has a release, it uses the next available less stable channel."
           }
         }
       }
@@ -21624,6 +21934,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "忘記"
+          }
+        }
+      }
+    },
+    "Edit" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改"
+          }
+        }
+      }
+    },
+    "Edit Shortcut" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改快捷方式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改快捷方式"
+          }
+        }
+      }
+    },
+    "What Poki should do" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让 Poki 做什么"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓 Poki 做什麼"
+          }
+        }
+      }
+    },
+    "App" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App"
           }
         }
       }
@@ -30544,7 +30918,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 将打开“设置”。前往“**隐私与安全性 › 开发者模式**”并轻点“**与 Poki 配对**”。"
+            "value" : "Poki 将打开“设置”。前往“**隐私与安全 › 开发者模式**”并轻点“**与 Poki 配对**”。"
           }
         },
         "zh-Hant" : {
@@ -30864,25 +31238,25 @@
         }
       }
     },
-    "Poki downloads and signs updates from this channel ahead of time, the same way Poki Setup does. Stable gets full releases only; Beta, Alpha and Pre-alpha get earlier builds." : {
+    "Poki prepares updates from this channel and more stable channels. If none has a release, it uses the next available less stable channel." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki downloads and signs updates from this release channel ahead of time, just like Poki Setup. Stable receives full releases only; Beta, Alpha, and Pre-alpha get earlier builds."
+            "value" : "Poki prepares updates from this channel and more stable channels. If none has a release, it uses the next available less stable channel."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 会同 Poki Setup 一样提前从此更新通道下载并签名更新。Stable 仅含正式版，Beta、Alpha 和 Pre-alpha 提供先行测试版。"
+            "value" : "Poki 会从此通道及更稳定的通道准备更新。如果均无可用版本，会使用下一个有版本的较不稳定通道。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 會同 Poki Setup 一樣提前從此更新通道下載並簽名更新。Stable 僅含正式版，Beta、Alpha 和 Pre-alpha 提供先行測試版。"
+            "value" : "Poki 會從此通道及更穩定的通道準備更新。如果均無可用版本，會使用下一個有版本的較不穩定通道。"
           }
         }
       }
@@ -31681,7 +32055,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往“设置 › 隐私与安全性 › 开发者模式”，开启后重启手机并轻点“打开”。"
+            "value" : "前往“设置 › 隐私与安全 › 开发者模式”，开启后重启手机并轻点“打开”。"
           }
         },
         "zh-Hant" : {
@@ -31704,7 +32078,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往“设置 › 隐私与安全性 › 开发者模式 › 与 Poki 配对”，输入此处显示的配对码。"
+            "value" : "前往“设置 › 隐私与安全 › 开发者模式 › 与 Poki 配对”，输入此处显示的配对码。"
           }
         },
         "zh-Hant" : {
@@ -32077,13 +32451,174 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "回环已开启。iOS 把配对服务换到了另一个端口，Poki 会通过本地网络找到它。请保持无线局域网开启，并在“设置 › 隐私与安全性 › 本地网络”中允许 Poki。如果仍未恢复，请重新启动 iPhone。"
+            "value" : "回环已开启。iOS 把配对服务换到了另一个端口，Poki 会通过本地网络找到它。请保持无线局域网开启，并在“设置 › 隐私与安全 › 本地网络”中允许 Poki。如果仍未恢复，请重新启动 iPhone。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "迴環已開啟。iOS 把配對服務換到了另一個連接埠，Poki 會透過區域網路找到它。請保持無線區域網開啟，並在「設定 › 隱私權與安全性 › 區域網路」中允許 Poki。如果仍未恢復，請重新啟動 iPhone。"
+          }
+        }
+      }
+    },
+    "Reopen Poki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reopen Poki"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新打开 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新開啟 Poki"
+          }
+        }
+      }
+    },
+    "Finishing the Update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finishing the Update"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在完成更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在完成更新"
+          }
+        }
+      }
+    },
+    "Installing the update. Do not close Poki in the app switcher. Features are unavailable until you reopen Poki." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installing the update. Do not close Poki in the app switcher. Features are unavailable until you reopen Poki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安装更新。请不要在多任务界面划掉 Poki。重新打开 Poki 前，功能暂不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安裝更新。請不要在多工處理畫面滑掉 Poki。重新開啟 Poki 前，功能暫不可用。"
+          }
+        }
+      }
+    },
+    "You can return to the Home Screen and wait. Poki closes by itself when the update is installed. Open Poki again afterwards. If nothing changes, update Poki from Poki Setup on your computer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can return to the Home Screen and wait. Poki closes by itself when the update is installed. Open Poki again afterwards. If nothing changes, update Poki from Poki Setup on your computer."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以回到主屏幕等待。更新安装完成后，Poki 会自动关闭，之后请重新打开 Poki。如果一直没有变化，请用电脑上的 Poki Setup 更新。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以回到主畫面等待。更新安裝完成後，Poki 會自動關閉，之後請重新開啟 Poki。如果一直沒有變化，請用電腦上的 Poki Setup 更新。"
+          }
+        }
+      }
+    },
+    "The update is installed. Waiting for Poki to close. Features are unavailable until you reopen Poki." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update is installed. Waiting for Poki to close. Features are unavailable until you reopen Poki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版已安装，正在等待 Poki 关闭。重新打开 Poki 前，功能暂不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版已安裝，正在等待 Poki 關閉。重新開啟 Poki 前，功能暫不可用。"
+          }
+        }
+      }
+    },
+    "The update is installed. Swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update is installed. Swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版已安装。请在多任务界面向上划掉 Poki，然后重新打开。重新打开前，功能暂不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新版已安裝。請在多工處理畫面向上滑掉 Poki，然後重新開啟。重新開啟前，功能暫不可用。"
+          }
+        }
+      }
+    },
+    "To finish the update, swipe up on Poki in the app switcher to close it, then open Poki again. If the update is still available, try again. Features are unavailable until you reopen Poki." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To finish the update, swipe up on Poki in the app switcher to close it, then open Poki again. If the update is still available, try again. Features are unavailable until you reopen Poki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在多任务界面向上划掉 Poki，然后重新打开以完成更新。如果仍显示可用更新，请重试。重新打开前，功能暂不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在多工處理畫面向上滑掉 Poki，然後重新開啟以完成更新。如果仍顯示可用更新，請重試。重新開啟前，功能暫不可用。"
           }
         }
       }

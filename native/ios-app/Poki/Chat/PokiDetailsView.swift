@@ -100,6 +100,8 @@ struct PokiDetailsView: View {
                 Group { switch route {
                 case .model:
                     ModelSettingsView()
+                case .voiceKey:
+                    ModelSettingsView(opensVoiceKey: true)
                 case .history:
                     ActionLogView(openSession: { id in dismiss(); openSession(id) })
                 case .conversations:
@@ -168,6 +170,8 @@ struct PokiDetailsView: View {
 
 enum DetailsRoute: Hashable {
     case model, history, conversations, voice, connection, advanced, agents, updates, approvals, appearance, interfaceSize
+    /// Opens the voice key form without changing the model selection.
+    case voiceKey
 }
 
 /// Settings > Conversations: the archived conversations, each one line as in the drawer, to open, bring
