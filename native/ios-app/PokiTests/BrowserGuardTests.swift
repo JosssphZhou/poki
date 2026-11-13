@@ -22,31 +22,52 @@ final class BrowserGuardTests: XCTestCase {
         let keys = ["chat.provider", "chat.customURL", "chat.customModel", ApprovalClassifier.modeKey]
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
         defer { for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) } }
-        // submit: Poki types into the search field and presses Enter; otherwise it taps the button.
-        // fields: what the form holds besides its search field. search: a plain GET search form, with
-        // no role=search, that loads its results page.
-        let samples: [(label: String, submit: Bool, question: String?, fields: String, search: Bool)] = [
-            ("Delete", false, "Allow deletion?", "", false),
-            ("Send", false, "Allow sending a message?", "", false),
-            ("Transfer", false, "Allow payment?", "", false),
-            ("提交订单", false, "Allow payment?", "", false),
-            ("Send", true, "Allow sending a message?", "", false),
-            ("Place order", true, "Allow payment?", "", false),
-            ("Next page", false, nil, "", false),
-            ("Search", true, nil, "", false),
-            ("Start trial", false, "Allow payment?", "", false),
-            ("Start a trial", false, "Allow payment?", "", false),
-            ("Start your trial", false, "Allow payment?", "", false),
-            ("Continue to secure checkout now", false, "Allow payment?", "", false),
-            ("Google Search", true, nil, "", true),
-            ("Google Search", false, nil, "", true),
-            ("Search articles", true, nil, "", true),
-            ("Search articles", false, nil, "", true),
-            ("Go", true, nil, "", true),
-            ("Go", false, nil, "", true),
-            ("Submit", true, "Allow sending a message?", "<textarea aria-label=\"Message\"></textarea>", false),
-            ("Submit", true, "Allow sending a message?", "<div contenteditable aria-label=\"Message\"></div>", false),
+        struct Sample {
+            let label: String
+            let submit: Bool
+            let question: String?
+            var fields = ""
+            var search = false
+            var action = "/results"
+            var buttonAction = ""
+            var formRole = ""
+        }
+        var samples: [Sample] = [
+            .init(label: "Delete", submit: false, question: "Allow deletion?"),
+            .init(label: "Send", submit: false, question: "Allow sending a message?"),
+            .init(label: "Transfer", submit: false, question: "Allow payment?"),
+            .init(label: "提交订单", submit: false, question: "Allow payment?"),
+            .init(label: "Send", submit: true, question: "Allow sending a message?"),
+            .init(label: "Place order", submit: true, question: "Allow payment?"),
+            .init(label: "Next page", submit: false, question: nil),
+            .init(label: "Search", submit: true, question: nil),
+            .init(label: "Start trial", submit: false, question: "Allow payment?"),
+            .init(label: "Start a trial", submit: false, question: "Allow payment?"),
+            .init(label: "Start your trial", submit: false, question: "Allow payment?"),
+            .init(label: "Continue to secure checkout now", submit: false, question: "Allow payment?"),
+            .init(label: "Google Search", submit: true, question: nil, search: true),
+            .init(label: "Google Search", submit: false, question: nil, search: true),
+            .init(label: "Search articles", submit: true, question: nil, search: true),
+            .init(label: "Search articles", submit: false, question: nil, search: true),
+            .init(label: "Go", submit: true, question: nil, search: true),
+            .init(label: "Go", submit: false, question: nil, search: true),
+            .init(label: "Submit", submit: true, question: "Allow sending a message?", fields: "<textarea aria-label=\"Message\"></textarea>"),
+            .init(label: "Submit", submit: true, question: "Allow sending a message?", fields: "<div contenteditable aria-label=\"Message\"></div>"),
         ]
+        for submit in [false, true] {
+            samples += [
+                .init(label: "Go", submit: submit, question: "Allow payment?", search: true, action: "/orders/place"),
+                .init(label: "Go", submit: submit, question: "Allow payment?", search: true, action: "/wallet/transfer"),
+                .init(label: "Go", submit: submit, question: "Allow sending a message?",
+                      fields: "<textarea role=\"searchbox\" aria-label=\"Message\">Hello</textarea>",
+                      search: true, action: "/messages/send"),
+                .init(label: "Go", submit: submit, question: "Allow sending a message?",
+                      fields: "<div contenteditable role=\"searchbox\" aria-label=\"Message\">Hello</div>",
+                      search: true, formRole: "search"),
+            ]
+        }
+        samples.append(.init(label: "Go", submit: false, question: "Allow payment?", search: true,
+                             buttonAction: "/orders/place"))
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
         defer { app.onProbeApproval = nil; app.stopSession() }
         for (index, sample) in samples.enumerated() {
@@ -56,9 +77,10 @@ final class BrowserGuardTests: XCTestCase {
                 let head = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Consent fixture</title></head><body style=\"font:17px -apple-system;margin:72px 20px\"><h1>Consent fixture</h1><p id=\"effect\"></p>"
                 let html = sample.search ? """
                 \(head)
-                <form method="get" action="/results">
+                <form method="get" action="\(sample.action)" role="\(sample.formRole)">
                 <input type="search" name="q" aria-label="Query" value="\(sample.submit ? "" : "local fixture")">
-                <button type="submit">\(sample.label)</button>
+                \(sample.fields)
+                <button type="submit" \(sample.buttonAction.isEmpty ? "" : "formaction=\"\(sample.buttonAction)\"")>\(sample.label)</button>
                 </form></body></html>
                 """ : """
                 \(head)
@@ -69,9 +91,10 @@ final class BrowserGuardTests: XCTestCase {
                 </form></body></html>
                 """
                 let results = "\(head)<script>if (new URLSearchParams(location.search).get('q') === 'local fixture') \(act)</script></body></html>"
-                let name = "\(sample.label), submit=\(sample.submit)\(sample.fields.isEmpty ? "" : ", form with \(sample.fields)")"
+                let name = "\(sample.label), action=\(sample.action), buttonAction=\(sample.buttonAction), submit=\(sample.submit)\(sample.fields.isEmpty ? "" : ", form with \(sample.fields)")"
                 print("Browser consent fixture: \(name), allow=\(allowed)")
-                let pages = try PageServer(pages: ["/": html, "/results": results])
+                let pages = try PageServer(pages: ["/": html, "/results": results, "/orders/place": results,
+                                                   "/wallet/transfer": results, "/messages/send": results])
                 let opened = await WebTools.perform("web_open", arguments: Self.json(["url": "http://127.0.0.1:\(pages.port)/"]))
                 XCTAssertFalse(opened.isError, opened.text)
                 let ref = try Self.ref(sample.submit ? "Query" : sample.label, in: opened.text)
