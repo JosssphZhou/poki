@@ -185,8 +185,12 @@ fn client() -> Result<reqwest::Client> {
 }
 
 async fn list() -> Result<Vec<GhRelease>> {
-    let mut list: Vec<GhRelease> = client()?
-        .get(format!("https://api.github.com/repos/{}/releases?per_page=100", repo()))
+    read_list(&client()?, &format!("https://api.github.com/repos/{}/releases?per_page=100", repo())).await
+}
+
+async fn read_list(http: &reqwest::Client, url: &str) -> Result<Vec<GhRelease>> {
+    let mut list: Vec<GhRelease> = http
+        .get(url)
         .header("Accept", "application/vnd.github+json")
         .timeout(std::time::Duration::from_secs(30))
         .send()
@@ -636,6 +640,61 @@ mod tests {
             html_url: None,
             assets: ipa.map(|n| vec![GhAsset { name: n.into(), browser_download_url: format!("https://x/{n}") }]).unwrap_or_default(),
         }
+    }
+
+    /// A local server that gives one answer to each request, in order, then repeats the last one.
+    /// Returns its address and the number of requests it has answered.
+    async fn answers(list: Vec<String>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/releases", listener.local_addr().unwrap());
+        let answered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = answered.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match socket.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => request.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                let _ = socket.write_all(list[n.min(list.len() - 1)].as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        (url, answered)
+    }
+
+    fn answer(status: &str, headers: &str, body: &str) -> String {
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}", body.len())
+    }
+
+    /// GitHub's answer once a network has spent its hour's requests; this reset is in the year 2100.
+    fn limited() -> String {
+        answer(
+            "403 Forbidden",
+            "x-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 4102444800\r\n",
+            r#"{"message":"API rate limit exceeded for 203.0.113.7.","documentation_url":"https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"}"#,
+        )
+    }
+
+    fn listed() -> String {
+        answer("200 OK", "", r#"[{"tag_name":"app-0.4.0","prerelease":false,"draft":false,"published_at":"2026-11-13T05:00:00Z","body":null,"assets":[]}]"#)
+    }
+
+    /// A client that goes straight to the local server, whatever proxy this machine has set.
+    fn direct() -> reqwest::Client { reqwest::Client::builder().no_proxy().build().unwrap() }
+
+    #[tokio::test]
+    async fn a_rate_limited_answer_is_asked_again() {
+        let (url, _) = answers(vec![limited(), listed()]).await;
+        let list = read_list(&direct(), &url).await.unwrap();
+        assert_eq!(list[0].tag_name, "app-0.4.0");
     }
 
     #[test]
