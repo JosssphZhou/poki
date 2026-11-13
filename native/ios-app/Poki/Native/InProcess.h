@@ -3,6 +3,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// 只识别系统明确报告的 UI testing 授权拒绝，不输出错误原文或屏幕内容。
+FOUNDATION_EXPORT NSDictionary<NSString *, id> * _Nullable PKAutomationAuthorizationDiagnostic(NSError * _Nullable error, uint64_t generation);
+FOUNDATION_EXPORT NSString * const PKAutomationAuthorizationFailureNotification;
+/// 就绪检查的纯判定，供 native 与模拟错误回归共用。
+FOUNDATION_EXPORT NSDictionary<NSString *, id> *PKReadinessVerdict(BOOL readOK, NSString * _Nullable code, uint64_t generation, BOOL reused);
+
 /// How a dispatched action ended, as far as the phone is concerned.
 typedef NS_ENUM(NSInteger, PKDelivery) {
     PKDeliveryNotSent = 0,

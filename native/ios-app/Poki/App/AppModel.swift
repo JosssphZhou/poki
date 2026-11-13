@@ -156,7 +156,7 @@ final class AppModel {
     /// The note before iOS's passcode screen is showing; Continue turns Poki on.
     var passcodeHeadsUp = false
     /// The note's text (PokiApp's alert). Its translations are looked up by this exact English key.
-    static let passcodeHeadsUpMessage: LocalizedStringResource = "This is the first time Poki starts automation since your iPhone restarted, so iOS will ask for your passcode on the next screen. That screen belongs to iOS. Poki can’t see or read what you enter, and it asks only once until the next restart."
+    static let passcodeHeadsUpMessage: LocalizedStringResource = "iOS may ask for your iPhone passcode to allow automation. That screen belongs to iOS; Poki can’t see or read what you enter. iOS may ask again after Poki is force closed or the iPhone restarts."
     private var passcodeHeadsUpReconnect = true
     private var passcodeHeadsUpSeen = 0.0
     private static let automationBootKey = "automationStartedBoot"
@@ -308,6 +308,14 @@ final class AppModel {
                            holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() })
         self.launcher = launcher
         self.pairer = pairer
+        NotificationCenter.default.addObserver(forName: .PKAutomationAuthorizationFailure, object: nil, queue: nil) { [weak self] note in
+            let generation = (note.userInfo?["generation"] as? NSNumber)?.uint64Value
+            let domain = note.userInfo?["domain"] as? String ?? "unknown"
+            let errorCode = (note.userInfo?["errorCode"] as? NSNumber)?.intValue ?? 0
+            let operationStarted = (note.userInfo?["operationStarted"] as? NSNumber)?.doubleValue
+            guard let generation else { return }
+            Task { @MainActor [weak self] in self?.automationAuthorizationFailed(generation: generation, domain: domain, errorCode: errorCode, operationStarted: operationStarted) }
+        }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
             await self?.askToConnect(client: client, callback: callback, connector: connector) ?? false
@@ -397,6 +405,22 @@ final class AppModel {
 
     /// The in-process session as prepare last answered it in this process (ESP-152).
     private var inProcessSession = InProcessSession.opening
+    private var automationNeedsReauthorization = false
+    private var verifiedGeneration: UInt64?
+    private var verificationStarted: TimeInterval = 0
+
+    /// 迟到的旧会话错误不能覆盖当前会话，也不能让动作再次发送。
+    func automationAuthorizationFailed(generation: UInt64, domain: String, errorCode: Int, operationStarted: TimeInterval? = nil) {
+        guard sessionOn, automationPath == .inProcess, automation.generation() == generation else { return }
+        if let operationStarted, verifiedGeneration == generation, operationStarted < verificationStarted { return }
+        automationNeedsReauthorization = true
+        InProcessWDA.gate.withLock { $0.reauthorizationRequired = true }
+        inProcessWarmToken += 1
+        inProcessWarming = false
+        inProcessSession = .failed(code: "automation_not_authorized", detail: "")
+        host.update(runner: inProcessSession.agentState)
+        log.add("runner", "automation authorization refused (domain \(domain), code \(errorCode), generation \(generation)); reopen Poki and follow the iOS passcode prompt")
+    }
     /// Automation works through Poki's own session, whether or not the loopback answers (ESP-448).
     var hasOpenInProcessSession: Bool {
         automationPath == .inProcess && sessionOn && inProcessSession == .open
@@ -505,7 +529,7 @@ final class AppModel {
     func warmInProcess(_ why: String) {
         let resumingStandby = runner.state == "standby" && keptSessionCandidate && !inProcessUsedUp
         guard automationPath == .inProcess, sessionOn, !runnerPaused, runner.isRunning || resumingStandby else { return }
-        if InProcessWDA.automationDeclined { return }
+        if InProcessWDA.automationDeclined || automationNeedsReauthorization { return }
         // 所有预热入口都必须等待旧暂停结束，否则迟到的暂停会关闭新恢复的自动化。
         guard automationPausesPending == 0 else { return }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
@@ -551,13 +575,22 @@ final class AppModel {
                 }
                 guard accepted else { return }
                 if token == self.inProcessWarmToken { self.inProcessWarming = false }
+                if result["code"] as? String == "automation_not_authorized", let generation = (result["generation"] as? NSNumber)?.uint64Value {
+                    self.automationAuthorizationFailed(generation: generation, domain: result["domain"] as? String ?? "unknown", errorCode: (result["errorCode"] as? NSNumber)?.intValue ?? 0)
+                    return
+                }
                 let waitedForPasscode = self.inProcessPasscode
                 self.endPasscodeWait(opened: ok)
                 let seconds = String(format: "%.2f", result["seconds"] as? Double ?? 0)
-                let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", first snapshot and screenshot %.2f s", $0) : "" } ?? ""
+                let warm = (result["warm_seconds"] as? Double).map { $0 > 0 ? String(format: ", readiness read %.2f s", $0) : "" } ?? ""
                 self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
                 if ok {
+                    if let generation = (result["generation"] as? NSNumber)?.uint64Value,
+                       let started = (result["verification_started"] as? NSNumber)?.doubleValue {
+                        self.verifiedGeneration = generation
+                        self.verificationStarted = started
+                    }
                     self.automationStarted()
                     // An open session proves both, also when the launcher only found the image mounted.
                     if !self.setup.developerMode || !self.setup.uiAutomation {
@@ -569,7 +602,8 @@ final class AppModel {
                 }
                 let detail = result["detail"] as? String ?? ""
                 // iOS gives up on the passcode after a minute and says only that enabling timed out.
-                let passcodeMissed = result["code"] as? String == "passcode_declined" || waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")
+                let passcodeMissed = result["code"] as? String == "passcode_declined" ||
+                    (result["warm_seconds"] == nil && (waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode")))
                 // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
                 if !ok, passcodeMissed {
                     InProcessWDA.gate.withLock { $0.declined = true }
@@ -580,11 +614,8 @@ final class AppModel {
                     if ok || passcodeMissed {
                         self.runner = RunnerStatus(state: "running", code: self.standbyRunnerCode)
                     } else {
-                        self.keptSessionCandidate = false
-                        // 复用失败后走原有启动路径；已挂载镜像时由 launcher 尝试本机会话。
-                        self.log.add("runner", "the kept automation session did not resume; trying the launcher")
-                        self.runner = RunnerStatus(state: "connecting")
-                        self.launchRunner()
+                        // 只读检查失败不重建会话；可在后续请求有界重试只读检查。
+                        self.log.add("runner", "the kept automation session did not pass its readiness read")
                     }
                 }
             }
@@ -597,7 +628,8 @@ final class AppModel {
         guard automationPath == .inProcess, sessionOn, !runnerPaused, runner.isRunning, runner.code == "local_ddi",
               loopback.isWorking, inProcessOpensInFlight == 0, !retriedLocalDDIOnLoopback,
               !InProcessWDA.automationDeclined, case .failed(let code, _) = inProcessSession,
-              code != "open_poki_first", code != "open_under_way" else { return false }
+              code != "open_poki_first", code != "open_under_way", code != "readiness_read_failed",
+              code != "automation_not_authorized", code != "native_session_invalidated" else { return false }
         retriedLocalDDIOnLoopback = true
         // No agent wakes the old local state before the launcher reports again.
         runner = RunnerStatus(state: "connecting")
@@ -1221,6 +1253,7 @@ final class AppModel {
         lastAgentActivity = Date()
         log.add("runner", automationPath == .inProcess ? "\(asked): opening the automation session again" : "\(asked): starting the runner")
         activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = "Starting the runner"; $0.since = Date() }
+        if automationNeedsReauthorization { host.update(runner: inProcessSession.agentState); return }
         if automationPath == .inProcess, InProcessWDA.automationDeclined {
             inProcessSession = .passcodeMissed
             host.update(runner: coreState(of: runner))
@@ -1324,6 +1357,7 @@ final class AppModel {
     /// The runner's state as the agent reads it. While the loopback is down, every pre-launch state
     /// is the same thing: waiting for the tunnel, said with the time it went and what to do.
     func coreState(of status: RunnerStatus) -> RunnerState {
+        if automationPath == .inProcess, automationNeedsReauthorization { return inProcessSession.agentState }
         // 待机会话通过 prepare 验证前，不能把缓存的 open 当作就绪。
         if automationPath == .inProcess, status.state == "standby", !runnerPaused {
             return inProcessSession.agentState
@@ -2022,6 +2056,9 @@ final class AppModel {
     /// what Home says instead of the loopback's trouble, which it showed before the hand-over. Nil
     /// while the session opens or is open.
     var localSessionTrouble: (text: String, opensSetup: Bool)? {
+        if sessionOn, automationNeedsReauthorization {
+            return (String(localized: "The current automation session needs authorization again. Force close and reopen Poki, then enter the iPhone passcode if iOS asks."), false)
+        }
         guard sessionOn, runner.isRunning, runner.code == "local_ddi" else { return nil }
         switch inProcessSession {
         // Waiting its turn: Poki not in front, or another open asking for the passcode.

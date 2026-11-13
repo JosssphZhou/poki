@@ -22,6 +22,7 @@ protocol InProcessAutomation: AnyObject, Sendable {
     func close() -> [String: Any]
     /// Automation Mode off with the session kept. Keys: paused, how, selectors.
     func pauseAutomation() -> [String: Any]
+    func generation() -> UInt64
 }
 
 /// Thread-safe: its session state is behind locks, and every call blocks on its own.
@@ -44,11 +45,15 @@ enum InProcessSession: Equatable {
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
         case .waitingForPasscode:
-            return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS asks for it before it allows automation, after Poki restarts and 8 hours after the last time. Only the owner can do this; the Live Activity asks them. Call again in about 10 s")
+            return .starting("waiting for the owner to enter the iPhone passcode on the phone: iOS may ask when automation starts, including after Poki is force closed or the phone restarts. Only the owner can do this. Call again in about 10 s")
         case .passcodeMissed:
             return .failed("the owner did not enter the iPhone passcode when iOS asked for it to allow automation (cancelled, or a minute passed). Nothing was sent, and Poki does not ask again by itself: the owner turns Poki off and on to be asked again",
                            fix: "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
         case .failed(let code, let detail):
+            if code == "automation_not_authorized" {
+                return .failed("the current automation session needs authorization again; no action is retried automatically",
+                               fix: "Force close and reopen Poki, then enter the iPhone passcode if iOS asks to allow automation")
+            }
             return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
                            fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
         }
@@ -84,6 +89,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         var inFront = true
         var startedThisBoot = false
         var opening = false
+        var reauthorizationRequired = false
     }
     static let gate = OSAllocatedUnfairLock(initialState: OpenGate())
     static var automationDeclined: Bool { gate.withLock { $0.declined } }
@@ -91,6 +97,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     /// prepare through the gate: an answer in prepare's shape when it may not run now.
     static func openThroughGate(_ prepare: () -> [String: Any]) -> [String: Any] {
         let refusal: String? = gate.withLock { g in
+            if g.reauthorizationRequired { return "automation_not_authorized" }
             if g.declined { return "passcode_declined" }
             if g.startedThisBoot { return nil }
             if !g.inFront { return "open_poki_first" }
@@ -99,8 +106,9 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             return nil
         }
         if let refusal {
-            let detail = refusal == "passcode_declined" ? "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on"
-                : refusal == "open_poki_first" ? "iOS asks for the passcode before the first automation since the iPhone restarted; that happens with Poki open, so the owner opens Poki first"
+            let detail = refusal == "automation_not_authorized" ? "force close and reopen Poki, then enter the iPhone passcode if iOS asks to allow automation"
+                : refusal == "passcode_declined" ? "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on"
+                : refusal == "open_poki_first" ? "iOS may ask for the passcode when automation starts; the owner opens Poki first"
                 : "an open is already asking for the passcode"
             return ["ok": false, "code": refusal, "detail": detail, "seconds": 0.0]
         }
@@ -262,6 +270,9 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         }
         if let session, session != "inprocess-\(native.generation())", key != "DELETE /session" {
             return refused(404, "invalid session id", "the automation session \(session) has ended (now generation \(native.generation()))")
+        }
+        if key != "DELETE /session", Self.gate.withLock({ $0.reauthorizationRequired }) {
+            return refused(500, "unknown error", "automation_not_authorized: force close and reopen Poki, then enter the iPhone passcode if iOS asks; no action was retried")
         }
         do {
             if key == "GET /screenshot" {

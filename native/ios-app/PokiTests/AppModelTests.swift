@@ -21,6 +21,9 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private var answer: [String: Any]?
     private var prepares = 0
     private var pauses = 0
+    private var generationValue: UInt64 = 1
+    func generation() -> UInt64 { lock.withLock { generationValue } }
+    func setGeneration(_ value: UInt64) { lock.withLock { generationValue = value } }
     private var pauseGate: DispatchSemaphore?
     private var heldPauseStarted = false
     var prepareCount: Int { lock.withLock { prepares } }
@@ -426,6 +429,7 @@ final class InProcessPasscodeTests: XCTestCase {
 
     override func setUp() async throws {
         try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
+        InProcessWDA.gate.withLock { $0.reauthorizationRequired = false; $0.declined = false }
         saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load())
         session = FakeAutomation()
         launcher = FakeLauncher()
@@ -442,6 +446,7 @@ final class InProcessPasscodeTests: XCTestCase {
         session?.releasePause()
         guard let saved, let model else { return }
         model.stopSession()
+        InProcessWDA.gate.withLock { $0.reauthorizationRequired = false; $0.declined = false }
         UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
         UserDefaults.standard.set(saved.relayEnabled, forKey: "relayEnabled")
         saved.setup.save()
@@ -451,6 +456,81 @@ final class InProcessPasscodeTests: XCTestCase {
         let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
         done.expectationDescription = what
         await fulfillment(of: [done], timeout: 5)
+    }
+
+    /// 只识别系统明确的 UI testing 拒绝；其他读屏错误不能被说成授权失败。
+    func testNativeAuthorizationClassifierAndReadinessVerdict() {
+        let denied = NSError(domain: "XCTestErrorDomain", code: 42, userInfo: [NSLocalizedDescriptionKey: "Not authorized for performing UI testing actions"])
+        let result = PKAutomationAuthorizationDiagnostic(denied, 7)
+        XCTAssertEqual(result?["code"] as? String, "automation_not_authorized")
+        XCTAssertEqual(result?["domain"] as? String, "XCTestErrorDomain")
+        XCTAssertEqual((result?["errorCode"] as? NSNumber)?.intValue, 42)
+        XCTAssertEqual((result?["generation"] as? NSNumber)?.uint64Value, 7)
+        let ordinary = NSError(domain: "AX", code: 1, userInfo: [NSLocalizedDescriptionKey: "screenshot is protected"])
+        XCTAssertNil(PKAutomationAuthorizationDiagnostic(ordinary, 7))
+        let verdict = PKReadinessVerdict(false, "automation_not_authorized", 7, true)
+        XCTAssertEqual((verdict["ok"] as? NSNumber)?.boolValue, false)
+        XCTAssertEqual(verdict["code"] as? String, "automation_not_authorized")
+        XCTAssertEqual(PKReadinessVerdict(false, "timeout", 7, true)["code"] as? String, "readiness_read_failed")
+    }
+
+    /// 同一代授权拒绝让 host 离开 running；旧代拒绝不得影响新会话。
+    func testAuthorizationFailureIsGenerationScopedAndStopsRetries() async throws {
+        await openSessionBeforeCellular()
+        session.setGeneration(2)
+        let failure = NSError(domain: "XCTestErrorDomain", code: 42, userInfo: [NSLocalizedDescriptionKey: "Not authorized for performing UI testing actions"])
+        let old = try XCTUnwrap(PKAutomationAuthorizationDiagnostic(failure, 1))
+        NotificationCenter.default.post(name: .PKAutomationAuthorizationFailure, object: nil, userInfo: old)
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(model.host.currentRunner.isRunning)
+        let current = try XCTUnwrap(PKAutomationAuthorizationDiagnostic(failure, 2))
+        NotificationCenter.default.post(name: .PKAutomationAuthorizationFailure, object: nil, userInfo: current)
+        await waitFor("current authorization refusal") { !self.model.host.currentRunner.isRunning }
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        XCTAssertTrue(model.host.currentRunner.describe.contains("authorization"))
+        let prepares = session.prepareCount
+        model.warmInProcess("retry after refusal")
+        var invoked = false
+        let gated = InProcessWDA.openThroughGate { invoked = true; return ["ok": true] }
+        XCTAssertFalse(invoked)
+        XCTAssertEqual(gated["code"] as? String, "automation_not_authorized")
+        XCTAssertEqual(session.prepareCount, prepares)
+        let wda = InProcessWDA(screen: CGSize(width: 402, height: 874))
+        let answer = try await wda.send(method: "POST", url: URL(string: "http://in-process/wda/tap/0")!, body: Data(#"{"x":1,"y":1}"#.utf8), timeout: 2)
+        XCTAssertEqual(answer.status, 500)
+        XCTAssertTrue(String(decoding: answer.body, as: UTF8.self).contains("automation_not_authorized"))
+    }
+
+    /// 普通失败不设置授权恢复门控。
+    func testOrdinaryReadinessFailureDoesNotRequestReauthorization() async {
+        await openSessionBeforeCellular()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("readiness pending") { self.session.isHoldingOpen }
+        let starts = launcher.starts
+        session.answer(["ok": false, "code": "readiness_read_failed", "generation": 1, "warm_seconds": 6])
+        await waitFor("readiness failure") { self.model.host.currentRunner.describe.contains("readiness_read_failed") }
+        XCTAssertFalse(InProcessWDA.gate.withLock { $0.reauthorizationRequired })
+        XCTAssertFalse(InProcessWDA.gate.withLock { $0.declined })
+        XCTAssertEqual(launcher.starts, starts)
+    }
+
+    /// 同代旧读屏拒绝迟到时不能覆盖更新的成功验证；新拒绝仍须停止。
+    func testLateOldReadFailureDoesNotOverrideNewVerification() async {
+        await openSessionBeforeCellular()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("new verification pending") { self.session.isHoldingOpen }
+        session.answer(["ok": true, "generation": 1, "reused": true, "verification_started": 200])
+        await waitFor("new verification passed") { self.model.host.currentRunner.isRunning }
+        model.automationAuthorizationFailed(generation: 1, domain: "XCTest", errorCode: 1, operationStarted: 100)
+        XCTAssertTrue(model.host.currentRunner.isRunning)
+        XCTAssertFalse(InProcessWDA.gate.withLock { $0.reauthorizationRequired })
+        model.automationAuthorizationFailed(generation: 1, domain: "XCTest", errorCode: 1, operationStarted: 201)
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        XCTAssertTrue(InProcessWDA.gate.withLock { $0.reauthorizationRequired })
     }
 
     /// On cellular the launcher reports `local_ddi`: the image is mounted, and nothing reached the
@@ -525,7 +605,7 @@ final class InProcessPasscodeTests: XCTestCase {
         model.wakeRunner()
         await waitFor("the kept session is being checked") { self.session.isHoldingOpen }
         session.answer(["ok": false, "code": "native_session_invalidated"])
-        await waitFor("the kept session failed") { !self.model.hasOpenInProcessSession && self.model.runner.state != "standby" }
+        await waitFor("the kept session failed") { self.model.host.currentRunner.describe.contains("native_session_invalidated") }
         XCTAssertFalse(model.host.currentRunner.isRunning)
     }
 
