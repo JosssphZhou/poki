@@ -395,10 +395,9 @@ struct HomeGreetingView: View {
         VStack(spacing: 0) {
             Text(verbatim: HomeGreeting.hello(at: date))
                 .foregroundStyle(dark ? Color(hex: 0xF4F4F1) : Color(hex: 0x111110))
-            // One line at any type size: at the largest sizes two lines of it reach down to the pills.
             Text(verbatim: HomeGreeting.ask)
                 .foregroundStyle(dark ? Color(hex: 0x8D8D87) : Color(hex: 0x6F6F69))
-                .lineLimit(1).minimumScaleFactor(0.5)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: size, weight: .semibold))
         .tracking(-0.6 * size / 28)

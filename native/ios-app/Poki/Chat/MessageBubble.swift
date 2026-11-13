@@ -21,7 +21,7 @@ struct MessageBubble: View {
     var body: some View {
         HStack {
             if direction != .incoming {
-                Spacer(minLength: .messageInsetPadding)
+                Spacer(minLength: typeSize.isAccessibilitySize ? 16 : .messageInsetPadding)
             }
             if direction == .incoming {
                 answer
@@ -36,7 +36,7 @@ struct MessageBubble: View {
                     // A table takes the row's width before the space beside it, so it scrolls sideways
                     // only when it is wider than the bubble can be.
                     .layoutPriority(blocks.contains { if case .table = $0 { true } else { false } } ? 1 : 0)
-                Spacer(minLength: .messageInsetPadding)
+                Spacer(minLength: typeSize.isAccessibilitySize ? 16 : .messageInsetPadding)
             } else {
                 (direction == .outgoing ? withCapsules : Text(rendered))
                     .font(.body)
@@ -53,7 +53,7 @@ struct MessageBubble: View {
                     .contentShape(.contextMenuPreview, shape)
                     .contentShape(.interaction, shape)
                     .contextMenu { copyButton { UIPasteboard.general.string = text } }
-                    .frame(maxWidth: 320, alignment: .trailing)
+                    .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : 320, alignment: .trailing)
             }
         }
         .transaction { if direction == .incoming { $0.animation = nil } }

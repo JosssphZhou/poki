@@ -131,7 +131,7 @@ struct AttachmentStrip: View {
                 .background(Color(red: 60 / 255, green: 60 / 255, blue: 67 / 255).opacity(0.85), in: .circle)
                 .overlay(Circle().strokeBorder(.white, lineWidth: 2).padding(-2))
                 // The touch is larger than the mark.
-                .frame(width: 36, height: 36).contentShape(.rect)
+                .frame(width: 44, height: 44).contentShape(.rect)
         }
         .buttonStyle(.plain)
         .offset(x: 11, y: -11)

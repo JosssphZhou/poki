@@ -14,7 +14,7 @@ final class InterfaceSizeTests: XCTestCase {
         defer { window.isHidden = true }
         let original = window.traitCollection.preferredContentSizeCategory
 
-        for category in [UIContentSizeCategory.extraSmall, .accessibilityExtraExtraExtraLarge] {
+        for category in [UIContentSizeCategory.extraSmall, .small, .large, .extraLarge, .extraExtraExtraLarge, .accessibilityMedium, .accessibilityExtraLarge, .accessibilityExtraExtraExtraLarge] {
             AppInterfaceSize.apply(category.rawValue, to: window)
             window.layoutIfNeeded()
             XCTAssertEqual(controller.traitCollection.preferredContentSizeCategory, category)
@@ -37,7 +37,7 @@ final class InterfaceSizeTests: XCTestCase {
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
-        for category in [UIContentSizeCategory.extraSmall, .accessibilityExtraExtraExtraLarge] {
+        for category in [UIContentSizeCategory.extraSmall, .small, .large, .extraLarge, .extraExtraExtraLarge, .accessibilityMedium, .accessibilityExtraLarge, .accessibilityExtraExtraExtraLarge] {
             AppInterfaceSize.apply(category.rawValue, to: window)
             window.layoutIfNeeded()
             let end = Date().addingTimeInterval(2)
@@ -75,7 +75,7 @@ final class InterfaceSizeTests: XCTestCase {
             window.isHidden = true
         }
         var sizes: [CGFloat] = []
-        for category in [UIContentSizeCategory.extraSmall, .accessibilityExtraExtraExtraLarge] {
+        for category in [UIContentSizeCategory.extraSmall, .small, .large, .extraLarge, .extraExtraExtraLarge, .accessibilityMedium, .accessibilityExtraLarge, .accessibilityExtraExtraExtraLarge] {
             AppInterfaceSize.apply(category.rawValue, to: window)
             AppInterfaceSize.updateNavigationFonts(in: window)
             let font = try XCTUnwrap(navigation.navigationBar.titleTextAttributes?[.font] as? UIFont)

@@ -258,6 +258,7 @@ private struct PokiSettingsCard: View {
     var openVoice: () -> Void
     var openActivity: () -> Void
     @ScaledMetric(relativeTo: .title2) private var face = 64.0
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -274,26 +275,29 @@ private struct PokiSettingsCard: View {
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
-            Group {
-                if let image = PokiMood.cutout(status.mood, small: true) {
-                    Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 14))
+        return HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: 8) {
+            layout {
+                Group {
+                    if let image = PokiMood.cutout(status.mood, small: true) {
+                        Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
+                    }
                 }
-            }
-            .frame(width: face, height: face)
-            .background(status.mood == .paused ? Tint.night : Tint.portrait, in: .circle)
-            .clipShape(.circle)
-            .overlay(Circle().strokeBorder(Tint.ring, lineWidth: 1))
-            .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: "Poki").font(Prominent.font(.title2, .bold)).foregroundStyle(Color(.label))
-                    .accessibilityAddTraits(.isHeader)
-                HStack(spacing: 6) {
-                    Circle().fill(status.mood.dot).frame(width: 7, height: 7)
-                    Text(verbatim: PokiStatusCopy.word(status)).lineLimit(1)
+                .frame(width: min(80, face), height: min(80, face))
+                .background(status.mood == .paused ? Tint.night : Tint.portrait, in: .circle)
+                .clipShape(.circle)
+                .overlay(Circle().strokeBorder(Tint.ring, lineWidth: 1))
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: "Poki").font(Prominent.font(.title2, .bold)).foregroundStyle(Color(.label))
+                        .accessibilityAddTraits(.isHeader)
+                    HStack(spacing: 6) {
+                        Circle().fill(status.mood.dot).frame(width: 7, height: 7)
+                        Text(verbatim: PokiStatusCopy.word(status)).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.subheadline).foregroundStyle(Color(.secondaryLabel))
+                    .accessibilityElement(children: .combine)
                 }
-                .font(.subheadline).foregroundStyle(Color(.secondaryLabel))
-                .accessibilityElement(children: .combine)
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))

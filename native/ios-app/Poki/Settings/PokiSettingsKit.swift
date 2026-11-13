@@ -155,6 +155,7 @@ struct SettingsPill: View {
     var chevron = false
     var action: () -> Void
     @ScaledMetric(relativeTo: .subheadline) private var height = 44.0
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Button(action: action) {
@@ -163,14 +164,15 @@ struct SettingsPill: View {
                     Image(systemName: symbol).font(.footnote.weight(.bold))
                         .foregroundStyle(prominent ? Tint.onSolid : Tint.blueText)
                 }
-                Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
+                Text(title).font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
                 if chevron {
                     Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color(.tertiaryLabel))
                 }
             }
             .foregroundStyle(prominent ? Tint.onSolid : Color(.label))
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: height)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: max(44, height))
             .background(prominent ? Tint.solid : Color(.secondarySystemGroupedBackground), in: .capsule)
             .overlay { if !prominent { Capsule().strokeBorder(Color(.separator).opacity(0.6), lineWidth: 1) } }
             .contentShape(.capsule)

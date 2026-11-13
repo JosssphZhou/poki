@@ -167,8 +167,6 @@ struct FirstRunGuide: View {
             .sheet(item: $keyFor, onDismiss: refresh) { KeyEntry(provider: $0) }
             .sheet(isPresented: $signingIn, onDismiss: refresh) { ChatGPTSignIn() }
         }
-        // Past this size a row's name breaks into single letters and the button's words are cut.
-        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
         .interactiveDismissDisabled()
     }
 

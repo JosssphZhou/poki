@@ -144,7 +144,8 @@ struct ChatView: View {
             if !bare { VStack(spacing: 8) {
                 asks
                 ComposerInputView(input: $draft, focused: $writing, running: busy, progress: progress, restarts: restarts,
-                                  send: { chat.send($0, attachments: $1) }, stop: chat.stop, openVoice: openVoice, openVoiceKey: openVoiceKey)
+                                  send: { chat.send($0, attachments: $1) }, stop: chat.stop, openVoice: openVoice, openVoiceKey: openVoiceKey,
+                                  noticeHeight: max(120, pageHeight * 0.6))
             }
             .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
             .frame(maxWidth: 720) }
@@ -1189,6 +1190,9 @@ struct ComposerInputView: View {
     var openVoice: () -> Void
     /// Settings, where the OpenAI key that Talk with Poki needs is added (or Live Voice turned on).
     var openVoiceKey: () -> Void = {}
+    /// Leave conversation context above a long voice notice; its content remains scrollable.
+    var noticeHeight: CGFloat = 360
+    @State private var voiceContentHeight: CGFloat = 0
     @State private var dictation = FieldDictation()
     /// Talk with Poki was asked for with no voice key: the field says so, in its own place.
     @State private var needsKey = false
@@ -1238,44 +1242,51 @@ struct ComposerInputView: View {
             // One row on one glass sheet (ESP-376): plus, the message, and the one button that talks,
             // sends or stops. The buttons inside are plain fills: no glass on glass.
             Group {
-                if let talk = voice.talkState {
-                    TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
-                            interrupt: voice.stopTalking, end: voice.stop,
-                            retry: { voice.dismissProblem(); openVoice() }, dismiss: voice.dismissProblem)
-                        .transition(.blurReplace)
-                } else if needsKey {
-                    // In the field's own place and on its glass, as the talk's bar is: nothing floats
-                    // over the field or slides out from behind it.
-                    VoiceKeyNotice(addKey: { needsKey = false; openVoiceKey() }, close: { needsKey = false })
-                        .transition(.blurReplace)
-                } else {
-                ComposerLayout(expanded: expanded) {
-                plus
-                // An app's name in the message shows as its capsule (ESP-377); the text itself stays plain.
-                CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll,
-                             onSwipe: { up in if up { focused = true } else if focused { focused = false } }, onSubmit: submit)
-                    .overlay(alignment: .topLeading) {
-                        if input.isEmpty {
-                            Text(dictation.on ? "Listening…" : attachments.isEmpty ? "Message Poki" : "Add a message")
-                                .foregroundStyle(Tint.homePlaceholder).lineLimit(1)
-                                .padding(.top, 6).allowsHitTesting(false).accessibilityHidden(true)
+                if voice.talkState != nil || needsKey {
+                    ScrollView {
+                        Group {
+                            if let talk = voice.talkState {
+                                TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
+                                        interrupt: voice.stopTalking, end: voice.stop,
+                                        retry: { voice.dismissProblem(); openVoice() }, dismiss: voice.dismissProblem)
+                            } else {
+                                VoiceKeyNotice(addKey: { needsKey = false; openVoiceKey() }, close: { needsKey = false })
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { voiceContentHeight = $0 }
                     }
-                    .padding(.horizontal, expanded ? 8 : 0)
-                    .accessibilitySortPriority(1)
-                HStack(spacing: 4) {
-                    if dictation.on { dictating } else if dictationButton, !running { microphone }
-                    mainButton
-                }
-                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                }
-                .transition(.blurReplace)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .frame(height: min(voiceContentHeight, noticeHeight))
+                    .transition(.blurReplace)
+                } else {
+                    ComposerLayout(expanded: expanded) {
+                        plus
+                        // An app's name in the message shows as its capsule (ESP-377); the text itself stays plain.
+                        CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll,
+                                     onSwipe: { up in if up { focused = true } else if focused { focused = false } }, onSubmit: submit)
+                            .overlay(alignment: .topLeading) {
+                                if input.isEmpty {
+                                    Text(dictation.on ? "Listening…" : attachments.isEmpty ? "Message Poki" : "Add a message")
+                                        .foregroundStyle(Tint.homePlaceholder).lineLimit(1)
+                                        .padding(.top, 6).allowsHitTesting(false).accessibilityHidden(true)
+                                }
+                            }
+                            .padding(.horizontal, expanded ? 8 : 0)
+                            .accessibilitySortPriority(1)
+                        HStack(spacing: 4) {
+                            if dictation.on { dictating } else if dictationButton, !running { microphone }
+                            mainButton
+                        }
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    }
+                    .simultaneousGesture(swipe)
+                    .transition(.blurReplace)
                 }
             }
             .padding(6)
             .contentShape(.rect)
             .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
-            .simultaneousGesture(swipe)
             .glassSurface(in: RoundedRectangle(cornerRadius: expanded ? 24 : (buttonSide + 12) / 2, style: .continuous), fallback: .bar)
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
         }
