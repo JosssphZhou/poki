@@ -10,6 +10,7 @@ import SwiftUI
 /// Answered or stopped, only the bubble stays; the answer is the owner's message under it.
 struct QuestionCard: View {
     var question: ChatQuestion
+    @Environment(\.dynamicTypeSize) private var size
     /// The options can be tapped: the question waits, for this task or for a task that has ended.
     var open: Bool
     var tail: Bool
@@ -30,13 +31,15 @@ struct QuestionCard: View {
                             Label("Other answer", systemImage: "pencil")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(Color(.secondaryLabel))
-                                .padding(.horizontal, 18).frame(height: 34)
+                                .padding(.horizontal, 18).frame(minHeight: 34)
                         }
                         .buttonStyle(.plain)
                         .accessibilityHint(Text("Type your own answer in the message field"))
                     }
                 }
-                .frame(maxWidth: 290, alignment: .leading)
+                // At the accessibility sizes the options take the row, so their words wrap instead of
+                // being cut.
+                .frame(maxWidth: size.isAccessibilitySize ? .infinity : 290, alignment: .leading)
                 .padding(.top, 2)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -53,6 +56,9 @@ private struct OptionButton: View {
     var suggested: Bool
     var tap: () -> Void
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var size
+    /// The icon grows with the words, from 26 points at the default size.
+    @ScaledMetric(relativeTo: .callout) private var side: CGFloat = 26
 
     /// The app the option is to use: the one the model named, else the one app its words name.
     private var app: String? {
@@ -66,35 +72,40 @@ private struct OptionButton: View {
         // front (no placeholder tile).
         let icon = app.flatMap { AppIconStore.shared.icon($0, dark: scheme == .dark) }
         let lead = icon != nil || option.emoji != nil
+        let large = size.isAccessibilitySize
+        let side = min(self.side, 44)
         Button(action: tap) {
             HStack(spacing: 10) {
                 if let icon {
-                    let shape = RoundedRectangle(cornerRadius: 26 * 0.225, style: .continuous)
+                    let shape = RoundedRectangle(cornerRadius: side * 0.225, style: .continuous)
                     Image(uiImage: icon).resizable().interpolation(.high).scaledToFill()
-                        .frame(width: 26, height: 26).clipShape(shape)
+                        .frame(width: side, height: side).clipShape(shape)
                         .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
                 } else if let emoji = option.emoji {
-                    Text(emoji).font(.system(size: 20)).frame(width: 26, height: 26)
+                    Text(emoji).font(.system(size: side * 0.77)).frame(width: side, height: side)
                 }
-                Text(option.label)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(2).multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if suggested {
-                    Text("Suggested")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 9).frame(height: 24)
-                        .background(.white.opacity(0.2), in: .capsule)
+                // At the accessibility sizes the words wrap as far as they need and Suggested goes
+                // under them; otherwise two lines at most, Suggested at the end.
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(option.label)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(large ? nil : 2).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: large)
+                    if suggested, large { tag }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, large ? 10 : 0)
+                if suggested, !large { tag }
             }
             .foregroundStyle(suggested ? .white : Tint.blueText)
-            .padding(.leading, lead ? 10 : 18).padding(.trailing, suggested ? 8 : 18)
+            .padding(.leading, lead ? 10 : 18).padding(.trailing, suggested && !large ? 8 : 18)
             .frame(minHeight: 46)
-            .background(suggested ? Tint.blue : Tint.blueSoft, in: .capsule)
+            // A capsule at its 46 points; taller, with wrapped words, the same corners on a rounded block.
+            .background(suggested ? Tint.blue : Tint.blueSoft, in: Self.shape)
             // A blue block as the task card draws one: a hairline in dark, a soft blue shadow in light.
-            .overlay { Capsule().strokeBorder(suggested ? Tint.ring : Tint.blueLine, lineWidth: 1) }
+            .overlay { Self.shape.strokeBorder(suggested ? Tint.ring : Tint.blueLine, lineWidth: 1) }
             .shadow(color: suggested ? Tint.blueShadow : .clear, radius: 9, y: 6)
-            .contentShape(.capsule)
+            .contentShape(Self.shape)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -102,5 +113,14 @@ private struct OptionButton: View {
         .accessibilityValue(suggested ? Text("Suggested") : Text(verbatim: ""))
         .accessibilityAddTraits(.isButton)
         .task(id: app) { if let app, icon == nil { await AppIconStore.shared.load(app) } }
+    }
+
+    private static let shape = RoundedRectangle(cornerRadius: 23, style: .continuous)
+
+    private var tag: some View {
+        Text("Suggested")
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 9).frame(minHeight: 24)
+            .background(.white.opacity(0.2), in: .capsule)
     }
 }

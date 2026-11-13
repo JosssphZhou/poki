@@ -346,7 +346,10 @@ extension PokiState {
                 bear: .thinking, size: .asking,
                 kicker: StatusWord.needsAnswer.text,
                 meta: .elapsed(question.since),
-                content: question.text,
+                // The title is one line; the question, the model's words of up to 160 characters, gets
+                // two under it, as a problem's fix does.
+                content: String(activity: "Poki has a question"),
+                subtitle: question.text, subtitleLines: 2,
                 bottom: .answer,
                 compact: .waiting(String(activity: "Answer?"), question.since))
         case .idle:

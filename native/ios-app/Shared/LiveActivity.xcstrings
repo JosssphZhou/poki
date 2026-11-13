@@ -1872,6 +1872,23 @@
         }
       }
     },
+    "Poki has a question" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 有个问题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 有個問題"
+          }
+        }
+      }
+    },
     "Poki Runner" : {
       "extractionState" : "manual",
       "localizations" : {
