@@ -22,35 +22,56 @@ final class BrowserGuardTests: XCTestCase {
         let keys = ["chat.provider", "chat.customURL", "chat.customModel", ApprovalClassifier.modeKey]
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
         defer { for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) } }
-        let samples: [(label: String, submit: Bool, question: String?)] = [
-            ("Delete", false, "Allow deletion?"),
-            ("Send", false, "Allow sending a message?"),
-            ("Transfer", false, "Allow payment?"),
-            ("提交订单", false, "Allow payment?"),
-            ("Send", true, "Allow sending a message?"),
-            ("Place order", true, "Allow payment?"),
-            ("Next page", false, nil),
-            ("Search", true, nil),
-            ("Start trial", false, "Allow payment?"),
-            ("Start a trial", false, "Allow payment?"),
-            ("Start your trial", false, "Allow payment?"),
-            ("Continue to secure checkout now", false, "Allow payment?"),
+        // submit: Poki types into the search field and presses Enter; otherwise it taps the button.
+        // fields: what the form holds besides its search field. search: a plain GET search form, with
+        // no role=search, that loads its results page.
+        let samples: [(label: String, submit: Bool, question: String?, fields: String, search: Bool)] = [
+            ("Delete", false, "Allow deletion?", "", false),
+            ("Send", false, "Allow sending a message?", "", false),
+            ("Transfer", false, "Allow payment?", "", false),
+            ("提交订单", false, "Allow payment?", "", false),
+            ("Send", true, "Allow sending a message?", "", false),
+            ("Place order", true, "Allow payment?", "", false),
+            ("Next page", false, nil, "", false),
+            ("Search", true, nil, "", false),
+            ("Start trial", false, "Allow payment?", "", false),
+            ("Start a trial", false, "Allow payment?", "", false),
+            ("Start your trial", false, "Allow payment?", "", false),
+            ("Continue to secure checkout now", false, "Allow payment?", "", false),
+            ("Google Search", true, nil, "", true),
+            ("Google Search", false, nil, "", true),
+            ("Search articles", true, nil, "", true),
+            ("Search articles", false, nil, "", true),
+            ("Go", true, nil, "", true),
+            ("Go", false, nil, "", true),
+            ("Submit", true, "Allow sending a message?", "<textarea aria-label=\"Message\"></textarea>", false),
+            ("Submit", true, "Allow sending a message?", "<div contenteditable aria-label=\"Message\"></div>", false),
         ]
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
         defer { app.onProbeApproval = nil; app.stopSession() }
         for (index, sample) in samples.enumerated() {
             for allowed in [false, true] {
                 UserDefaults.standard.set(ApprovalMode.allCases[index % ApprovalMode.allCases.count].rawValue, forKey: ApprovalClassifier.modeKey)
-                let html = """
-                <html><head><meta name="viewport" content="width=device-width"><title>Consent fixture</title></head><body>
-                <p id="effect"></p>
-                <form onsubmit="event.preventDefault();document.getElementById('effect').textContent='effect happened'">
+                let act = "document.getElementById('effect').textContent='effect happened'"
+                let head = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Consent fixture</title></head><body><p id=\"effect\"></p>"
+                let html = sample.search ? """
+                \(head)
+                <form method="get" action="/results">
+                <input type="search" name="q" aria-label="Query" value="\(sample.submit ? "" : "local fixture")">
+                <button type="submit">\(sample.label)</button>
+                </form></body></html>
+                """ : """
+                \(head)
+                <form onsubmit="event.preventDefault();\(act)">
                 <input type="search" aria-label="Query">
-                <button type="\(sample.submit ? "submit" : "button")" onclick="\(sample.submit ? "" : "document.getElementById('effect').textContent='effect happened'")">\(sample.label)</button>
+                \(sample.fields)
+                <button type="\(sample.submit ? "submit" : "button")" onclick="\(sample.submit ? "" : act)">\(sample.label)</button>
                 </form></body></html>
                 """
-                print("Browser consent fixture: \(sample.label), submit=\(sample.submit), allow=\(allowed)")
-                let pages = try PageServer(pages: ["/": html])
+                let results = "\(head)<script>if (new URLSearchParams(location.search).get('q') === 'local fixture') \(act)</script></body></html>"
+                let name = "\(sample.label), submit=\(sample.submit)\(sample.fields.isEmpty ? "" : ", form with \(sample.fields)")"
+                print("Browser consent fixture: \(name), allow=\(allowed)")
+                let pages = try PageServer(pages: ["/": html, "/results": results])
                 let opened = await WebTools.perform("web_open", arguments: Self.json(["url": "http://127.0.0.1:\(pages.port)/"]))
                 XCTAssertFalse(opened.isError, opened.text)
                 let ref = try Self.ref(sample.submit ? "Query" : sample.label, in: opened.text)
@@ -80,8 +101,8 @@ final class BrowserGuardTests: XCTestCase {
                 _ = await chat.runDelegated("Perform the local browser fixture action")
                 chat.stop()
                 let effect = try await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
-                XCTAssertEqual(questions, sample.question.map { [$0] } ?? [], sample.label)
-                XCTAssertEqual(effect, sample.question == nil || allowed ? "effect happened" : "", sample.label)
+                XCTAssertEqual(questions, sample.question.map { [$0] } ?? [], name)
+                XCTAssertEqual(effect, sample.question == nil || allowed ? "effect happened" : "", name)
                 if sample.label == "Delete", !allowed, ProcessInfo.processInfo.arguments.contains("-approvalEvidence") {
                     try await captureApprovalView(ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {})
                         .environment(app).environment(chat), named: "browser-delete-declined")
@@ -370,7 +391,7 @@ final class BrowserGuardTests: XCTestCase {
     }
 }
 
-/// HTML pages on 127.0.0.1 by path; any other path is not found.
+/// HTML pages on 127.0.0.1 by path, whatever the query; any other path is not found.
 private final class PageServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "page-server")
@@ -403,8 +424,9 @@ private final class PageServer: @unchecked Sendable {
             let received = received + (data ?? Data())
             if received.range(of: Data("\r\n\r\n".utf8)) != nil {
                 let path = String(decoding: received.prefix(64), as: UTF8.self).split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-                let body = self.pages[path] ?? ""
-                let status = self.pages[path] == nil ? "404 Not Found" : "200 OK"
+                let page = self.pages[String(path.prefix { $0 != "?" })]
+                let body = page ?? ""
+                let status = page == nil ? "404 Not Found" : "200 OK"
                 let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
                 return connection.send(content: Data((head + body).utf8), completion: .contentProcessed { _ in connection.cancel() })
             }
