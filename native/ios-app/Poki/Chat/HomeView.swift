@@ -50,31 +50,7 @@ enum HomeMotion {
 
 // MARK: Poki's picture
 
-/// How Poki's picture meets the page. It has no edge: the bear stands on the page itself, with no
-/// ground, ring or shadow. While the owner chooses, a debug build can still draw the faint shadow or
-/// the old ring (`-pokiPictureEdge shadow`, `-pokiPictureEdge ring`) to compare them.
-enum PictureEdge {
-    /// The bear alone on the page.
-    case bare
-    /// The bear alone, with a faint shadow under its own outline to part it from a pale page.
-    case shadow
-    /// The earlier picture: a pale blue round ground in a white ring, with a soft blue shadow.
-    case ring
-
-    static let current: PictureEdge = {
-        #if DEBUG
-        switch UserDefaults.standard.string(forKey: "pokiPictureEdge") {
-        case "shadow": return .shadow
-        case "ring": return .ring
-        default: return .bare
-        }
-        #else
-        return .bare
-        #endif
-    }()
-}
-
-/// Poki's picture: the bear for its state, standing on the page. Every state is played by the
+/// Poki's round picture: the bear for its state, on a pale blue ground. Every state is played by the
 /// three-dimensional bear (`PokiMood.act`), which takes up each state's stance from where it is, reacts
 /// when a task is done or goes wrong, and says hi to a tap (`ModelBear`). The flat faces, which blink and
 /// hop when the state changes (`BlinkingFace`), stand in only until the model is drawn, or where it
@@ -84,7 +60,6 @@ struct PokiPortrait: View {
     var side: CGFloat = HomeMotion.avatar
     /// Counts the taps on the picture.
     var pokes = 0
-    var edge = PictureEdge.current
 
     var body: some View {
         #if DEBUG
@@ -109,9 +84,9 @@ struct PokiPortrait: View {
 
     private func portrait(_ mood: PokiMood) -> some View {
         ZStack {
-            if edge == .ring { Circle().fill(Tint.portrait) }
-            // The board's bear is 50 points in the 56-point square, 6 points down, so the round
-            // picture cuts it at the chest.
+            Circle().fill(Tint.portrait)
+            // The board's bear is 50 points in the 56-point circle, 6 points down, so the circle
+            // cuts it at the chest.
             ModelBear(act: mood.act, side: side * 50 / 56, pokes: pokes) {
                 BlinkingFace(mood: mood, side: side * 50 / 56)
             }
@@ -124,33 +99,23 @@ struct PokiPortrait: View {
     }
 }
 
-/// Poki's picture as it shows on a page, at its size and place. It is drawn at the home page's 80
-/// points and scaled, so one picture, and one three-dimensional bear, goes from the home page to the
-/// top of the chat without being made again.
+/// Poki's picture as it shows on a page: in a white ring with a soft blue shadow (boards 定稿 07 and
+/// 头像位置 丙). It is drawn at the home page's 80 points and scaled, so one picture, and one
+/// three-dimensional bear, goes from the home page to the top of the chat without being made again.
 struct PokiPicture: View {
     var mood: PokiMood
     var side: CGFloat
     /// Counts the taps on Poki, for the bear to answer.
     var pokes = 0
-    var edge = PictureEdge.current
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let dark = scheme == .dark
-        let picture = PokiPortrait(mood: mood, side: HomeMotion.homeAvatar, pokes: pokes, edge: edge)
+        PokiPortrait(mood: mood, side: HomeMotion.homeAvatar, pokes: pokes)
             .scaleEffect(side / HomeMotion.homeAvatar)
             .frame(width: side, height: side)
-        switch edge {
-        case .bare:
-            picture
-        case .shadow:
-            picture.shadow(color: Color.black.opacity(dark ? 0.35 : 0.12), radius: 3, y: 1.5)
-        case .ring:
-            // Boards 定稿 07 and 头像位置 丙.
-            picture
-                .overlay(Circle().strokeBorder(Color.white.opacity(dark ? 0.85 : 1), lineWidth: 2))
-                .shadow(color: dark ? Color(hex: 0x3C8DFF).opacity(0.35) : Color(hex: 0x0177FD).opacity(0.18), radius: dark ? 8 : 7, y: 4)
-        }
+            .overlay(Circle().strokeBorder(Color.white.opacity(dark ? 0.85 : 1), lineWidth: 2))
+            .shadow(color: dark ? Color(hex: 0x3C8DFF).opacity(0.35) : Color(hex: 0x0177FD).opacity(0.18), radius: dark ? 8 : 7, y: 4)
     }
 }
 
@@ -252,7 +217,7 @@ struct PokiHead: View {
 // The middle of the bar, Poki's picture over its state, is IMessageChannelHeaderModifier from
 // GetStream/stream-tutorial-projects (commit 04c8dbb, AI/AgentSkills/iMessageCloneWithSkills/
 // IMessageScreens.swift; the repository has no licence file). Changed: a bar of its own instead of a
-// toolbar item; the picture at the board's 56 points, standing on the page; a dot and Poki's state under it
+// toolbar item; the picture at the board's 56 points in a white ring; a dot and Poki's state under it
 // (board 定稿 07).
 
 /// The chat's top as Messages draws a conversation's (ESP-468): the two round glass buttons float at
