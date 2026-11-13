@@ -14,14 +14,14 @@ final class LoopbackTunnel {
     }
     private(set) var busy = false
     private var manager: NETunnelProviderManager?
-    private var statusObserver: NSObjectProtocol?
-    private var connectionDeadline: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var statusObserver: NSObjectProtocol?
+    @ObservationIgnored nonisolated(unsafe) private var connectionDeadline: Task<Void, Never>?
     /// After the tunnel failed or dropped without the owner ending it, dial again with a backoff and a
     /// cap (GitHub issue 44: it stayed down for 101 s and 134 s until someone opened Poki). The
     /// owner's own Disconnect, or Turn off, ends it for good until they connect again; so does another
     /// VPN being detected when a try comes (best effort: a VPN that sets no proxy, such as Tailscale, may not be detected). Opening Poki dials nothing.
     private var reconnect = ReconnectPlan()
-    private var reconnectTask: Task<Void, Never>?
+    @ObservationIgnored nonisolated(unsafe) private var reconnectTask: Task<Void, Never>?
     private var reconnecting = false
     /// When Poki itself last stopped the tunnel. The tunnel hears that as a stop by the user, and its
     /// "stopped on purpose" notification must not cancel the retry Poki queued right after.
@@ -56,7 +56,11 @@ final class LoopbackTunnel {
         }
     }
 
-    isolated deinit {
+    // Not an isolated deinit: its back-deployed hop to the main actor frees a pointer the runtime never
+    // allocated (iOS 26.3 simulator), which ended every test run at the first AppModel that went away.
+    // Everything here is safe from any thread, and the three properties it reads are the tunnel's own
+    // bookkeeping (no view watches them), so they are left out of the actor's checking for it.
+    deinit {
         connectionDeadline?.cancel()
         reconnectTask?.cancel()
         CFNotificationCenterRemoveEveryObserver(CFNotificationCenterGetDarwinNotifyCenter(), Unmanaged.passUnretained(self).toOpaque())

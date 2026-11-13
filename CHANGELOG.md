@@ -16,7 +16,7 @@ Build numbers are the GitHub Actions run number of the release workflow.
 - 
 
 ### Fixed
-- 
+- PokiTests run to the end on the iOS 26.3 simulator: a tunnel that went away no longer stopped the run.
 
 ### Device checks
 - docs/device-test-checklist.md: passed / not passed, with the date and iOS version.
