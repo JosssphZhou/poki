@@ -258,11 +258,11 @@ extension View {
         }
     }
 
-    /// A page's own top bar (the chat's, the conversations'): a safe-area bar on iOS 26, so what
-    /// scrolls passes under it through the system's soft scroll edge, as under the system's bars; an
-    /// inset before it. Behind the bar is `ground`, the page's colour thinning out downwards
-    /// (`TopBarGround`); nil leaves it out. The bar draws no solid ground: one would cover the edge
-    /// effect and leave a hard line where it ends.
+    /// A page's own top bar (the chat's): a safe-area bar on iOS 26, so what scrolls passes under it
+    /// through the system's soft scroll edge, as under the system's bars; an inset before it. Behind
+    /// the bar is `ground`, the page's colour thinning out downwards (`TopBarGround`); nil leaves it
+    /// out. The bar draws no solid ground: one would cover the edge effect and leave a hard line
+    /// where it ends.
     @ViewBuilder func topBar<Bar: View>(ground: Color?, @ViewBuilder _ bar: () -> Bar) -> some View {
         let grounded = bar().frame(maxWidth: .infinity).background { if let ground { TopBarGround(colour: ground) } }
         if #available(iOS 26.0, *) {
@@ -802,17 +802,20 @@ enum ChatFollow: Equatable {
 /// The ground a page's own top bar stands on: the page's colour, strongest at the top of the screen
 /// and thinning to nothing a little under the bar. The system's soft scroll edge blurs what scrolls
 /// under a bar, but it is made for glass buttons and stays subtle (Apple's `ScrollEdgeEffectStyle`):
-/// behind a tall bar's lower half, where the chat has Poki's picture and name and the conversations
-/// their title, the messages still showed sharp. The colour is the page's own at every stop and only
-/// its opacity changes, so in dark it deepens to the page and never to grey.
+/// behind a tall bar's lower half, where the chat has Poki's picture and name, the messages still
+/// showed sharp. A taller bar carries the system's effect further down, but its ramp is the
+/// system's and reaches the messages under the bar before it clears the name. The colour is the
+/// page's own at every stop and only its opacity changes, so in dark it deepens to the page and
+/// never to grey.
 private struct TopBarGround: View {
     var colour: Color
     /// How far under the bar the ground runs before it is gone.
-    static let tail: CGFloat = 32
+    static let tail: CGFloat = 40
 
     /// The ground's opacity from the top of the screen (0) to the end of its tail (1): nearly full
-    /// behind the status bar, falling through the bar, and gone with no edge.
-    static func strength(_ place: Double) -> Double { 0.9 * pow(1 - pow(place, 3), 1.5) }
+    /// behind the status bar, a little over half behind Poki's name, and gone with no edge before the
+    /// first bubble of a conversation at rest.
+    static func strength(_ place: Double) -> Double { 0.92 * pow(1 - pow(place, 5), 2) }
 
     var body: some View {
         let stops = (0...12).map { step -> Gradient.Stop in
