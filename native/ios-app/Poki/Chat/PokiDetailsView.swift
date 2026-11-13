@@ -429,7 +429,6 @@ struct HealthView: View {
                 } label: {
                     SettingsLabel("Appearance", systemImage: "circle.lefthalf.filled")
                 }
-                .pickerStyle(.menu)
                 .accessibilityIdentifier("moreSettings.appearance")
 
                 // Main's "Updates" (the version, a new build, signing until and Signing Options), by its own name.
