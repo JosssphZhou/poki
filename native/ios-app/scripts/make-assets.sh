@@ -65,11 +65,6 @@ bears() {
   done
 }
 bears "$APP"
-# The launch screen's bear: the ready bear, its flat bottom edge (the picture stops at the chest) faded out over its
-# last 36 pixels (12 points) so no straight line shows on the launch screen's plain ground. Nothing above that changes.
-mkdir -p "$APP/LaunchBear.imageset"
-swift "$HERE/scripts/fade-bottom.swift" "$HERE/Poki/ActivityBears/ActivityBear-ready.png" "$APP/LaunchBear.imageset/bear@3x.png" 36
-echo '{"images":[{"filename":"bear@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/LaunchBear.imageset/Contents.json"
 
 WIDGET="$HERE/PokiWidgets/Assets.xcassets"
 catalog "$WIDGET"

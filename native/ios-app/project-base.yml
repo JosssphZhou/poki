@@ -58,10 +58,10 @@ targets:
         CADisableMinimumFrameDurationOnPhone: true
         UIViewControllerBasedStatusBarAppearance: false
         # The screen iOS shows while Poki opens: the home page's ground (LaunchBackground, light and dark) with
-        # the bear on its own, without a ground (LaunchBear, 136 points), so nothing square sits on it.
+        # the bear on its own, without a ground (ActivityBear-ready, 136 points), so nothing square sits on it.
         UILaunchScreen:
           UIColorName: LaunchBackground
-          UIImageName: LaunchBear
+          UIImageName: ActivityBear-ready
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:
