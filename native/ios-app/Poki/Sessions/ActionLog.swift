@@ -61,32 +61,34 @@ struct ActionLogView: View {
         let days = Dictionary(grouping: log.entries.reversed(), by: { Calendar.current.startOfDay(for: $0.at) }).sorted { $0.key > $1.key }
         List {
             if log.entries.isEmpty {
-                ContentUnavailableView("No Actions Yet", systemImage: "list.bullet.rectangle",
+                ContentUnavailableView("No actions yet", systemImage: "list.bullet.rectangle",
                                        description: Text("Every tap, swipe and keystroke Poki makes on this iPhone is listed here, whoever asked for it."))
-                    .listRowBackground(Color.clear)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
             }
             ForEach(days, id: \.key) { day, entries in
-                Section(day.formatted(date: .complete, time: .omitted)) {
+                PaperSection {
                     ForEach(entries) { entry in
                         // A row whose run is gone is plain text, not a disabled button: iOS fades a disabled
                         // button's whole label, which left most of the log close to invisible.
                         if let id = entry.session, SessionStore.shared.session(id) != nil {
-                            Button { openSession(id) } label: { row(entry) }.foregroundStyle(Color(.label))
+                            Button { openSession(id) } label: { row(entry) }
                         } else {
                             row(entry)
                         }
                     }
+                } header: {
+                    Text(verbatim: day.formatted(date: .complete, time: .omitted))
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .navigationTitle("Activity Log")
+        .paperList()
+        .navigationTitle("Activity log")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { log.load() }
     }
 
     private func row(_ entry: ActionLog.Entry) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: 12) {
             // Who asked for it: the agent's badge, or Poki's own.
             Group {
                 if let caller = entry.caller { CallerBadge(name: caller, size: 28) } else { PokiAvatar(size: 28) }
@@ -94,17 +96,17 @@ struct ActionLogView: View {
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: entry.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(entry.ok ? Color.green : Color.red)
-                    .background(Circle().fill(Color(.systemBackground)).padding(-1))
+                    .foregroundStyle(entry.ok ? Paper.ink : Paper.ink2)
+                    .background(Circle().fill(Paper.page).padding(-1))
                     .offset(x: 3, y: 3)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(ActivityWords.label(entry.text)).foregroundStyle(Color(.label)).lineLimit(2)
+                Text(ActivityWords.label(entry.text)).foregroundStyle(Paper.ink).lineLimit(2)
                 Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: " · "))
-                    .font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
+                    .font(Paper.note).foregroundStyle(Paper.ink2).lineLimit(1)
             }
             Spacer(minLength: 4)
-            Text(entry.at, style: .time).font(.footnote).monospacedDigit().foregroundStyle(Color(.secondaryLabel))
+            Text(entry.at, style: .time).font(Paper.note).monospacedDigit().foregroundStyle(Paper.ink2)
         }
     }
 }

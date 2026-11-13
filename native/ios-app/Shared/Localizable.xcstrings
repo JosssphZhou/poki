@@ -665,6 +665,23 @@
       },
       "extractionState" : "manual"
     },
+    "Activity log" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活动日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活動日誌"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
     "Add" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2531,22 +2548,6 @@
         }
       }
     },
-    "Copy Address" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拷贝地址"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "複製地址"
-          }
-        }
-      }
-    },
     "Copy Log" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2559,6 +2560,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製日誌"
+          }
+        }
+      }
+    },
+    "Copy address" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝地址"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製地址"
           }
         }
       }
@@ -5564,23 +5581,6 @@
       },
       "extractionState" : "manual"
     },
-    "No Actions Yet" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚无操作"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無操作"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "No Answer" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5676,6 +5676,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無步驟"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "No actions yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無操作"
           }
         }
       },
@@ -8608,7 +8625,7 @@
         }
       }
     },
-    "Recent Use" : {
+    "Recent use" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8810,7 +8827,7 @@
         }
       }
     },
-    "Relay Address" : {
+    "Relay address" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8941,23 +8958,6 @@
       },
       "extractionState" : "manual"
     },
-    "Rename Agent" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新命名智能体"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新命名AI 代理"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Rename Session" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8970,6 +8970,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新命名會話"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Rename agent" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新命名智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新命名AI 代理"
           }
         }
       },
@@ -9076,7 +9093,7 @@
       },
       "extractionState" : "manual"
     },
-    "Revoke Access" : {
+    "Revoke access" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -10332,6 +10349,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打斷播報僅停止語音回覆，當前正在執行的操作仍會完成並向你反饋結果。"
+          }
+        }
+      }
+    },
+    "Stop when idle for" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "闲置多久后停止"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閒置多久後停止"
           }
         }
       }

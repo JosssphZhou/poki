@@ -87,7 +87,7 @@ struct SettingsHome: View {
                     }
                     .disabled(model.relayAddress == nil)
                     .swipeActions { Button("Revoke", role: .destructive) { model.revoke(secret) } }
-                    .contextMenu { Button("Revoke Access", systemImage: "xmark.circle", role: .destructive) { model.revoke(secret) } }
+                    .contextMenu { Button("Revoke access", systemImage: "xmark.circle", role: .destructive) { model.revoke(secret) } }
                 }
                 Button(action: add) {
                     Label { Text("Add Agent") } icon: { Image(systemName: "plus.circle.fill").foregroundStyle(.blue) }
@@ -115,7 +115,7 @@ struct SettingsHome: View {
             if model.automationPath == .runner {
                 Section {
                     LabeledContent("Runner", value: Health.runner(model).word)
-                    Picker("Stop When Idle For", selection: $model.idleStopSeconds) {
+                    Picker("Stop when idle for", selection: $model.idleStopSeconds) {
                         ForEach(Self.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
                     }
                     if model.runnerPaused {
@@ -189,24 +189,25 @@ struct RelayView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        Form {
-            Section {
+        List {
+            PaperSection {
                 TextField("https://poki-relay.you.workers.dev", text: $text)
                     .font(.body.monospaced())
                     .keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .focused($focused)
                     .submitLabel(.done).onSubmit(save)
             } header: {
-                Text("Relay Address")
+                Text("Relay address")
             } footer: {
                 if rejected {
-                    Text("That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev.").foregroundStyle(.red)
+                    Text("That is not a relay address. Enter the address deploy.sh printed, such as https://poki-relay.you.workers.dev.").foregroundStyle(Paper.ink)
                 } else {
                     Text("Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay.")
                 }
             }
-            Section("Status") { LabeledContent("Relay", value: statusText) }
+            PaperSection("Status") { LabeledContent("Relay", value: statusText) }
         }
+        .paperList()
         .navigationTitle("Relay")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave) } }
@@ -247,13 +248,13 @@ struct ConnectorDetail: View {
     var body: some View {
         // Rows and Add open this only once a relay is set, so the address is there.
         let url = model.connectorURL(for: secret)?.absoluteString ?? ""
-        Form {
+        List {
             if url.isEmpty {
-                Section {
-                    Text("Set your relay in Agents to get this connector’s address.").foregroundStyle(Color(.secondaryLabel))
+                PaperSection {
+                    Text("Set your relay in Agents to get this connector’s address.").foregroundStyle(Paper.ink2)
                 }
             } else {
-            Section {
+            PaperSection {
                 if let qr = QRCode.image(url) {
                     Image(uiImage: qr).interpolation(.none).resizable().scaledToFit()
                         .frame(width: 180, height: 180).padding(16)
@@ -262,8 +263,8 @@ struct ConnectorDetail: View {
                         .accessibilityLabel(Text("QR code of the address"))
                 }
                 Text(verbatim: url.replacingOccurrences(of: secret.secret, with: "••••••"))
-                    .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel)).textSelection(.disabled)
-                Button(copied ? "Copied" : "Copy Address", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    .font(.footnote.monospaced()).foregroundStyle(Paper.ink2).textSelection(.disabled)
+                Button(copied ? "Copied" : "Copy address", systemImage: copied ? "checkmark" : "doc.on.doc") {
                     UIPasteboard.general.string = url
                     copied = true
                 }
@@ -271,10 +272,10 @@ struct ConnectorDetail: View {
                 Text("Add this URL as a remote MCP server in your client. Anyone with this link can control this iPhone while Poki is running. Keep it private, and revoke it here if compromised.")
             }
             }
-            Section {
+            PaperSection {
                 let recent = Array(SessionStore.shared.sessions(for: secret, among: model.identity.secrets).prefix(20))
                 if recent.isEmpty {
-                    Text("No agent has used this connector yet.").foregroundStyle(Color(.secondaryLabel))
+                    Text("No agent has used this connector yet.").foregroundStyle(Paper.ink2)
                 }
                 ForEach(recent) { session in
                     HStack(spacing: 12) {
@@ -282,29 +283,30 @@ struct ConnectorDetail: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: session.name).font(.body.weight(.semibold)).lineLimit(1)
                             let line = session.lastLine
-                            if !line.isEmpty { Text(verbatim: line).font(.subheadline).foregroundStyle(Color(.secondaryLabel)).lineLimit(2) }
+                            if !line.isEmpty { Text(verbatim: line).font(.subheadline).foregroundStyle(Paper.ink2).lineLimit(2) }
                         }
                         Spacer(minLength: 8)
                         Text(session.live ? String(localized: "now") : ChatTime.row(session.updated))
-                            .font(.subheadline).foregroundStyle(Color(.secondaryLabel))
+                            .font(.subheadline).foregroundStyle(Paper.ink2)
                     }
                     .accessibilityElement(children: .combine)
                 }
             } header: {
-                Text("Recent Use")
+                Text("Recent use")
             }
-            Section {
+            PaperSection {
                 LabeledContent("Added", value: secret.created.formatted(date: .abbreviated, time: .omitted))
-                Button("Revoke Access", role: .destructive) { model.revoke(secret); back() }
+                Button("Revoke access") { model.revoke(secret); back() }
             }
         }
+        .paperList()
         .navigationTitle(Text(verbatim: secret.name))
         .navigationBarTitleDisplayMode(.inline)
         // The name is the title; its menu renames it, as a session's does.
         .toolbarTitleMenu {
             Button("Rename", systemImage: "pencil") { newName = secret.name; renaming = true }
         }
-        .alert("Rename Agent", isPresented: $renaming) {
+        .alert("Rename agent", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Cancel", role: .cancel) {}
             Button("Save") { model.rename(secret, to: newName) }
