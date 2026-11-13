@@ -19,12 +19,22 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private var gate: DispatchSemaphore?
     private var heldOpenStarted = false
     private var answer: [String: Any]?
+    private var prepares = 0
+    private var pauses = 0
+    private var pauseGate: DispatchSemaphore?
+    private var heldPauseStarted = false
+    var prepareCount: Int { lock.withLock { prepares } }
+    var pauseCount: Int { lock.withLock { pauses } }
+    func holdPause() { lock.withLock { pauseGate = DispatchSemaphore(value: 0); heldPauseStarted = false } }
+    var isHoldingPause: Bool { lock.withLock { heldPauseStarted && pauseGate != nil } }
+    func releasePause() { lock.withLock { pauseGate?.signal(); pauseGate = nil } }
     /// The next open waits until `answer(_:)`.
     func holdNextOpen() { lock.withLock { gate = DispatchSemaphore(value: 0); heldOpenStarted = false } }
     var isHoldingOpen: Bool { lock.withLock { gate != nil && heldOpenStarted } }
     /// Lets a held open go on, with this answer instead of opening (nil opens).
     func answer(_ result: [String: Any]?) { lock.withLock { answer = result; gate?.signal(); gate = nil } }
     func prepare() -> [String: Any] {
+        lock.withLock { prepares += 1 }
         if let held = lock.withLock({ () -> DispatchSemaphore? in heldOpenStarted = gate != nil; return gate }) {
             held.wait()
             if let given = lock.withLock({ () -> [String: Any]? in defer { answer = nil }; return answer }) { return given }
@@ -36,7 +46,11 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
         }
     }
     func close() -> [String: Any] { lock.withLock { defer { open = false }; return ["closed": open, "generation": 1, "seconds": 0.0] } }
-    func pauseAutomation() -> [String: Any] { ["paused": true, "how": "fake"] }
+    func pauseAutomation() -> [String: Any] {
+        let held = lock.withLock { () -> DispatchSemaphore? in pauses += 1; heldPauseStarted = pauseGate != nil; return pauseGate }
+        held?.wait()
+        return ["paused": true, "how": "fake"]
+    }
 }
 
 final class FakePairing: DevicePairing {
@@ -425,6 +439,7 @@ final class InProcessPasscodeTests: XCTestCase {
 
     override func tearDown() async throws {
         session?.answer(nil)
+        session?.releasePause()
         guard let saved, let model else { return }
         model.stopSession()
         UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
@@ -456,6 +471,148 @@ final class InProcessPasscodeTests: XCTestCase {
     /// What Home lists about the runner and the loopback (the simulator's relay and location aside).
     private func homeIssues() -> [String] {
         Issue.current(model).map(\.id).filter { ["runner", "cellular", "loopback", "local"].contains($0) }
+    }
+
+    private func openSessionBeforeCellular() async {
+        model.wakeRunner()
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the local session opened") { self.model.hasOpenInProcessSession }
+        model.loopback.simulate(.noAnswer, wifiUp: false, cellularUp: true)
+    }
+
+    /// 回环不通时，待机后先验证保留会话；验证完成前不能向 agent 报就绪。
+    func testCellularWakeValidatesKeptSessionWithoutDeveloperConnection() async {
+        let savedClose = model.closeSessionWhenIdle
+        defer { model.closeSessionWhenIdle = savedClose }
+        model.closeSessionWhenIdle = false
+        await openSessionBeforeCellular()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        let prepares = session.prepareCount
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("the kept session is being checked") { self.session.isHoldingOpen }
+        XCTAssertEqual(session.prepareCount, prepares + 1)
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        XCTAssertTrue(model.canStartTasks, "聊天应允许等待复用结果，而不是要求回环网络")
+        XCTAssertNotEqual(SetupIssueHint.first(model: model)?.target, .step(.loopback))
+        session.answer(nil)
+        await waitFor("the kept session resumed") { self.model.host.currentRunner.isRunning }
+        XCTAssertFalse(model.loopback.isWorking)
+        XCTAssertEqual(homeIssues(), [])
+    }
+
+    /// 蜂窝自动待机不关闭会话或 Automation Mode，下一任务不需要重新建开发通道。
+    func testCellularIdlePreservesSessionEvenWhenCloseWhenIdleIsEnabled() async {
+        let savedClose = model.closeSessionWhenIdle
+        defer { model.closeSessionWhenIdle = savedClose }
+        model.closeSessionWhenIdle = true
+        await openSessionBeforeCellular()
+        let pauses = session.pauseCount
+        model.pauseRunner(reason: "idle", byOwner: false)
+        XCTAssertTrue(model.hasOpenInProcessSession)
+        XCTAssertEqual(session.pauseCount, pauses)
+        model.wakeRunner()
+        await waitFor("automation resumed after cellular idle") { self.model.host.currentRunner.isRunning }
+        XCTAssertFalse(model.loopback.isWorking)
+    }
+
+    /// 保留会话失效时回退启动，不能仅凭旧状态继续报就绪。
+    func testFailedKeptSessionDoesNotReportReady() async {
+        await openSessionBeforeCellular()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("the kept session is being checked") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "code": "native_session_invalidated"])
+        await waitFor("the kept session failed") { !self.model.hasOpenInProcessSession && self.model.runner.state != "standby" }
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+    }
+
+    /// 用户取消授权后停止重试，不把它当作网络失败重启 launcher。
+    func testDeclinedPasscodeDuringCellularResumeIsNotRetried() async {
+        await openSessionBeforeCellular()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("the kept session is being checked") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "code": "passcode_declined"])
+        await waitFor("the refusal is reported") { self.model.host.currentRunner.describe.contains("owner did not enter") }
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        let prepares = session.prepareCount
+        model.warmInProcess("another agent request")
+        XCTAssertEqual(session.prepareCount, prepares)
+        let starts = launcher.starts
+        model.pauseRunner(reason: "idle", byOwner: false)
+        model.wakeRunner()
+        XCTAssertEqual(launcher.starts, starts)
+        XCTAssertEqual(session.prepareCount, prepares)
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        InProcessWDA.gate.withLock { $0.declined = false }
+    }
+
+    /// 待机后旧的 prepare 结果不能把会话标成可用。
+    func testOldResumeCompletionCannotMarkStandbyReady() async {
+        let savedClose = model.closeSessionWhenIdle
+        defer { model.closeSessionWhenIdle = savedClose }
+        model.closeSessionWhenIdle = false
+        await openSessionBeforeCellular()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("resume is pending") { self.session.isHoldingOpen }
+        model.pauseRunner(reason: "idle again", byOwner: false)
+        session.answer(nil)
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertFalse(model.hasOpenInProcessSession)
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        let prepares = session.prepareCount
+        model.wakeRunner()
+        await waitFor("the interrupted resume is retried") { self.model.host.currentRunner.isRunning }
+        XCTAssertEqual(session.prepareCount, prepares + 1)
+    }
+
+    /// 异步暂停未完成时唤醒必须等待，避免旧暂停关闭新会话的 Automation Mode。
+    func testWakeWaitsForPendingAutomationPause() async {
+        let savedClose = model.closeSessionWhenIdle
+        defer { model.closeSessionWhenIdle = savedClose; model.testPauseAutomationOnSimulator = false }
+        model.closeSessionWhenIdle = false
+        model.testPauseAutomationOnSimulator = true
+        await openSessionBeforeCellular()
+        model.loopback.simulate(.working(ms: 9), wifiUp: true, cellularUp: false)
+        session.holdPause()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        await waitFor("automation pause pending") { self.session.isHoldingPause }
+        let prepares = session.prepareCount
+        model.wakeRunner()
+        XCTAssertEqual(session.prepareCount, prepares)
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        session.releasePause()
+        await waitFor("resume after pause") { self.model.host.currentRunner.isRunning }
+        XCTAssertEqual(session.prepareCount, prepares + 1)
+    }
+
+    /// 暂停超时先报告失败；迟到完成后重新验证，不能直接报就绪。
+    func testSlowPauseTimesOutAndLateCompletionRevalidates() async {
+        let savedClose = model.closeSessionWhenIdle
+        defer { model.closeSessionWhenIdle = savedClose; model.testPauseAutomationOnSimulator = false; model.testPauseTimeout = 15 }
+        model.closeSessionWhenIdle = false
+        model.testPauseAutomationOnSimulator = true
+        model.testPauseTimeout = 0.15
+        await openSessionBeforeCellular()
+        model.loopback.simulate(.working(ms: 9), wifiUp: true, cellularUp: false)
+        session.holdPause()
+        model.pauseRunner(reason: "idle", byOwner: false)
+        await waitFor("automation pause pending") { self.session.isHoldingPause }
+        model.wakeRunner()
+        await waitFor("pause timeout reported") { self.model.host.currentRunner.describe.contains("pause_timeout") }
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        session.holdNextOpen()
+        session.releasePause()
+        await waitFor("late pause triggers verification") { self.session.isHoldingOpen }
+        XCTAssertFalse(model.host.currentRunner.isRunning)
+        session.answer(nil)
+        await waitFor("verified after late pause") { self.model.host.currentRunner.isRunning }
     }
 
     /// ESP-448: set up on Wi-Fi, then a new task on cellular. Automation is ready only once the

@@ -91,8 +91,8 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     /// prepare through the gate: an answer in prepare's shape when it may not run now.
     static func openThroughGate(_ prepare: () -> [String: Any]) -> [String: Any] {
         let refusal: String? = gate.withLock { g in
-            if g.startedThisBoot { return nil }
             if g.declined { return "passcode_declined" }
+            if g.startedThisBoot { return nil }
             if !g.inFront { return "open_poki_first" }
             if g.opening { return "open_under_way" }
             g.opening = true
