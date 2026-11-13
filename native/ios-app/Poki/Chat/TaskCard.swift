@@ -53,6 +53,7 @@ struct TaskCard: View {
     /// shows; so does one handed back to you. One waiting for your answer folds: the approval card speaks.
     @State private var open: Bool?
     @ScaledMetric(relativeTo: .footnote) private var endingSide = 20.0
+    @ScaledMetric(relativeTo: .subheadline) private var cardInset = 12.0
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private var total: Int { steps.count + upcoming.count }
@@ -85,7 +86,7 @@ struct TaskCard: View {
                             .transition(.opacity)
                     }
                 }
-                .padding(.vertical, 12).padding(.horizontal, 14)
+                .padding(.vertical, min(18, cardInset)).padding(.horizontal, min(20, cardInset + 2))
             } else if blue {
                 VStack(alignment: .leading, spacing: 14) {
                     header
@@ -102,7 +103,9 @@ struct TaskCard: View {
                     header
                 }
                 .tint(Color(.tertiaryLabel))
-                .padding(.vertical, isOpen ? 16 : 12).padding(.leading, isOpen ? 16 : 12).padding(.trailing, isOpen ? 16 : 14)
+                .padding(.vertical, min(20, cardInset + (isOpen ? 4 : 0)))
+                .padding(.leading, min(20, cardInset + (isOpen ? 4 : 0)))
+                .padding(.trailing, min(20, cardInset + (isOpen ? 4 : 2)))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

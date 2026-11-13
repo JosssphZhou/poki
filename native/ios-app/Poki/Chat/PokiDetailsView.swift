@@ -308,9 +308,10 @@ private struct ConversationsSettingsView: View {
 private struct PokiNameRow: View {
     var mood: PokiMood
     @ScaledMetric(relativeTo: .body) private var face = 34.0
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: min(18, iconSpacing)) {
             Group {
                 if let image = PokiMood.cutout(mood, small: true) {
                     Image(uiImage: image).resizable().interpolation(.high).scaledToFit()
@@ -327,7 +328,7 @@ private struct PokiNameRow: View {
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 8)
         }
-        .padding(.vertical, 6)
+        .modifier(SettingsRowPadding())
         .animation(.easeInOut(duration: 0.3), value: mood)
     }
 }
@@ -520,19 +521,26 @@ enum Appearance: String, CaseIterable, Identifiable {
 
 /// Settings › Appearance: Automatic, Light or Dark.
 struct AppearanceView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(Appearance.key) private var choice = Appearance.automatic.rawValue
 
     var body: some View {
         List {
             Section {
                 ForEach(Appearance.allCases) { option in
-                    Button { choice = option.rawValue } label: {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            choice = option.rawValue
+                        }
+                    } label: {
                         HStack {
                             Text(option.title).foregroundStyle(Color(.label))
                             Spacer()
-                            if option.rawValue == choice {
-                                Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Tint.blueText)
-                            }
+                            Image(systemName: "checkmark")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Tint.blueText)
+                                .opacity(option.rawValue == choice ? 1 : 0)
+                                .accessibilityHidden(true)
                         }
                         .contentShape(.rect)
                     }

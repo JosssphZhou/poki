@@ -270,10 +270,20 @@ struct RootView: View {
         // the setup step, or the Activity Log for a problem; `poki://voice` brings the chat to the front.
         .onOpenURL { url in open(link: url) }
         // On the window, not the view: sheets and full-screen covers take it too, and Automatic hands back to iOS.
-        .onChange(of: appearance, initial: true) { _, value in
+        .onChange(of: appearance, initial: true) { previous, value in
             let style = (Appearance(rawValue: value) ?? .automatic).style
             for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-                for window in scene.windows { window.overrideUserInterfaceStyle = style }
+                for window in scene.windows where window.overrideUserInterfaceStyle != style {
+                    let effectiveStyle = style == .unspecified ? scene.traitCollection.userInterfaceStyle : style
+                    if previous != value, scene.activationState == .foregroundActive, !window.isHidden,
+                       !UIAccessibility.isReduceMotionEnabled, window.traitCollection.userInterfaceStyle != effectiveStyle {
+                        UIView.transition(with: window, duration: 0.28, options: [.transitionCrossDissolve, .allowUserInteraction]) {
+                            window.overrideUserInterfaceStyle = style
+                        }
+                    } else {
+                        window.overrideUserInterfaceStyle = style
+                    }
+                }
             }
         }
         .onChange(of: interfaceSize, initial: true) { _, value in

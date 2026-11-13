@@ -1248,7 +1248,7 @@ struct ComposerInputView: View {
                     .frame(height: min(voiceContentHeight, noticeHeight))
                     .transition(.blurReplace)
                 } else {
-                    ComposerLayout(expanded: expanded) {
+                    ComposerLayout(expansion: expanded ? 1 : 0) {
                         plus
                         // An app's name in the message shows as its capsule (ESP-377); the text itself stays plain.
                         CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll,
@@ -1276,7 +1276,7 @@ struct ComposerInputView: View {
             .contentShape(.rect)
             .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
             .glassSurface(in: RoundedRectangle(cornerRadius: expanded ? 24 : (buttonHitSide + 12) / 2, style: .continuous), fallback: .bar)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: expanded)
         }
         .animation(.snappy, value: dictation.on)
         .animation(TalkMotion.enter, value: voice.talkState != nil)

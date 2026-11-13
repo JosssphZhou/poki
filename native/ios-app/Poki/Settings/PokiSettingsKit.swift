@@ -56,11 +56,12 @@ struct SettingsRow: View {
     /// that leaves Poki (the system's own chevron ends the rows that open a page).
     var accessory: Accessory? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
 
     enum Accessory { case done, leaves }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: min(18, iconSpacing)) {
             SettingsIcon(symbol: symbol, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.semibold)).foregroundStyle(Color(.label))
@@ -80,7 +81,7 @@ struct SettingsRow: View {
             case nil: EmptyView()
             }
         }
-        .padding(.vertical, 6)
+        .modifier(SettingsRowPadding())
     }
 
     @ViewBuilder private func valueView(_ value: String) -> some View {
@@ -101,12 +102,14 @@ struct SettingsRow: View {
 /// size, with the same gap, weight and height (`SettingsRow`), so every page under Settings draws its
 /// rows one way.
 struct SettingsLabelStyle: LabelStyle {
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
+
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: min(18, iconSpacing)) {
             SettingsLabelIcon { configuration.icon }
             configuration.title.fontWeight(.semibold)
         }
-        .padding(.vertical, 6)
+        .modifier(SettingsRowPadding())
     }
 }
 
@@ -115,6 +118,7 @@ struct SettingsLabelStyle: LabelStyle {
 struct SettingsLabel<Title: View, Icon: View>: View {
     var title: Title
     var icon: Icon
+    @ScaledMetric(relativeTo: .body) private var iconSpacing = 14.0
 
     init(@ViewBuilder title: () -> Title, @ViewBuilder icon: () -> Icon) {
         self.title = title()
@@ -122,11 +126,11 @@ struct SettingsLabel<Title: View, Icon: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: min(18, iconSpacing)) {
             SettingsLabelIcon { icon }
             title.fontWeight(.semibold)
         }
-        .padding(.vertical, 6)
+        .modifier(SettingsRowPadding())
     }
 }
 
@@ -153,17 +157,32 @@ private struct SettingsLabelIcon<Icon: View>: View {
     }
 }
 
-extension View {
-    /// A page under Settings, the home page of Settings included: the round icons on its labels, the
-    /// system's grouped rows 16 pt apart, and under them the home page's own light, standing still.
-    func settingsPage() -> some View {
-        labelStyle(SettingsLabelStyle())
+/// Extra breathing room within the native grouped list's insets.
+struct SettingsRowPadding: ViewModifier {
+    @ScaledMetric(relativeTo: .body) private var inset = 4.0
+
+    func body(content: Content) -> some View {
+        content.padding(.vertical, min(6, inset))
+    }
+}
+
+private struct SettingsPageStyle: ViewModifier {
+    @ScaledMetric(relativeTo: .body) private var sectionSpacing = 16.0
+
+    func body(content: Content) -> some View {
+        content
+            .labelStyle(SettingsLabelStyle())
             .listStyle(.insetGrouped)
-            .listSectionSpacing(16)
+            .listSectionSpacing(min(24, sectionSpacing))
+            .environment(\.defaultMinListRowHeight, 44)
             .contentMargins(.top, 4, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .background { HomeBackdrop(home: true, working: false, frozen: true) }
     }
+}
+
+extension View {
+    func settingsPage() -> some View { modifier(SettingsPageStyle()) }
 }
 
 /// A section's heading as the settings pages write it: in the words' own case.

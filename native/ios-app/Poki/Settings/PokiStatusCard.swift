@@ -59,6 +59,8 @@ struct PokiStatusCard: View {
     var maximumHeight: CGFloat = 600
     @State private var contentHeight: CGFloat = 160
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var rowInset = 10.0
+    @ScaledMetric(relativeTo: .body) private var rowHeight = 52.0
     @Environment(\.colorScheme) private var scheme
     /// Settings › Models, for Add Model.
     var openModel: () -> Void
@@ -128,7 +130,7 @@ struct PokiStatusCard: View {
                     Text("Add Model").foregroundStyle(Tint.blue).frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color(.tertiaryLabel))
                 }
-                .padding(.horizontal, 20).frame(minHeight: 52).contentShape(.rect)
+                .padding(.horizontal, 20).frame(minHeight: min(64, max(44, rowHeight))).contentShape(.rect)
             }
             .buttonStyle(CardRowStyle())
             .accessibilityIdentifier("status.addModel")
@@ -222,7 +224,7 @@ struct PokiStatusCard: View {
                 }
             }
         }
-        .padding(.horizontal, 20).padding(.vertical, 10).frame(minHeight: 52).contentShape(.rect)
+        .padding(.horizontal, 20).padding(.vertical, min(16, rowInset)).frame(minHeight: min(64, max(44, rowHeight))).contentShape(.rect)
     }
 
     private func tickRow(_ title: String, ticked: Bool, inset: CGFloat, height: CGFloat = 44) -> some View {

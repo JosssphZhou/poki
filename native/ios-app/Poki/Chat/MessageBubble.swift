@@ -15,6 +15,8 @@ struct MessageBubble: View {
     /// The last bubble of its run has the small corner on its side.
     var tail: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .body) private var verticalInset = 13.0
+    @ScaledMetric(relativeTo: .body) private var horizontalInset = 18.0
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var scheme
 
@@ -29,8 +31,8 @@ struct MessageBubble: View {
                     .tint(Tint.blueText)
                     .foregroundStyle(Color(.label))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, .messageVerticalPadding)
-                    .padding(.horizontal, .messageHorizontalPadding)
+                    .padding(.vertical, min(18, verticalInset))
+                    .padding(.horizontal, min(24, horizontalInset))
                     .pokiBubble(tail: tail)
                     .contextMenu { copyButton { UIPasteboard.general.string = text } }
                     // A table takes the row's width before the space beside it, so it scrolls sideways
@@ -43,8 +45,8 @@ struct MessageBubble: View {
                     .accessibilityLabel(Text(verbatim: text))
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(direction == .guest ? Tint.onSolid : Color.white)
-                    .padding(.vertical, .messageVerticalPadding)
-                    .padding(.horizontal, .messageHorizontalPadding)
+                    .padding(.vertical, min(18, verticalInset))
+                    .padding(.horizontal, min(24, horizontalInset))
                     .background(direction == .guest ? Tint.solid : Tint.blue, in: shape)
                     // The bubble is one flat layer with its own outline, so the lifted copy of it (the
                     // long press) is cut to the same outline and the small corner stays where it is.
@@ -523,8 +525,6 @@ extension CGFloat {
     static let cornerRadius: CGFloat = 22
     static let tailRadius: CGFloat = 7
     static let messageInsetPadding: CGFloat = 60
-    static let messageVerticalPadding: CGFloat = 13
-    static let messageHorizontalPadding: CGFloat = 18
 }
 
 extension View {

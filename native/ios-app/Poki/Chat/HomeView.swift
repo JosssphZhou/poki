@@ -608,6 +608,8 @@ private struct ShortcutPill: View {
     @State private var place = ScreenPlace.Probe()
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .subheadline) private var iconSide = 24.0
+    @ScaledMetric(relativeTo: .subheadline) private var pillHeight = 48.0
+    @ScaledMetric(relativeTo: .subheadline) private var sideInset = 12.0
 
     var body: some View {
         Button { if !locked { pick() } } label: {
@@ -627,8 +629,10 @@ private struct ShortcutPill: View {
             }
             .padding(.vertical, typeSize.isAccessibilitySize ? 10 : 0)
             .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, alignment: .leading)
-            .padding(.leading, 12).padding(.trailing, 18).frame(minHeight: 48)
-            .contentShape(.capsule)
+            .padding(.leading, min(18, sideInset))
+            .padding(.trailing, min(24, sideInset * 1.5))
+            .frame(minHeight: min(64, max(44, pillHeight)))
+            .contentShape(.rect)
         }
         .pillButtonStyle(row: row)
         .background(ScreenPlace(probe: place))

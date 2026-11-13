@@ -51,7 +51,6 @@ struct ModelSettingsView: View {
         // (a rebuild dropped taps and the sheets it was presenting).
         .background { Color.clear.accessibilityHidden(true).id(version) }
         .listStyle(.insetGrouped)
-        .listSectionSpacing(16)
         .navigationTitle("Models")
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
