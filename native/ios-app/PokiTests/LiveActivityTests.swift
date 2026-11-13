@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class LiveActivityTests: XCTestCase {
+    func testBatchApprovalQuestionNamesEverySensitiveKind() {
+        let samples: [(String, String)] = [
+            (#"multiple sensitive actions: action 1: sending a message ("send"); action 2: a payment ("pay")"#,
+             "Allow sending a message and payment?"),
+            (#"multiple sensitive actions: action 1: a payment ("pay"); action 2: deleting ("delete"); action 3: sending a message ("send")"#,
+             "Allow payment, deletion, and sending a message?"),
+            (#"multiple sensitive actions: action 1: a payment ("pay"); action 2: a payment ("buy")"#,
+             "Allow payment?"),
+            (#"sending a message ("send")"#, "Allow sending a message?"),
+        ]
+        for (reason, question) in samples {
+            let approval = PendingApproval(id: "batch", app: "Messages", summary: "Continue",
+                                           reason: reason, expires: .now.addingTimeInterval(60))
+            XCTAssertEqual(approval.question, question, reason)
+        }
+    }
+
     /// The Live Activity counts the chat's plan from the first step on the phone (the chat publishes it
     /// before that step, while the activity is idle or still shows the last run as finished), and a
     /// finished run's plan never carries into the next run.
