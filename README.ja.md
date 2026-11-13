@@ -10,7 +10,8 @@
 
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.zh-TW.md">繁體中文</a> | 日本語 | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a><br>
-  <a href="https://poki.bot">poki.bot</a>
+  <a href="https://poki.bot">poki.bot</a><br>
+  <sub>This translation describes an earlier release. The <a href="README.md">English README</a> covers Poki 0.4.0.</sub>
 </p>
 
 <!-- badges:start -->
@@ -19,14 +20,14 @@
   <a href="https://github.com/JosssphZhou/poki/stargazers"><img src="https://img.shields.io/github/stars/JosssphZhou/poki" alt="GitHub stars"></a>
   <a href="https://github.com/JosssphZhou/poki/forks"><img src="https://img.shields.io/github/forks/JosssphZhou/poki" alt="GitHub forks"></a>
   <a href="https://github.com/JosssphZhou/poki/issues"><img src="https://img.shields.io/github/issues/JosssphZhou/poki" alt="GitHub issues"></a>
-  <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki" alt="Latest release"></a>
+  <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki?sort=date&amp;display_name=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS-lightgrey" alt="Platform: macOS and iOS">
 </p>
 <!-- badges:end -->
 
 ## クイックスタート
 
-**iPhone に Poki App をインストールする。** [Alpha リリース](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)から Poki Setup をダウンロードし、画面の案内に従ってください。詳しくは [iPhone のインストール手順](README.md#poki-on-your-iphone)を参照してください。iPhone には、10.7.0.1 を端末自身に戻す VPN アプリも必要です。App Store の無料アプリ LocalDevVPN で対応できます。モデルのアカウントはご自身で用意してください。ChatGPT Plus または Pro プランでのサインインがいちばん簡単です。Anthropic、OpenAI、Gemini、DeepSeek、OpenRouter の API キーを貼り付けるか、OpenAI 互換の独自サーバーを使うこともできます。Claude のサブスクリプションではサインインできないため、Anthropic の API キーを使ってください。
+**iPhone に Poki App をインストールする。** [Alpha リリース](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)から Poki Setup をダウンロードし、画面の案内に従ってください。詳しくは [iPhone のインストール手順](README.md#install-poki-on-your-iphone)を参照してください。iPhone には、10.7.0.1 を端末自身に戻す VPN アプリも必要です。App Store の無料アプリ LocalDevVPN で対応できます。モデルのアカウントはご自身で用意してください。ChatGPT Plus または Pro プランでのサインインがいちばん簡単です。Anthropic、OpenAI、Gemini、DeepSeek、OpenRouter の API キーを貼り付けるか、OpenAI 互換の独自サーバーを使うこともできます。Claude のサブスクリプションではサインインできないため、Anthropic の API キーを使ってください。
 
 **エージェントにインストールを任せる。** 次の内容をエージェントに渡してください：
 

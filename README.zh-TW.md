@@ -10,7 +10,8 @@
 
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | 繁體中文 | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a><br>
-  <a href="https://poki.bot">poki.bot</a>
+  <a href="https://poki.bot">poki.bot</a><br>
+  <sub>This translation describes an earlier release. The <a href="README.md">English README</a> covers Poki 0.4.0.</sub>
 </p>
 
 <!-- badges:start -->
@@ -19,14 +20,14 @@
   <a href="https://github.com/JosssphZhou/poki/stargazers"><img src="https://img.shields.io/github/stars/JosssphZhou/poki" alt="GitHub stars"></a>
   <a href="https://github.com/JosssphZhou/poki/forks"><img src="https://img.shields.io/github/forks/JosssphZhou/poki" alt="GitHub forks"></a>
   <a href="https://github.com/JosssphZhou/poki/issues"><img src="https://img.shields.io/github/issues/JosssphZhou/poki" alt="GitHub issues"></a>
-  <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki" alt="Latest release"></a>
+  <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki?sort=date&amp;display_name=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS-lightgrey" alt="Platform: macOS and iOS">
 </p>
 <!-- badges:end -->
 
 ## 快速開始
 
-**在 iPhone 上安裝 Poki App。** 從 [Alpha 發布頁](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下載 Poki Setup，依照安裝視窗操作。詳見 [iPhone 安裝說明](README.md#poki-on-your-iphone)。iPhone 上還需要一個能把 10.7.0.1 連回本機的 VPN 應用程式，App Store 上免費的 LocalDevVPN 就可以。模型帳號需要自己準備：用 ChatGPT Plus 或 Pro 方案登入最省事，也可以填入 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 金鑰，或者接入自己的 OpenAI 相容服務。Claude 訂閱無法直接登入，請改用 Anthropic API 金鑰。
+**在 iPhone 上安裝 Poki App。** 從 [Alpha 發布頁](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下載 Poki Setup，依照安裝視窗操作。詳見 [iPhone 安裝說明](README.md#install-poki-on-your-iphone)。iPhone 上還需要一個能把 10.7.0.1 連回本機的 VPN 應用程式，App Store 上免費的 LocalDevVPN 就可以。模型帳號需要自己準備：用 ChatGPT Plus 或 Pro 方案登入最省事，也可以填入 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 金鑰，或者接入自己的 OpenAI 相容服務。Claude 訂閱無法直接登入，請改用 Anthropic API 金鑰。
 
 **讓 agent 幫你安裝。** 把這段貼給你的 agent：
 

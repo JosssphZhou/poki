@@ -10,7 +10,8 @@
 
 <p align="center">
   <a href="README.md">English</a> | 简体中文 | <a href="README.zh-TW.md">繁體中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a><br>
-  <a href="https://poki.bot">poki.bot</a>
+  <a href="https://poki.bot">poki.bot</a><br>
+  <sub>This translation describes an earlier release. The <a href="README.md">English README</a> covers Poki 0.4.0.</sub>
 </p>
 
 <!-- badges:start -->
@@ -19,14 +20,14 @@
   <a href="https://github.com/JosssphZhou/poki/stargazers"><img src="https://img.shields.io/github/stars/JosssphZhou/poki" alt="GitHub stars"></a>
   <a href="https://github.com/JosssphZhou/poki/forks"><img src="https://img.shields.io/github/forks/JosssphZhou/poki" alt="GitHub forks"></a>
   <a href="https://github.com/JosssphZhou/poki/issues"><img src="https://img.shields.io/github/issues/JosssphZhou/poki" alt="GitHub issues"></a>
-  <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki" alt="Latest release"></a>
+  <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki?sort=date&amp;display_name=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS-lightgrey" alt="Platform: macOS and iOS">
 </p>
 <!-- badges:end -->
 
 ## 快速开始
 
-**在 iPhone 上安装 Poki App。** 从 [Alpha 发布页](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下载 Poki Setup，按安装窗口操作。详见 [iPhone 安装说明](README.md#poki-on-your-iphone)。iPhone 上还需要一个能把 10.7.0.1 连回本机的 VPN 应用，App Store 上免费的 LocalDevVPN 就可以。模型账号需要自己准备：用 ChatGPT Plus 或 Pro 套餐登录最省事，也可以填入 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 密钥，或者接入自己的 OpenAI 兼容服务。Claude 订阅不能直接登录，请改用 Anthropic API 密钥。
+**在 iPhone 上安装 Poki App。** 从 [Alpha 发布页](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下载 Poki Setup，按安装窗口操作。详见 [iPhone 安装说明](README.md#install-poki-on-your-iphone)。iPhone 上还需要一个能把 10.7.0.1 连回本机的 VPN 应用，App Store 上免费的 LocalDevVPN 就可以。模型账号需要自己准备：用 ChatGPT Plus 或 Pro 套餐登录最省事，也可以填入 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 密钥，或者接入自己的 OpenAI 兼容服务。Claude 订阅不能直接登录，请改用 Anthropic API 密钥。
 
 **让 agent 帮你安装。** 把这段发给你的 agent：
 
