@@ -252,10 +252,11 @@ The next section records the run on the rebased code.
 
 Run on 4642454. Its code is the same as at f4d6895, the last commit that changes
 code; only this file differed. The daemon and a release build of the native
-helper came from a checkout of 4642454, and `poki_mcp_status` reported it. The
-pinned idevice dependency carried the same one-line local change to
-`remotepairing_serial_number` as before. The MCP calls went straight to that
-daemon.
+helper came from a checkout of 4642454, and `poki_mcp_status` reported it. As in
+the previous run, two things were not from the branch: the pinned idevice
+dependency carried the same one-line local change to
+`remotepairing_serial_number`, and the stdio proxy that forwarded the MCP calls
+to the daemon came from another local checkout.
 
 Same phone and method as the previous run: the panel and its rotation were read
 before each step with `xcrun devicectl device info displays`, every step used
