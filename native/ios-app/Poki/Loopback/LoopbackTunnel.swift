@@ -266,7 +266,7 @@ final class LoopbackTunnel {
     private func yieldToAnotherVPN() {
         reconnect.ownerStopped()
         reconnecting = false
-        let message = "Another VPN appears to be on, so Poki did not turn its local connection back on. Turn that VPN off and tap Enable Local Connection, or choose an external connection in Setup."
+        let message = "Another VPN appears to be on, so Poki did not turn its local connection back on. Turn that VPN off and tap Enable local connection, or choose an external connection in Setup."
         AppLog.shared.add("loopback", "local VPN: another VPN is on; not reconnecting")
         state = .failed(message)
         onAttention?(message)

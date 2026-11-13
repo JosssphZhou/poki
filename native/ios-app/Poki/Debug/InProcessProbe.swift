@@ -403,13 +403,13 @@ struct InProcessSection: View {
     private let running = AutomationPath.current
 
     var body: some View {
-        Section {
+        PaperSection {
             Picker("Agents' actions go through", selection: $path) {
                 Text("Poki Runner").tag(AutomationPath.runner.rawValue)
                 Text("Poki itself").tag(AutomationPath.inProcess.rawValue)
             }
             if path != running.rawValue {
-                Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(.orange)
+                Text("Takes effect when Poki starts again.").font(.caption).foregroundStyle(Paper.ink)
             }
             ProbeField(probe: probe).frame(height: 44)
             HStack {

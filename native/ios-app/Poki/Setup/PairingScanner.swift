@@ -52,12 +52,12 @@ struct PairingScannerSheet: View {
                 dismiss()
             }
             .ignoresSafeArea()
-            .navigationTitle("Scan Pairing Code")
+            .navigationTitle("Scan pairing code")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .safeAreaInset(edge: .bottom) {
                 Text("Point the camera at the code Poki Setup shows on your computer.")
-                    .font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                    .font(.footnote).foregroundStyle(Paper.ink2)
                     .multilineTextAlignment(.center).padding()
                     .frame(maxWidth: .infinity).background(.bar)
             }

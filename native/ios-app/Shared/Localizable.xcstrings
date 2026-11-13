@@ -1206,22 +1206,6 @@
         }
       }
     },
-    "Allow Location Access" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "允许访问位置信息"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "允許訪問位置資訊"
-          }
-        }
-      }
-    },
     "Allow UI Automation" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1250,6 +1234,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許操作"
+          }
+        }
+      }
+    },
+    "Allow location access" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许访问位置信息"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許訪問位置資訊"
           }
         }
       }
@@ -1500,7 +1500,7 @@
       },
       "extractionState" : "manual"
     },
-    "Anisette Server" : {
+    "Anisette server" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1517,7 +1517,7 @@
       },
       "extractionState" : "manual"
     },
-    "Another VPN appears to be on, so Poki did not turn its local connection back on. Turn that VPN off and tap Enable Local Connection, or choose an external connection in Setup." : {
+    "Another VPN appears to be on, so Poki did not turn its local connection back on. Turn that VPN off and tap Enable local connection, or choose an external connection in Setup." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1910,7 +1910,7 @@
         }
       }
     },
-    "Built-in Connection" : {
+    "Built-in connection" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1975,7 +1975,7 @@
         }
       }
     },
-    "Cancel Connection" : {
+    "Cancel connection" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1991,7 +1991,7 @@
         }
       }
     },
-    "Cancel Pairing" : {
+    "Cancel pairing" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2351,7 +2351,7 @@
         }
       }
     },
-    "Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted." : {
+    "Connect to Wi‑Fi and tap **Start pairing**. Allow local network access when prompted." : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
@@ -2548,22 +2548,6 @@
         }
       }
     },
-    "Copy Log" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "拷贝日志"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "複製日誌"
-          }
-        }
-      }
-    },
     "Copy address" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2576,6 +2560,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製地址"
+          }
+        }
+      }
+    },
+    "Copy log" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製日誌"
           }
         }
       }
@@ -2860,23 +2860,6 @@
         }
       }
     },
-    "Developer Mode Is On" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开发者模式已开启"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開發者模式已開啟"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Developer Mode is on" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2976,7 +2959,7 @@
         }
       }
     },
-    "Disconnect Local Connection" : {
+    "Disconnect local connection" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3090,22 +3073,6 @@
         }
       }
     },
-    "Download Again" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新下载"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新下載"
-          }
-        }
-      }
-    },
     "Download Developer Disk Image" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3122,7 +3089,23 @@
         }
       }
     },
-    "Download and Install Update" : {
+    "Download again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新下載"
+          }
+        }
+      }
+    },
+    "Download and install update" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3205,22 +3188,6 @@
       },
       "extractionState" : "manual"
     },
-    "Enable Local Connection" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启本机连接"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟本機連線"
-          }
-        }
-      }
-    },
     "Enable a local connection in Setup and wait for the connection check to pass, then try pairing again." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3233,6 +3200,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請在配置中開啟本機連線，等連線檢查透過後再重新配對。"
+          }
+        }
+      }
+    },
+    "Enable local connection" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启本机连接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟本機連線"
           }
         }
       }
@@ -4039,7 +4022,7 @@
         }
       }
     },
-    "How To" : {
+    "How to" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4104,22 +4087,6 @@
         }
       }
     },
-    "Import Pairing File" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "导入配对文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "匯入配對檔案"
-          }
-        }
-      }
-    },
     "Import memory" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4132,6 +4099,22 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "輸入記憶"
+          }
+        }
+      }
+    },
+    "Import pairing file" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导入配对文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "匯入配對檔案"
           }
         }
       }
@@ -4250,7 +4233,24 @@
         }
       }
     },
-    "Install Refresh" : {
+    "Install is available when Poki isn’t running a task." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 未在执行任务时才能安装。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 未在執行任務時才能安裝。"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Install refresh" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4267,7 +4267,7 @@
       },
       "extractionState" : "manual"
     },
-    "Install Update" : {
+    "Install update" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4279,23 +4279,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安裝更新"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Install is available when Poki isn’t running a task." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 未在执行任务时才能安装。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 未在執行任務時才能安裝。"
           }
         }
       },
@@ -4434,24 +4417,7 @@
         }
       }
     },
-    "Keep Me Signed In" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保持登录"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保持登入"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Keep Poki Running" : {
+    "Keep Poki running" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4483,6 +4449,23 @@
           }
         }
       }
+    },
+    "Keep me signed in" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持登入"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Keep your existing VPN connected. Poki uses its loopback and leaves its own VPN off." : {
       "localizations" : {
@@ -4859,22 +4842,6 @@
         }
       }
     },
-    "Live Activity Preview" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "实时活动预览"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "實時活動預覽"
-          }
-        }
-      }
-    },
     "Live Activity is off" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4887,6 +4854,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "實時活動已關閉"
+          }
+        }
+      }
+    },
+    "Live Activity preview" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时活动预览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "實時活動預覽"
           }
         }
       }
@@ -5085,23 +5068,6 @@
           }
         }
       }
-    },
-    "Loopback Is On" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "回环已开启"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "迴環已開啟"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "Loopback is off" : {
       "localizations" : {
@@ -5531,7 +5497,7 @@
       },
       "extractionState" : "manual"
     },
-    "Newest on This Channel" : {
+    "Newest on this channel" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -5612,40 +5578,6 @@
           }
         }
       }
-    },
-    "No Log Yet" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚无日志"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無日誌"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "No Profile" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无描述文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無描述檔案"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "No Sessions Yet" : {
       "localizations" : {
@@ -5732,6 +5664,22 @@
       },
       "extractionState" : "manual"
     },
+    "No answer" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无应答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無應答"
+          }
+        }
+      }
+    },
     "No chat account" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5813,6 +5761,40 @@
         }
       }
     },
+    "No log yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无日志"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無日誌"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "No profile" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无描述文件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無描述檔案"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
     "No proxy app? Install LocalDevVPN, a free loopback app built for this." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5859,39 +5841,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暫無"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Not Found" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未找到"
-          }
-        }
-      }
-    },
-    "Not On Yet" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未开启"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未開啟"
           }
         }
       },
@@ -5991,6 +5940,22 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "未完成"
+          }
+        }
+      }
+    },
+    "Not found" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到"
           }
         }
       }
@@ -7021,7 +6986,7 @@
         }
       }
     },
-    "Other Ways" : {
+    "Other ways" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -7088,34 +7053,18 @@
       },
       "extractionState" : "manual"
     },
-    "Pair Again" : {
+    "Pair again" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "重新配对"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "重新配對"
-          }
-        }
-      }
-    },
-    "Pair This iPhone" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配对此 iPhone"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "配對此 iPhone"
           }
         }
       }
@@ -7149,6 +7098,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「設定」中配對"
+          }
+        }
+      }
+    },
+    "Pair this iPhone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配对此 iPhone"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配對此 iPhone"
           }
         }
       }
@@ -7565,22 +7530,21 @@
       },
       "extractionState" : "manual"
     },
-    "Poki Runner Is Installed and Trusted" : {
+    "Poki Runner" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki Runner 已安装并受信任"
+            "state" : "needs_review",
+            "value" : "Poki Runner"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki Runner 已安裝並受信任"
+            "state" : "needs_review",
+            "value" : "Poki Runner"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Poki Runner did not start. In Settings → Developer, turn on UI Automation; in Settings → General → VPN & Device Management, trust the developer of Poki Runner." : {
       "extractionState" : "manual",
@@ -7664,22 +7628,6 @@
         }
       },
       "extractionState" : "manual"
-    },
-    "Poki Version" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 版本"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 版本"
-          }
-        }
-      }
     },
     "Poki Was Updated" : {
       "localizations" : {
@@ -8310,6 +8258,22 @@
         }
       }
     },
+    "Poki version" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 版本"
+          }
+        }
+      }
+    },
     "Poki will close by itself. Open it again once the update is in." : {
       "localizations" : {
         "zh-Hans" : {
@@ -8392,7 +8356,7 @@
         }
       }
     },
-    "Prepare Refresh Now" : {
+    "Prepare refresh now" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8460,7 +8424,7 @@
       },
       "extractionState" : "manual"
     },
-    "Proxy Loopback Interface" : {
+    "Proxy loopback interface" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8727,23 +8691,6 @@
         }
       }
     },
-    "Refresh Ready" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "续签已就绪"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "續簽已就緒"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Refresh model list" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8756,6 +8703,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新整理模型列表"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Refresh ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "续签已就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "續簽已就緒"
           }
         }
       },
@@ -8860,7 +8824,7 @@
       },
       "extractionState" : "manual"
     },
-    "Release Channel" : {
+    "Release channel" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9126,22 +9090,6 @@
       },
       "extractionState" : "manual"
     },
-    "Run Checks" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "运行检查"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "執行檢查"
-          }
-        }
-      }
-    },
     "Run bin/voice-bridge.mjs on your Mac and enter the address it gives. The Mac holds your OpenAI key and gives this phone a key that works for one minute, so the phone never stores it. Audio goes straight from this phone to OpenAI." : {
       "localizations" : {
         "zh-Hans" : {
@@ -9154,6 +9102,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Mac 上執行 bin/voice-bridge.mjs 並輸入生成的地址。OpenAI 金鑰儲存在 Mac 本地，手機僅獲取有效期 1 分鐘的臨時憑證，不儲存金鑰，音訊將由手機直連傳送至 OpenAI。"
+          }
+        }
+      }
+    },
+    "Run checks" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行检查"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行檢查"
           }
         }
       }
@@ -9288,7 +9252,7 @@
         }
       }
     },
-    "Scan Pairing Code" : {
+    "Scan pairing code" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9584,7 +9548,7 @@
         }
       }
     },
-    "Share Log" : {
+    "Share log" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9633,39 +9597,6 @@
         }
       }
     },
-    "Sign In" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登录"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登入"
-          }
-        }
-      }
-    },
-    "Sign In to Download the Update" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登录以下载更新"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "登入以下載更新"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Sign In with ChatGPT" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9682,18 +9613,18 @@
         }
       }
     },
-    "Sign Out" : {
+    "Sign in" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出登录"
+            "value" : "登录"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出登入"
+            "value" : "登入"
           }
         }
       }
@@ -9746,6 +9677,23 @@
           }
         }
       }
+    },
+    "Sign in to download the update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录以下载更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登入以下載更新"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Sign in with ChatGPT" : {
       "localizations" : {
@@ -9812,23 +9760,6 @@
         }
       }
     },
-    "Signed Until" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "签名有效期至"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "簽名有效期至"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Signed in" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9845,6 +9776,23 @@
         }
       }
     },
+    "Signed until" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名有效期至"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "簽名有效期至"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
     "Signing" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9857,22 +9805,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "簽名"
-          }
-        }
-      }
-    },
-    "Signing Options" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "签名选项"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "簽名選項"
           }
         }
       }
@@ -9893,6 +9825,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Signing options" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "签名选项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "簽名選項"
+          }
+        }
+      }
     },
     "Signing out" : {
       "localizations" : {
@@ -10027,22 +9975,6 @@
       },
       "extractionState" : "manual"
     },
-    "Start Hold" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开始保活测试"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始保活測試"
-          }
-        }
-      }
-    },
     "Start Now" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10055,22 +9987,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "立即啟動"
-          }
-        }
-      }
-    },
-    "Start Pairing" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开始配对"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開始配對"
           }
         }
       }
@@ -10091,6 +10007,38 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Start hold" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始保活测试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始保活測試"
+          }
+        }
+      }
+    },
+    "Start pairing" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始配对"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始配對"
+          }
+        }
+      }
     },
     "Starting" : {
       "extractionState" : "manual",
@@ -10268,22 +10216,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止 Runner"
-          }
-        }
-      }
-    },
-    "Stop When Idle For" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "闲置多久后停止"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "閒置多久後停止"
           }
         }
       }
@@ -11845,23 +11777,6 @@
         }
       }
     },
-    "Tunnel On, No Answer" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隧道已开启，但无响应"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "隧道已開啟，但無響應"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Tunnel on, no answer" : {
       "localizations" : {
         "zh-Hans" : {
@@ -11894,38 +11809,6 @@
         }
       }
     },
-    "Turn On Developer Mode" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启开发者模式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟開發者模式"
-          }
-        }
-      }
-    },
-    "Turn On Loopback" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启回环"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟迴環"
-          }
-        }
-      }
-    },
     "Turn on **Enable UI Automation**." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11939,6 +11822,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟「**啟用 UI 自動化**」。"
+          }
+        }
+      }
+    },
+    "Turn on Developer Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启开发者模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟開發者模式"
           }
         }
       }
@@ -11990,6 +11889,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟增強模式（迴環僅在增強模式下可用）。"
+          }
+        }
+      }
+    },
+    "Turn on Loopback" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启回环"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟迴環"
           }
         }
       }
@@ -12193,23 +12108,6 @@
         }
       }
     },
-    "UI Automation Is On" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "UI 自动化已开启"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "UI 自動化已開啟"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "UI Automation is on" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12258,7 +12156,7 @@
         }
       }
     },
-    "Up to Date" : {
+    "Up to date" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -12274,7 +12172,7 @@
         }
       }
     },
-    "Update Available" : {
+    "Update available" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -12289,23 +12187,6 @@
           }
         }
       }
-    },
-    "Update Ready" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新已就绪"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更新已就緒"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "Update iOS to 17.4 or later." : {
       "extractionState" : "manual",
@@ -12324,18 +12205,18 @@
         }
       }
     },
-    "Use Default Server" : {
+    "Update ready" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用默认服务器"
+            "value" : "更新已就绪"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用預設伺服器"
+            "value" : "更新已就緒"
           }
         }
       },
@@ -12357,23 +12238,6 @@
         }
       }
     },
-    "Use Your Proxy App" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用你的代理 App"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用你的代理 App"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Use a Code Instead" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12389,6 +12253,23 @@
           }
         }
       }
+    },
+    "Use default server" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用默认服务器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用預設伺服器"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Use for live voice" : {
       "localizations" : {
@@ -12424,7 +12305,7 @@
       },
       "extractionState" : "manual"
     },
-    "Use the Current VPN" : {
+    "Use the current VPN" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -12452,6 +12333,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將此賬戶用於"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Use your proxy app" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用你的代理 App"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用你的代理 App"
           }
         }
       },
@@ -12506,7 +12404,7 @@
         }
       }
     },
-    "Verification Code" : {
+    "Verification code" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -13180,7 +13078,7 @@
       },
       "extractionState" : "manual"
     },
-    "ask_poki Tool" : {
+    "ask_poki tool" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

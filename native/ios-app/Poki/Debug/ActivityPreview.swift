@@ -18,27 +18,26 @@ struct ActivityPreview: View {
         // A list of the Live Activity's states; each row starts the real one on this iPhone, which iOS
         // draws on the Lock Screen and in the Dynamic Island.
         List {
-            Section {
+            PaperSection {
                 ForEach(Self.samples.filter { only == nil || $0.0 == only }, id: \.0) { name, state in
                     Button { Task.detached { await DemoActivity.run(state) } } label: {
                         LabeledContent {
-                            Image(systemName: "play.circle.fill").foregroundStyle(.blue).imageScale(.large)
+                            Image(systemName: "play.fill").font(.system(size: 13)).foregroundStyle(Paper.ink2)
                         } label: {
                             Label { Text(verbatim: Self.title(name)) } icon: { Image(systemName: state.face.symbol) }
                         }
                     }
-                    .foregroundStyle(Color(.label))
                 }
             } footer: {
                 Text("Starts that Live Activity on this iPhone. Lock the phone or go to the Home Screen to see it; the next one replaces it.")
             }
-            Section {
-                Button("End Live Activity", systemImage: "stop.circle", role: .destructive) {
+            PaperSection {
+                Button("End Live Activity", systemImage: "stop.circle") {
                     Task.detached { for old in Activity<PokiActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) } }
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .paperList()
         .navigationTitle("Live Activity")
         .navigationBarTitleDisplayMode(.inline)
         .task {

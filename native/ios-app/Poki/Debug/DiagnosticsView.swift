@@ -13,20 +13,20 @@ struct DiagnosticsView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Form {
-            Section {
-                Button(copied ? "Copied" : "Copy Log", systemImage: copied ? "checkmark" : "doc.on.doc") {
+        List {
+            PaperSection {
+                Button(copied ? "Copied" : "Copy log", systemImage: copied ? "checkmark" : "doc.on.doc") {
                     UIPasteboard.general.string = log.text
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(2)); copied = false }
                 }
-                ShareLink(item: log.text, subject: Text("Poki log")) { Label("Share Log", systemImage: "square.and.arrow.up") }
+                ShareLink(item: log.text, subject: Text("Poki log")) { Label("Share log", systemImage: "square.and.arrow.up") }
                 Button { path.append(.log) } label: {
                     LabeledContent("Log") { Text("\(log.lines.count) lines") }
                 }
-                .foregroundStyle(Color(.label))
-                Button { path.append(.activityPreview) } label: { LabeledContent("Live Activity Preview") { EmptyView() } }
-                    .foregroundStyle(Color(.label))
+                .foregroundStyle(Paper.ink)
+                Button { path.append(.activityPreview) } label: { LabeledContent("Live Activity preview") { EmptyView() } }
+                    .foregroundStyle(Paper.ink)
             } header: {
                 Text("Log")
             } footer: {
@@ -35,34 +35,34 @@ struct DiagnosticsView: View {
             ApprovalTestingSection()
             // The in-process path's switch and probes (ESP-173, ESP-175).
             InProcessSection()
-            Section {
+            PaperSection {
                 if let loop = loopbackInterface(addresses) {
                     Text(verbatim: "\(loop.interface)  \(loop.address)").font(.body.monospaced().weight(.semibold))
                     Text(loop.ipv6.isEmpty ? "No IPv6 on this interface" : "IPv6 present: \(loop.ipv6.joined(separator: ", "))")
-                        .font(.footnote.monospaced()).foregroundStyle(loop.ipv6.isEmpty ? Color.secondary : Color.red)
+                        .font(.footnote.monospaced()).foregroundStyle(loop.ipv6.isEmpty ? Paper.ink2 : Paper.ink)
                 } else {
                     Text("No interface has a 10.7.0.x address. Check that your proxy app is on and its loopback module is enabled.")
                 }
             } header: {
-                Text("Proxy Loopback Interface")
+                Text("Proxy loopback interface")
             } footer: {
                 Text(verbatim: "Network path: \(model.loopback.pathSummary). Wi-Fi \(model.loopback.wifiUp ? "up" : "down"), cellular \(model.loopback.cellularUp ? "up" : "down")\(model.loopback.cellularOnly ? " (cellular only)" : "")")
                     .textSelection(.enabled)
             }
             .textSelection(.enabled)
-            Section("Checks") {
+            PaperSection("Checks") {
                 ForEach(results) { r in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(Self.title(r)).font(.subheadline.weight(.semibold))
-                        Text(verbatim: "\(r.target)  \(r.milliseconds) ms").font(.caption.monospaced()).foregroundStyle(Color(.secondaryLabel))
+                        Text(verbatim: "\(r.target)  \(r.milliseconds) ms").font(.caption.monospaced()).foregroundStyle(Paper.ink2)
                         if !r.detail.isEmpty { Text(verbatim: r.detail).font(.caption.monospaced()) }
                         if !r.firstBytes.isEmpty { Text(verbatim: "first bytes: \(r.firstBytes)").font(.caption.monospaced()) }
                     }
                     .textSelection(.enabled)
                 }
-                Button(running ? "Running…" : "Run Checks") { Task { await run() } }.disabled(running)
+                Button(running ? "Running…" : "Run checks") { Task { await run() } }.disabled(running)
             }
-            Section {
+            PaperSection {
                 LabeledContent("Port on 10.7.0.1") {
                     TextField(text: $hold.port, prompt: Text(verbatim: "49152")) { Text("Port on 10.7.0.1") }
                         .keyboardType(.numberPad).multilineTextAlignment(.trailing).monospacedDigit()
@@ -71,8 +71,8 @@ struct DiagnosticsView: View {
                     ForEach(Hold.Experiment.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .disabled(hold.holding)
-                Button("Start Hold") { hold.start() }.disabled(hold.holding)
-                Button("Stop", role: .destructive) { hold.stop() }.disabled(!hold.holding)
+                Button("Start hold") { hold.start() }.disabled(hold.holding)
+                Button("Stop") { hold.stop() }.disabled(!hold.holding)
                 if !hold.log.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(hold.log.indices, id: \.self) { i in Text(verbatim: hold.log[i]).font(.caption2.monospaced()) }
@@ -80,17 +80,18 @@ struct DiagnosticsView: View {
                     .textSelection(.enabled)
                 }
             } header: {
-                Text("Background Hold")
+                Text("Background hold")
             } footer: {
                 Text("Tap Start, leave the app for a while, then return. The log records suspension gaps and connection closures.")
             }
-            Section("Addresses") {
+            PaperSection("Addresses") {
                 ForEach(addresses.indices, id: \.self) { i in
                     Text(verbatim: "\(addresses[i].interface)  \(addresses[i].address)").font(.caption.monospaced())
                 }
             }
             .textSelection(.enabled)
         }
+        .paperList()
         .navigationTitle("Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
         .task { await run() }
@@ -118,29 +119,31 @@ struct LogView: View {
     var back: () -> Void
     var body: some View {
         List {
-            ForEach(Array(log.lines.reversed().enumerated()), id: \.offset) { _, line in
-                Text(verbatim: line).font(.caption.monospaced()).textSelection(.enabled)
+            PaperSection {
+                ForEach(Array(log.lines.reversed().enumerated()), id: \.offset) { _, line in
+                    Text(verbatim: line).font(.caption.monospaced()).textSelection(.enabled).padding(.vertical, 8)
+                }
             }
         }
-        .listStyle(.plain)
-        .overlay { if log.lines.isEmpty { ContentUnavailableView("No Log Yet", systemImage: "doc.text") } }
+        .overlay { if log.lines.isEmpty { ContentUnavailableView("No log yet", systemImage: "doc.text") } }
+        .paperList()
         .navigationTitle("Log")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Clear", role: .destructive) { log.clear() }
+                Button("Clear") { log.clear() }.tint(Paper.ink)
             }
         }
     }
 }
 
-/// Switches being tried, all off by default. Ask Before Sensitive Steps is in Agents › Approvals.
+/// Switches being tried, all off by default. Ask before sensitive steps is in Settings.
 private struct ApprovalTestingSection: View {
     @Environment(AppModel.self) private var model
     var body: some View {
         @Bindable var model = model
-        Section {
-            Toggle("ask_poki Tool", isOn: $model.askPokiTool)
+        PaperSection {
+            Toggle("ask_poki tool", isOn: $model.askPokiTool)
             Toggle("Auto-Classifier", isOn: $model.approvalClassifier)
             if model.approvalClassifier {
                 Picker("Permissiveness", selection: $model.classifierLevel) {

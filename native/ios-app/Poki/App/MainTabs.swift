@@ -189,26 +189,27 @@ struct AdvancedView: View {
 
     var body: some View {
         @Bindable var model = model
-        Form {
+        List {
             if model.automationPath == .runner {
-                Section {
+                PaperSection {
                     LabeledContent("Runner", value: Health.runner(model).word)
-                    Picker("Stop When Idle For", selection: $model.idleStopSeconds) {
+                    Picker("Stop when idle for", selection: $model.idleStopSeconds) {
                         ForEach(SettingsHome.idleChoices, id: \.0) { Text($0.1).tag($0.0) }
                     }
                 } header: { Text("Poki Runner") }
             }
-            Section {
+            PaperSection {
                 Button("Notifications") {
                     if let url = URL(string: UIApplication.openNotificationSettingsURLString) { UIApplication.shared.open(url) }
                 }
                 NavigationLink("Diagnostics", value: SettingsRoute.diagnostics)
                 NavigationLink("Log", value: SettingsRoute.log)
-                NavigationLink("Live Activity Preview", value: SettingsRoute.activityPreview)
+                NavigationLink("Live Activity preview", value: SettingsRoute.activityPreview)
             } footer: {
                 Text("Diagnostics: connection checks, the background hold, this iPhone’s addresses and the in-process automation switch.")
             }
         }
+        .paperList()
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
     }
