@@ -6,7 +6,7 @@
 //! Secrets never touch a file: the app installs a [`Vault`] backed by its Keychain before the
 //! first call (poki_signer_set_vault). One request at a time; see include/poki_launcher.h.
 use crate::device::{Device, Pairing};
-use idevice::{lockdown::LockdownClient, misagent::MisagentClient, utils::installation};
+use idevice::{installation_proxy::InstallationProxyClient, lockdown::LockdownClient, misagent::MisagentClient, utils::installation};
 use poki_setup_core::{
     self as core, Progress, Reporter,
     apple::{anisette::Source, gsa::Pending, identity},
@@ -206,6 +206,11 @@ pub async fn handle(request: Value, emit: impl Fn(Value) + Send + Sync + 'static
             let mut device = phone.open().await?;
             Ok(json!({"udid": udid(&mut device).await?}))
         }
+        "apps" => {
+            let phone: Phone = serde_json::from_value(request.clone()).map_err(|e| fail(e.to_string(), "config"))?;
+            let mut device = phone.open().await?;
+            Ok(json!({"apps": installed_apps(&mut device).await?}))
+        }
         "prepare" => prepare(&request, &reporter).await,
         "install" => install(&request, &reporter).await,
         other => Err(fail(format!("unknown request {other:?}"), "config")),
@@ -216,6 +221,36 @@ async fn udid(device: &mut Device) -> std::result::Result<String, Failure> {
     let mut lockdown: LockdownClient = device.connect().await?;
     let v = lockdown.get_value(Some("UniqueDeviceID"), None).await?;
     v.as_string().map(String::from).filter(|s| !s.is_empty()).ok_or_else(|| fail("the phone did not say its UDID", "device"))
+}
+
+/// Every app on the phone, as installation_proxy lists it (the service Poki Runner's lookup used):
+/// its bundle id, its Home Screen name and its bundle name. The chat's agent launches apps by these
+/// ids instead of ids a model recalls (a tester's 淘宝 and 美团, Nov 2026). Only these three
+/// attributes are asked for, so the answer stays small.
+async fn installed_apps(device: &mut Device) -> std::result::Result<Vec<Value>, Failure> {
+    let mut proxy: InstallationProxyClient = device.connect().await?;
+    let mut options = plist::Dictionary::new();
+    options.insert("ApplicationType".into(), plist::Value::String("Any".into()));
+    options.insert(
+        "ReturnAttributes".into(),
+        plist::Value::Array(["CFBundleIdentifier", "CFBundleDisplayName", "CFBundleName"].iter().map(|k| plist::Value::String((*k).into())).collect()),
+    );
+    let list = tokio::time::timeout(Duration::from_secs(20), proxy.browse(Some(plist::Value::Dictionary(options))))
+        .await
+        .map_err(|_| fail("The iPhone did not list its apps in time.", "device"))??;
+    Ok(installed_entries(&list))
+}
+
+/// installation_proxy's entries as {id, name, bundle_name}; entries without a bundle id are left out.
+fn installed_entries(list: &[plist::Value]) -> Vec<Value> {
+    let text = |d: &plist::Dictionary, k: &str| d.get(k).and_then(|v| v.as_string()).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    list.iter()
+        .filter_map(|app| {
+            let d = app.as_dictionary()?;
+            let id = text(d, "CFBundleIdentifier")?;
+            Some(json!({"id": id, "name": text(d, "CFBundleDisplayName"), "bundle_name": text(d, "CFBundleName")}))
+        })
+        .collect()
 }
 
 /// Takes the signing key Poki Setup left in the container (Documents/PokiSetup/signing-identity.json),
@@ -362,4 +397,29 @@ async fn install(request: &Value, reporter: &Reporter) -> Out {
     }
     reporter.done("install", None);
     Ok(json!({"installed": true}))
+}
+
+#[cfg(test)]
+mod installed_tests {
+    use super::*;
+
+    #[test]
+    fn entries_keep_id_and_names_and_skip_ones_without_an_id() {
+        let app = |pairs: &[(&str, &str)]| {
+            let mut d = plist::Dictionary::new();
+            for (k, v) in pairs {
+                d.insert((*k).into(), plist::Value::String((*v).into()));
+            }
+            plist::Value::Dictionary(d)
+        };
+        let list = vec![
+            app(&[("CFBundleIdentifier", "com.taobao.taobao4iphone"), ("CFBundleDisplayName", "淘宝"), ("CFBundleName", "Taobao4iPhone")]),
+            app(&[("CFBundleIdentifier", "com.meituan.imeituan"), ("CFBundleDisplayName", " ")]),
+            app(&[("CFBundleDisplayName", "No id")]),
+        ];
+        let out = installed_entries(&list);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0], json!({"id": "com.taobao.taobao4iphone", "name": "淘宝", "bundle_name": "Taobao4iPhone"}));
+        assert_eq!(out[1], json!({"id": "com.meituan.imeituan", "name": null, "bundle_name": null}));
+    }
 }

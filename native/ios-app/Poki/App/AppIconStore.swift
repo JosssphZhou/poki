@@ -101,6 +101,13 @@ final class AppIconStore {
         KnownApps.find(app)?.name(in: .current)
     }
 
+    /// Whether iOS has a Home Screen icon for `id`, that is whether the app is installed; nil when the
+    /// iPhone's icons are not read (`-pokiSystemIcons off`). InstalledApps' check without the phone's list.
+    static func installedOnPhone(_ id: String) -> Bool? {
+        guard SystemIcons.enabled else { return nil }
+        return SystemIcons.icon(id, dark: false) != nil
+    }
+
     /// The bundle IDs of the apps `text` names, in any of their names: "打开美团外卖点下酒菜" names Meituan
     /// Waimai and not Meituan, as the longest name wins where one starts another. A Latin name counts
     /// only as a whole word, and one-letter names ("X") never.
