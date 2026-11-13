@@ -48,12 +48,24 @@ final class UnresponsiveAppTests: XCTestCase {
         let phone = try SilentAppServer(delay: delay, label: label)
         defer { phone.stop() }
         let sensitive = label != "Continue"
-        let model = try FakeCompletions(replies: [
-            FakeCompletions.tool("do", ["actions": [["launch": "com.example.slow-test"]]]),
-            FakeCompletions.tool("do", ["actions": [["tap": 1]]]),
-            FakeCompletions.tool("finish_task", ["success": !sensitive, "summary": sensitive ? "The owner declined." : "Completed.", "details": [], "answer": ["kind": "action"]]),
-            FakeCompletions.text(sensitive ? "The step was not allowed." : "Completed."),
-        ])
+        let model = try FakeCompletions(replies: []) { request in
+            guard request["tools"] != nil else { return FakeCompletions.text("Test app task") }
+            let messages = request["messages"] as? [[String: Any]] ?? []
+            let last = messages.last { $0["role"] as? String == "tool" }
+            let content = (last?["content"] as? String) ?? (last?["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n") ?? ""
+            if last == nil {
+                return FakeCompletions.tool("report_plan", ["steps": ["Open the test app", label], "currentStep": 1, "title": "Test app response"])
+            }
+            if content == Harness.planPublished {
+                return FakeCompletions.tool("do", ["actions": [["launch": "com.example.slow-test"]]])
+            }
+            if content.contains("did: launch"), content.contains("1 Button \"\(label)\"") {
+                return FakeCompletions.tool("do", ["actions": [["tap": 1]]])
+            }
+            if content == Harness.resultRecorded { return FakeCompletions.text("Test task ended.") }
+            let completed = content.contains("Completed") && !sensitive
+            return FakeCompletions.tool("finish_task", ["success": completed, "summary": completed ? "Completed." : "The step did not complete.", "details": [], "answer": ["kind": "action"]])
+        }
         ModelKeys.customURL = "http://127.0.0.1:\(model.port)/v1"
         ModelKeys.customModel = "fake-model"
         ModelKeys.selectedProvider = .custom
@@ -66,7 +78,7 @@ final class UnresponsiveAppTests: XCTestCase {
         defer { app.stopSession() }
         let chat = ChatModel(app: app)
         chat.newConversation()
-        window?.rootViewController = UIHostingController(rootView: ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {}).environment(app).environment(chat))
+        window?.rootViewController = UIHostingController(rootView: ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {}).environment(app).environment(chat).transaction { $0.disablesAnimations = true })
         window?.makeKeyAndVisible()
         var liveProgress: [Int] = []
         let activity = try XCTUnwrap(Activity<PokiActivityAttributes>.activities.first, "the simulator starts a real Live Activity")
@@ -84,24 +96,27 @@ final class UnresponsiveAppTests: XCTestCase {
         var progress: [Int] = []
         var approvals = 0
         var captured = Set<Int>()
-        ChatModel.afterTask = { result in record = result; done.fulfill() }
+        ChatModel.afterTask = { result in
+            record = result
+            Task { @MainActor in await Task.yield(); done.fulfill() }
+        }
         app.addShellObserver { [weak self, weak app] event in
             switch event {
             case .screenWaiting(let seconds, _):
                 progress.append(seconds)
-                let bucket = seconds / 4
+                let bucket = seconds
                 guard captured.insert(bucket).inserted else { return }
                 Task { @MainActor in
                     await Task.yield()
                     guard let self, let app else { return }
                     XCTAssertTrue(app.activityText.contains("Waiting"))
-                    self.capture("\(name)-wait-\(seconds)")
+                    await self.capture("\(name)-wait-\(seconds)")
                 }
             case .approvalRequested(let approval):
                 approvals += 1
                 Task { @MainActor in
                     await Task.yield()
-                    self?.capture("\(name)-approval")
+                    await self?.capture("\(name)-approval")
                     app?.resolve(approval, approved: false)
                 }
             default: break
@@ -110,8 +125,10 @@ final class UnresponsiveAppTests: XCTestCase {
         chat.send("Open the test app and \(label.lowercased()).")
         await fulfillment(of: [done], timeout: 100)
         await Task.yield()
-        capture("\(name)-finished")
+        await capture("\(name)-finished")
         let result = try XCTUnwrap(record)
+        let calls = result.calls.map { ["tool": $0.name, "arguments": $0.arguments, "answer": $0.answer] }
+        try JSONSerialization.data(withJSONObject: calls, options: [.prettyPrinted, .sortedKeys]).write(to: evidence.appendingPathComponent(name + "-calls.json"))
         XCTAssertFalse(progress.isEmpty, "the chat receives waiting progress")
         XCTAssertGreaterThan(liveProgress.count, 1, "ActivityKit receives changing waiting state: \(liveProgress)")
         if delay == nil {
@@ -139,7 +156,8 @@ final class UnresponsiveAppTests: XCTestCase {
         return folder
     }
 
-    private func capture(_ name: String) {
+    private func capture(_ name: String) async {
+        await DisplayFrames.rendered()
         guard let window else { return XCTFail("no simulator window") }
         window.layoutIfNeeded()
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
@@ -147,11 +165,33 @@ final class UnresponsiveAppTests: XCTestCase {
     }
 
     private func captureActivity(_ state: PokiState, name: String) {
-        let view = UIHostingController(rootView: LockScreenCard(face: state.face).frame(width: 390).background(Color.blue))
-        view.view.frame = CGRect(x: 0, y: 0, width: 390, height: 220)
-        view.view.layoutIfNeeded()
-        let image = UIGraphicsImageRenderer(bounds: view.view.bounds).image { context in view.view.layer.render(in: context.cgContext) }
+        let renderer = ImageRenderer(content: LockScreenCard(face: state.face).frame(width: 390).background(Color.blue))
+        renderer.scale = 3
+        guard let image = renderer.uiImage else { return XCTFail("Activity preview did not render") }
         try? image.pngData()?.write(to: evidence.appendingPathComponent(name + ".png"))
+    }
+}
+
+@MainActor
+private final class DisplayFrames: NSObject {
+    private var remaining = 2
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    static func rendered() async {
+        let frames = DisplayFrames()
+        await withCheckedContinuation { continuation in
+            frames.continuation = continuation
+            let link = CADisplayLink(target: frames, selector: #selector(tick))
+            link.add(to: .main, forMode: .common)
+        }
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        remaining -= 1
+        guard remaining == 0 else { return }
+        link.invalidate()
+        continuation?.resume()
+        continuation = nil
     }
 }
 

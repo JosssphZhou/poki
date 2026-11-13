@@ -150,13 +150,15 @@ final class FakeCompletions: @unchecked Sendable {
     private let queue = DispatchQueue(label: "fake-completions")
     private let lock = NSLock()
     private var replies: [String]
+    private let reply: (([String: Any]) -> String)?
     private var bodies: [[String: Any]] = []
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
     var requests: [[String: Any]] { lock.withLock { bodies } }
 
-    init(replies: [String]) throws {
+    init(replies: [String], reply: (([String: Any]) -> String)? = nil) throws {
         self.replies = replies
+        self.reply = reply
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -196,7 +198,10 @@ final class FakeCompletions: @unchecked Sendable {
 
     private func answer(_ connection: NWConnection, _ body: Data) {
         let events = lock.withLock { () -> String in
-            if let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] { bodies.append(json) }
+            if let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] {
+                bodies.append(json)
+                if let reply { return reply(json) }
+            }
             return replies.isEmpty ? Self.text("No more scripted turns.") : replies.removeFirst()
         }
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
