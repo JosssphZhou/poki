@@ -8,9 +8,9 @@ import simd
 enum BearAct: Equatable {
     /// Standing by itself, looking about and doing its small things.
     case ready
-    /// A paw up by its chin, its head tilted, looking up.
+    /// A paw up at its chin, its head tilted, looking up.
     case thinking
-    /// Its head down over its paws, which tap away under its chin.
+    /// Its head down over its paws, which tap away.
     case working
     /// A paw up, asking for an Allow.
     case asking
@@ -24,7 +24,7 @@ enum BearAct: Equatable {
     case paused
     /// Poki cannot reach the phone: a paw up at the side of its head, rubbing it, looking up, puzzled.
     case lost
-    /// A paw up beside its ear, its head tilted away from it, nodding now and then.
+    /// A paw at its ear, its head tilted, nodding now and then.
     case listening
     /// Its mouth moving as it talks.
     case speaking
@@ -66,8 +66,7 @@ enum BearStance {
         case .thinking:
             p.headPitch = -0.08; p.headRoll = 0.1
             p.gaze = [0.005, 0.007]
-            // The paw comes in toward the chin as far as it stays in front of the cheek.
-            p.raise = 0.55; p.bend = 0.3; p.reach = 0.6
+            p.raise = 0.6; p.bend = 1; p.reach = 1
         case .working:
             p.headPitch = 0.14
             p.gaze = [0, -0.006]
@@ -88,16 +87,14 @@ enum BearStance {
             p.gaze = [-0.004, 0.008]
             p.raise = 0.95; p.bend = 0.7
         case .listening:
-            // Tilted toward the paw, the head came down on it.
-            p.headRoll = 0.08
+            p.headRoll = -0.12
             p.gaze = [-0.004, 0.002]
-            p.raise = 0.9; p.reach = 0.3
+            p.raise = 0.85; p.bend = 0.35
         case .speaking:
             p.headPitch = -0.05
             p.mouth = 1
         case .hello:
-            // Reaching in a little, the waving paw stays inside the picture's side all the way up.
-            p.raise = 1; p.reach = 0.3
+            p.raise = 1
             p.mouth = 1
             p.sparkles = 1
         }
