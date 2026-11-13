@@ -253,7 +253,7 @@ fn classify(e: &anyhow::Error) -> (&'static str, i32) {
         Some(poki_setup_core::Error::CertificateLimit(_)) => ("certificate_limit", EXIT_PERSON),
         Some(poki_setup_core::Error::Apple { .. }) => ("apple", EXIT_FAILED),
         Some(poki_setup_core::Error::Device(_)) => ("device", EXIT_FAILED),
-        Some(poki_setup_core::Error::Http(_)) => ("network", EXIT_FAILED),
+        Some(poki_setup_core::Error::Http(_) | poki_setup_core::Error::GitHubUnreachable) => ("network", EXIT_FAILED),
         Some(poki_setup_core::Error::Sign(_)) => ("sign", EXIT_FAILED),
         _ => ("error", EXIT_FAILED),
     }

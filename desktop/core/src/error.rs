@@ -31,6 +31,13 @@ pub enum Error {
     Plist(#[from] plist::Error),
     #[error("JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// GitHub turned the request for Poki's releases away with 403 or 429, each try: this network
+    /// has used up the hour's requests GitHub allows without a sign-in.
+    #[error("GitHub is limiting requests from this network, so Poki's releases could not be read. Switch to another network or proxy node and try again, or try again in an hour.")]
+    GitHubRateLimited,
+    /// GitHub gave no answer to the request for Poki's releases, each try.
+    #[error("Could not reach GitHub to read Poki's releases. Check the connection and try again.")]
+    GitHubUnreachable,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -59,6 +66,8 @@ impl Error {
             Error::Http(_) => "http",
             Error::Plist(_) => "plist",
             Error::Json(_) => "json",
+            Error::GitHubRateLimited => "github_rate_limited",
+            Error::GitHubUnreachable => "github_unreachable",
         }
     }
 }
