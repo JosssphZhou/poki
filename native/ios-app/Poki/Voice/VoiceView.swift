@@ -21,31 +21,34 @@ struct VoiceView: View {
 
     private var form: some View {
         @Bindable var voice = voice
-        return Form {
-                // Voice runs in the chat (the waveform button for a live conversation, the microphone
+        return List {
+                // Voice runs on the message field (the black button: Talk with Poki for a live conversation, Dictate
                 // for dictation). This page only says how it runs and keeps its options.
-                Section {
-                    LabeledContent("Live Voice") {
-                        Text(voice.canTalkLive ? (VoiceDirect.apiKey != nil ? String(localized: "OpenAI key") : String(localized: "Voice bridge")) : String(localized: "Not Available"))
-                            .foregroundStyle(voice.canTalkLive ? Color.secondary : Color.orange)
+                PaperSection {
+                    LabeledContent("Live voice") {
+                        Text(voice.canTalkLive ? (VoiceDirect.apiKey != nil ? String(localized: "OpenAI key") : String(localized: "Voice bridge")) : String(localized: "Not available"))
+                            .foregroundStyle(voice.canTalkLive ? Paper.ink2 : Paper.ink)
                     }
                     LabeledContent("Dictation", value: String(localized: "On this iPhone"))
-                    Toggle("Mute Poki’s Voice", isOn: $voice.muted)
+                    Toggle("Mute Poki’s voice", isOn: $voice.muted)
                 } footer: {
-                    if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(.orange) }
+                    if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(Paper.ink) }
                     else if voice.canTalkLive {
-                        Text("In the chat, the waveform button starts a live conversation: Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. The microphone in the message field only dictates.")
+                        Text("Talk with Poki, behind the black button on the message field, is a live conversation: Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. Dictate only turns your words into text.")
                     } else {
                         Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Poki › Model. Dictation in the message field works with every model.")
                     }
                 }
                 if voice.lastTurnMS != nil || voice.bridge != nil || VoiceDirect.apiKey == nil {
-                    DisclosureGroup("Advanced") {
-                        if let ms = voice.lastTurnMS { LabeledContent("Last Answer", value: "\(ms) ms") }
+                    PaperSection {
+                        if let ms = voice.lastTurnMS { LabeledContent("Last answer", value: "\(ms) ms") }
                         bridgeRows
+                    } header: {
+                        Text("Advanced")
                     }
                 }
             }
+            .paperList()
             .navigationTitle("Voice")
             .navigationBarTitleDisplayMode(.inline)
     }
@@ -54,16 +57,16 @@ struct VoiceView: View {
 
     @ViewBuilder private var bridgeRows: some View {
         if let bridge = voice.bridge, !editingBridge {
-            LabeledContent("Mac Voice Bridge") { Text(bridge.display).font(.footnote.monospaced()) }
-            Button("Change Address") { bridgeText = bridge.base.absoluteString; bridgeRejected = false; editingBridge = true }
+            LabeledContent("Mac voice bridge") { Text(bridge.display).font(.footnote.monospaced()) }
+            Button("Change address") { bridgeText = bridge.base.absoluteString; bridgeRejected = false; editingBridge = true }
         } else {
             TextField("Mac voice bridge address", text: $bridgeText)
                 .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                 .font(.body.monospaced())
                 .onSubmit(saveBridge)
-            Button("Save Address", action: saveBridge).disabled(bridgeText.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Save address", action: saveBridge).disabled(bridgeText.trimmingCharacters(in: .whitespaces).isEmpty)
             Text(bridgeRejected ? "That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code." : "Optional, for live voice without an OpenAI key on this iPhone: run bin/voice-bridge.mjs on your Mac and enter the address it gives.")
-                .font(.footnote).foregroundStyle(bridgeRejected ? Color.orange : Color.secondary)
+                .font(.footnote).foregroundStyle(bridgeRejected ? Paper.ink : Paper.ink2)
         }
     }
 

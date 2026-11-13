@@ -681,23 +681,6 @@
         }
       }
     },
-    "Add Account" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加账户"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增賬戶"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Add Agent" : {
       "localizations" : {
         "zh-Hans" : {
@@ -779,6 +762,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Add an account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加账户"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新增賬戶"
+          }
+        }
+      }
     },
     "Add it to the [general] section of your Quantumult X profile and save." : {
       "localizations" : {
@@ -1959,23 +1958,6 @@
         }
       }
     },
-    "Change Address" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更改地址"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更改地址"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Change address" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2009,7 +1991,7 @@
       },
       "extractionState" : "manual"
     },
-    "Chat Model" : {
+    "Chat model" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2732,7 +2714,7 @@
       },
       "extractionState" : "manual"
     },
-    "Delete Account" : {
+    "Delete account" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3142,7 +3124,7 @@
         }
       }
     },
-    "Edit Address and Key" : {
+    "Edit address and key" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4076,17 +4058,17 @@
         }
       }
     },
-    "In Use" : {
+    "In use" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "使用中"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "使用中"
           }
         }
@@ -4554,23 +4536,6 @@
       },
       "extractionState" : "manual"
     },
-    "Last Answer" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次回答"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "上次回答"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Last Run" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4586,6 +4551,23 @@
           }
         }
       }
+    },
+    "Last answer" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次回答"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Last answer %lld ms after you stopped" : {
       "localizations" : {
@@ -4815,22 +4797,21 @@
         }
       }
     },
-    "Live Voice" : {
+    "Live voice" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "实时语音"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "實時語音"
+            "state" : "needs_review",
+            "value" : "即時語音"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account." : {
       "localizations" : {
@@ -5077,22 +5058,21 @@
       },
       "extractionState" : "manual"
     },
-    "Mac Voice Bridge" : {
+    "Mac voice bridge" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Mac 语音桥接"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "Mac 語音橋接"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Mac voice bridge address" : {
       "localizations" : {
@@ -5194,7 +5174,7 @@
       },
       "extractionState" : "manual"
     },
-    "Models to Choose From" : {
+    "Models to choose from" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -5276,23 +5256,6 @@
           }
         }
       }
-    },
-    "Mute Poki’s Voice" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将 Poki 的语音静音"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將 Poki 的語音靜音"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "Mute Poki’s voice" : {
       "localizations" : {
@@ -5520,23 +5483,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下一步"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "No Account" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无账户"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無賬戶"
           }
         }
       },
@@ -5825,23 +5771,6 @@
       },
       "extractionState" : "manual"
     },
-    "Not Available" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可用"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Not Found" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5890,23 +5819,6 @@
           }
         }
       }
-    },
-    "Not Supported" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "Not Used Yet" : {
       "localizations" : {
@@ -5958,6 +5870,22 @@
       },
       "extractionState" : "manual"
     },
+    "Not available" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法使用"
+          }
+        }
+      }
+    },
     "Not finished" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5974,23 +5902,6 @@
         }
       }
     },
-    "Not in use" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未使用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未使用"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Not on yet" : {
       "localizations" : {
         "zh-Hans" : {
@@ -6003,6 +5914,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未開啟"
+          }
+        }
+      }
+    },
+    "Not set" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未設定"
           }
         }
       }
@@ -6040,6 +5967,23 @@
           }
         }
       }
+    },
+    "Not supported" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支持"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不支援"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Notes" : {
       "localizations" : {
@@ -6220,23 +6164,6 @@
           }
         }
       }
-    },
-    "On This iPhone" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此 iPhone 上"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此 iPhone 上"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "On it. Opening Messages." : {
       "localizations" : {
@@ -6652,23 +6579,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 Stash。如果其 TUN 或覆寫設定中有迴環或 10.7.0.1 選項，請開啟。"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Open an account to choose what it is used for. Dictation in the message field needs no account." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开一个账户以选择它的用途。信息栏里的听写不需要账户。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟一個賬戶以選擇它的用途。資訊欄裡的聽寫不需要賬戶。"
           }
         }
       },
@@ -8522,23 +8432,6 @@
         }
       }
     },
-    "Reading the Model List…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在读取模型列表…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在讀取模型列表…"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Reading the iOS version" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8551,6 +8444,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在讀取 iOS 版本"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Reading the model list…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在读取模型列表…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在讀取模型列表…"
           }
         }
       },
@@ -8724,23 +8634,6 @@
         }
       }
     },
-    "Refresh Model List" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刷新模型列表"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新整理模型列表"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Refresh Ready" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8758,7 +8651,24 @@
       },
       "extractionState" : "manual"
     },
-    "Refresh the model list under Text Chat to add the other Realtime models your key can use." : {
+    "Refresh model list" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新模型列表"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新整理模型列表"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Refresh the model list under Text chat to add the other Realtime models your key can use." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8906,7 +8816,7 @@
         }
       }
     },
-    "Remove Key" : {
+    "Remove key" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9023,7 +8933,7 @@
       },
       "extractionState" : "manual"
     },
-    "Replace Key" : {
+    "Replace key" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9268,23 +9178,6 @@
           }
         }
       }
-    },
-    "Save Address" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "存储地址"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "儲存地址"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "Save address" : {
       "localizations" : {
@@ -9664,23 +9557,6 @@
         }
       }
     },
-    "Sign In Again" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新登录"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新登入"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Sign In to Download the Update" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9730,6 +9606,23 @@
         }
       }
     },
+    "Sign in again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新登入"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
     "Sign in to ChatGPT again: tap my picture, then Model." : {
       "localizations" : {
         "zh-Hans" : {
@@ -9778,6 +9671,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Sign out" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出登入"
+          }
+        }
+      }
     },
     "Sign-in code %@" : {
       "localizations" : {
@@ -10515,6 +10424,22 @@
         }
       }
     },
+    "Talking with Poki needs an OpenAI key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "与 Poki 对话需要 OpenAI 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "與 Poki 對話需要 OpenAI 金鑰"
+          }
+        }
+      }
+    },
     "Talking with Poki needs an OpenAI key (tap here for Model) or the voice bridge. Dictate works with any model." : {
       "localizations" : {
         "zh-Hans" : {
@@ -10797,23 +10722,6 @@
       },
       "extractionState" : "manual"
     },
-    "Text Chat" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字聊天"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字聊天"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Text Mom\nI’m on my way…" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10862,6 +10770,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Text chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "文字聊天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "文字聊天"
+          }
+        }
+      }
     },
     "Text chat works with every account. Live voice needs an OpenAI API key." : {
       "localizations" : {
@@ -12342,23 +12266,6 @@
         }
       }
     },
-    "Use This Account For" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将此账户用于"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將此賬戶用於"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Use Your Proxy App" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12392,7 +12299,7 @@
         }
       }
     },
-    "Use for Live Voice" : {
+    "Use for live voice" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -12409,7 +12316,7 @@
       },
       "extractionState" : "manual"
     },
-    "Use for Text Chat" : {
+    "Use for text chat" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -12441,6 +12348,23 @@
           }
         }
       }
+    },
+    "Use this account for" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将此账户用于"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將此賬戶用於"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Used your iPhone" : {
       "localizations" : {
@@ -12573,40 +12497,6 @@
         }
       }
     },
-    "Voice Model" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "语音模型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "語音模型"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Voice Models to Choose From" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可选语音模型"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可選語音模型"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Voice and Speech" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12651,6 +12541,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "語音聊天"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Voice model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音模型"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Voice models to choose from" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选语音模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可選語音模型"
           }
         }
       },
