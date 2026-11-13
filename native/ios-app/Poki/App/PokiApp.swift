@@ -44,6 +44,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Everything pushed over the front: a chat, an agent's session, Settings and its pages.
     @State private var home = NavigationPath()
+    /// The first run's pages, until the owner has been through them once.
+    @State private var welcoming = false
     /// Settings › Appearance: light, dark, or the iPhone's own when nothing is chosen.
     @AppStorage(PokiLight.schemeKey) private var scheme = ""
     @AppStorage(PokiLight.key) private var light = PokiLight.firstLight.rawValue
@@ -94,7 +96,7 @@ struct RootView: View {
                     chatsPage(newChat: { withAnimation(.snappy) { frontPage = .newChat } })
                 }
                 .toolbar(.hidden, for: .navigationBar)
-                .modifier(FrontDestinations(page: { AnyView(page($0)) }, home: $home, openRun: openRun))
+                .modifier(FrontDestinations(page: { AnyView(page($0)) }, home: $home, setUpAgain: { welcoming = true }, openRun: openRun))
             }
         } else {
             NavigationSplitView(columnVisibility: $columns) {
@@ -105,7 +107,7 @@ struct RootView: View {
                 NavigationStack(path: $home) {
                     newChatPage(openChats: { withAnimation { columns = columns == .all ? .detailOnly : .all } }, symbol: "sidebar.left", paged: false)
                         .toolbar(.hidden, for: .navigationBar)
-                        .modifier(FrontDestinations(page: { AnyView(page($0)) }, home: $home, openRun: openRun))
+                        .modifier(FrontDestinations(page: { AnyView(page($0)) }, home: $home, setUpAgain: { welcoming = true }, openRun: openRun))
                 }
             }
             .navigationSplitViewStyle(.balanced)
@@ -121,6 +123,7 @@ struct RootView: View {
 
     var body: some View {
         front
+        .fullScreenCover(isPresented: $welcoming) { FirstRun(done: { welcoming = false }) }
         .preferredColorScheme(scheme == "dark" ? .dark : scheme == "light" ? .light : nil)
         // The Live Activity draws Poki's light too, and reads the choice from the App Group.
         .onChange(of: light, initial: true) { _, now in SharedContainer.defaults.set(now, forKey: PokiLight.key) }
@@ -163,6 +166,9 @@ struct RootView: View {
             AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
             // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
             guard !model.pairingUnderWay else { return }
+            // A link is the owner going somewhere (a pairing file from Poki Setup, a tap on the Live
+            // Activity): the first run steps aside, so what the link opens is not under it.
+            welcoming = false
             // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
             // setup at that step, where the result is shown.
             if let step = model.open(link: url) {
@@ -230,6 +236,8 @@ struct RootView: View {
         // A sample conversation (`-pokiChat working`) opens in the chat itself.
         if defaults.string(forKey: "pokiChat") != nil { show(HomeRoute.chat) }
         let screen = defaults.string(forKey: "pokiScreen")
+        // The first run, once, for a phone that is not set up yet. Not over a screenshot's screen.
+        if screen == "welcome" || (screen == nil && FirstRun.isDue(setUp: model.setupLooksComplete)) { welcoming = true }
         switch screen {
         case "chat", "voice": show(HomeRoute.chat)
         case "session": if let first = SessionStore.shared.ordered.first(where: { $0.kind == .agent || $0.kind == .handoff }) { show(HomeRoute.session(first.id)) }
@@ -261,6 +269,7 @@ struct RootView: View {
 private struct FrontDestinations: ViewModifier {
     var page: (RootView.HomeRoute) -> AnyView
     @Binding var home: NavigationPath
+    var setUpAgain: () -> Void
     var openRun: (String) -> Void
 
     func body(content: Content) -> some View {
@@ -270,7 +279,7 @@ private struct FrontDestinations: ViewModifier {
             .navigationDestination(for: FrontRoute.self) { route in
                 switch route {
                 case .settings: FrontSettings()
-                case .connection: ConnectionPage()
+                case .connection: ConnectionPage(setUpAgain: setUpAgain)
                 case .agents: AgentsList(push: { home.append($0) }).paperPage()
                 case .appearance: AppearancePage()
                 case .signing: SigningPage()

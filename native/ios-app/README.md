@@ -25,7 +25,7 @@ the in-process path. Changing paths takes effect on the next app launch.
 | Path | What |
 |---|---|
 | `Poki/App` | App entry (Chat and Voice pages), status words and issues, all steps, the app model (on/off, runner sleep and wake, events, approvals, pairing, setup steps) |
-| `Poki/Front` | The front: the New chat and Chats pages, Settings and its Connection and Appearance pages, the paper colours and row styles every page uses |
+| `Poki/Front` | The front: the first run, the New chat and Chats pages, Settings and its Connection and Appearance pages, the paper colours and row styles every page uses |
 | `Poki/BearPoses` | Poki’s poses, one picture each (`scripts/make-assets.sh` puts them in the asset catalogs) |
 | `Poki/Setup` | The setup items’ own pages, each with its live check |
 | `Poki/Loopback` | Local VPN configuration and status, live developer-service checks, external VPN choices |
@@ -56,7 +56,7 @@ open native/ios-app/Poki.xcodeproj
 
 `native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
 
-`-pokiScreen chat|chats|setup|connect|settings|appearance|debug|activity|steps|connector|model|voice` opens that screen at launch (chat is Poki's chat, chats the list of chats, setup Settings › Connection, connect Settings › Agents, appearance Poki's light, debug Diagnostics, activity the Live Activity's samples, steps the Activity Log, model the accounts); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
+`-pokiScreen chat|chats|setup|connect|settings|appearance|welcome|debug|activity|steps|connector|model|voice` opens that screen at launch (chat is Poki's chat, chats the list of chats, setup Settings › Connection, connect Settings › Agents, appearance Poki's light, welcome the first run, debug Diagnostics, activity the Live Activity's samples, steps the Activity Log, model the accounts); `-pokiWelcomed YES` skips the first run on a simulator that is not set up; `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
 
 Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
@@ -257,7 +257,7 @@ signs the app, so the owner is not sent through setup again.
 
 Install and launch
 - [ ] Install `Poki-unsigned.ipa`. Runner path only: also install the runner IPA with the same signing, and open Poki Runner by hand: no passcode prompt, no automation banner; it opens Poki (or shows Open Poki).
-- [ ] Launch Poki: the gear on the chats page has a dot while a step is left, and Settings › Connection lists the steps left, with no Install Poki Runner step.
+- [ ] Launch Poki: the first run opens, and its “Let me use this iPhone” page lists the steps left, with no Install Poki Runner step. Afterwards the gear on the chats page has a dot while a step is left.
 
 Setup
 - [ ] Each step opens in turn; Open Settings starts a Live Activity with the step number and what to tap.

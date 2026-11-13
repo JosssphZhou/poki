@@ -129,6 +129,22 @@
         }
       }
     },
+    "%@ things to switch on, once. I check each one as you go." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "有%@项需要打开，只需一次。你每完成一项，我就检查一项。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "有%@項需要打開，只需一次。你每完成一項，我就檢查一項。"
+          }
+        }
+      }
+    },
     "%@%@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1347,6 +1363,22 @@
         }
       }
     },
+    "Allow microphone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "允许使用麦克风"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "允許使用麥克風"
+          }
+        }
+      }
+    },
     "Allow this step?" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1489,6 +1521,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "即將就緒"
+          }
+        }
+      }
+    },
+    "Almost there" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "就快好了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "就快好了"
           }
         }
       }
@@ -2298,6 +2346,22 @@
         }
       }
     },
+    "Choose what I think with" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选择我用来思考的模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選擇我用來思考的模型"
+          }
+        }
+      }
+    },
     "Choosing the team" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2608,6 +2672,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Continue with step %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "继续第 %lld 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "繼續第 %lld 步"
+          }
+        }
+      }
     },
     "Conversation" : {
       "localizations" : {
@@ -3899,6 +3979,22 @@
         }
       }
     },
+    "Get started" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "开始使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "開始使用"
+          }
+        }
+      }
+    },
     "Gives Poki its own key to this iPhone. The key stays on this device." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4046,6 +4142,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Hi, I’m Poki." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你好，我是 Poki。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你好，我是 Poki。"
+          }
+        }
+      }
     },
     "Hi, I’m Poki. Tell me what to do on this iPhone." : {
       "localizations" : {
@@ -4221,6 +4333,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已執行 %lld 步並暫停。請指示下一步操作。"
+          }
+        }
+      }
+    },
+    "I use your iPhone for you. Write to me or just talk, then watch me do it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "我替你操作你的 iPhone。给我发消息或直接说话，然后看我去做。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "我替你操作你的 iPhone。傳訊息給我或直接說話，然後看我去做。"
           }
         }
       }
@@ -4552,6 +4680,22 @@
         }
       }
     },
+    "It is the one colour in the app. You can change it later in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "这是 App 里唯一的颜色。之后可以在设置中更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "這是 App 裡唯一的顏色。之後可以在設定中更改。"
+          }
+        }
+      }
+    },
     "It starts when an agent asks." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4598,6 +4742,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行不可撤銷的操作前，我會先向你確認。"
+          }
+        }
+      }
+    },
+    "I’m ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "我准备好了"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "我準備好了"
           }
         }
       }
@@ -4876,6 +5036,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上一步"
+          }
+        }
+      }
+    },
+    "Let me use this iPhone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "让我使用这台 iPhone"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "讓我使用這台 iPhone"
           }
         }
       }
@@ -6136,6 +6312,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未找到"
+          }
+        }
+      }
+    },
+    "Not now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "以后再说"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "稍後再說"
           }
         }
       }
@@ -7602,6 +7794,22 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "照片"
+          }
+        }
+      }
+    },
+    "Pick my light" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "选一种我的光"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選一種我的光"
           }
         }
       }
@@ -9751,6 +9959,22 @@
       },
       "extractionState" : "manual"
     },
+    "Set up again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重新配置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重新配置"
+          }
+        }
+      }
+    },
     "Set your relay address first. Each agent gets its own MCP address on it." : {
       "localizations" : {
         "zh-Hans" : {
@@ -10012,6 +10236,22 @@
       },
       "extractionState" : "manual"
     },
+    "Sign in or add a key. You can switch later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "登录或添加密钥。之后可以更换。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "登入或加入金鑰。之後可以更換。"
+          }
+        }
+      }
+    },
     "Sign in to ChatGPT again: open Settings, then Model." : {
       "localizations" : {
         "zh-Hans" : {
@@ -10077,6 +10317,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Sign in with your account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "用你的账户登录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用你的賬戶登入"
+          }
+        }
+      }
     },
     "Sign out" : {
       "localizations" : {
@@ -10357,6 +10613,22 @@
       },
       "extractionState" : "manual"
     },
+    "Start" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "开始"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "開始"
+          }
+        }
+      }
+    },
     "Start Now" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10451,6 +10723,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "狀態"
+          }
+        }
+      }
+    },
+    "Step %lld of %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "第 %1$lld 步，共 %2$lld 步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "第 %1$lld 步，共 %2$lld 步"
           }
         }
       }
@@ -10760,6 +11048,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "與 Poki 語音對話"
+          }
+        }
+      }
+    },
+    "Talk to me" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "和我说话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "和我說話"
           }
         }
       }
@@ -12076,6 +12380,22 @@
         }
       }
     },
+    "To do" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "待完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "待完成"
+          }
+        }
+      }
+    },
     "Today" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12120,6 +12440,22 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "再試一次"
+          }
+        }
+      }
+    },
+    "Try “Reorder my usual lunch”, or tap the black button and say it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "试试“再点一份我常吃的午餐”，或者轻点黑色按钮直接说。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "試試「再點一份我常吃的午餐」，或者點一下黑色按鈕直接說。"
           }
         }
       }
@@ -13237,6 +13573,38 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "你在 %@ 允許了這一步"
+          }
+        }
+      }
+    },
+    "You can look around now. I can use this iPhone once setup is finished, in Settings › Connection." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "现在可以先随便看看。在“设置 › 连接”中完成配置后，我就能使用这台 iPhone。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "現在可以先隨便看看。在「設定 › 連線」中完成配置後，我就能使用這台 iPhone。"
+          }
+        }
+      }
+    },
+    "You can talk to me instead of typing. I need the microphone for that." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你可以直接对我说话，不必打字。这需要使用麦克风。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你可以直接對我說話，不必打字。這需要使用麥克風。"
           }
         }
       }

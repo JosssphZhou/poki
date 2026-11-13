@@ -108,10 +108,11 @@ private struct StatusCard: View {
 }
 
 /// Settings › Connection: Poki on or off, everything it needs on this iPhone (the app's own setup items,
-/// each opening its own page), signing and the advanced pages.
+/// each opening its own page), signing, the advanced pages, and the first run again.
 struct ConnectionPage: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
+    var setUpAgain: () -> Void
 
     /// Each item as a state the phone is in, not a thing to do: "Paired with Poki", "Poki keeps running".
     private static func name(_ step: SetupStep) -> String {
@@ -178,6 +179,7 @@ struct ConnectionPage: View {
                 PaperRows {
                     NavigationLink(value: FrontRoute.signing) { PaperRow(String(localized: "Signing and updates"), value: signingLine) }
                     NavigationLink(value: SetupRoute.advanced) { PaperRow(String(localized: "Advanced")) }
+                    Button(action: setUpAgain) { PaperRow(String(localized: "Set up again")) }
                 }
                 .buttonStyle(.plain)
             }

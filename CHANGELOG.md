@@ -13,6 +13,7 @@ Build numbers are the GitHub Actions run number of the release workflow.
 - During a talk with Poki, the Live Activity shows the open microphone and a button that ends the talk.
 - Pictures in a message: the plus on the message field takes up to four from Photos or Files.
 - Settings › Appearance: Poki’s light (five to choose from) and Light or Dark.
+- A first run: Poki says what it is, you pick its light, and it walks you through this iPhone, a model and the microphone. Each step can wait.
 
 ### Changed
 - A new app icon: Poki on the front page’s sky.
