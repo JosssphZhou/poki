@@ -40,7 +40,7 @@ final class UnresponsiveAppTests: XCTestCase {
 
     func testSensitiveStepsStillAskAndDenialSendsNothingAfterRecovery() async throws {
         for label in ["Send", "Pay", "Delete"] {
-            try await runScenario(name: "deny-\(label.lowercased())", delay: 2, label: label)
+            try await runScenario(name: "deny-\(label.lowercased())", delay: 8, label: label)
         }
     }
 
