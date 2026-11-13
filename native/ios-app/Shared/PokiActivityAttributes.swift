@@ -121,18 +121,28 @@ struct PendingApproval: Codable, Hashable {
     /// the notification. It comes from the kind the rules saw in PokiCore's reason, never from the
     /// agent's words ("Allow payment?").
     var question: String {
-        // Several sensitive actions in one batch: the first one's kind, as PokiCore asks from it.
-        var reason = self.reason
-        if let first = reason.range(of: #"^multiple sensitive actions: action \d+: "#, options: .regularExpression) {
-            reason = String(reason[first.upperBound...])
+        let kinds: [(prefix: String, question: String, name: String)] = [
+            ("a payment", String(activity: "Allow payment?"), String(activity: "payment")),
+            ("deleting", String(activity: "Allow deletion?"), String(activity: "deletion")),
+            ("sending", String(activity: "Allow sending a message?"), String(activity: "sending a message").localizedLowercase),
+            ("a call", String(activity: "Allow a call?"), String(activity: "a call")),
+            ("typing into a password", String(activity: "Allow typing a password?"), String(activity: "typing a password")),
+            ("input in", String(activity: "Allow a step in a protected app?"), String(activity: "a step in a protected app")),
+        ]
+        let reasons = reason.hasPrefix("multiple sensitive actions: ")
+            ? reason.replacingOccurrences(of: #"^(multiple sensitive actions: )?action \d+: |; action \d+: "#,
+                                          with: "\n", options: .regularExpression).split(separator: "\n").map(String.init)
+            : [reason]
+        var selected: [Int] = []
+        for reason in reasons {
+            let kind = kinds.firstIndex { reason.hasPrefix($0.prefix) } ?? kinds.count
+            if !selected.contains(kind) { selected.append(kind) }
         }
-        if reason.hasPrefix("a payment") { return String(activity: "Allow payment?") }
-        if reason.hasPrefix("deleting") { return String(activity: "Allow deletion?") }
-        if reason.hasPrefix("sending") { return String(activity: "Allow sending a message?") }
-        if reason.hasPrefix("a call") { return String(activity: "Allow a call?") }
-        if reason.hasPrefix("typing into a password") { return String(activity: "Allow typing a password?") }
-        if reason.hasPrefix("input in") { return String(activity: "Allow a step in a protected app?") }
-        return String(activity: "Allow this step?")
+        guard selected.count > 1 else {
+            return selected.first.flatMap { $0 < kinds.count ? kinds[$0].question : nil } ?? String(activity: "Allow this step?")
+        }
+        let names = selected.map { $0 < kinds.count ? kinds[$0].name : String(activity: "other steps") }
+        return String(activity: "Allow \(names.formatted(.list(type: .and)))?")
     }
 }
 

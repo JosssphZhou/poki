@@ -187,6 +187,57 @@ final class ApprovalTests: XCTestCase {
 
     }
 
+    func testMixedBatchCannotUseASingleCategoryGrantAndDenialSendsNothing() async throws {
+        let wda = FakeWDA()
+        wda.source([("Button", "Send"), ("Button", "Pay")], app: "Messages")
+        wda.set("GET /wda/activeAppInfo") { _ in
+            (200, ["value": ["bundleId": "com.apple.MobileSMS", "name": "Messages"]])
+        }
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+        _ = await core.call("do", ["actions": [["key": "return"]]])
+        let single = try XCTUnwrap(core.pendingApproval)
+        XCTAssertTrue(single.reason.hasPrefix("sending a message (return in "), single.reason)
+        core.resolveApproval(id: single.id, approved: true)
+
+        let mixed = await core.call("do", ["actions": [["tap": 2], ["key": "return"]]])
+        XCTAssertTrue(mixed.text.contains("approval_required"), mixed.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "Approving Send cannot also approve Pay")
+        XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty)
+        let pending = try XCTUnwrap(core.pendingApproval)
+        XCTAssertTrue(pending.reason.contains("action 1: a payment"), pending.reason)
+        XCTAssertTrue(pending.reason.contains("action 2: sending a message"), pending.reason)
+        core.resolveApproval(id: pending.id, approved: false)
+
+        let sent = await core.call("do", ["actions": [["key": "return"]]])
+        XCTAssertFalse(sent.isError, sent.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+        let pay = await core.call("do", ["actions": [["tap": 2]]])
+        XCTAssertTrue(pay.text.contains("approval_required"), pay.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, "Only the separately approved Send ran")
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+
+        for allowed in [false, true] {
+            let (batchCore, _, _) = makeCore(wda) { $0.approvalWait = 2 }
+            _ = await batchCore.call("look", [:])
+            let before = wda.bodies("POST /wda/tap").count + wda.bodies("POST /wda/keys").count
+            let decision = Task {
+                for await event in batchCore.events {
+                    if case .approvalRequested(let approval) = event {
+                        batchCore.resolveApproval(id: approval.id, approved: allowed)
+                        return
+                    }
+                }
+            }
+            let result = await batchCore.call("do", ["actions": [["tap": 2], ["key": "return"]]])
+            decision.cancel()
+            XCTAssertEqual(result.isError, !allowed, result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count + wda.bodies("POST /wda/keys").count - before, allowed ? 2 : 0,
+                           "A declined batch must send neither action; approving both permits both")
+        }
+    }
+
     /// "Payments, deletions and actions in Wallet always need your confirmation", whatever action the
     /// agent picks to touch the button: every kind of action is aimed at Pay and at Delete, with the
     /// rules for messages, calls and passwords off, and no touch may go down and lift on either before the owner
