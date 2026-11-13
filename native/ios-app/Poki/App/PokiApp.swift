@@ -279,8 +279,9 @@ struct RootView: View {
             }
         }
         .task(id: interfaceSize) {
-            // Defer the trait change past startup layout, and coalesce closely spaced commits.
-            try? await Task.sleep(for: .milliseconds(250))
+            // Apply outside the current layout pass. Coalesce events within roughly one frame,
+            // while the preview and the rest of the window inherit the same native category.
+            try? await Task.sleep(for: .milliseconds(16))
             guard !Task.isCancelled else { return }
             for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
                 for window in scene.windows { AppInterfaceSize.apply(interfaceSize, to: window) }

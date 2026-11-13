@@ -57,8 +57,6 @@ struct InterfaceSizeSettingsView: View {
     @AppStorage(AppInterfaceSize.defaultsKey) private var preference = AppInterfaceSize.system
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pendingIndex: Int?
-    @State private var dragging = false
     @State private var toggleHeight: CGFloat = 52
     @State private var previewTitleHeight: CGFloat = 18
 
@@ -93,7 +91,6 @@ struct InterfaceSizeSettingsView: View {
                             .padding(.horizontal, 20)
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { previewTitleHeight = $0 }
                         InterfaceSizePreview()
-                            .dynamicTypeSize(previewSize)
                             .frame(height: max(520, geometry.size.height - reservedHeight))
                     }
                 }
@@ -110,14 +107,6 @@ struct InterfaceSizeSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var previewSize: DynamicTypeSize {
-        // The window applies the saved preference asynchronously. Keep showing the selected
-        // size after the drag ends, even while the window still reports its previous category.
-        let category = pendingIndex.map { AppInterfaceSize.categories[$0] }
-            ?? AppInterfaceSize.category(for: preference)
-        return category.flatMap { DynamicTypeSize($0) } ?? typeSize
-    }
-
     @ViewBuilder private var controls: some View {
         Toggle("Follow System", isOn: Binding(
             get: { followsSystem },
@@ -132,13 +121,12 @@ struct InterfaceSizeSettingsView: View {
         VStack(spacing: 0) {
             Divider()
             Slider(value: Binding(
-                get: { Double(pendingIndex ?? index) },
+                get: { Double(index) },
                 set: { value in
                     let step = Int(value.rounded())
-                    if dragging {
-                        pendingIndex = step
-                    } else {
-                        preference = AppInterfaceSize.categories[step].rawValue
+                    let selected = AppInterfaceSize.categories[step].rawValue
+                    if preference != selected {
+                        preference = selected
                     }
                 }
             ), in: 0...Double(AppInterfaceSize.categories.count - 1), step: 1) {
@@ -147,16 +135,10 @@ struct InterfaceSizeSettingsView: View {
                 endpoint("Interface Size Minimum", size: 14)
             } maximumValueLabel: {
                 endpoint("Interface Size Maximum", size: 18)
-            } onEditingChanged: { editing in
-                dragging = editing
-                if !editing, let pendingIndex {
-                    preference = AppInterfaceSize.categories[pendingIndex].rawValue
-                    self.pendingIndex = nil
-                }
             }
-            .sensoryFeedback(.selection, trigger: pendingIndex ?? index)
+            .sensoryFeedback(.selection, trigger: index)
             .tint(Color(.secondaryLabel))
-            .accessibilityValue(Text("Size \((pendingIndex ?? index) + 1) of \(AppInterfaceSize.categories.count)"))
+            .accessibilityValue(Text("Size \(index + 1) of \(AppInterfaceSize.categories.count)"))
             .accessibilityIdentifier("interfaceSize.slider")
             .frame(maxHeight: .infinity)
         }
