@@ -57,7 +57,7 @@ final class UnresponsiveAppTests: XCTestCase {
                 return FakeCompletions.tool("report_plan", ["steps": ["Open the test app", label], "currentStep": 1, "title": "Test app response"])
             }
             if content == Harness.planPublished {
-                return FakeCompletions.tool("do", ["actions": [["launch": "com.example.slow-test"]]])
+                return FakeCompletions.tool("do", ["actions": [["launch": phone.bundleID]]])
             }
             if content.contains("did: launch"), content.contains("1 Button \"\(label)\"") {
                 return FakeCompletions.tool("do", ["actions": [["tap": 1]]])
@@ -95,6 +95,7 @@ final class UnresponsiveAppTests: XCTestCase {
         var record: TaskRecord?
         var progress: [Int] = []
         var approvals = 0
+        var denials = 0
         var captured = Set<Int>()
         ChatModel.afterTask = { result in
             record = result
@@ -112,13 +113,14 @@ final class UnresponsiveAppTests: XCTestCase {
                     XCTAssertTrue(app.activityText.contains("Waiting"))
                     await self.capture("\(name)-wait-\(seconds)")
                 }
-            case .approvalRequested(let approval):
+            case .approvalRequested:
                 approvals += 1
                 Task { @MainActor in
                     await Task.yield()
                     await self?.capture("\(name)-approval")
-                    app?.resolve(approval, approved: false)
                 }
+            case .approvalEnded(_, let approved):
+                if approved == false { denials += 1 }
             default: break
             }
         }
@@ -139,6 +141,7 @@ final class UnresponsiveAppTests: XCTestCase {
             XCTAssertEqual(phone.touches, 0)
         } else if sensitive {
             XCTAssertEqual(approvals, 1, "\(label) still needs the owner's approval")
+            XCTAssertEqual(denials, 1, "the owner declined using the displayed approval card")
             XCTAssertEqual(phone.touches, 0, "denial must keep \(label) from reaching the app")
         } else {
             XCTAssertEqual(result.result?.success, true)
@@ -201,6 +204,7 @@ private final class SilentAppServer: @unchecked Sendable {
     private let lock = NSLock()
     private let delay: Double?
     private let label: String
+    let bundleID: String
     private var launched: Date?
     private var firstRead: Double?
     private var touched = 0
@@ -220,6 +224,7 @@ private final class SilentAppServer: @unchecked Sendable {
     @MainActor init(delay: Double?, label: String) throws {
         self.delay = delay
         self.label = label
+        bundleID = label == "Send" ? "com.apple.MobileSMS" : "com.example.slow-test"
         png = UIGraphicsImageRenderer(size: CGSize(width: 390, height: 844)).image { context in
             UIColor.white.setFill(); context.fill(CGRect(x: 0, y: 0, width: 390, height: 844))
             ("Simulated app response" as NSString).draw(at: CGPoint(x: 30, y: 100), withAttributes: [.foregroundColor: UIColor.black])
@@ -249,9 +254,9 @@ private final class SilentAppServer: @unchecked Sendable {
             case "POST /appium/settings", "DELETE /session": return ok(.null)
             case "GET /wda/locked": return ok(false)
             case "GET /wda/screen": return ok(["screenSize": ["width": 390, "height": 844]])
-            case "GET /wda/activeAppInfo": return ok(["bundleId": "com.example.slow-test", "name": "Slow Test App"])
+            case "GET /wda/activeAppInfo": return ok(["bundleId": .string(bundleID), "name": "Slow Test App"])
             case "POST /wda/apps/activate", "POST /wda/apps/launch":
-                if request.body?["bundleId"]?.string == "com.example.slow-test", launched == nil { launched = Date() }
+                if request.body?["bundleId"]?.string == bundleID, launched == nil { launched = Date() }
                 return ok(.null)
             case "GET /source":
                 if let launched, firstRead == nil { firstRead = Date().timeIntervalSince(launched) }

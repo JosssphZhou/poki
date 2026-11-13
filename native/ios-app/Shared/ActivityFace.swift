@@ -272,7 +272,7 @@ extension PokiState {
                 kicker: total.map { String(activity: "Step \(step) of \($0)") } ?? String(activity: "Step \(step)"),
                 place: name,
                 meta: since.map { ActivityFace.Meta.elapsed($0) } ?? ActivityFace.Meta.none,
-                content: screenWaitSeconds.map { String(activity: "Waiting for the app to respond (\($0)s)") } ?? doing ?? StatusWord.running.text,
+                content: screenWaitSeconds.map { String(activity: "Waiting for app (\($0)s)") } ?? doing ?? StatusWord.running.text,
                 previous: plan == nil ? previous.map { ActivityWords.step($0) } : planStep(step - 1),
                 bottom: .progress(step: step, total: total, stop: true),
                 failedSteps: failedSteps ?? [],

@@ -23,24 +23,24 @@
         }
       }
     },
-    "Waiting for the app to respond (%llds)": {
+    "Waiting for app (%llds)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Waiting for the app to respond (%llds)"
+            "value": "Waiting for app (%llds)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在等待应用响应（%lld 秒）"
+            "value": "等待应用（%lld 秒）"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在等待應用程式回應（%lld 秒）"
+            "value": "等待應用程式（%lld 秒）"
           }
         }
       }
