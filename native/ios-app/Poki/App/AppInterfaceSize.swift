@@ -185,17 +185,6 @@ private struct InterfaceSizePreview: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ChatTopBar(status: PokiStatus(.ready), home: false, busy: false,
-                       openThreads: {}, newConversation: {}, openDetails: {})
-                .overlayPreferenceValue(PicturePlaceKey.self) { anchors in
-                    GeometryReader { proxy in
-                        PokiFlight(status: PokiStatus(.ready), home: false, writing: false,
-                                   places: anchors.mapValues { proxy[$0] }, pokes: 0, tap: {})
-                    }
-                }
-                .allowsHitTesting(false)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(verbatim: "Poki"))
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     MessageBubble(direction: .outgoing, text: String(localized: "Help me plan tomorrow."), tail: true)
@@ -210,6 +199,19 @@ private struct InterfaceSizePreview: View {
                 .padding(.horizontal, 18).padding(.vertical, 12)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .topBar {
+                ChatTopBar(status: PokiStatus(.ready), home: false, busy: false,
+                           openThreads: {}, newConversation: {}, openDetails: {})
+                    .overlayPreferenceValue(PicturePlaceKey.self) { anchors in
+                        GeometryReader { proxy in
+                            PokiFlight(status: PokiStatus(.ready), home: false, writing: false,
+                                       places: anchors.mapValues { proxy[$0] }, pokes: 0, tap: {})
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: "Poki"))
+            }
             ComposerInputView(input: .constant(""), focused: .constant(false), running: false,
                               send: { _, _ in }, stop: {}, openVoice: {})
                 .allowsHitTesting(false)
