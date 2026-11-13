@@ -109,6 +109,9 @@ const zh: Record<string, string> = {
   "Latest release": "最新版本",
   "Use the latest release": "改用最新版本",
   "Use an IPA file…": "选择 IPA 文件…",
+  // The core's words when GitHub's release list cannot be read (desktop/core/src/error.rs). Drafts, not copy-reviewed yet.
+  "GitHub is limiting requests from this network, so Poki's releases could not be read. Switch to another network or proxy node and try again, or try again in an hour.": "GitHub 正在限制这个网络的请求，暂时读不到 Poki 的版本列表。请换一个网络或代理节点后重试，或一小时后再试。",
+  "Could not reach GitHub to read Poki's releases. Check the connection and try again.": "连不上 GitHub，读不到 Poki 的版本列表。请检查网络后重试。",
 };
 const listeners = new Set<() => void>();
 let lang: Lang = (localStorage.getItem("lang") as Lang) || (navigator.language.toLowerCase().startsWith("zh") ? "zh-Hans" : "en");
