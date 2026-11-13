@@ -139,7 +139,7 @@ struct ChatView: View {
                            newConversation: { if home { restarts += 1 } else { chat.newConversation() } }, openDetails: tapPoki)
             }
         }
-        .bottomBar {
+        .bottomBar(softEdge: true) {
             if !bare { VStack(spacing: 8) {
                 asks
                 ComposerInputView(input: $draft, focused: $writing, running: busy, progress: progress, restarts: restarts,
@@ -262,9 +262,10 @@ struct ChatView: View {
 extension View {
     /// The message field's place on the bottom edge: a safe-area bar on iOS 26 (the conversation fades
     /// under it, as under the system's bars), an inset before it.
-    @ViewBuilder func bottomBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+    @ViewBuilder func bottomBar<Bar: View>(softEdge: Bool = false, @ViewBuilder _ bar: () -> Bar) -> some View {
         if #available(iOS 26.0, *) {
             safeAreaBar(edge: .bottom, spacing: 0) { GlassEffectContainer(spacing: 8) { bar() } }
+                .scrollEdgeEffectStyle(softEdge ? .soft : .automatic, for: .bottom)
         } else {
             safeAreaInset(edge: .bottom, spacing: 0) { bar() }
         }

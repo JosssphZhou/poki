@@ -186,7 +186,7 @@ private struct InterfaceSizePreview: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
                     MessageBubble(direction: .outgoing, text: String(localized: "Help me plan tomorrow."), tail: true)
                     MessageBubble(direction: .incoming, text: String(localized: "Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder."), tail: true)
                     TaskCard(title: String(localized: "Reminder created"),
@@ -196,7 +196,9 @@ private struct InterfaceSizePreview: View {
                     MessageBubble(direction: .outgoing, text: String(localized: "Show me the full plan."), tail: true)
                     MessageBubble(direction: .incoming, text: String(localized: "Your plan is ready. You can review it here and make changes whenever you like."), tail: true)
                 }
-                .padding(.horizontal, 18).padding(.vertical, 12)
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
             .topBar {
@@ -212,12 +214,15 @@ private struct InterfaceSizePreview: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(verbatim: "Poki"))
             }
-            ComposerInputView(input: .constant(""), focused: .constant(false), running: false,
-                              send: { _, _ in }, stop: {}, openVoice: {})
-                .allowsHitTesting(false)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text("Message Poki"))
-                .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
+            .bottomBar(softEdge: true) {
+                ComposerInputView(input: .constant(""), focused: .constant(false), running: false,
+                                  send: { _, _ in }, stop: {}, openVoice: {})
+                    .allowsHitTesting(false)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text("Message Poki"))
+                    .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
+                    .frame(maxWidth: 720)
+            }
         }
         .background { HomeBackdrop(home: false, working: false, frozen: true) }
         .clipShape(.rect(cornerRadius: 24))
