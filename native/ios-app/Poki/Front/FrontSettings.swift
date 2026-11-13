@@ -2,13 +2,14 @@ import PokiCore
 import SwiftUI
 
 /// The pages only the front has. Everything else it pushes is a page the app already had.
-enum FrontRoute: Hashable { case settings, connection, agents, signing }
+enum FrontRoute: Hashable { case settings, connection, agents, appearance, signing }
 
 /// Settings, behind the gear on the chats page: whether Poki can use this iPhone, then one row each for
-/// what it thinks with, who else may use it, and what it remembers, and the one switch.
+/// what it thinks with, who else may use it, what it remembers and how it looks, and the one switch.
 /// Every setting the app has sits behind one of them.
 struct FrontSettings: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(PokiLight.key) private var light = PokiLight.firstLight.rawValue
 
     private var agentsLine: String {
         if model.relayAddress == nil || !model.relayEnabled { return String(localized: "Off") }
@@ -36,6 +37,9 @@ struct FrontSettings: View {
                     NavigationLink(value: FrontRoute.agents) { PaperRow(String(localized: "Agents"), value: agentsLine) }
                     NavigationLink(value: SettingsRoute.memory) {
                         PaperRow(String(localized: "Memory"), value: String(localized: "\(RoutineStore.shared.routines.count) routines"))
+                    }
+                    NavigationLink(value: FrontRoute.appearance) {
+                        PaperRow(String(localized: "Appearance"), value: (PokiLight(rawValue: light) ?? .firstLight).name)
                     }
                 }
                 .buttonStyle(.plain)
@@ -194,5 +198,70 @@ struct SigningPage: View {
             .paperList()
             .navigationTitle("Signing and updates")
             .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Settings › Appearance: Poki's light, and light or dark.
+struct AppearancePage: View {
+    @AppStorage(PokiLight.key) private var light = PokiLight.firstLight.rawValue
+    @AppStorage(PokiLight.schemeKey) private var scheme = ""
+    @Environment(\.colorScheme) private var shown
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                Text("Poki’s light is the one colour in the app. It sits behind Poki in the window and when you talk.")
+                    .font(.system(size: 15)).foregroundStyle(Paper.ink2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                LightSwatches(light: $light).padding(.top, 18)
+                Text(verbatim: (PokiLight(rawValue: light) ?? .firstLight).name).font(Paper.note).foregroundStyle(Paper.ink2).padding(.top, 12)
+                PaperRows {
+                    schemeRow(String(localized: "Light"), "light", on: shown == .light)
+                    schemeRow(String(localized: "Dark"), "dark", on: shown == .dark)
+                }
+                .padding(.top, 24)
+            }
+            .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 24)
+            .frame(maxWidth: 640).frame(maxWidth: .infinity)
+        }
+        .navigationTitle("Appearance")
+        .navigationBarTitleDisplayMode(.inline)
+        .paperPage()
+    }
+
+    private func schemeRow(_ title: String, _ value: String, on: Bool) -> some View {
+        Button { scheme = value } label: {
+            HStack {
+                Text(verbatim: title).font(Paper.row).foregroundStyle(Paper.ink)
+                Spacer()
+                if on { Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.ink) }
+            }
+            .frame(minHeight: 54).contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// Poki's five lights as a row of swatches; the chosen one has a ring in ink.
+struct LightSwatches: View {
+    @Binding var light: Int
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(PokiLight.allCases) { choice in
+                let colors = choice.palette, chosen = choice.rawValue == light
+                Button { light = choice.rawValue } label: {
+                    Circle().fill(RadialGradient(colors: [colors.warm, colors.mid, colors.sky], center: UnitPoint(x: 0.5, y: 0.72), startRadius: 2, endRadius: 30))
+                        .frame(width: 50, height: 50)
+                        .padding(5)
+                        .overlay(Circle().strokeBorder(Paper.ink, lineWidth: 2).opacity(chosen ? 1 : 0))
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(Text(verbatim: choice.name))
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
+        }
     }
 }

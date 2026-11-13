@@ -303,7 +303,7 @@ jobs:
           crashed=0
           for look in light dark; do
             xcrun simctl ui "$UDID" appearance "$look"
-            for screen in home chats settings setup connect model debug activity; do
+            for screen in home chats settings setup connect model appearance debug activity; do
               xcrun simctl terminate "$UDID" nz.zheha.poki || true
               xcrun simctl launch "$UDID" nz.zheha.poki -pokiScreen "$screen" > /dev/null
               sleep 4

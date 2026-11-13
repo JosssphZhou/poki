@@ -44,6 +44,9 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Everything pushed over the front: a chat, an agent's session, Settings and its pages.
     @State private var home = NavigationPath()
+    /// Settings › Appearance: light, dark, or the iPhone's own when nothing is chosen.
+    @AppStorage(PokiLight.schemeKey) private var scheme = ""
+    @AppStorage(PokiLight.key) private var light = PokiLight.firstLight.rawValue
 
     /// Poki's chat and an outside agent's session.
     enum HomeRoute: Hashable { case chat, session(String) }
@@ -118,6 +121,9 @@ struct RootView: View {
 
     var body: some View {
         front
+        .preferredColorScheme(scheme == "dark" ? .dark : scheme == "light" ? .light : nil)
+        // The Live Activity draws Poki's light too, and reads the choice from the App Group.
+        .onChange(of: light, initial: true) { _, now in SharedContainer.defaults.set(now, forKey: PokiLight.key) }
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .alert(model.connectionAsk.map { String(localized: "Allow \($0.client) to connect?") } ?? "",
                isPresented: Binding(get: { model.connectionAsk != nil }, set: { if !$0 { model.answerConnection(false) } }),
@@ -243,6 +249,7 @@ struct RootView: View {
                 home.append(SettingsRoute.connector(first))
             }
         case "chats": frontPage = .chats; columns = .all
+        case "appearance": home = NavigationPath([FrontRoute.appearance])
         case "model": openAgents(.accounts)
         case "steps": openAgents(.activityLog)
         default: break
@@ -265,6 +272,7 @@ private struct FrontDestinations: ViewModifier {
                 case .settings: FrontSettings()
                 case .connection: ConnectionPage()
                 case .agents: AgentsList(push: { home.append($0) }).paperPage()
+                case .appearance: AppearancePage()
                 case .signing: SigningPage()
                 }
             }
