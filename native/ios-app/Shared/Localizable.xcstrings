@@ -113,6 +113,22 @@
         }
       }
     },
+    "%@, %lld didn’t go through" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@，%2$lld 个未成功"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@，%2$lld 個未成功"
+          }
+        }
+      }
+    },
     "%@, %lld missed" : {
       "localizations" : {
         "zh-Hans" : {
@@ -141,22 +157,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@，第 %lld 步"
-          }
-        }
-      }
-    },
-    "%@, waiting for you" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，正在等待你"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，正在等待你"
           }
         }
       }
@@ -205,6 +205,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@，%2$@"
+          }
+        }
+      }
+    },
+    "%lld actions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld 个操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%lld 個操作"
           }
         }
       }
@@ -301,6 +317,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld 步，用時 %2$@"
+          }
+        }
+      }
+    },
+    "1 action" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 个操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1 個操作"
           }
         }
       }
@@ -467,6 +499,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "A live conversation, out loud" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "实时对话，开口就说"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "即時對話，開口就說"
+          }
+        }
+      }
     },
     "A local connection change is already in progress. Try again when it finishes." : {
       "localizations" : {
@@ -1652,22 +1700,6 @@
       },
       "extractionState" : "manual"
     },
-    "Approved, %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已批准，%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已批准，%@"
-          }
-        }
-      }
-    },
     "Ask Before Sensitive Steps" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1680,6 +1712,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "敏感步驟先問我"
+          }
+        }
+      }
+    },
+    "Ask Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "问 Poki"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "問 Poki"
           }
         }
       }
@@ -2323,23 +2371,6 @@
         }
       }
     },
-    "Connecting…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在连接…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在連線…"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Connection" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2702,22 +2733,6 @@
       },
       "extractionState" : "manual"
     },
-    "Delivered" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已送达"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已送達"
-          }
-        }
-      }
-    },
     "Denied" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2882,6 +2897,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Didn’t go through" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未成功"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未成功"
+          }
+        }
+      }
     },
     "Disconnect Local Connection" : {
       "localizations" : {
@@ -3178,23 +3209,6 @@
       },
       "extractionState" : "manual"
     },
-    "End Live Voice" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "结束实时语音"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "結束實時語音"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "End conversation" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3210,6 +3224,23 @@
           }
         }
       }
+    },
+    "End live voice" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束实时语音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束實時語音"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Enter Your Passcode Next" : {
       "localizations" : {
@@ -3670,6 +3701,22 @@
         }
       }
     },
+    "Go ahead." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请说。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請說。"
+          }
+        }
+      }
+    },
     "Go to Settings › Other and turn on Include route 10.7.0.1/32 (update Shadowrocket if missing)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3738,23 +3785,6 @@
       },
       "extractionState" : "manual"
     },
-    "Hearing you…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在听你说…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在聽你說…"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Hi, I’m Poki. Tell me what to do on this iPhone." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3787,6 +3817,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Hides every action" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "隐藏所有操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "隱藏所有操作"
+          }
+        }
+      }
     },
     "History" : {
       "localizations" : {
@@ -4754,23 +4800,6 @@
       },
       "extractionState" : "manual"
     },
-    "Live voice needs an OpenAI API key (tap here for Model) or the voice bridge. The microphone in the field dictates with any model." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "实时语音需要 OpenAI API 密钥（轻点此处前往“模型”）或语音桥接。信息栏里的麦克风可配合任何模型听写。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "實時語音需要 OpenAI API 金鑰（輕點此處前往「模型」）或語音橋接。資訊欄裡的麥克風可配合任何模型聽寫。"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account." : {
       "localizations" : {
         "zh-Hans" : {
@@ -5084,22 +5113,6 @@
       },
       "extractionState" : "manual"
     },
-    "Message Poki" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "给 Poki 发消息"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "給 Poki 發訊息"
-          }
-        }
-      }
-    },
     "Messages" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5249,6 +5262,22 @@
       },
       "extractionState" : "manual"
     },
+    "Mute Poki’s voice" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "将 Poki 的声音静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "將 Poki 的聲音靜音"
+          }
+        }
+      }
+    },
     "Name" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5396,22 +5425,6 @@
         }
       },
       "extractionState" : "manual"
-    },
-    "New Conversation" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新对话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新對話"
-          }
-        }
-      }
     },
     "New conversation" : {
       "localizations" : {
@@ -5880,6 +5893,22 @@
       },
       "extractionState" : "manual"
     },
+    "Not allowed, so Poki skipped that step" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未获允许，Poki 已跳过这一步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "未獲允許，Poki 已略過這一步"
+          }
+        }
+      }
+    },
     "Not approved by model. Say yes in the chat to let it through." : {
       "localizations" : {
         "zh-Hans" : {
@@ -5897,18 +5926,18 @@
       },
       "extractionState" : "manual"
     },
-    "Not approved, so Poki skipped that step" : {
+    "Not finished" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "未获批准，已跳过此步骤"
+            "state" : "needs_review",
+            "value" : "未完成"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "未獲批准，已跳過此步驟"
+            "state" : "needs_review",
+            "value" : "未完成"
           }
         }
       }
@@ -8863,7 +8892,24 @@
       },
       "extractionState" : "manual"
     },
-    "Rename Conversation" : {
+    "Rename Session" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新命名会话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新命名會話"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Rename conversation" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8880,7 +8926,7 @@
       },
       "extractionState" : "manual"
     },
-    "Rename Session" : {
+    "Rename session" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -9506,6 +9552,22 @@
       },
       "extractionState" : "manual"
     },
+    "Shows every action" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "显示所有操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "顯示所有操作"
+          }
+        }
+      }
+    },
     "Sign In" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9818,6 +9880,38 @@
         }
       }
     },
+    "Speak" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "说话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "說話"
+          }
+        }
+      }
+    },
+    "Speak, and it becomes text" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "说出来，就变成文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "說出來，就變成文字"
+          }
+        }
+      }
+    },
     "Speaking" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10048,23 +10142,6 @@
         }
       }
     },
-    "Stop Dictation" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止听写"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止聽寫"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Stop Poki" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10114,23 +10191,6 @@
         }
       }
     },
-    "Stop Talking" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止说话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止說話"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Stop When Idle For" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10146,6 +10206,23 @@
           }
         }
       }
+    },
+    "Stop dictation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止听写"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止聽寫"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Stop runner" : {
       "localizations" : {
@@ -10310,6 +10387,22 @@
         }
       }
     },
+    "Talk with Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "与 Poki 对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "與 Poki 對話"
+          }
+        }
+      }
+    },
     "Talking" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10322,6 +10415,38 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "對話中"
+          }
+        }
+      }
+    },
+    "Talking with Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在与 Poki 对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "正在與 Poki 對話"
+          }
+        }
+      }
+    },
+    "Talking with Poki needs an OpenAI key (tap here for Model) or the voice bridge. Dictate works with any model." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "与 Poki 对话需要 OpenAI API 密钥（轻点此处前往“模型”）或语音桥接。听写可配合任何模型使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "與 Poki 對話需要 OpenAI API 金鑰（輕點此處前往「模型」）或語音橋接。聽寫可配合任何模型使用。"
           }
         }
       }
@@ -11609,6 +11734,22 @@
         }
       }
     },
+    "Try again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再试一次"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再試一次"
+          }
+        }
+      }
+    },
     "Tunnel On, No Answer" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12006,6 +12147,22 @@
         }
       }
     },
+    "Unmute Poki’s voice" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "取消 Poki 声音的静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "取消 Poki 聲音的靜音"
+          }
+        }
+      }
+    },
     "Up to Date" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12201,6 +12358,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用當前 VPN"
+          }
+        }
+      }
+    },
+    "Used your iPhone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用了你的 iPhone"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "使用了你的 iPhone"
           }
         }
       }
@@ -12403,40 +12576,6 @@
       },
       "extractionState" : "manual"
     },
-    "Voice conversation" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "语音对话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "語音對話"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Voice, turn by turn" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "语音，逐轮对话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "語音，逐輪對話"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Waiting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12619,6 +12758,22 @@
       },
       "extractionState" : "manual"
     },
+    "What’s on this afternoon?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今天下午有什么安排？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今天下午有什麼安排？"
+          }
+        }
+      }
+    },
     "With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time; Poki and Poki Runner use 2. For free Apple ID signing, install the external-connection build and use LocalDevVPN or a compatible VPN app." : {
       "localizations" : {
         "zh-Hans" : {
@@ -12667,23 +12822,6 @@
         }
       }
     },
-    "Working on it…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在处理…"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在處理…"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "YOUR API KEY" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12716,6 +12854,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "You allowed this at %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你在 %@ 允许了这一步"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你在 %@ 允許了這一步"
+          }
+        }
+      }
     },
     "Your Mac" : {
       "localizations" : {
@@ -12847,6 +13001,38 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Your words become text. Nothing is sent until you send it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你说的话会变成文字。发送之前不会发出任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "你說的話會變成文字。傳送之前不會送出任何內容。"
+          }
+        }
+      }
+    },
+    "Yours" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "由你完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "由你完成"
+          }
+        }
+      }
     },
     "a connector" : {
       "localizations" : {

@@ -53,9 +53,6 @@ targets:
         # follows the iPhone's language.
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, zh-Hans, zh-Hant]
-        # Every page is the website's blue (or the night blue): white status bar text throughout.
-        UIStatusBarStyle: UIStatusBarStyleLightContent
-        UIViewControllerBasedStatusBarAppearance: false
         UILaunchScreen:
           UIColorName: AccentColor
           UIImageName: Bear

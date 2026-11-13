@@ -418,7 +418,7 @@ struct SessionView: View {
 
     var body: some View {
         let session = SessionStore.shared.session(id)
-        ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, canRetry: false, retry: {}) {
+        ChatTranscript(entries: (AskPoki.live(id)?.entries ?? session?.entries) ?? [], typing: AskPoki.live(id)?.awaitingModel ?? false, canRetry: false, retry: {}, sessionID: id) {
             if session?.live == true, let approval = model.approvals.first {
                 ApprovalCard(approval: approval) { approved in model.resolve(approval, approved: approved) }
             }
@@ -427,10 +427,18 @@ struct SessionView: View {
         // their scroll-edge behaviour (as in the chat).
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if AskPoki.live(id) != nil {
-                Button("Stop Poki") { AskPoki.live(id)?.stop() }.buttonStyle(.bordered).tint(Color(.systemRed)).padding(.vertical, 10)
+                Button { AskPoki.live(id)?.stop() } label: {
+                    Text("Stop Poki").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.ink)
+                        .padding(.horizontal, 20).frame(height: 44)
+                        .overlay(Capsule().strokeBorder(Paper.ink, lineWidth: 1.5))
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(PressStyle())
+                .padding(.vertical, 10)
             }
         }
-        .background(Color(.systemBackground))
+        .background(Paper.page)
+        .toolbarBackground(Paper.page, for: .navigationBar)
         // The session's name is the title; its menu renames it (the system title menu).
         .navigationTitle(Text(verbatim: session?.name ?? ""))
         .navigationBarTitleDisplayMode(.inline)
@@ -438,7 +446,7 @@ struct SessionView: View {
         .toolbarTitleMenu {
             Button("Rename", systemImage: "pencil") { newName = session?.name ?? ""; renaming = true }
         }
-        .alert("Rename Session", isPresented: $renaming) {
+        .alert("Rename session", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Cancel", role: .cancel) {}
             Button("Save") { SessionStore.shared.rename(id, to: newName) }
@@ -462,17 +470,31 @@ struct ApprovalCard: View {
     var approval: PendingApproval
     var answer: (Bool) -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Allow this step?").font(.system(size: 15, weight: .semibold))
-            Text(verbatim: approval.summary).font(.system(size: 15)).foregroundStyle(Color(.label))
-            HStack {
-                Button("Don’t Allow") { answer(false) }.buttonStyle(.bordered)
-                Button("Allow") { answer(true) }.buttonStyle(.borderedProminent)
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Allow this step?").font(.system(size: 17, weight: .semibold)).foregroundStyle(Paper.ink)
+                Text(verbatim: approval.summary).font(.system(size: 15)).foregroundStyle(Paper.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            HStack(spacing: 8) {
+                Button { answer(false) } label: {
+                    Text("Don’t allow").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.ink)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .overlay(Capsule().strokeBorder(Paper.line, lineWidth: 1.5))
+                        .contentShape(.capsule)
+                }
+                Button { answer(true) } label: {
+                    Text("Allow").font(.system(size: 15, weight: .semibold)).foregroundStyle(Paper.page)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .background(Paper.ink, in: Capsule())
+                        .contentShape(.capsule)
+                }
+            }
+            .buttonStyle(PressStyle())
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Paper.line, lineWidth: 1.5))
         .padding(.top, 8)
     }
 }

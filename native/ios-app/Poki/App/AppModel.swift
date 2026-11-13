@@ -577,6 +577,15 @@ final class AppModel {
                 self.watchTalk()
             }
         }
+        #if DEBUG && targetEnvironment(simulator)
+        // The scripted talk shows its steps as a real task would.
+        voice.mockStep = { [weak self] label in
+            self?.activity.update { state in
+                if let label { state.phase = .working; state.headline = label; state.app = "Calendar" }
+                else if state.phase == .working { state.phase = .idle; state.headline = "Waiting for agent"; state.app = nil }
+            }
+        }
+        #endif
     }
 
     /// In the background the loopback is still watched while Poki is on (the agent's runner depends on

@@ -15,6 +15,8 @@ Build numbers are the GitHub Actions run number of the release workflow.
 ### Changed
 - A new app icon: Poki on the front page’s sky.
 - The Dynamic Island and the Lock Screen card are black, with Poki’s pose for what it is doing, the step in words, and Stop.
+- The chat is flat on paper. While Poki uses the phone the chat stays as it is; afterwards one “Used your iPhone” card lists what it did.
+- One button on the message field opens Dictate and Talk with Poki; during a talk the field is the talk’s own bar.
 
 ### Fixed
 - PokiTests run to the end on the iOS 26.3 simulator: a tunnel that went away no longer stopped the run.
