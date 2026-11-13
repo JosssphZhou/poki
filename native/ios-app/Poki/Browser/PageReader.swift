@@ -10,6 +10,7 @@ enum PageReader {
 (() => {
   if (window.__pokiReader) return;
   const refs = new Map();
+  const documentID = Date.now() + ':' + Math.random();
   const ids = new WeakMap();
   let nextRef = 1;
   const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'META', 'LINK', 'TITLE']);
@@ -205,16 +206,15 @@ enum PageReader {
 
   // Two kinds of box float over a page. A notice only informs and covers the page: a cookie or privacy
   // banner, or a site's "by continuing to use this site you agree to our terms". Poki dismisses it,
-  // with its reject or necessary-only choice when it has one. A prompt that would give the owner an
-  // obligation or an identity is the owner's: a sign-in or sign-up, a subscription, payment or free
-  // trial, an age or birthday, a human check, a tick for "I agree to the terms", any email or password
-  // field. Such a prompt is never taken for a notice, and its go-ahead buttons are not Poki's to tap.
+  // with its reject or necessary-only choice when it has one.
+  // Identity prompts need a hand-off; financial prompts need approval. Neither is a notice.
   const ACCEPT = /\b(accept|agree|allow|ok|okay|got it|continue|understood|i understand|close)\b|同意|接受|允许|知道了|好的|关闭/i;
   const REJECT = /\b(reject|decline|deny|refuse|disagree|necessary only|only necessary|essential only|only essential|strictly necessary|necessary cookies|continue without accepting)\b|拒绝|仅必要|仅限必要|只接受必要|不同意/i;
   const GO = /\b(accept|agree|allow|ok|okay|got it|continue|understood|i understand|yes|next|submit|enter|confirm|proceed|start)\b|同意|接受|允许|知道了|好的|继续|确定|下一步|进入|确认|开始/i;
   const CONSENT_TEXT = /cookie|consent|privacy|personal data|tracking|our partners|advertis|terms of (use|service)|\bby (continuing|using|browsing|staying)\b|隐私|个人信息|跟踪|广告|使用条款|服务条款|继续(使用|浏览)/i;
   const CONSENT_MARK = /cookie|consent|gdpr|privacy|onetrust|didomi|truste|usercentrics|cookiebot|quantcast|sp_message/i;
-  const OWNER_TEXT = /\b(sign ?in to|log ?in to|sign ?in or|log ?in or|sign ?up|create (an |your |a free )?account|subscribe|subscription|free trial|password|payment|checkout|date of birth|birthday|birth date|years old|years of age|verify (your )?age|(must|you are|you're|i am|i'm) (be )?(over |at least )?(1[3-9]|2[01])|captcha|not a robot|verify (that )?you('re| are) (a )?human)\b|\b(1[3-9]|2[01]) ?(\+|or older|and over)|登录|登入|注册|订阅|密码|付款|支付|试用|年满|出生日期|生日|人机验证|验证码/i;
+  const OWNER_TEXT = /\b(sign ?in to|log ?in to|sign ?in or|log ?in or|sign ?up|create (an |your |a free )?account|password|date of birth|birthday|birth date|years old|years of age|verify (your )?age|(must|you are|you're|i am|i'm) (be )?(over |at least )?(1[3-9]|2[01])|captcha|not a robot|verify (that )?you('re| are) (a )?human)\b|\b(1[3-9]|2[01]) ?(\+|or older|and over)|登录|登入|注册|密码|年满|出生日期|生日|人机验证|验证码/i;
+  const PAYMENT_TEXT = /\b(subscribe|subscription|free trial|payment|checkout)\b|订阅|付款|支付|试用/i;
   const AGREE_TERMS = /\b(agree|accept|consent)\b.*\b(terms|conditions)\b|同意.*(条款|协议)/i;
   const OWNER_FIELDS = 'input[type=password], input[type=email], input[autocomplete~="username"], input[autocomplete~="email"], input[autocomplete~="current-password"]';
   function boxes(el) {
@@ -227,8 +227,9 @@ enum PageReader {
     }
     return out;
   }
-  const ownersPrompt = (box) => OWNER_TEXT.test(squash(box.innerText).slice(0, 3000)) || !!box.querySelector(OWNER_FIELDS)
+  const restrictedPrompt = (box) => OWNER_TEXT.test(squash(box.innerText).slice(0, 3000)) || !!box.querySelector(OWNER_FIELDS)
     || [...box.querySelectorAll('input[type=checkbox], [role=checkbox]')].some((c) => AGREE_TERMS.test(name(c)));
+  const ownersPrompt = (box) => restrictedPrompt(box) || PAYMENT_TEXT.test(squash(box.innerText).slice(0, 3000));
   // What a notice is, for the step that dismisses it: read from the boxes around the button up to the
   // notice's own size, since a consent tool often marks just the row of buttons.
   const noticeKind = (el) => {
@@ -261,7 +262,7 @@ enum PageReader {
     const el = element(ref);
     if (!el) return { banner: false, owner: false };
     const label = name(el);
-    const owner = GO.test(label) && !REJECT.test(label) && !!ownerBox(el);
+    const owner = GO.test(label) && !REJECT.test(label) && !!ownerBox(el) && restrictedPrompt(ownerBox(el));
     const box = consentBox(el);
     if (!box) return { banner: false, owner };
     const reject = rejectIn(box, el);
@@ -361,9 +362,27 @@ enum PageReader {
 
   const describe = (el) => privateField(el) || squash(el.getAttribute('aria-label') || el.innerText || el.tagName.toLowerCase()).slice(0, 60);
 
-  function click(ref) {
+  function action(ref, submit = false) {
+    const el = element(ref);
+    if (!el) return null;
+    const form = el.form;
+    const submitting = submit || !!(form && ['BUTTON', 'INPUT'].includes(el.tagName) && ['submit', 'image'].includes(el.type));
+    const submitters = form ? [...form.elements].filter((control) =>
+      ['BUTTON', 'INPUT'].includes(control.tagName) && ['submit', 'image'].includes(control.type) && !control.disabled) : [];
+    const labels = [name(el), ...(submitting ? submitters.map((control) => name(control)) : [])];
+    const prompt = ownerBox(el);
+    if (prompt && !restrictedPrompt(prompt) && GO.test(name(el)) && !REJECT.test(name(el))) labels.push('pay');
+    const searching = form?.getAttribute('role') === 'search' ||
+      (submitting && (submitters.length ? submitters.every((control) => /^(search|搜索|搜尋|查询|查詢)$/i.test(name(control))) : role(el) === 'searchbox'));
+    const details = { documentID, ref, labels, submitting, searching, href: el.href || '',
+      formAction: form?.action || '', formMethod: form?.method || '', type: el.type || '' };
+    return { labels, submitting, searching, fingerprint: JSON.stringify(details) };
+  }
+
+  function click(ref, expected) {
     const el = element(ref);
     if (!el) return { ok: false, error: 'stale' };
+    if (action(ref)?.fingerprint !== expected) return { ok: false, error: 'stale' };
     if (el.disabled || el.getAttribute('aria-disabled') === 'true') return { ok: false, error: 'disabled', name: name(el) };
     driving = true;
     quiet(el);
@@ -384,9 +403,10 @@ enum PageReader {
     return { ok: true, name: name(el), covered };
   }
 
-  function type(ref, text, submit) {
+  function type(ref, text, submit, expected) {
     const el = element(ref);
     if (!el) return { ok: false, error: 'stale' };
+    if (action(ref, submit)?.fingerprint !== expected) return { ok: false, error: 'stale' };
     const view = el.ownerDocument.defaultView;
     if (privateField(el)) return { ok: false, error: 'owner', name: name(el) };
     if (el.disabled || el.readOnly) return { ok: false, error: 'disabled', name: name(el) };
@@ -441,7 +461,7 @@ enum PageReader {
     });
   }
 
-  window.__pokiReader = { read, click, type, settle, drive, consent, label: (ref) => { const el = element(ref); return el ? name(el) : null; } };
+  window.__pokiReader = { read, click, type, action, settle, drive, consent, label: (ref) => { const el = element(ref); return el ? name(el) : null; } };
 })();
 """#
 }

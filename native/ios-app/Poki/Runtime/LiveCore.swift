@@ -43,6 +43,9 @@ final class LiveCore: CoreSession {
     func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
         await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
     }
+    func requestBrowserApproval(site: String, summary: String, reason: String) async -> TapClearance {
+        await core.requestBrowserApproval(site: site, summary: summary, reason: reason, waiting: 115)
+    }
     func accessChanged() { core.accessChanged() }
     /// The app's own MCP tools (ask_poki), after look, do and status.
     func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
@@ -65,7 +68,7 @@ final class LiveCore: CoreSession {
             switch outcome { case .done(let text): delivery = text; case .failed(let text): delivery = "failed: \(text)" }
             return .toolFinished(summary: activity.summary, delivery: delivery, app: facts.app, thumbnail: facts.thumbnail, error: facts.error, session: activity.session)
         case .approvalRequested(let approval):
-            return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, reason: approval.reason, expires: approval.expires))
+            return .approvalRequested(PendingApproval(id: approval.id, app: approval.app, summary: approval.summary, reason: approval.reason, expires: approval.expires, requiresOwner: approval.requiresOwner ? true : nil))
         case .approvalEnded(let id, let approved): return .approvalEnded(id: id, approved: approved)
         case .handoffRequested(let id, let kind, let text, let app): return .handoffRequested(id: id, kind: kind, text: text, app: app)
         case .handoffEnded(let id, let how): return .handoffEnded(id: id, how: how)

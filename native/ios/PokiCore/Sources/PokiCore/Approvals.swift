@@ -21,6 +21,16 @@ public struct SensitivityRules: Sendable, Equatable {
     public var enabled = true
     public init() {}
 
+    /// Websites have no native messaging-app bundle ID. Their controls use the same word rules.
+    public func reason(forBrowserControl text: String) -> String? {
+        var rules = self
+        rules.messagingApps = ["poki-browser"]
+        let element = Element(type: "Button", label: text, value: nil, identifier: nil,
+                              frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        return rules.reason(touching: element, typing: false,
+                            app: Foreground(bundleID: "poki-browser", name: nil), secureOnScreen: false)
+    }
+
     /// The rules a way of asking holds steps back by. Never asking lets typing a password, sending a
     /// message and placing a call go ahead; payments, deletions and Wallet still wait for the owner.
     public func asked(_ mode: ApprovalMode) -> SensitivityRules {
@@ -100,6 +110,7 @@ public struct Approval: Sendable, Equatable {
     public var expires: Date
     /// The actions it covers, as a fingerprint: the same actions sent again run once it is granted.
     var fingerprint: String
+    public var requiresOwner = false
 }
 
 /// Pending and granted approvals. At most one is pending; it is granted or declined only from the app
@@ -156,9 +167,9 @@ final class Approvals: @unchecked Sendable {
         return found?.value.approval
     }
 
-    func request(app: String, summary: String, reason: String, fingerprint: String) -> Approval {
+    func request(app: String, summary: String, reason: String, fingerprint: String, requiresOwner: Bool = false) -> Approval {
         let date = Date()
-        let approval = Approval(id: String(UUID().uuidString.prefix(8)).lowercased(), app: app, summary: summary, reason: reason, requested: date, expires: date.addingTimeInterval(lifetime), fingerprint: fingerprint)
+        let approval = Approval(id: String(UUID().uuidString.prefix(8)).lowercased(), app: app, summary: summary, reason: reason, requested: date, expires: date.addingTimeInterval(lifetime), fingerprint: fingerprint, requiresOwner: requiresOwner)
         lock.lock()
         // One pending at a time: a new request replaces an older one, which ends unanswered.
         let replaced = entries.values.filter { $0.decision == nil }

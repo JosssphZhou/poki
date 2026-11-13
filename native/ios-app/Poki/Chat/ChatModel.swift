@@ -566,7 +566,7 @@ final class ChatModel {
         case let name where WebTools.names.contains(name):
             if let refusal = selectRoute(.web) { return refusal }
             showBrowser(opening: name == "web_open")
-            return await WebTools.perform(name, arguments: call.arguments)
+            return await WebTools.perform(name, arguments: call.arguments, app: app)
         case "look", "do":
             if let refusal = selectRoute(.app) { return refusal }
             phoneStepUnderWay = true

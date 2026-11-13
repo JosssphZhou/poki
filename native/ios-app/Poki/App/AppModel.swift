@@ -266,6 +266,11 @@ final class AppModel {
         await core.callTool(name, arguments: arguments)
     }
 
+    func requestBrowserApproval(site: String, summary: String, reason: String) async -> Bool {
+        let clearance = await core.requestBrowserApproval(site: site, summary: summary, reason: reason)
+        return clearance.mayTap && !Task.isCancelled
+    }
+
     /// The chats watch the steps and approvals of the task they run (the in-app chat and an outside
     /// agent's hand-off each have one).
     private var shellObservers: [(ShellEvent) -> Void] = []

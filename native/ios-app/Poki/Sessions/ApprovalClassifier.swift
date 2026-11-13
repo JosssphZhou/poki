@@ -64,6 +64,7 @@ enum ApprovalClassifier {
     }
 
     static func requiresOwner(_ approval: PendingApproval) -> Bool {
+        if approval.requiresOwner == true { return true }
         let reason = approval.reason
         if reason.hasPrefix("sending a message (a tap in ") { return true }
         return !reason.hasPrefix("sending a message") && !reason.hasPrefix("a call (") &&

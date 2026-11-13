@@ -372,6 +372,18 @@ public final class PokiCore: @unchecked Sendable {
         let unreadable = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard let reason = unreadable && config.sensitive.enabled ? "a tap on something with no readable text" : config.rules.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
         let approval = approvals.request(app: app.describe, summary: unreadable ? "Tap something with no text" : "Tap “\(text)”", reason: reason, fingerprint: "tap:\(UUID().uuidString)")
+        return await waitForApproval(approval, seconds: seconds)
+    }
+
+    public func requestBrowserApproval(site: String, summary: String, reason: String, waiting seconds: Double) async -> TapClearance {
+        if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
+        let approval = approvals.request(app: site, summary: summary, reason: reason,
+                                         fingerprint: "browser:\(UUID().uuidString)", requiresOwner: true)
+        return await waitForApproval(approval, seconds: seconds)
+    }
+
+    private func waitForApproval(_ approval: Approval, seconds: Double) async -> TapClearance {
+        let reason = approval.reason
         switch await approvals.wait(id: approval.id, seconds: seconds) {
         case .approved?:
             _ = approvals.consumeGrant(fingerprint: approval.fingerprint)

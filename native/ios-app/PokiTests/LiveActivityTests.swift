@@ -1,9 +1,10 @@
+import SwiftUI
 import XCTest
 @testable import Poki
 
 @MainActor
 final class LiveActivityTests: XCTestCase {
-    func testBatchApprovalQuestionNamesEverySensitiveKind() {
+    func testBatchApprovalQuestionNamesEverySensitiveKind() async throws {
         let samples: [(String, String)] = [
             (#"multiple sensitive actions: action 1: sending a message ("send"); action 2: a payment ("pay")"#,
              "Allow sending a message and payment?"),
@@ -13,10 +14,20 @@ final class LiveActivityTests: XCTestCase {
              "Allow payment?"),
             (#"sending a message ("send")"#, "Allow sending a message?"),
         ]
-        for (reason, question) in samples {
+        let chinese = ["允许发送消息和付款吗？", "允许付款、删除和发送消息吗？", "允许付款吗？", "允许发送消息吗？"]
+        let isChinese = Bundle.main.preferredLocalizations.first?.hasPrefix("zh") == true
+        for (index, sample) in samples.enumerated() {
+            let (reason, question) = sample
             let approval = PendingApproval(id: "batch", app: "Messages", summary: "Continue",
                                            reason: reason, expires: .now.addingTimeInterval(60))
-            XCTAssertEqual(approval.question, question, reason)
+            XCTAssertEqual(approval.question, isChinese ? chinese[index] : question, reason)
+            if index == 0 {
+                try await captureApprovalView(VStack(alignment: .leading, spacing: 24) {
+                    Text("Batch approval fixture").font(.title2)
+                    ApprovalAskCard(title: approval.question, expires: approval.expires, answer: { _ in })
+                }.padding().frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(.systemBackground)),
+                named: isChinese ? "batch-zh" : "batch-en")
+            }
         }
     }
 
@@ -138,5 +149,27 @@ private extension ActivityFace.Compact {
     func says(_ text: String) -> Bool {
         let words = Mirror(reflecting: self).children.first.map { String(describing: $0.value) } ?? ""
         return words.contains(text)
+    }
+}
+
+@MainActor
+extension XCTestCase {
+    func captureApprovalView<Content: View>(_ content: Content, named name: String) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let appeared = expectation(description: "Approval UI appeared")
+        let controller = UIHostingController(rootView: content.onAppear { appeared.fulfill() })
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; previous?.makeKeyAndVisible() }
+        await fulfillment(of: [appeared], timeout: 3)
+        controller.view.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("approval-evidence")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent(name + ".png"))
     }
 }

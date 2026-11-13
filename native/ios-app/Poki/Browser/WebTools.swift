@@ -7,6 +7,8 @@ import PokiCore
 enum WebTools {
     static let names: Set<String> = ["web_open", "web_read", "web_click", "web_type", "web_handoff"]
 
+    @MainActor private static let checkout = try! Regex(#"(?i)\b(check out|complete (order|purchase|booking)|confirm (order|purchase|payment)|free trial)\b|结账|結帳|试用|試用"#)
+
     private static func object(_ properties: [String: Any], _ required: [String]) -> [String: Any] {
         ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
     }
@@ -30,17 +32,14 @@ enum WebTools {
     ]
 
     static let instructions = """
-    Poki has its own browser for websites, apart from Safari and the phone's screen. For a task on a website (showtimes, prices, opening hours, anything read from a site), use web_open, web_read, web_click and web_type instead of opening Safari with look and do: the owner keeps using the phone meanwhile. Start with web_open on the site's main address. A pure website task, including a Wikipedia lookup, must not also call look or do, launch Safari, or start phone controls. Finish with finish_task, never a do call. Use phone controls alongside the browser only for a separate app part explicitly requested by the owner, with its own report_plan step naming that app. A failed webpage is not permission to switch to phone controls. Pages answer as lines; act on the refs in brackets from the latest answer, since refs change when the page changes. Prefer find over reading a long page twice. Never sign in, pay, buy, book or submit the owner's personal details: when the site needs a sign-in, shows a human check or captcha, or asks for payment, call web_handoff with a short reason and continue after it returns. Banners and pop-ups come in two kinds. A notice that only informs and covers the page (a cookie or privacy banner, or a site-use notice such as "by continuing to use this site you agree to our terms") is yours to dismiss: tap its reject or necessary-only choice (such as Reject all, Decline, Only necessary) when it has one, otherwise Continue, Close or Accept. Anything that would give the owner an obligation or an identity is the owner's, so call web_handoff: signing up or in, subscribing or paying, a free trial, entering an age or birthday, a human check, a form that needs "I agree to the terms" ticked before it can be sent, and any pop-up with an email or password field. When unsure which kind it is, treat it as the owner's. A notice you dismiss shows as its own step; you need not mention it in your answer. If the owner did not name a place and the site needs one, use the place the site suggests and say which one you used. Report only what the pages showed, with the date and place it applies to; when a list was cut short, say so rather than filling it in. Finish with finish_task: for an answer read from a website use answer.kind field or list with the facts in details, and leave answer.items empty.
+    Poki has its own browser for websites, apart from Safari and the phone's screen. For a task on a website (showtimes, prices, opening hours, anything read from a site), use web_open, web_read, web_click and web_type instead of opening Safari with look and do: the owner keeps using the phone meanwhile. Start with web_open on the site's main address. A pure website task, including a Wikipedia lookup, must not also call look or do, launch Safari, or start phone controls. Finish with finish_task, never a do call. Use phone controls alongside the browser only for a separate app part explicitly requested by the owner, with its own report_plan step naming that app. A failed webpage is not permission to switch to phone controls. Pages answer as lines; act on the refs in brackets from the latest answer, since refs change when the page changes. Prefer find over reading a long page twice. Payments, deletions, transfers and sending or submitting messages wait for the owner’s approval card before the browser acts. If approval is declined or unanswered, stop that action. Never sign in or enter the owner’s private details: when the site needs a sign-in, private fields, a human check or captcha, call web_handoff with a short reason and continue after it returns. Banners and pop-ups come in two kinds. A notice that only informs and covers the page (a cookie or privacy banner, or a site-use notice such as "by continuing to use this site you agree to our terms") is yours to dismiss: tap its reject or necessary-only choice (such as Reject all, Decline, Only necessary) when it has one, otherwise Continue, Close or Accept. Anything that would give the owner an obligation or an identity is the owner's, so call web_handoff: signing up or in, entering an age or birthday, a human check, a form that needs "I agree to the terms" ticked before it can be sent, and any pop-up with an email or password field. When unsure which kind it is, treat it as the owner's. A notice you dismiss shows as its own step; you need not mention it in your answer. If the owner did not name a place and the site needs one, use the place the site suggests and say which one you used. Report only what the pages showed, with the date and place it applies to; when a list was cut short, say so rather than filling it in. Finish with finish_task: for an answer read from a website use answer.kind field or list with the facts in details, and leave answer.items empty.
     """
-
-    /// A short button or link label that pays or orders.
-    @MainActor private static let paying = try! Regex(#"(?i)\b(pay|purchase|buy|checkout|check out|place order|complete (order|purchase|booking)|confirm (order|purchase|payment)|subscribe|start (a |your )?(free )?trial|free trial)\b|付款|支付|下单|购买|结账|订阅|试用"#)
 
     /// A short button or link label for a step only the owner takes: signing in or up, an age check,
     /// agreeing to terms.
     @MainActor private static let ownersStep = try! Regex(#"(?i)\b(sign ?in|log ?in|sign ?up|register|create (an |your )?account|join (for free|now)|continue with (google|apple|facebook|microsoft|email|phone))\b|\b(i am|i'm|im) (over |at least )?(1[3-9]|2[01])\b|\b(1[3-9]|2[01]) ?(\+|or older|and over|years or older)|\b(verify|confirm) (my |your )?age\b|\b(agree|accept|consent)\b.*\b(terms|conditions|eula|license agreement)\b|登录|登入|注册|年满|同意.*(条款|协议)"#)
 
-    @MainActor static func perform(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+    @MainActor static func perform(_ name: String, arguments: String, app: AppModel? = nil) async -> PokiCore.ToolAnswer {
         let args = (arguments.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
         let browser = PokiBrowser.shared
         guard await browser.waitForPoki() else { return answer("Task stopped. Action not executed.", error: true) }
@@ -64,9 +63,6 @@ enum WebTools {
         case "web_click":
             guard let ref = args["ref"] as? String else { return answer("web_click needs a ref from the latest page read.", error: true) }
             let label = await label(browser, ref) ?? (args["element"] as? String) ?? ref
-            if label.count <= 40, label.contains(paying) {
-                return answer("“\(label)” looks like paying or ordering. That is the owner's to do: call web_handoff.", error: true)
-            }
             if label.count <= 60, label.contains(ownersStep) {
                 return answer("“\(label)” is a sign-in, sign-up, age or terms step. That is the owner's to do: call web_handoff with a short reason.", error: true)
             }
@@ -87,7 +83,11 @@ enum WebTools {
             default: String(localized: "Tap “\(button)”")
             }
             let step = browser.begin(title)
-            let tapped = await browser.act { (try? await browser.call("return window.__pokiReader.click(ref)", ["ref": ref])) as? [String: Any] }
+            guard let expected = await clearance(browser, ref: ref, submit: false, title: title, app: app) else {
+                browser.end(step, ok: false, started: started)
+                return answer("Action not executed: approval was declined, unanswered, or unavailable. Read the page before trying again.", error: true)
+            }
+            let tapped = await browser.act { (try? await browser.call("return window.__pokiReader.click(ref, expected)", ["ref": ref, "expected": expected])) as? [String: Any] }
             result = await after(browser, tapped, ref: ref, did: notice.isEmpty ? "Tapped “\(label)”." : "Dismissed the notice with “\(label)”.")
             browser.end(step, ok: !result.isError, started: started)
         case "web_type":
@@ -95,9 +95,15 @@ enum WebTools {
                 return answer("web_type needs a ref and the text.", error: true)
             }
             let label = await label(browser, ref) ?? ref
-            let step = browser.begin(String(localized: "Type “\(short(text))” in “\(short(label))”"))
+            let title = String(localized: "Type “\(short(text))” in “\(short(label))”")
+            let step = browser.begin(title)
+            let submit = args["submit"] as? Bool ?? false
+            guard let expected = await clearance(browser, ref: ref, submit: submit, typing: true, title: title, app: app) else {
+                browser.end(step, ok: false, started: started)
+                return answer("Action not executed: approval was declined, unanswered, or unavailable. Read the page before trying again.", error: true)
+            }
             let typed = await browser.act {
-                (try? await browser.call("return window.__pokiReader.type(ref, text, submit)", ["ref": ref, "text": text, "submit": args["submit"] as? Bool ?? false])) as? [String: Any]
+                (try? await browser.call("return window.__pokiReader.type(ref, text, submit, expected)", ["ref": ref, "text": text, "submit": submit, "expected": expected])) as? [String: Any]
             }
             result = await after(browser, typed, ref: ref, did: "Typed into “\(label)”: \(typed?["value"] as? String ?? text).")
             browser.end(step, ok: !result.isError, started: started)
@@ -119,6 +125,32 @@ enum WebTools {
     }
 
     // MARK: Answers
+
+    @MainActor private static func clearance(_ browser: PokiBrowser, ref: String, submit: Bool, typing: Bool = false,
+                                           title: String, app: AppModel?) async -> String? {
+        guard let action = try? await browser.call("return window.__pokiReader.action(ref, submit)", ["ref": ref, "submit": submit]) as? [String: Any],
+              let fingerprint = action["fingerprint"] as? String else { return nil }
+        var reasons: [String] = []
+        if !typing || submit {
+            let rules = SensitivityRules()
+            for label in action["labels"] as? [String] ?? [] {
+                let control = label.replacingOccurrences(of: "提交订单", with: "下单")
+                    .replacingOccurrences(of: "提交訂單", with: "下单")
+                let reason = rules.reason(forBrowserControl: control)
+                    ?? (control.contains(checkout) ? rules.reason(forBrowserControl: "pay") : nil)
+                if let reason, !reasons.contains(reason) { reasons.append(reason) }
+            }
+            if reasons.isEmpty, action["submitting"] as? Bool == true, action["searching"] as? Bool != true {
+                reasons.append("sending a message (submitting a form)")
+            }
+        }
+        if let first = reasons.first {
+            let reason = reasons.count == 1 ? first : "multiple sensitive actions: " + reasons.enumerated().map { "action \($0.offset + 1): \($0.element)" }.joined(separator: "; ")
+            guard let app, await app.requestBrowserApproval(site: browser.host, summary: title, reason: reason) else { return nil }
+        }
+        guard !Task.isCancelled, browser.isOpen, !browser.ownerHasIt else { return nil }
+        return fingerprint
+    }
 
     private static func answer(_ text: String, error: Bool) -> PokiCore.ToolAnswer {
         PokiCore.ToolAnswer(text: text, jpeg: nil, isError: error)

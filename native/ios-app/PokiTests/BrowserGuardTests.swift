@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Observation
 import PokiCore
+import SwiftUI
 import XCTest
 @testable import Poki
 
@@ -55,6 +56,7 @@ final class BrowserGuardTests: XCTestCase {
                 ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
                 ModelKeys.customModel = "fake-model"
                 ModelKeys.selectedProvider = .custom
+                let chat = ChatModel(app: app, kind: .handoff, requester: "Browser consent regression")
                 var questions: [String] = []
                 app.onProbeApproval = { approval in
                     questions.append(approval.question)
@@ -62,15 +64,24 @@ final class BrowserGuardTests: XCTestCase {
                         let effect = try? await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
                         XCTAssertEqual(effect, "", "The page must not act while consent is pending")
                         XCTAssertTrue(app.approvals.contains { $0.id == approval.id }, "The request must reach the owner's card")
+                        if sample.label == "Delete", !allowed, ProcessInfo.processInfo.arguments.contains("-approvalEvidence") {
+                            do {
+                                try await self.captureApprovalView(ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {})
+                                    .environment(app).environment(chat), named: "browser-delete-pending")
+                            } catch { XCTFail("Approval UI capture failed: \(error)") }
+                        }
                         app.resolve(approval, approved: allowed)
                     }
                 }
-                let chat = ChatModel(app: app, kind: .handoff, requester: "Browser consent regression")
                 _ = await chat.runDelegated("Perform the local browser fixture action")
                 chat.stop()
                 let effect = try await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
                 XCTAssertEqual(questions, sample.question.map { [$0] } ?? [], sample.label)
                 XCTAssertEqual(effect, sample.question == nil || allowed ? "effect happened" : "", sample.label)
+                if sample.label == "Delete", !allowed, ProcessInfo.processInfo.arguments.contains("-approvalEvidence") {
+                    try await captureApprovalView(ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {})
+                        .environment(app).environment(chat), named: "browser-delete-declined")
+                }
                 app.onProbeApproval = nil
             }
         }

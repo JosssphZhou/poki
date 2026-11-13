@@ -116,6 +116,7 @@ struct PendingApproval: Codable, Hashable {
     /// Why it needs the owner, from PokiCore's rules: `sending a message ("send")`, `a payment ("pay")`.
     var reason: String
     var expires: Date
+    var requiresOwner: Bool? = nil
 
     /// The approval as one short question, the same on every card, the island, the Lock Screen and
     /// the notification. It comes from the kind the rules saw in PokiCore's reason, never from the
@@ -124,7 +125,7 @@ struct PendingApproval: Codable, Hashable {
         let kinds: [(prefix: String, question: String, name: String)] = [
             ("a payment", String(activity: "Allow payment?"), String(activity: "payment")),
             ("deleting", String(activity: "Allow deletion?"), String(activity: "deletion")),
-            ("sending", String(activity: "Allow sending a message?"), String(activity: "sending a message").localizedLowercase),
+            ("sending", String(activity: "Allow sending a message?"), String(activity: "Message sending")),
             ("a call", String(activity: "Allow a call?"), String(activity: "a call")),
             ("typing into a password", String(activity: "Allow typing a password?"), String(activity: "typing a password")),
             ("input in", String(activity: "Allow a step in a protected app?"), String(activity: "a step in a protected app")),
@@ -142,7 +143,7 @@ struct PendingApproval: Codable, Hashable {
             return selected.first.flatMap { $0 < kinds.count ? kinds[$0].question : nil } ?? String(activity: "Allow this step?")
         }
         let names = selected.map { $0 < kinds.count ? kinds[$0].name : String(activity: "other steps") }
-        return String(activity: "Allow \(names.formatted(.list(type: .and)))?")
+        return String(activity: "Allow \(names.formatted(.list(type: .and).locale(Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en"))))?")
     }
 }
 
