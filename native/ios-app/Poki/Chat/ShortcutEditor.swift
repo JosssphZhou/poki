@@ -26,6 +26,7 @@ struct ShortcutEditor: View {
     /// The app row is open to the choices.
     @State private var choosing = false
     @State private var shown = false
+    @State private var cardFrame = CGRect.null
     @FocusState private var writing: Bool
     /// Every app Poki knows by name, by its name on this iPhone.
     private let apps: [(id: String, name: String)]
@@ -49,15 +50,23 @@ struct ShortcutEditor: View {
             Color.black.opacity(shown ? (scheme == .dark ? 0.45 : 0.25) : 0)
                 .ignoresSafeArea()
                 .contentShape(.rect)
-                .onTapGesture { if writing || choosing { writing = false; choosing = false } else { close() } }
+                .onTapGesture(perform: tapOutside)
                 .accessibilityLabel(Text("Close"))
                 .accessibilityAddTraits(.isButton)
             ScrollView {
-                card.padding(.vertical, 24)
+                card
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("shortcut.editor")) } action: { cardFrame = $0 }
+                    .padding(.vertical, 24)
             }
             .scrollBounceBehavior(.basedOnSize)
             .defaultScrollAnchor(.center, for: .alignment)
             .padding(.horizontal, 24)
+            .contentShape(.rect)
+            .coordinateSpace(name: "shortcut.editor")
+            .simultaneousGesture(SpatialTapGesture(coordinateSpace: .named("shortcut.editor")).onEnded { tap in
+                guard !cardFrame.isNull, !cardFrame.contains(tap.location) else { return }
+                tapOutside()
+            })
             .scaleEffect(shown || reduceMotion ? 1 : 0.92)
             .opacity(shown ? 1 : 0)
             .accessibilityAddTraits(.isModal)
@@ -80,6 +89,15 @@ struct ShortcutEditor: View {
         .onChange(of: writing) { _, writing in
             if writing { choosing = false }
             typing(writing)
+        }
+    }
+
+    private func tapOutside() {
+        if writing || choosing {
+            writing = false
+            choosing = false
+        } else {
+            close()
         }
     }
 

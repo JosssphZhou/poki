@@ -168,6 +168,8 @@ struct FirstRunGuide: View {
             .sheet(isPresented: $signingIn, onDismiss: refresh) { ChatGPTSignIn() }
         }
         .interactiveDismissDisabled()
+        // Keep the existing limit until the guide's rows and buttons are verified at AX3–AX5.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     private var dots: some View {
