@@ -231,10 +231,10 @@ the second rebase had merged with, so the branch was rebased onto current
   either back. The commit that kept the display orientation through that reset
   had nothing left to change and was dropped, together with its test.
 - `acknowledge` is `main`'s text. On `main` it sends no value in any reply,
-  `hostAPIVersion` included. The live reads on a phone with a second panel go
-  through the same function, so they no longer answer `hostAPIVersion` with 7.
-  The prototype in #47 added that answer, and no run since has read a live tree
-  without it.
+  `hostAPIVersion` included: #189 removed the answer of 7 that `main` had sent
+  since 5efdcd1. The live reads on a phone with a second panel go through the
+  same function, so they no longer answer `hostAPIVersion` either. Every
+  earlier hardware run had that answer.
 - The launcher on `main` no longer compiles `ax.rs` or any other bridge file,
   so the branch no longer changes `native/launcher`. The commit that added
   `display.rs` to the launcher was dropped, and so was `ROUTES_BY_PANEL = false`
@@ -246,4 +246,44 @@ did. Every line that `main` added to `ax.rs` since `ce504ac` is in the rebased
 file.
 
 The hardware run in the previous section was on the code before this rebase.
-It has not been repeated on the rebased code yet.
+The next section records the run on the rebased code.
+
+## Hardware run after the third rebase
+
+Run on 4642454. Its code is the same as at f4d6895, the last commit that changes
+code; only this file differed. The daemon and a release build of the native
+helper came from a checkout of 4642454, and `poki_mcp_status` reported it. The
+pinned idevice dependency carried the same one-line local change to
+`remotepairing_serial_number` as before. The MCP calls went straight to that
+daemon.
+
+Same phone and method as the previous run: the panel and its rotation were read
+before each step with `xcrun devicectl device info displays`, every step used
+Settings, and "Agree" means the same three things.
+
+| State | Reported size | Result |
+| --- | --- | --- |
+| Inner panel, `rot90` | 951 by 669 | Agree. |
+| Inner panel, `rot270` | 951 by 669 | Agree. |
+| Inner panel, `rot180` | 669 by 951 | Agree. A tap at a point taken from the screenshot also hit its row. |
+| Inner panel, `rot0` | 669 by 951 | Agree. |
+| Outer panel after folding, `rot0` | 466 by 678 | Agree. `go_back` and `tap_text` also changed the screen as expected. |
+| Inner panel after unfolding, `rot90` | 951 by 669 | Agree. |
+
+- All six states ran on one helper process. The next read and the next tap
+  used the new panel and rotation each time.
+- None of these live reads answered `hostAPIVersion`, and all of them returned
+  trees.
+- The first `type_text` after the tunnel came up verified through
+  accessibility and restored the clipboard. An AX read with the keyboard on
+  screen returned 55 elements. The following `type_text` with `clear` verified
+  too. The previous run returned `text_not_verified` at this step, and what
+  made the difference is not known.
+- `launch_app` as the first call after the tunnel came up again returned an
+  unknown outcome with `AX live query failed`, and Settings had opened. A
+  second call with Settings already in front confirmed the foreground app.
+
+Not run on hardware:
+
+- A screen with more than 256 elements. The Settings root has 24.
+- The launcher, which this branch no longer changes.
