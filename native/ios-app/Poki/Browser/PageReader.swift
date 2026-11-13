@@ -373,16 +373,21 @@ enum PageReader {
     const labels = [name(el), ...(submitting ? submitters.map((control) => name(control)) : [])];
     const prompt = ownerBox(el);
     if (prompt && !restrictedPrompt(prompt) && GO.test(name(el)) && !REJECT.test(name(el))) labels.push('pay');
-    // A search form is sent with GET and every field to type in is a search field, whatever its button
-    // says. A form that also holds a message, an amount or any other text field is not one.
-    const fields = form ? [...form.elements, ...form.querySelectorAll('[contenteditable]')].filter(typable) : [];
+    const formAction = submitter && el.hasAttribute('formaction') ? el.formAction : form?.action || '';
     const method = (submitter && el.getAttribute('formmethod') || form?.getAttribute('method') || 'get').toLowerCase();
-    const searchForm = method === 'get' && fields.length > 0 &&
-      fields.every((field) => field.type === 'search' || field.getAttribute('role') === 'searchbox');
-    const searching = form?.getAttribute('role') === 'search' ||
-      (submitting && (searchForm || (submitters.length ? submitters.every((control) => /^(search|搜索|搜尋|查询|查詢)$/i.test(name(control))) : role(el) === 'searchbox')));
+    if (submitting && formAction) {
+      const path = decodeURIComponent(new URL(formAction, document.baseURI).pathname)
+        .replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+      const words = path.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      labels.push(...words.map((word) => ['order', 'orders'].includes(word) ? 'place order' : word));
+    }
+    const fields = form ? [...form.elements, ...form.querySelectorAll('[contenteditable]')].filter(typable) : [];
+    const searchForm = method === 'get' && fields.length > 0 && fields.every((field) =>
+      field.tagName === 'INPUT' && (field.type === 'search' ||
+        field.type === 'text' && field.getAttribute('role') === 'searchbox'));
+    const searching = submitting && (searchForm || (!form && role(el) === 'searchbox'));
     const details = { documentID, ref, labels, submitting, searching, href: el.href || '',
-      formAction: form?.action || '', formMethod: form?.method || '', type: el.type || '' };
+      formAction, formMethod: method, type: el.type || '' };
     return { labels, submitting, searching, fingerprint: JSON.stringify(details) };
   }
 
