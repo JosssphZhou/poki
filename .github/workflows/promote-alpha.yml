@@ -1,7 +1,6 @@
 # Promote to Alpha: Actions > Promote to Alpha > Run workflow. Takes a pre-alpha (by default the one
 # on app-prealpha-latest), runs the alpha tests on its commit, and when they pass puts that same IPA
-# (not a rebuild) into the rolling app-alpha-latest release (and the old ios-alpha-latest) with the
-# tag app-<VERSION>-alpha.<build>.
+# (not a rebuild) into the rolling app-alpha-latest release with the tag app-<VERSION>-alpha.<build>.
 # Testers on the Alpha channel get exactly the file that was tried on Pre-alpha.
 name: Promote to Alpha
 

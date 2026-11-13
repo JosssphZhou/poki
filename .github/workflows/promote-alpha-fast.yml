@@ -1,6 +1,6 @@
 # Promote to Alpha (fast): the same as Promote to Alpha without the tests. Takes a pre-alpha (by
 # default the one on app-prealpha-latest) and puts that same IPA, with its Poki Setup files, into
-# app-alpha-latest (and the old ios-alpha-latest) as app-<VERSION>-alpha.<build>. About a minute.
+# app-alpha-latest as app-<VERSION>-alpha.<build>. About a minute.
 name: Promote to Alpha (fast)
 
 on:

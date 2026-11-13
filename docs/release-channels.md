@@ -18,10 +18,10 @@ Poki Setup orders versions so that `0.3.0-beta.1 < 0.3.0-beta.2 < 0.3.0 < 0.3.0-
 suffix sorts below the plain version, a build number above it.
 
 Until November 2026 app releases were tagged `ios-vX.Y.Z`, `ios-vX.Y.Z-beta.K`, `ios-alpha-X.Y.Z-N` and
-`ios-prealpha-X.Y.Z-N`; Poki Setup reads both schemes. Poki Setup 0.2.2 and earlier read only the old
-ones, so every pre-alpha and alpha is also copied into the old rolling releases `ios-prealpha-latest`
-and `ios-alpha-latest`, which carry the Poki Setup update too. That copy stops once those versions
-are gone. Betas and stables exist only as `app-*`.
+`ios-prealpha-X.Y.Z-N`; Poki Setup reads both schemes. Pre-alpha and Alpha each have one rolling
+release, `app-prealpha-latest` and `app-alpha-latest`; builds are no longer copied into the old
+`ios-prealpha-latest` and `ios-alpha-latest`, so Poki Setup 0.2.2 and earlier (which read only those)
+stay on the last build there. Betas and stables exist only as `app-*`.
 
 N is the commit count of the built commit on `main`, so it only goes up while `main` is never
 rewritten. Betas and stables drop it from their names; inside the app, `CFBundleVersion` still
