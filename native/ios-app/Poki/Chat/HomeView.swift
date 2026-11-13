@@ -261,6 +261,7 @@ struct ChatTopBar: View {
                         .glassSurface(in: Circle(), interactive: true)
                         .accessibilityLabel(Text("Conversations"))
                         .accessibilityIdentifier("chat.threads")
+                        .accessibilityShowsLargeContentViewer()
                 }
                 Spacer(minLength: 8)
                 Button {
@@ -275,6 +276,7 @@ struct ChatTopBar: View {
                 .sensoryFeedback(.impact(weight: .light), trigger: homeTaps)
                 .accessibilityLabel(Text("New Conversation"))
                 .accessibilityIdentifier("home.newChat")
+                .accessibilityShowsLargeContentViewer()
             }
             .padding(.top, (sizes.avatar - sizes.button) / 2)
             Button(action: openDetails) {
@@ -287,6 +289,7 @@ struct ChatTopBar: View {
             .accessibilityLabel(Text(verbatim: "Poki, " + PokiStatusCopy.word(status)))
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("chat.header.details")
+            .accessibilityShowsLargeContentViewer()
             .padding(.horizontal, sizes.button + 12)
         }
         .glassGroup()

@@ -126,6 +126,7 @@ struct TalkBar: View {
                 HStack(spacing: 8) { controls }
                 VStack(alignment: .leading, spacing: 8) { controls }
             }
+            .layoutPriority(1)
         }
     }
 
@@ -159,6 +160,7 @@ struct TalkBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(label))
         .accessibilityIdentifier(identifier)
+        .accessibilityShowsLargeContentViewer()
     }
 
     private func capsule(_ title: LocalizedStringKey, fill: Color, ink: Color, identifier: String, action: @escaping () -> Void) -> some View {

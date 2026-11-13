@@ -1414,6 +1414,7 @@ struct ComposerInputView: View {
         .disabled(voice.isOn)
         .accessibilityLabel(Text("Dictate"))
         .accessibilityIdentifier("composer.dictate")
+        .accessibilityShowsLargeContentViewer()
     }
 
     // MARK: The plus menu
