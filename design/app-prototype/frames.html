@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Poki frames</title>
+    <style>
+      :root {
+        --bg: #e4e5e1;
+        --ink: #1a1a17;
+        --ink2: #6b6b63;
+        --line: #cfd0cb;
+        --f: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--f);
+        -webkit-font-smoothing: antialiased;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: color-mix(in oklch, var(--bg) 88%, transparent);
+        -webkit-backdrop-filter: blur(14px);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid var(--line);
+        padding: 14px 28px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+      h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      header p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--ink2);
+        flex: 1;
+        min-width: 200px;
+      }
+      .seg {
+        display: flex;
+        gap: 4px;
+      }
+      .seg button,
+      nav a {
+        font: inherit;
+        font-size: 13px;
+        border: 0;
+        background: none;
+        color: var(--ink);
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        text-decoration: none;
+        min-height: 36px;
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--ink);
+        color: #fff;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .seg button:hover,
+        nav a:hover {
+          background: rgba(0, 0, 0, 0.07);
+        }
+        .seg button[aria-pressed='true']:hover {
+          background: var(--ink);
+        }
+        figure a:hover .fr {
+          box-shadow:
+            0 0 0 5px #111,
+            0 0 0 8px rgba(0, 0, 0, 0.25);
+        }
+      }
+      .seg button:focus-visible,
+      nav a:focus-visible,
+      figure a:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
+      nav {
+        display: flex;
+        gap: 2px;
+        flex-wrap: wrap;
+        padding: 10px 20px 0;
+      }
+      main {
+        padding: 8px 28px 80px;
+      }
+      section {
+        padding: 26px 0 8px;
+        scroll-margin-top: 70px;
+      }
+      h2 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+      }
+      section > p {
+        margin: 0 0 18px;
+        font-size: 14px;
+        color: var(--ink2);
+        max-width: 65ch;
+        line-height: 1.45;
+      }
+      .rowf {
+        display: flex;
+        gap: 26px;
+        flex-wrap: wrap;
+      }
+      figure {
+        margin: 0;
+        width: 195px;
+      }
+      figure a {
+        display: block;
+        border-radius: 24px;
+        text-decoration: none;
+        color: inherit;
+      }
+      .fr {
+        width: 195px;
+        height: 422px;
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 0 0 5px #111;
+        background: #fff;
+        transition: box-shadow 150ms ease-out;
+      }
+      .fr iframe {
+        width: 390px;
+        height: 844px;
+        border: 0;
+        transform: scale(0.5);
+        transform-origin: 0 0;
+        pointer-events: none;
+        display: block;
+      }
+      figcaption {
+        padding: 14px 2px 0;
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      figcaption b {
+        font-weight: 600;
+        display: block;
+      }
+      figcaption span {
+        color: var(--ink2);
+        font-variant-numeric: tabular-nums;
+      }
+      figcaption small {
+        display: block;
+        color: var(--ink2);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Poki, every frame</h1>
+      <p id="count"></p>
+      <div class="seg" id="mode">
+        <button data-mode="light" aria-pressed="true">Light</button
+        ><button data-mode="dark" aria-pressed="false">Dark</button>
+      </div>
+    </header>
+    <nav id="nav" aria-label="Sections"></nav>
+    <main id="board"></main>
+    <script>
+      /* Each frame is the real prototype, opened at one state and frozen. Click a frame to open it live. */
+      const GROUPS = [
+        [
+          'First run',
+          'Shown once, and again from Settings › Set up again. The window is the stage; it shrinks when a step needs room.',
+          [
+            ['ob-welcome', 'Welcome'],
+            ['ob-light', 'Pick the light'],
+            ['ob-setup', 'Setup checklist'],
+            ['ob-step', 'One setup step'],
+            ['ob-model', 'Choose a model'],
+            ['ob-voice', 'Microphone'],
+            ['ob-ready', 'Ready'],
+          ],
+        ],
+        [
+          'Front page',
+          'A new chat. One glass input at the bottom: write in it, or tap its black button to dictate or to talk with Poki. No settings here, and no call page.',
+          [
+            ['home', 'New chat'],
+            ['home-typing', 'Writing', 'Poki reads along'],
+            ['home-voice', 'Two ways to speak', 'The black button opens Dictate and Talk with Poki'],
+            ['home-dictating', 'Dictating', 'Your words become text; nothing is sent until you send it'],
+            ['home-talking', 'Talking with Poki', 'Live. The sky moves and Poki listens'],
+            ['home-talk-poki', 'Poki answering', 'What comes of the talk collects under its words'],
+            ['to-chats', 'Halfway to the chats', 'The window is shrinking into the New chat button'],
+          ],
+        ],
+        [
+          'Chats',
+          'One swipe from the front page. Settings sits behind the gear here, and the pill with Poki in it starts a new chat.',
+          [
+            ['chats', 'Every chat'],
+            ['chats-search', 'Searching'],
+            ['chats-empty', 'No chats yet'],
+            ['chats-alert', 'Connection needs fixing'],
+          ],
+        ],
+        [
+          'A chat',
+          'A record, written after the fact. Nothing is drawn here while Poki uses the phone; when it has finished, the chat gets one card: the apps, the time, the steps Poki named, and every action on request.',
+          [
+            ['chat-answer', 'A quick look', 'No plan, so the card is one line'],
+            ['chat-done', 'A phone task, finished', 'The steps Poki named, and the one you did yourself'],
+            ['chat-steps', 'Every action', 'Opened from the last line of the card'],
+            ['chat-allowed', 'What you allowed', 'The approval is kept on its step'],
+            ['chat-fail', 'Couldn’t finish', 'The step that did not go through, and why'],
+            ['chat-talked', 'After a talk', 'What came of it, then ordinary messages'],
+            ['chat-talking', 'Talking inside a chat', 'The card that will remain is built live'],
+            ['chat-talked-none', 'A talk with nothing to keep'],
+          ],
+        ],
+        [
+          'Poki on the phone',
+          'You are in the other app; Poki is only in the island, and the chat stays untouched until the end. This is the island from the dynamic island work: one line with the app’s own words for the action in hand, and a button that pauses Poki and resumes it. It never counts towards a total, because the app has none.',
+          [
+            ['task-work', 'Working', 'The action in hand, and Stop'],
+            ['task-paused', 'Paused', 'The island stays; the same button resumes'],
+            ['task-pill', 'Working, as a pill', 'The Quiet version: a dot beats once per action'],
+            ['task-allow', 'Asking to send', 'Twenty seconds to answer'],
+            ['task-yours', 'Your turn', 'Passwords and payments are yours'],
+            ['task-done', 'Done'],
+            ['task-fail', 'Couldn’t finish'],
+            ['task-black', 'In black', 'What an app can draw: iOS paints the island solid black'],
+          ],
+        ],
+        [
+          'Settings',
+          'Reached from the chats page. The first page is short; every setting the app has today sits behind one of its rows. Connection holds Setup, signing and Advanced. Model holds accounts and voice. Agents holds the MCP relay and its address.',
+          [
+            ['set', 'Settings', 'One status, four rows and the approvals switch'],
+            ['set-conn', 'Connection', 'Poki on or off, the setup checks'],
+            ['set-conn-warn', 'Connection, one to fix'],
+            ['set-sign', 'Signing and updates', 'From Setup today'],
+            ['set-adv', 'Advanced', 'From Setup › Advanced today'],
+            ['set-diag', 'Diagnostics', 'With the testing switches'],
+            ['set-model', 'Model', 'Accounts, what is in use, voice'],
+            ['set-acct', 'One account'],
+            ['set-agents', 'Agents', 'MCP relay, its address, each agent'],
+            ['set-relay', 'Relay address'],
+            ['set-agent', 'One agent', 'Its own MCP address'],
+            ['set-activity', 'Agent activity', 'Actions only: an agent gives no plan'],
+            ['set-memory', 'Memory', 'Routines, notes, back up'],
+            ['set-light', 'Appearance', 'New: the app has none today'],
+          ],
+        ],
+      ];
+      const q = new URLSearchParams(location.search);
+      let mode = q.get('mode') === 'dark' ? 'dark' : 'light',
+        mix = q.get('mix') || '1';
+      const slug = (t) => t.toLowerCase().replace(/[^a-z]+/g, '-');
+      function render() {
+        let n = 0;
+        const total = GROUPS.reduce((a, g) => a + g[2].length, 0);
+        document.getElementById('nav').innerHTML = GROUPS.map(
+          (g) => `<a href="#${slug(g[0])}">${g[0]}</a>`,
+        ).join('');
+        document.getElementById('board').innerHTML = GROUPS.map(
+          ([title, note, frames]) =>
+            `<section id="${slug(title)}"><h2>${title}</h2><p>${note}</p><div class="rowf">${frames
+              .map(([key, label, sub]) => {
+                n++;
+                return `<figure><a href="index.html?scene=${key}&mode=${mode}&mix=${mix}" aria-label="Open ${label} live"><div class="fr"><iframe title="${label}" tabindex="-1" data-src="index.html?frame=${key}&embed=1&mode=${mode}&mix=${mix}"></iframe></div></a><figcaption><b><span>${String(n).padStart(2, '0')}</span> ${label}</b>${sub ? `<small>${sub}</small>` : ''}</figcaption></figure>`;
+              })
+              .join('')}</div></section>`,
+        ).join('');
+        document.getElementById('count').textContent =
+          `${total} frames in ${GROUPS.length} groups. Click any frame to open it live.`;
+        document
+          .querySelectorAll('#mode button')
+          .forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === mode));
+        /* load one after another: the first frame cuts the bear art and the rest reuse it */
+        const list = [...document.querySelectorAll('iframe[data-src]')];
+        let i = 0;
+        const next = () => {
+          const f = list[i++];
+          if (!f) return;
+          f.addEventListener('load', () => setTimeout(next, 30), { once: true });
+          f.src = f.dataset.src;
+        };
+        next();
+      }
+      document.getElementById('mode').addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b || b.dataset.mode === mode) return;
+        mode = b.dataset.mode;
+        const u = new URL(location);
+        u.searchParams.set('mode', mode);
+        history.replaceState(null, '', u);
+        render();
+      });
+      render();
+    </script>
+  </body>
+</html>
