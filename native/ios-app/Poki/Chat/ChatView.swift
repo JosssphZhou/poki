@@ -1203,10 +1203,11 @@ struct ComposerInputView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var scaledButton = 44.0
+    @ScaledMetric(relativeTo: .body) private var scaledButtonDiameter = 44.0
     @ScaledMetric(relativeTo: .body) private var fieldHeight = 112.0
 
-    private var buttonSide: CGFloat { min(56, max(44, scaledButton)) }
+    private var buttonDiameter: CGFloat { min(56, max(36, scaledButtonDiameter)) }
+    private var buttonHitSide: CGFloat { max(44, buttonDiameter) }
     private var expanded: Bool { focused || typeSize >= .xxxLarge }
 
     private var voice: VoiceModel { model.voice }
@@ -1274,7 +1275,7 @@ struct ComposerInputView: View {
             .padding(6)
             .contentShape(.rect)
             .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
-            .glassSurface(in: RoundedRectangle(cornerRadius: expanded ? 24 : (buttonSide + 12) / 2, style: .continuous), fallback: .bar)
+            .glassSurface(in: RoundedRectangle(cornerRadius: expanded ? 24 : (buttonHitSide + 12) / 2, style: .continuous), fallback: .bar)
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
         }
         .animation(.snappy, value: dictation.on)
@@ -1396,7 +1397,7 @@ struct ComposerInputView: View {
             Image(systemName: "mic.fill")
                 .font(.body.weight(.medium)).foregroundStyle(Tint.red)
                 .symbolEffect(.pulse, isActive: true)
-                .frame(width: buttonSide, height: buttonSide).contentShape(.rect)
+                .frame(width: buttonHitSide, height: buttonHitSide).contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Stop Dictation"))
@@ -1408,7 +1409,7 @@ struct ComposerInputView: View {
         Button { dictation.start(model, after: input) } label: {
             Image(systemName: "mic")
                 .font(.body.weight(.medium)).foregroundStyle(Color(.label))
-                .frame(width: buttonSide, height: buttonSide).contentShape(.rect)
+                .frame(width: buttonHitSide, height: buttonHitSide).contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(voice.isOn)
@@ -1437,15 +1438,17 @@ struct ComposerInputView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.title3.weight(.medium)).dynamicTypeSize(...DynamicTypeSize.xxxLarge).foregroundStyle(Color(.label))
-                .frame(width: buttonSide, height: buttonSide)
+                .frame(width: buttonDiameter, height: buttonDiameter)
                 .background(Color(.label).opacity(scheme == .dark ? 0.16 : 0.12), in: .circle)
-                .contentShape(.circle)
+                .frame(width: buttonHitSide, height: buttonHitSide)
+                .contentShape(.interaction, Rectangle())
         }
         // Photos first, as on the board, though the menu opens upward from the button.
         .menuOrder(.fixed)
         .disabled(attachments.count >= Self.most)
         .accessibilityLabel(Text("Add Photos or Files"))
         .accessibilityIdentifier("composer.plus")
+        .accessibilityShowsLargeContentViewer()
     }
 
     private func addPhotos(_ items: [PhotosPickerItem]) async {
@@ -1484,7 +1487,7 @@ struct ComposerInputView: View {
                 .font(.body.weight(.semibold))
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(running ? Tint.onSolid : .white)
-                .frame(width: buttonSide, height: buttonSide)
+                .frame(width: buttonDiameter, height: buttonDiameter)
                 .background(running ? Tint.solid : Tint.blue, in: .circle)
                 .overlay {
                     if running {
@@ -1495,7 +1498,8 @@ struct ComposerInputView: View {
                             .animation(.easeInOut(duration: 0.4), value: progress)
                     }
                 }
-                .contentShape(.circle)
+                .frame(width: buttonHitSide, height: buttonHitSide)
+                .contentShape(.interaction, Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(running ? "Stop" : canSend ? "Send" : "Talk with Poki"))
