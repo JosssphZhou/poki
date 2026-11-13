@@ -4,8 +4,10 @@
 //   is the owner's to unlock and a password prompt is handed to them, and a purchase is a plain tap;
 //   and, for ESP-465, the Return sentence names the type answer's read-back as the check before
 //   Return, an action's check lines (the send check after Return) count as evidence, and finish_task
-//   comes in the reply right after the observation that verifies the result; and a task that cannot
-//   be completed is one beyond the tools, since a missing choice is asked in the chat;
+//   comes in the reply right after the observation that verifies the result; a task that cannot be
+//   completed is one beyond the tools, since a missing choice is asked in the chat; and a last
+//   paragraph on when a reply uses a Markdown table, which the chat draws as a table (the terminal
+//   and message channels the Mac agent answers in do not);
 // - the instructions put PokiCore's own MCP instructions first, as task-runner.mjs puts the MCP server's
 //   instructions first;
 // - look, do and status are PokiCore's tools with their MCP descriptions;
@@ -48,14 +50,14 @@ enum Harness {
         // front when a task begins, so a first look reads only the owner's chat (ESP-465). finish_task
         // ends the chat's task and the app brings Poki back (chatTaskEnded), so a finish: true do is a
         // step more; the save rides in the same reply instead of a turn before it.
-        let start = "do {run: name} with the routine below that covers it, else do {launch: bundle id} with the app it needs. Send report_plan together with that first do. Finish in one reply: finish_task, which also brings the phone back to this chat, and with it routines {action: \"save\", name, description} when the task worked and was not a routine yet, named the way the owner would ask for it."
+        let route = "Choose the route from the owner's request. For a website task, start with web_open and use only web tools; do not call look or do to check readiness, open Safari, or finish the task. For an app task, start with do {run: name} when the routine below covers it, else do {launch: bundle id}. Send report_plan with the first action. Use both routes only when the owner explicitly requested a separate app part, and put that part in its own plan step with the app's name. A failed step is not permission to switch routes. Finish with finish_task. After a successful app task that was not already a routine, save its steps with routines {action: \"save\", name, description}, named the way the owner would ask for it."
         if asking {
-            parts.append("Start the task with a do in your first reply: " + start + " Ask with ask_user before that first do only when the owner's words can mean two different tasks, such as a train ticket or a flight.")
+            parts.append(route + " Ask with ask_user before the first action only when the owner's words can mean two different tasks, such as a train ticket or a flight.")
             // Two kinds of unclear: an operation the model settles by trying, and a choice made for the
             // owner, which it takes when something gives a default and asks with ask_user otherwise.
             parts.append("Settle every operation yourself: which app to use, where to tap, which route, what a page holds; try it and look. Use the app the owner named. When they named none, use the one their saved notes name, else the usual app for the task, and name it in your reply; ask which app only when the screen or the saved notes list several apps for the task and nothing says which the owner uses. A choice is a pick made for the owner, such as which hospital branch and department, a date or time they did not give, which of two contacts with the same name, or which product option. Take a choice yourself when their words, the saved notes or the screen give a default for it (a usual or nearest store, a size already selected, the default address or payment), and name what you chose in your reply. Ask the owner with ask_user about every other choice that costs money or is hard to undo, and about what to do when the app they named is not installed: one choice per call, on the page that shows its options, before the step that submits it. Keep each answer with routines {action: \"remember\", text} so the next task of its kind starts from it.")
         } else {
-            parts.append("Start the task with a do in your first reply: " + start)
+            parts.append(route)
         }
         // A model decides approvals from what the owner said. A refused step goes through once the
         // owner says yes to it, so the agent asks in words and tries again.
@@ -87,7 +89,7 @@ enum Harness {
 
     static let reportPlan = ToolSpec(
         name: "report_plan",
-        description: "Publish a plan before phone actions. Update currentStep (1-based) on each step. title names the task in two to four words, as a heading in the user's language (\"Text Mom\", \"Order the usual\"), not the user's sentence; send it with the first plan. When the task sends a message to someone, to is that person as the user named them (\"Mom\"); leave it out otherwise.",
+        description: "Publish a plan before actions. Update currentStep (1-based) on each step. title names the task in two to four words, as a heading in the user's language (\"Text Mom\", \"Order the usual\"), not the user's sentence; send it with the first plan. When the task sends a message to someone, to is that person as the user named them (\"Mom\"); leave it out otherwise.",
         schema: object(["steps": ["type": "array", "items": string, "minItems": 1, "maxItems": 8], "currentStep": ["type": "integer", "minimum": 1, "maximum": 8], "title": string, "to": string], ["steps", "currentStep"]))
 
     static let finishTask = ToolSpec(

@@ -689,6 +689,7 @@ final class AppModel {
         }
         #endif
         Thumbnail.previewImage = ActivityPreview.sampleScreen()
+        AppIconFile.preview = { AppIconStore.shared.icon($0) }
         sessionOn = true
         relayStatus = .ready
         currentApp = messages
@@ -1544,6 +1545,7 @@ final class AppModel {
     }
 
     func runTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+        if name == "status" || name == "routines" { return await core.callTool(name, arguments: arguments) }
         if probeDriven { return await core.callTool(name, arguments: arguments) }
         if !sessionOn { startSession() }
         guard sessionOn else {
