@@ -40,6 +40,43 @@ final class ChatHarnessTests: XCTestCase {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
     }
 
+    func testCancellingADelegationStopsItsChat() async throws {
+        let server = try FakeCompletions(replies: [FakeCompletions.text("Late reply.")], replyDelay: 1)
+        let chat = chat(on: server)
+        let run = Task { await chat.runDelegated("Wait for a reply") }
+        let deadline = Date().addingTimeInterval(5)
+        while server.requests.isEmpty, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(server.requests.count, 1)
+        XCTAssertTrue(chat.running)
+
+        run.cancel()
+        let reply = await run.value
+
+        XCTAssertFalse(chat.running)
+        XCTAssertNil(ChatModel.delegatedBusy)
+        XCTAssertNotEqual(reply.success, true)
+        XCTAssertTrue(reply.text.contains("Stopped."), reply.text)
+        // The suspended model response must not start another turn or appear after Stop.
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(server.requests.count, 1)
+        XCTAssertFalse(chat.entries.contains { if case .poki("Late reply.") = $0.kind { return true }; return false })
+    }
+
+    func testAlreadyCancelledDelegationDoesNotStartAChat() async throws {
+        let server = try FakeCompletions(replies: [FakeCompletions.text("Should not run.")])
+        let chat = chat(on: server)
+        let run = Task { await chat.runDelegated("Do not start") }
+        run.cancel()
+
+        let reply = await run.value
+
+        XCTAssertEqual(reply.success, false)
+        XCTAssertFalse(chat.running)
+        XCTAssertNil(ChatModel.delegatedBusy)
+        XCTAssertTrue(chat.entries.isEmpty)
+        XCTAssertTrue(server.requests.isEmpty)
+    }
+
     /// A note the agent saved during one task reaches the model with the next task of the same
     /// conversation.
     func testEachTaskTellsTheModelWhatMemoryHolds() async throws {
@@ -151,12 +188,14 @@ final class FakeCompletions: @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [String]
     private var bodies: [[String: Any]] = []
+    private let replyDelay: TimeInterval
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
     var requests: [[String: Any]] { lock.withLock { bodies } }
 
-    init(replies: [String]) throws {
+    init(replies: [String], replyDelay: TimeInterval = 0) throws {
         self.replies = replies
+        self.replyDelay = replyDelay
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -200,7 +239,9 @@ final class FakeCompletions: @unchecked Sendable {
             return replies.isEmpty ? Self.text("No more scripted turns.") : replies.removeFirst()
         }
         let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
-        connection.send(content: Data((head + events).utf8), completion: .contentProcessed { _ in connection.cancel() })
+        queue.asyncAfter(deadline: .now() + replyDelay) {
+            connection.send(content: Data((head + events).utf8), completion: .contentProcessed { _ in connection.cancel() })
+        }
     }
 
     private static func event(_ delta: [String: Any], finish: String) -> String {

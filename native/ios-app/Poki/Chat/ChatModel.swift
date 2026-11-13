@@ -416,11 +416,21 @@ final class ChatModel {
     /// Runs a task an outside agent handed over (`ask_poki`) and answers with Poki's last words, how the
     /// task ended, and finish_task's summary and answer.
     func runDelegated(_ task: String) async -> (text: String, success: Bool?) {
+        guard !Task.isCancelled else { return ("Poki's task was cancelled.", false) }
         ChatModel.delegatedBusy = requester ?? String(localized: "an agent")
         defer { ChatModel.delegatedBusy = nil }
         lastOutcome = nil
         send(task)
-        while running { try? await Task.sleep(for: .milliseconds(100)) }
+        while running {
+            do { try await Task.sleep(for: .milliseconds(100)) }
+            catch {
+                // A cancelled sleep throws immediately on every retry. Stop the owned chat task
+                // and leave the loop instead of spinning on the main actor while it keeps running.
+                stop()
+                await self.task?.value
+                break
+            }
+        }
         let replies = entries.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
         var lines: [String] = []
         if let taskResult {
