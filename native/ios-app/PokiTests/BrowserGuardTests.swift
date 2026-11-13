@@ -17,6 +17,65 @@ final class BrowserGuardTests: XCTestCase {
         PokiBrowser.shared.close()
     }
 
+    func testBrowserActionsWaitForOwnerConsent() async throws {
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", ApprovalClassifier.modeKey]
+        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) } }
+        let samples: [(label: String, submit: Bool, question: String?)] = [
+            ("Delete", false, "Allow deletion?"),
+            ("Send", false, "Allow sending a message?"),
+            ("Transfer", false, "Allow payment?"),
+            ("提交订单", false, "Allow payment?"),
+            ("Send", true, "Allow sending a message?"),
+            ("Place order", true, "Allow payment?"),
+            ("Next page", false, nil),
+            ("Search", true, nil),
+        ]
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
+        defer { app.onProbeApproval = nil; app.stopSession() }
+        for (index, sample) in samples.enumerated() {
+            for allowed in [false, true] {
+                UserDefaults.standard.set(ApprovalMode.allCases[index % ApprovalMode.allCases.count].rawValue, forKey: ApprovalClassifier.modeKey)
+                let html = """
+                <html><head><meta name="viewport" content="width=device-width"><title>Consent fixture</title></head><body>
+                <p id="effect"></p>
+                <form onsubmit="event.preventDefault();document.getElementById('effect').textContent='effect happened'">
+                <input type="search" aria-label="Query">
+                <button type="\(sample.submit ? "submit" : "button")" onclick="\(sample.submit ? "" : "document.getElementById('effect').textContent='effect happened'")">\(sample.label)</button>
+                </form></body></html>
+                """
+                print("Browser consent fixture: \(sample.label), submit=\(sample.submit), allow=\(allowed)")
+                let pages = try PageServer(pages: ["/": html])
+                let opened = await WebTools.perform("web_open", arguments: Self.json(["url": "http://127.0.0.1:\(pages.port)/"]))
+                XCTAssertFalse(opened.isError, opened.text)
+                let ref = try Self.ref(sample.submit ? "Query" : sample.label, in: opened.text)
+                let tool = sample.submit ? "web_type" : "web_click"
+                let arguments: [String: Any] = sample.submit ? ["ref": ref, "text": "local fixture", "submit": true] : ["ref": ref]
+                let server = try FakeCompletions(replies: [FakeCompletions.tool(tool, arguments), FakeCompletions.text("Finished fixture")])
+                ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
+                ModelKeys.customModel = "fake-model"
+                ModelKeys.selectedProvider = .custom
+                var questions: [String] = []
+                app.onProbeApproval = { approval in
+                    questions.append(approval.question)
+                    Task { @MainActor in
+                        let effect = try? await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
+                        XCTAssertEqual(effect, "", "The page must not act while consent is pending")
+                        XCTAssertTrue(app.approvals.contains { $0.id == approval.id }, "The request must reach the owner's card")
+                        app.resolve(approval, approved: allowed)
+                    }
+                }
+                let chat = ChatModel(app: app, kind: .handoff, requester: "Browser consent regression")
+                _ = await chat.runDelegated("Perform the local browser fixture action")
+                chat.stop()
+                let effect = try await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
+                XCTAssertEqual(questions, sample.question.map { [$0] } ?? [], sample.label)
+                XCTAssertEqual(effect, sample.question == nil || allowed ? "effect happened" : "", sample.label)
+                app.onProbeApproval = nil
+            }
+        }
+    }
+
     func testWikipediaTaskKeepsPhoneAutomationOff() async throws {
         let pages = try PageServer(pages: ["/": "<html><title>On this day</title><body>Public history page</body></html>"])
         let server = try FakeCompletions(replies: [
