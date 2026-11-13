@@ -10,8 +10,7 @@
 
 <p align="center">
   <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | 繁體中文 | <a href="README.ja.md">日本語</a> | <a href="README.ko.md">한국어</a> | <a href="README.es.md">Español</a><br>
-  <a href="https://poki.bot">poki.bot</a><br>
-  <sub>This translation describes an earlier release. The <a href="README.md">English README</a> covers Poki 0.4.0.</sub>
+  <a href="https://poki.bot">poki.bot</a>
 </p>
 
 <!-- badges:start -->
@@ -21,112 +20,142 @@
   <a href="https://github.com/JosssphZhou/poki/forks"><img src="https://img.shields.io/github/forks/JosssphZhou/poki" alt="GitHub forks"></a>
   <a href="https://github.com/JosssphZhou/poki/issues"><img src="https://img.shields.io/github/issues/JosssphZhou/poki" alt="GitHub issues"></a>
   <a href="https://github.com/JosssphZhou/poki/releases"><img src="https://img.shields.io/github/v/release/JosssphZhou/poki?sort=date&amp;display_name=release" alt="Latest release"></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20iOS-lightgrey" alt="Platform: macOS and iOS">
+  <img src="https://img.shields.io/badge/platform-iOS%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Platform: iOS, macOS and Windows">
 </p>
 <!-- badges:end -->
 
-## 快速開始
+Poki 是一個像人一樣操作 iPhone 的代理。它讀取螢幕，在實際應用程式裡點按、輸入和滾動，並在敏感操作前詢問你。
 
-**在 iPhone 上安裝 Poki App。** 從 [Alpha 發布頁](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下載 Poki Setup，依照安裝視窗操作。詳見 [iPhone 安裝說明](README.md#install-poki-on-your-iphone)。iPhone 上還需要一個能把 10.7.0.1 連回本機的 VPN 應用程式，App Store 上免費的 LocalDevVPN 就可以。模型帳號需要自己準備：用 ChatGPT Plus 或 Pro 方案登入最省事，也可以填入 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 金鑰，或者接入自己的 OpenAI 相容服務。Claude 訂閱無法直接登入，請改用 Anthropic API 金鑰。
+**Poki App** 直接在 iPhone 上執行。你在對話裡交代任務，它就在其他應用程式裡完成。首次安裝需要 Mac 或 Windows 電腦，之後執行任務不需要電腦。
 
-**讓 agent 幫你安裝。** 把這段貼給你的 agent：
+Poki MCP 是早期通過 Mac 上的代理控制 iPhone 的方式，現已停止更新。已有使用者仍可使用，說明保留在頁面後部的 [Poki MCP](#poki-mcp)。
+
+各版本的更新內容見 [CHANGELOG.md](CHANGELOG.md)。
+
+## 在 iPhone 上安裝 Poki
+
+首次安裝需要一台 Mac 或 Windows 電腦。
+
+- **Mac**：讓代理安裝 Poki，或下載 macOS 版 Poki Setup，按視窗操作。
+- **Windows**：下載 Windows 版 Poki Setup，按視窗操作。先安裝 Apple Devices 或 iTunes，讓電腦能通過 USB 識別 iPhone。代理也可以使用 Poki Setup 自帶的命令列工具。
+- **安裝之後**：Poki 在 iPhone 上獨立執行任務。免費 Apple 帳號的簽章有效期是 7 天，電腦上的 Poki Setup 保持執行時可以續簽，見[常見問題](#常見問題)。
+
+### 讓代理安裝（推薦）
+
+把下面這句話發給 Claude Code 或 Codex 等代理：
 
 ```text
-依照 https://github.com/JosssphZhou/poki 根目錄的 AGENTS.md 安裝，包含 MCP 技能，需要我操作時就停下來。
+從 https://github.com/JosssphZhou/poki 把 Poki 安裝到我的 iPhone。
 ```
 
-**Poki MCP。** 已經在用 Claude Code、Codex 或其他 MCP 用戶端？接上 Poki MCP，用你自己的訂閱就好，不需要另外的模型帳號。
+代理按 [install-poki 技能](skills/install-poki/SKILL.md)執行 `bin/install-iphone.mjs`，自動完成可以代做的步驟。你只需完成系統要求本人操作的部分：在 Mac 的 Poki Setup 視窗輸入 Apple 帳號，在手機上點「信任」、開啟開發者模式、信任開發者並開啟 Poki。首次開啟時，Poki 會請求開啟自動化模式，請點「繼續」並輸入鎖屏密碼。取消後重新開啟 Poki，即可再次請求。代理會在每一步用一句話告訴你要做什麼。免費 Apple 帳號也可以使用。
 
-啟動伺服器並讓它持續執行：
+安裝器預設選擇 Alpha 通道，也可以讓代理選擇 Beta 等其他通道。組建先進入 Alpha，經過更多測試後，同一組建再進入 Beta。
 
-```sh
-git clone https://github.com/JosssphZhou/poki.git
-cd poki
-./bin/setup
-npm start
-```
+沒有 Node.js 24，或使用 Windows？先安裝 Poki Setup，同一句提示詞仍然可用，代理會使用安裝器內的命令列工具。Poki Setup 也能複製給代理的提示詞，Mac 上在 Poki > Copy Prompt for Your Agent，Windows 上在 Settings > Use an agent。
 
-需要 macOS 15 或以上版本、完整版 Xcode、Rust、Node.js 24+ 和 ffmpeg。`./bin/setup` 會檢查缺少的相依套件，第一次建置需要幾分鐘。
+安裝器讀取 GitHub 發布列表時若出現 403 或 429，通常是同一網路共用的匿名請求額度已用完。換一個網路或代理伺服器節點後重試，或等一小時。
 
-Poki 以 macOS 為目標平台。Linux 使用者請見社群移植版 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)（[#16](https://github.com/JosssphZhou/poki/issues/16)），它在本儲存庫之外維護。
+### 使用 Poki Setup
 
-Windows：社群移植版 [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows)（由其作者維護，我們未測試）。
+想自己點選安裝？從 [Alpha 發布頁](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下載 macOS 版 `.dmg` 或 Windows 版 `.exe`，按視窗操作。Windows 版由 [ZhehanZhang](https://github.com/ZhehanZhang) 貢獻。Beta 發布頁帶有相同的 Poki Setup 安裝文件。在設定中選擇通道之前，Poki Setup 預設安裝最新 Stable；尚無 Stable 時安裝 Beta。步驟見 [Poki Setup](desktop/README.md)。
 
-### 預先編譯的 macOS arm64 套件
+### 需要準備什麼
 
-從 Release 頁面下載 `poki-v0.1.1-macos-arm64.tar.gz`，然後執行：
+| 項目 | 要求 |
+| --- | --- |
+| iPhone | iOS 18 或更高版本，即 iPhone XS、XR、SE（第 2 代）或更新機型。真機測試目前使用 iOS 27。 |
+| 電腦 | macOS 14 或更高版本的 Mac，或已安裝 Apple Devices 或 iTunes 的 x64 Windows 電腦。Mac 上用代理安裝還需要 Node.js 24 或更高版本，不需要 Xcode。 |
+| 資料線與帳號 | USB 資料線和 Apple 帳號。免費帳號的簽章有效期為 7 天，Poki Setup 可以續簽。 |
+| 連線 | iPhone 上需要能把 10.7.0.1 連回手機本機的 VPN 應用程式。App Store 上免費的 LocalDevVPN 可以使用，也可以按 Poki 的說明設定 Karing 或 Shadowrocket。 |
+| 模型帳號 | 需要自己準備。使用 ChatGPT Plus 或 Pro 登入最方便。也可填寫 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 金鑰，或使用自己的 OpenAI 兼容服務。Claude 訂閱不能直接登入，請使用 Anthropic API 金鑰。 |
 
-```sh
-tar -xzf poki-v0.1.1-macos-arm64.tar.gz
-cd poki-v0.1.1
-npm ci --no-audit --no-fund
-npm start
-```
+iOS 27 及以上通過原生服務控制手機。iOS 18 至 26 使用 XCTest 會話，需要在手機的開發者設定中開啟 UI Automation。應用也能安裝到 iPadOS 18 及以上的 iPad。
 
-套件內含原生橋接和 idevice 工具，不需要 Rust 或 `./bin/setup`。仍然需要 Apple Silicon 的 macOS、完整版 Xcode、Node.js 24+、Python 3 和 ffmpeg。MCP 用戶端的註冊和選用的 Agent 安裝，請參考下文。
+### 常見問題
 
-在同一個目錄開另一個終端機，註冊 MCP 伺服器：
+**Windows 能安裝嗎？** 可以。Windows 版 Poki Setup 和 Mac 版一樣能安裝、配對和續簽。請先安裝 Apple Devices 或 iTunes，讓電腦能識別 iPhone。見 [Poki Setup](desktop/README.md)。
 
-```sh
-claude mcp add --scope user poki-mcp -- node "$PWD/src/stdio.mjs"   # Claude Code
-codex mcp add poki-mcp -- node "$PWD/src/stdio.mjs"                 # Codex
-```
+**裝好以後還需要電腦嗎？** 執行任務不需要，Poki 在手機上獨立執行。使用免費 Apple 帳號時，保持電腦上的 Poki Setup 執行以便每周續簽；也可以在手機的 Poki 中登入 Apple 帳號，讓手機自行續簽。0.4.0 的首次手機登入可能失敗，見[已知問題](#已知問題)和[需要保持執行的內容](skills/install-poki/SKILL.md#what-to-keep-running)。
 
-**Poki Agent。** 想用 Poki 獨立的終端機 agent 或訊息管道的話，讓 `npm start` 繼續執行，在同一個目錄再開一個終端機。安裝 agent，把它的指令加進這個終端機的 PATH，然後登入：
+**免費 Apple 帳號可以用嗎？7 天限制是什麼？** 可以，但簽章只有 7 天有效。電腦保持喚醒、手機可連線且 Poki Setup 開著時，安裝器每 6 小時檢查一次，剩餘 2 天或更少時續簽。不續簽就會到期無法開啟，Poki 會在最後 2 天提醒。見[沒有付費開發者帳號](skills/install-poki/SKILL.md#no-paid-developer-account)。
 
-```sh
-npm ci --prefix agent
-export PATH="$PWD/bin:$PATH"
-poki login
-poki status
-```
+**需要什麼 iPhone 和系統？** iOS 18 及以上，即 iPhone XS、XR、SE（第 2 代）或更新機型；也支援安裝到 iPadOS 18 及以上。真機測試目前只在 iOS 27 上完成，iOS 18 至 26 使用的另一條控制路徑尚未在真機驗證。見[驗證記錄](docs/verification.md)。
 
-Poki Agent 預設使用 GPT-6.1 Terra（`gpt-6.1-terra`），推理強度為 low。建議保留這項設定，它是我們在手機任務中測試過的最快設定。可透過 `POKI_AGENT_MODEL` 更換模型，詳見[執行 Poki Agent](agent/README.md)。
+**需要自己的模型帳號嗎？** 需要。可用 ChatGPT Plus 或 Pro 登入，或使用 Anthropic、OpenAI、Gemini、DeepSeek、OpenRouter 的 API 金鑰或自己的 OpenAI 兼容服務。語音對話還需要語音模型金鑰。見[需要準備什麼](#需要準備什麼)。
 
-實體 iPhone 請先透過 USB 和 Mac 配對。詳見[實體 iPhone 設定](docs/physical-iphone.md)。
+**看不到更新，例如在中國大陸的網路上，怎麼辦？** Poki 從 GitHub 查更新，部分網路無法訪問或會遇到 403、429 限制。換網路或代理伺服器節點，或在電腦上的 Poki Setup 點 Renew 更新。見[更新 Poki](#更新-poki)。
+
+**會改動手機里的內容嗎？操作前會問嗎？** Poki 在實際應用程式裡執行你交代的任務，包括發消息。螢幕內容會發送給你設定的模型服務。付款、刪除和錢包操作始終需要確認。發消息、輸入密碼等其他敏感步驟，可以在 Settings > Approvals 選擇詢問方式或不詢問。見[已知問題](#已知問題)。
+
+## 更新 Poki
+
+- **手機上**：0.4.0 開啟 Settings > Connection > Signing & Updates，0.3.1 開啟設定中的 Signing 頁面。有新組建時，頁面提供下載並安裝。若要求先登入，說明應用由電腦安裝，手機還沒有 Apple 帳號，請使用安裝時的帳號登入，或改由電腦更新。
+- **電腦上**：Poki Setup 的 Renew 會把所選通道的最新組建覆蓋安裝到現有應用。Mac 上也可以讓代理「更新我 iPhone 上的 Poki」，install-poki 技能的更新流程會先檢查版本和簽章身份。
+- 卡在「Finishing the update」時，從多任務介面划掉 Poki，再開啟並核對設定中的版本。版本未變則用電腦上的 Poki Setup 更新。不要為修復更新而刪除 Poki，刪除應用也會刪除對話。
+
+通道和 Alpha 到 Beta 的流程見[發布通道](docs/release-channels.md)。
+
+## 已知問題
+
+- Poki 操作的是真實手機。你讓它發送消息或付款，它就會執行。螢幕內容會發送給你設定的模型服務。
+- 0.4.0 在手機上首次登入 Apple 帳號可能提示需要 Mac，因為 Apple 不再接受 Poki 使用的舊 Mac 登入身份。已登入使用者可照常在手機上更新；其他使用者請通過電腦上的 Poki Setup 續簽和更新。
+- 真機支援目前僅在中文介面、竪屏 iPhone 上驗證，不支援橫屏。
+- 未在低於 iOS 27 的真機或 iPad 上測試。較舊或較小的 iPhone 上，三維小熊和首頁動畫可能更熱或更慢。低電量模式和「減弱動態效果」會改用靜態小熊圖片。
+- 免費 Apple 帳號簽章有效期為 7 天。請讓電腦上的 Poki Setup 能連線手機，或在到期前手動續簽。
+- GitHub 發布列表可能返回 403 或 429，通常與多人共用網路有關。換網路或代理伺服器節點後重試，或等一小時。
+
+更多限制和測試結果見[驗證記錄](docs/verification.md)。
 
 ## 試跑一個任務
 
-使用 Poki Agent 時，如果只連接一支 iPhone，會自動選取。連接多台裝置時，加上 `--device '<device UUID>'`。
+開啟 Poki，在輸入框寫「查一下明天的天氣，告訴我要不要帶傘」，或點首頁的應用開始任務。Poki 在螢幕上的應用程式裡操作，在靈動島和鎖屏顯示步驟，並在敏感操作前停下詢問。
 
-```sh
-node bin/call.mjs list_devices   # 查詢裝置 UUID
-poki "Search esp32 in Chrome and summarize the top result"
-```
+也可以不先開啟 Poki，長按操作按鈕與它對話，或通過快捷指令和 Siri 使用 Talk to Poki、Send Task to Poki。這類任務會通過通知回復。
 
-> **注意：** Poki 操作的是你真實的 iPhone。如果你要它發訊息或付款，它就會照做。螢幕內容會傳送到你設定的模型服務。
-
-越用越快：Poki Agent 會記住做過的任務，重複執行時速度更快。
-
-**訊息管道：** 設定好已授權的管道後，用 `poki imessage` 或 [`poki telegram`](agent/README.md#telegram) 啟動。設定方式請見 [Poki Agent](agent/README.md)。
-
-**MCP 用戶端：** Claude Code、Codex，以及任何支援 `mcpServers` JSON 的用戶端。
-
-實體 iPhone 的支援目前只在使用中文介面的 iPhone 上驗證過。實體裝置只支援直向。無法匯出 App 容器，也無法直接連到「設定」的子頁面。請見[驗證紀錄與已知限制](docs/verification.md)。
-
-## 文件
-
-| 主題 | 閱讀 |
-| --- | --- |
-| 安裝、其他 MCP 用戶端與疑難排解 | [安裝指南](docs/install.md) |
-| Poki Agent、模型、iMessage 與 Telegram | [執行 Poki Agent](agent/README.md) |
-| MCP 工具參考 | [工具行為](docs/tools.md) |
-| 環境變數與工作階段 | [設定](docs/configuration.md) |
-| USB 配對、開發者模式與 Wi-Fi | [實體 iPhone 設定](docs/physical-iphone.md) |
-| 測試結果、已知限制與免責聲明 | [驗證](docs/verification.md) |
-| 橋接架構 | [原生橋接](native/NATIVE.md)與[模擬器轉接層](native/simulator.md) |
-| 路線圖 | [poki.bot](https://poki.bot) |
+> **注意：** Poki 控制的是真實 iPhone。你讓它發消息或付款，它就會執行。
 
 ## 路線圖
 
-<p align="center">
-  <img src="docs/images/roadmap.png" width="860" alt="Poki roadmap. Shipped: Poki MCP, Poki Agent, iMessage, Telegram, and Terminal integrations, self-learning routes, remote connections. In Progress: persistent connection performance improvements, native text input (clipboard-free), simplified tool interface. Planned: Poki App, which runs locally on iPhone and is available while your Mac is powered off. Future: iPhone Duo support, physical device support (no Xcode required), additional model providers.">
-</p>
+這裡只列方向，不承諾日期。
 
-- **已發布:** Poki MCP、Poki Agent、iMessage、Telegram 與終端機整合、自我學習路線、遠端連線
-- **開發中:** **長連線效能最佳化**、原生文字輸入（不經剪貼簿）、簡化工具介面
-- **計畫中:** Poki App：在 iPhone 本機執行，Mac 關機時可用
-- **遠期規劃:** 支援 iPhone Duo、實機支援（無需安裝 Xcode）、更多模型供應商
+**已完成，至 0.4.0 Beta**
+
+- iPhone 上的 Poki App，安裝後無需 Mac，支援鎖屏和靈動島批准操作。
+- 代理或 Mac、Windows 版 Poki Setup 一步安裝，無需 Xcode，免費 Apple 帳號可用。
+- iOS 27 及以上的原生控制。
+- Poki MCP、Poki Agent、iMessage 和 Telegram 渠道，以及任務路線的學習與重放。Poki MCP 保留現狀，不再更新。
+- 局域網和 Tailscale 遠程連線。
+- 0.4.0 介面，包括三維小熊首頁、語音對話、操作按鈕、封存和深色模式。
+
+**下一步**
+
+- 更新改用 Poki 自己的下載源，GitHub 作為備用。
+- 多個更新通道合為一個。
+- 語音只負責聽、說和看，手機操作交給當前執行任務的文字模型。
+- 更多介面語言。
+
+**以後**
+
+- 在更多 iPhone、iOS 版本和螢幕語言上做真機驗證。
+- 支援更多模型服務。
+
+## 文件
+
+| 主題 | 文件 |
+| --- | --- |
+| 各版本更新內容 | [CHANGELOG.md](CHANGELOG.md) |
+| 用代理安裝 iPhone App | [install-poki 技能](skills/install-poki/SKILL.md) |
+| Mac 和 Windows 安裝器 | [Poki Setup](desktop/README.md) |
+| 發布通道和組建晉級 | [發布通道](docs/release-channels.md) |
+| Poki MCP 安裝、其他客戶端和排錯（不再更新） | [安裝指南](docs/install.md) |
+| Poki Agent、模型、iMessage 和 Telegram | [執行 Poki Agent](agent/README.md) |
+| MCP 工具說明 | [工具說明](docs/tools.md) |
+| 環境變量和會話 | [設定說明](docs/configuration.md) |
+| USB 配對、開發者模式和 Wi-Fi | [真機設定](docs/physical-iphone.md) |
+| 測試結果、限制與免責聲明 | [驗證記錄](docs/verification.md) |
+| 橋接架構 | [原生橋接](native/NATIVE.md)和[模擬器適配](native/simulator.md) |
+| 路線圖 | [路線圖](#路線圖) |
 
 ## Star History
 
@@ -181,6 +210,17 @@ poki "Search esp32 in Chrome and summarize the top result"
 </table>
 <!-- CORE-CONTRIBUTORS:END -->
 
+## 特別貢獻者
+
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/yulunRyanw"><img src="https://avatars.githubusercontent.com/u/216360668?v=4&size=240" width="120" height="120" alt="yulunRyanw"/><br /><sub><b>yulunRyanw</b></sub></a><br />提交了一整套 0.4.0 改版設計，涵蓋對話、即時動態、設定和首次執行（<a href="https://github.com/JosssphZhou/poki/pull/250">#250</a>、<a href="https://github.com/JosssphZhou/poki/pull/256">#256</a> 至 <a href="https://github.com/JosssphZhou/poki/pull/268">#268</a>），這些設計塑造了新介面的方向。</td>
+    </tr>
+  </tbody>
+</table>
+
+
 ## 感謝牆
 
 感謝每一位提交過 Issue 或 Pull Request 的朋友，你們的回報與修正讓 Poki 變得更好。
@@ -233,6 +273,91 @@ poki "Search esp32 in Chrome and summarize the top result"
   </tbody>
 </table>
 <!-- THANKS-WALL:END -->
+
+<a id="poki-mcp"></a>
+
+## Poki MCP (早期電腦連線方式，不再更新)
+
+Poki MCP 是早期的電腦端連線方式，現已停止更新。Mac 上的 Claude Code 或 Codex 等代理可透過它控制 iPhone 或 iOS 模擬器，Poki Agent 則提供終端機、iMessage 和 Telegram 管道。這裡保留給既有使用者和繼續開發的人；要使用持續維護的版本，請[安裝 iPhone App](#在-iphone-上安裝-poki)。
+
+**讓 agent 幫你安裝。** 把這段貼給你的 agent：
+
+```text
+依照 https://github.com/JosssphZhou/poki 根目錄的 AGENTS.md 安裝，包含 MCP 技能，需要我操作時就停下來。
+```
+
+**Poki MCP。** 已經在用 Claude Code、Codex 或其他 MCP 用戶端？接上 Poki MCP，用你自己的訂閱就好，不需要另外的模型帳號。
+
+啟動伺服器並讓它持續執行：
+
+```sh
+git clone https://github.com/JosssphZhou/poki.git
+cd poki
+./bin/setup
+npm start
+```
+
+Poki MCP 從原始碼建置，因此需要 macOS 15 以上、完整版 Xcode、Rust、Node.js 24+、Python 3 和 ffmpeg。Poki App 不需要 Xcode。`./bin/setup` 會檢查缺少的相依套件，首次建置需要幾分鐘。
+
+Poki 以 macOS 為目標平台。Linux 使用者請見社群移植版 [poki-for-linux](https://github.com/carrotciallo/poki-for-linux)（[#16](https://github.com/JosssphZhou/poki/issues/16)），它在本儲存庫之外維護。
+
+Poki MCP on Windows：社群移植版 [scy7796/poki-for-windows](https://github.com/scy7796/poki-for-windows)（由其作者維護，我們未測試）。
+
+Poki MCP 的發布標籤為 `vX.Y.Z`，iPhone App 的 `app-` 發布不包含這個套件。
+
+### 預先編譯的 macOS arm64 套件
+
+從 Release 頁面下載 [`poki-v0.1.1-macos-arm64.tar.gz`](https://github.com/JosssphZhou/poki/releases/tag/v0.1.1)，然後執行：
+
+```sh
+tar -xzf poki-v0.1.1-macos-arm64.tar.gz
+cd poki-v0.1.1
+npm ci --no-audit --no-fund
+npm start
+```
+
+套件內含原生橋接和 idevice 工具，不需要 Rust 或 `./bin/setup`。仍然需要 Apple Silicon 的 macOS、完整版 Xcode、Node.js 24+、Python 3 和 ffmpeg。MCP 用戶端的註冊和選用的 Agent 安裝，請參考下文。
+
+在同一個目錄開另一個終端機，註冊 MCP 伺服器：
+
+```sh
+claude mcp add --scope user poki-mcp -- node "$PWD/src/stdio.mjs"   # Claude Code
+codex mcp add poki-mcp -- node "$PWD/src/stdio.mjs"                 # Codex
+```
+
+**Poki Agent。** 想用 Poki 獨立的終端機 agent 或訊息管道的話，讓 `npm start` 繼續執行，在同一個目錄再開一個終端機。安裝 agent，把它的指令加進這個終端機的 PATH，然後登入：
+
+```sh
+npm ci --prefix agent
+export PATH="$PWD/bin:$PATH"
+poki login
+poki status
+```
+
+Poki Agent 預設使用 GPT-6.1 Terra（`gpt-6.1-terra`），推理強度為 low。建議保留這項設定，它是我們在手機任務中測試過的最快設定。可透過 `POKI_AGENT_MODEL` 更換模型，詳見[執行 Poki Agent](agent/README.md)。
+
+實體 iPhone 請先透過 USB 和 Mac 配對。詳見[實體 iPhone 設定](docs/physical-iphone.md)。
+
+`./bin/poki update` 仍會拉取最新 main 並重新建置。重新啟動步驟和可選的更新檢查見 [Update](AGENTS.md#update)。
+
+### 使用 Poki Agent 試跑任務
+
+使用 Poki Agent 時，如果只連接一支 iPhone，會自動選取。連接多台裝置時，加上 `--device '<device UUID>'`。
+
+```sh
+node bin/call.mjs list_devices   # 查詢裝置 UUID
+poki "Search esp32 in Chrome and summarize the top result"
+```
+
+> **注意：** Poki 操作的是你真實的 iPhone。如果你要它發訊息或付款，它就會照做。螢幕內容會傳送到你設定的模型服務。
+
+越用越快：Poki Agent 會記住做過的任務，重複執行時速度更快。
+
+**訊息管道：** 設定好已授權的管道後，用 `poki imessage` 或 [`poki telegram`](agent/README.md#telegram) 啟動。設定方式請見 [Poki Agent](agent/README.md)。
+
+**MCP 用戶端：** Claude Code、Codex，以及任何支援 `mcpServers` JSON 的用戶端。
+
+實體 iPhone 的支援目前只在使用中文介面的 iPhone 上驗證過。實體裝置只支援直向。無法匯出 App 容器，也無法直接連到「設定」的子頁面。請見[驗證紀錄與已知限制](docs/verification.md)。
 
 ## 免責聲明
 
