@@ -4,7 +4,9 @@
 //   is the owner's to unlock and a password prompt is handed to them, and a purchase is a plain tap;
 //   and, for ESP-465, the Return sentence names the type answer's read-back as the check before
 //   Return, an action's check lines (the send check after Return) count as evidence, and finish_task
-//   comes in the reply right after the observation that verifies the result;
+//   comes in the reply right after the observation that verifies the result; and the purchase sentence
+//   is replaced by one on choosing within the owner's request (Poki's rules decide what asks), and the
+//   tool-error sentence says a declined or unanswered approval is the owner's decision;
 // - the instructions put PokiCore's own MCP instructions first, as task-runner.mjs puts the MCP server's
 //   instructions first;
 // - look, do and status are PokiCore's tools with their MCP descriptions;
@@ -41,10 +43,11 @@ enum Harness {
         // ends the chat's task and the app brings Poki back (chatTaskEnded), so a finish: true do is a
         // step more; the save rides in the same reply instead of a turn before it.
         parts.append("Start the task with a do in your first reply: do {run: name} with the routine below that covers it, else do {launch: bundle id} with the app it needs. Send report_plan together with that first do. Finish in one reply: finish_task, which also brings the phone back to this chat, and with it routines {action: \"save\", name, description} when the task worked and was not a routine yet, named the way the owner would ask for it.")
-        // A model decides approvals from what the owner said. A refused step goes through once the
-        // owner says yes to it, so the agent asks in words and tries again.
+        // A model decides messages, calls and passwords from what the owner said; payments, deleting and
+        // Wallet are always the owner's card. A refused step goes through once the owner says yes to it,
+        // so the agent asks in words and sends the same actions again.
         if ApprovalClassifier.mode == .reply {
-            parts.append("Approvals here are decided from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, naming the step, and if they say yes, send the same step again.")
+            parts.append("Here the owner answers in this chat. A declined message, call or password means they have not said yes to it here yet: ask them in one plain sentence whether they want it, naming it as the answer does (the kind of step and the app, with the person, the words or the amount), and end your turn. If they say yes, send the same actions again, unchanged; otherwise leave it undone. A declined payment, deletion or Wallet step is their own answer on the card.")
         }
         if !brief.isEmpty { parts.append(brief) }
         return parts.joined(separator: "\n\n")

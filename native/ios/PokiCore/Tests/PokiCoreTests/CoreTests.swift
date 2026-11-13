@@ -494,7 +494,32 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
         // The screen it was refused on comes with the answer (the gym: the one answer without a picture).
         XCTAssertNotNil(result.jpeg, result.text)
-        XCTAssertTrue(result.text.contains("Nothing was sent.\napp: "), result.text)
+        XCTAssertTrue(result.text.contains(" Nothing was sent. "), result.text)
+        XCTAssertTrue(result.text.contains("\napp: "), result.text)
+    }
+
+    /// A card nobody answered in its time and a card another action replaced are different answers: the
+    /// first is not approved and is not sent again, the second can be sent again.
+    func testACardThatRanOutAndACardAnotherActionReplacedAnswerDifferently() async {
+        var config = CoreConfig(approvalWait: 5, toolDeadline: 8, actionCap: 3, readTimeout: 1, busyWait: 0.2, treeFormat: "json", humanize: false)
+        config.approvalMode = { .confirm }
+        let wda = screenWithDelete()
+        let computer = Computer(runner: Runner(url: config.runnerURL, transport: wda), host: FakeHost(), config: config, approvals: Approvals(lifetime: 0.5) { _ in })
+        _ = await computer.look(full: false)
+        let ranOut = await computer.act(actions: [["tap": 1]], full: false)
+        XCTAssertTrue(ranOut.text.hasPrefix("not_sent from action 1: the owner did not answer on the phone"), ranOut.text)
+        XCTAssertTrue(ranOut.text.contains("do not send it again in this task"), ranOut.text)
+
+        let (core, _, _) = makeCore(screenWithDelete()) { $0.approvalWait = 5 }
+        _ = await core.call("look", [:])
+        Task {
+            while core.pendingApproval == nil { try? await Task.sleep(nanoseconds: 20_000_000) }
+            _ = await core.clearTap(on: "Share", inApp: "com.apple.mobileslideshow", named: "Photos", waiting: 0.1)
+        }
+        let replaced = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(replaced.text.hasPrefix("not_sent from action 1: the card for this step was withdrawn before the owner answered"), replaced.text)
+        XCTAssertTrue(replaced.text.contains("Send the same actions again when you still need them."), replaced.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
 
     func testOtherActionsWithdrawThePendingRequestSoTheAutomationCannotApproveIt() async {

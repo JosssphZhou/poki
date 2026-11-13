@@ -261,13 +261,16 @@ final class ChatModel {
     /// The pictures of the owner's last message, sent again with it by Try Again.
     private var lastImages: [Data] = []
 
-    /// What was said in this chat, oldest first, for the auto-classifier.
+    /// What the owner said in this chat, oldest first, for the auto-classifier: their own messages, one
+    /// line each, and Poki's note where a step was declined here and they were to be asked about it. The
+    /// agent's replies and outside agents' requests are left out, so nothing an agent writes, a line it
+    /// starts with "Owner:" included, reads as the owner's yes.
     var ownerContext: [String] {
         entries.suffix(30).compactMap { entry in
             switch entry.kind {
-            case .you(let text, _): "Owner: \(text)"
-            case .request(let text, let from): "Request from \(from): \(text)"
-            case .poki(let text): "Assistant: \(String(text.prefix(400)))"
+            case .you(let text, _): "Owner: \(text.split(whereSeparator: \.isNewline).joined(separator: " "))"
+            case .note(.approval(let note)) where note.reply && note.state == .refused:
+                "Poki: the step \(note.why) in \(note.app) was declined, and the agent was told to ask the owner in this chat whether to do it."
             default: nil
             }
         }

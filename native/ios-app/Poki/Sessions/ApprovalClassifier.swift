@@ -99,17 +99,14 @@ enum ApprovalClassifier {
             return Verdict(allowed: false, reason: "no chat model to ask")
         }
         var said: [String] = AskPoki.chat?.ownerContext ?? []
-        for line in voice.suffix(12) {
-            switch line.role {
-            case .you: said.append("Owner (live call): \(line.text)")
-            case .poki: said.append("Assistant (live call): \(line.text)")
-            default: break
-            }
+        for line in voice.suffix(12) where line.role == .you {
+            said.append("Owner (live call): \(line.text.split(whereSeparator: \.isNewline).joined(separator: " "))")
         }
         let conversation = said.isEmpty ? "(the owner has said nothing in Poki; the request came from an outside agent)" : said.suffix(20).joined(separator: "\n")
         let instructions = """
         You decide, fast, whether an AI agent driving the owner's iPhone may do one sensitive step. \
-        \(level.rule) A yes from the owner to a question about this step counts as asking for it. \
+        \(level.rule) The conversation holds only the owner's own messages and Poki's notes. The owner's yes \
+        after Poki's note that this step was declined and they were to be asked counts as asking for it. \
         Reply with one line: ALLOW or REFUSE, a colon, and at most ten words why.
         """
         let prompt = """

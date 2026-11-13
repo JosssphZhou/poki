@@ -107,7 +107,9 @@ public struct Approval: Sendable, Equatable {
 /// press the automation lands afterwards finds nothing to grant. Both also refuse to tap in Poki when
 /// they can tell it is in front.
 final class Approvals: @unchecked Sendable {
-    enum Decision: Sendable { case approved, declined, expired }
+    /// `expired`: the request's time ran out with no answer. `withdrawn`: another action or request
+    /// ended it before the owner answered.
+    enum Decision: Sendable { case approved, declined, expired, withdrawn }
     private struct Entry {
         var approval: Approval
         var decision: Decision?
@@ -163,7 +165,7 @@ final class Approvals: @unchecked Sendable {
         // One pending at a time: a new request replaces an older one, which ends unanswered.
         let replaced = entries.values.filter { $0.decision == nil }
         for old in replaced {
-            old.waiters.values.forEach { $0.resume(returning: .expired) }
+            old.waiters.values.forEach { $0.resume(returning: .withdrawn) }
             entries[old.approval.id] = nil
         }
         entries[approval.id] = Entry(approval: approval)
@@ -185,7 +187,7 @@ final class Approvals: @unchecked Sendable {
         guard let entry = entries[id], entry.decision == nil else { lock.unlock(); return }
         entries[id] = nil
         lock.unlock()
-        entry.waiters.values.forEach { $0.resume(returning: .expired) }
+        entry.waiters.values.forEach { $0.resume(returning: .withdrawn) }
         emit(.approvalEnded(id: id, approved: nil))
     }
 

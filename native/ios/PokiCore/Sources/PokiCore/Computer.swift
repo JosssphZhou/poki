@@ -611,7 +611,13 @@ final class Computer: @unchecked Sendable {
                     ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, fingerprint: fingerprint)
                 // The time the owner takes is not the actions' time: the clock starts again after it.
                 let asked = now()
-                let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
+                var outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
+                // In the app's own chat the hold ends a few seconds before the card does: the call waits
+                // those out too, so it answers with the card's end rather than a wait the model would
+                // send again after the card is gone, opening a second one.
+                if outcome == nil, answerBy == nil, !Task.isCancelled, approval.expires.timeIntervalSinceNow < 15 {
+                    outcome = await approvals.wait(id: approval.id, seconds: max(0, approval.expires.timeIntervalSinceNow) + 0.5)
+                }
                 let waited = now() - asked
                 until += waited
                 started += waited
@@ -639,11 +645,17 @@ final class Computer: @unchecked Sendable {
                     approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
                     toRun = tail
                 case .declined?:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)")
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)",
+                                         next: "The owner does not want this done: leave it undone, and do not reach the same result another way (another button, typing with Return, a drag, a routine). Go on with what the task still needs without it, or end the task when nothing is left, and tell the owner which step they declined and that it was not done.")
                 case .expired?:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the approval request ended unanswered (\(reason)).\(sentFirst)")
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner did not answer on the phone within \(Int(approvals.lifetime / 60)) minutes (\(reason)).\(sentFirst)",
+                                         next: "Take it as not approved: leave this step undone and do not send it again in this task. End the task now and tell the owner which step is waiting for their OK, so they can ask again.")
+                case .withdrawn?:
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the card for this step was withdrawn before the owner answered, because another action or request replaced it (\(reason)).\(sentFirst)",
+                                         next: "Send the same actions again when you still need them.")
                 case nil:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone.\(sentFirst) When they approve, \(again) (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.")
+                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone and has not answered yet.\(sentFirst)",
+                                         next: "To keep waiting, \(again) now: the call waits on the same card and goes on once they approve. look leaves the card open; any other action withdraws it.")
                 }
             }
         }
@@ -1058,14 +1070,16 @@ final class Computer: @unchecked Sendable {
 
     /// The answer when the sensitive part was not sent: text only when nothing went, else the read
     /// after what did go.
-    func refused(until: Double, full: Bool, did: [String], text: String) async -> ToolResult {
+    /// `next` says what to do now, after what happened.
+    func refused(until: Double, full: Bool, did: [String], text: String, next: String = "") async -> ToolResult {
+        let then = next.isEmpty ? "" : " " + next
         guard !did.isEmpty else {
             // The screen it was refused on, so the model sees what it asked for (gym: the declined
             // answer was the one answer without a picture).
             let read = await readAndReply(until: until, full: full, changes: true)
-            return ToolResult(text: text + " Nothing was sent.\n" + read.text, jpeg: read.jpeg, isError: true)
+            return ToolResult(text: text + " Nothing was sent." + then + "\n" + read.text, jpeg: read.jpeg, isError: true)
         }
-        return await readAndReply(until: until, full: full, changes: true, did: did, error: text)
+        return await readAndReply(until: until, full: full, changes: true, did: did, error: text + then)
     }
 
     // MARK: Sensitivity
