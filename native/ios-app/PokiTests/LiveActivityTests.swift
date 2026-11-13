@@ -171,5 +171,9 @@ extension XCTestCase {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("approval-evidence")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent(name + ".png"))
+        // The picture leaves out a web view's page. With -approvalEvidenceHold SECONDS the view stays up
+        // that long, for a screenshot of the simulator's own screen.
+        let hold = UserDefaults.standard.double(forKey: "approvalEvidenceHold")
+        if hold > 0 { try await Task.sleep(for: .seconds(hold)) }
     }
 }

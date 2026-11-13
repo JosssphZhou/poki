@@ -53,7 +53,7 @@ final class BrowserGuardTests: XCTestCase {
             for allowed in [false, true] {
                 UserDefaults.standard.set(ApprovalMode.allCases[index % ApprovalMode.allCases.count].rawValue, forKey: ApprovalClassifier.modeKey)
                 let act = "document.getElementById('effect').textContent='effect happened'"
-                let head = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Consent fixture</title></head><body><p id=\"effect\"></p>"
+                let head = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Consent fixture</title></head><body style=\"font:17px -apple-system;margin:72px 20px\"><h1>Consent fixture</h1><p id=\"effect\"></p>"
                 let html = sample.search ? """
                 \(head)
                 <form method="get" action="/results">
@@ -82,6 +82,9 @@ final class BrowserGuardTests: XCTestCase {
                 ModelKeys.customModel = "fake-model"
                 ModelKeys.selectedProvider = .custom
                 let chat = ChatModel(app: app, kind: .handoff, requester: "Browser consent regression")
+                // With -approvalEvidence, the waiting card and the declined page of one deletion and one order.
+                let evidence = allowed || !ProcessInfo.processInfo.arguments.contains("-approvalEvidence") ? nil
+                    : ["Delete": "browser-delete", "提交订单": "browser-order"][sample.label]
                 var questions: [String] = []
                 app.onProbeApproval = { approval in
                     questions.append(approval.question)
@@ -89,10 +92,10 @@ final class BrowserGuardTests: XCTestCase {
                         let effect = try? await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
                         XCTAssertEqual(effect, "", "The page must not act while consent is pending")
                         XCTAssertTrue(app.approvals.contains { $0.id == approval.id }, "The request must reach the owner's card")
-                        if sample.label == "Delete", !allowed, ProcessInfo.processInfo.arguments.contains("-approvalEvidence") {
+                        if let evidence {
                             do {
                                 try await self.captureApprovalView(ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {})
-                                    .environment(app).environment(chat), named: "browser-delete-pending")
+                                    .environment(app).environment(chat), named: evidence + "-pending")
                             } catch { XCTFail("Approval UI capture failed: \(error)") }
                         }
                         app.resolve(approval, approved: allowed)
@@ -103,9 +106,9 @@ final class BrowserGuardTests: XCTestCase {
                 let effect = try await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
                 XCTAssertEqual(questions, sample.question.map { [$0] } ?? [], name)
                 XCTAssertEqual(effect, sample.question == nil || allowed ? "effect happened" : "", name)
-                if sample.label == "Delete", !allowed, ProcessInfo.processInfo.arguments.contains("-approvalEvidence") {
+                if let evidence {
                     try await captureApprovalView(ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {})
-                        .environment(app).environment(chat), named: "browser-delete-declined")
+                        .environment(app).environment(chat), named: evidence + "-declined")
                 }
                 app.onProbeApproval = nil
             }
