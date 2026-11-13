@@ -53,6 +53,24 @@ final class LocalRunnerTests: XCTestCase {
         return (PokiCore(config: config, host: host, transport: lanes), host)
     }
 
+    func testAReadWaitsForTheUnansweredAppAndReturnsItsCurrentScreen() async throws {
+        let phone = Phone()
+        let busy = LockedBox(true)
+        let statusReads = LockedBox(0)
+        let local = LocalRunner(serve: phone.serve, unanswered: {
+            busy.value ? ("foreground accessibility request", 5) : nil
+        })
+        let transport = RecoveringPhone(local: local, statusReads: statusReads, busy: busy)
+        let core = PokiCore(config: CoreConfig(toolDeadline: 6, readTimeout: 1, treeFormat: "json", humanize: false),
+                            host: FakeHost(), transport: transport)
+
+        let answer = await core.tool("look", arguments: "{}")
+
+        XCTAssertFalse(answer.isError, answer.text)
+        XCTAssertTrue(answer.text.contains("Chat 0"), "the same read must wait for the app and return its current screen: \(answer.text)")
+        XCTAssertTrue(phone.touches.value.isEmpty, "recovering a read never sends a touch")
+    }
+
     /// Seen on the phone (ESP-464): the chat app in front did not answer for 38 s, and the read that
     /// asked it held Poki's one queue all that time. 19 s in, the watchdog took the session for wedged
     /// and restarted it, which brought nothing back (the app still did not answer) and dropped the
@@ -167,5 +185,19 @@ final class LocalRunnerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(silent, 1, "a runner that answers nothing is restarted")
         let overdue = try await held(waiting: 6) { _ in (200, ["value": ["ready": true, "busy": ["request": "GET /source", "seconds": 400]]]) }
         XCTAssertGreaterThanOrEqual(overdue, 1, "a request held past any deadline is a wedged runner")
+    }
+}
+
+private struct RecoveringPhone: HTTPTransport {
+    let local: LocalRunner
+    let statusReads: LockedBox<Int>
+    let busy: LockedBox<Bool>
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        if method == "GET", url.path == "/status" {
+            let reads = statusReads.update { $0 += 1; return $0 }
+            if reads >= 2 { busy.value = false }
+        }
+        return try await local.send(method: method, url: url, body: body, timeout: timeout)
     }
 }
