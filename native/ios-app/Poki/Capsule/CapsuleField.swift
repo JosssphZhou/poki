@@ -81,6 +81,9 @@ struct CapsuleField: UIViewRepresentable {
         /// The keyboard's top in the root view when the swipe began (iOS 26), for telling at its end
         /// whether the keyboard went with the finger.
         private var keyboardTop: CGFloat?
+        /// Where the finger came down, in the window. A pan is seen some points later, and its own
+        /// count of the way starts short of them.
+        private var touchDown: CGPoint?
 
         init(parent: CapsuleField) { self.parent = parent }
 
@@ -129,14 +132,14 @@ struct CapsuleField: UIViewRepresentable {
         /// As a swipe on the field begins (iOS 26). The system starts taking the keyboard down where a
         /// drag meets it; `keyboardDismissPadding` on the root view's keyboard guide moves that line up
         /// (WWDC23, Keep up with the keyboard; the root view's guide as in atlou/KeyboardAccessory, MIT),
-        /// here to where the finger came down, so the keyboard and the bar over it start with the finger
-        /// and keep its distance. A message scrolled away from its first line scrolls back instead, and
-        /// the keyboard stays.
+        /// here to where the finger came down, so the keyboard and the bar over it are under the finger
+        /// from the moment the drag is seen. A message scrolled away from its first line scrolls back
+        /// instead, and the keyboard stays.
         private func follow(_ pan: UIPanGestureRecognizer, on view: UITextView) {
             keyboardTop = nil
             guard #available(iOS 26.0, *), let root = view.window?.rootViewController?.view else { return }
             let guide = root.keyboardLayoutGuide
-            let start = pan.location(in: root).y - pan.translation(in: root).y
+            let start = touchDown.map { root.convert($0, from: nil).y } ?? pan.location(in: root).y
             view.keyboardDismissMode = startedScrolled ? .none : .interactive
             guide.keyboardDismissPadding = startedScrolled ? 0 : max(0, guide.layoutFrame.minY - start)
             keyboardTop = guide.layoutFrame.minY
@@ -151,6 +154,11 @@ struct CapsuleField: UIViewRepresentable {
             let followed = guide.layoutFrame.minY > keyboardTop + 1
             DispatchQueue.main.async { guide.keyboardDismissPadding = 0 }
             return followed
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            touchDown = touch.location(in: nil)
+            return true
         }
 
         /// Alongside the text view's own scrolling and selection.
