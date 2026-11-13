@@ -2081,6 +2081,23 @@
         }
       }
     },
+    "Can’t Reach GitHub" : {
+      "comment" : "Signing Options › Version, in place of the newest build when GitHub did not answer. Draft wording in every language: not copy-reviewed yet.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "连不上 GitHub"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "連不上 GitHub"
+          }
+        }
+      }
+    },
     "Can’t reach this iPhone" : {
       "localizations" : {
         "zh-Hans" : {
@@ -29437,6 +29454,23 @@
         }
       }
     },
+    "GitHub is limiting requests from this network. Switch to another network or proxy node and try again, or try again in an hour." : {
+      "comment" : "Shown when GitHub's hourly limit for this network stops Poki from reading its releases. Draft wording in every language: not copy-reviewed yet.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub 正在限制这个网络的请求。请换一个网络或代理节点后重试，或一小时后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub 正在限制這個網路的請求。請換一個網路或代理節點後重試，或一小時後再試。"
+          }
+        }
+      }
+    },
     "10.7.0.1 takes the connection, but the pairing service behind it did not answer (%lld). Reconnect your proxy app or LocalDevVPN and check Wi-Fi, then tap Check Again. The pairing itself is kept." : {
       "localizations" : {
         "zh-Hans" : {
@@ -31741,6 +31775,23 @@
         }
       }
     },
+    "Poki can’t reach GitHub. Check the network and try again." : {
+      "comment" : "Shown when GitHub does not answer while Poki reads its releases. Draft wording in every language: not copy-reviewed yet.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 连不上 GitHub，请检查网络后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 連不上 GitHub，請檢查網路後重試。"
+          }
+        }
+      }
+    },
     "Tap Allow or Don’t Allow in the Live Activity, a notification, or Poki." : {
       "localizations" : {
         "zh-Hans" : {
@@ -31785,6 +31836,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瞭解更多"
+          }
+        }
+      }
+    },
+    "Limited by GitHub" : {
+      "comment" : "Signing Options › Version, in place of the newest build when GitHub turned the request away for this network's hourly limit. Draft wording in every language: not copy-reviewed yet.",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "被 GitHub 限流"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "遭 GitHub 限流"
           }
         }
       }
