@@ -31,6 +31,10 @@ final class BrowserGuardTests: XCTestCase {
             ("Place order", true, "Allow payment?"),
             ("Next page", false, nil),
             ("Search", true, nil),
+            ("Start trial", false, "Allow payment?"),
+            ("Start a trial", false, "Allow payment?"),
+            ("Start your trial", false, "Allow payment?"),
+            ("Continue to secure checkout now", false, "Allow payment?"),
         ]
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
         defer { app.onProbeApproval = nil; app.stopSession() }
