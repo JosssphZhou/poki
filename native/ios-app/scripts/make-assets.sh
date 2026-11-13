@@ -28,10 +28,11 @@ echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components"
 bear "$APP"
 # The launch screen (LaunchScreen.storyboard) is the Bear picture in the middle of a ground that meets it on every
 # side, so the square does not show: scripts/launch-ground.swift reads the ground from the picture's own edge.
-# One set of pictures for light and dark. POKI_LAUNCH_FEATHER, in pixels of the 360-pixel picture, fades the
-# bear into the ground where the picture's left and bottom edges cut it off; 0 leaves the picture as it is.
+# One set of pictures for light and dark. The picture's left and bottom edges cut the bear off, so the picture
+# fades into the ground over its last 10 points (30 of its 360 pixels) at those two edges. POKI_LAUNCH_FEATHER
+# sets another width in pixels; 0 leaves the picture as it is, with the bear cut straight.
 launch="$(mktemp -d)"
-swift "$HERE/scripts/launch-ground.swift" "$APP/Bear.imageset/bear@3x.png" "$launch" "${POKI_LAUNCH_FEATHER:-0}"
+swift "$HERE/scripts/launch-ground.swift" "$APP/Bear.imageset/bear@3x.png" "$launch" "${POKI_LAUNCH_FEATHER:-30}"
 for part in band top bottom bear; do
   mkdir -p "$APP/Launch-$part.imageset"
   mv "$launch/$part.png" "$APP/Launch-$part.imageset/$part@3x.png"
