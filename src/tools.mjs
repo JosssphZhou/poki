@@ -5,14 +5,7 @@ import { z } from 'zod';
 import { version } from './build-info.mjs';
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
-const defaultTools = new Set([
-  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
-  'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
-  'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
-  'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
-  'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
-]);
-const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. Single-step tools remain for exploring an unknown screen.';
+const defaultTools = new Set(['look', 'do', 'status', 'mac']);
 const readOnly = new Set(['observe_device','list_devices', 'get_device_info', 'take_screenshot', 'get_foreground_app', 'list_elements', 'list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'wait_for', 'wait']);
 const guidance = {
   acquire_device: 'Only needed to keep other sessions off a device across several calls. One batch_commands call already runs without interruption, so a single-call task needs no lease. If you take one, keep the returned lease_id, renew before expiry, then release.',
@@ -72,23 +65,33 @@ definitions.push(['disconnect_device', 'Close the selected remote device connect
 definitions.push(['reconnect_device', 'Re-establish the selected RemotePairing tunnel. Does not replay input. A new session may require Wi-Fi when iOS closes its remote pairing listener.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, approval mode for this session, and any available Poki update with release notes and the update command.', z.object({}), true]);
 
-// The computer-use profile (POKI_TOOL_PROFILE=cua, cua.mjs): look and do, plus device and status tools.
 for (const [name, description, schema, readOnlyHint] of cua.definitions) definitions.push([name, description, z.fromJSONSchema(schema), readOnlyHint]);
-const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
-const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
+const legacy = new Map(definitions.filter(([name]) => !['look', 'do'].includes(name)).map(def => [def[0], def]));
+definitions.push(['status', 'Poki Mac state: version, devices, selected device and approval scope. Taps, typing, payments, deleting and sending messages inside apps have no approval protection. App runner, relay and phone-side approvals are not supported on Mac.', z.object({}), true]);
+definitions.push(['mac', 'Mac capabilities and legacy actions. Choose tool and pass its original arguments. Includes simulators, Xcode builds, recording, crash logs, device selection and leases. With describe=true, return the selected tool description and argument schema without executing it.', z.object({ tool: z.enum([...legacy.keys()]), arguments: z.record(z.string(), z.unknown()).default({}), describe: z.boolean().optional() }), false]);
 
 export function createServer(call) {
-  const computerUse = profile() === 'cua', listed = listedFor(profile());
-  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
+  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: cua.instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
     server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
-      try { return await call(name, args, { signal: extra.mcpReq?.signal ?? extra.signal, requestId: extra.mcpReq?._meta?.['poki/request_id'] }); }
+      try {
+        const options = { signal: extra.mcpReq?.signal ?? extra.signal, requestId: extra.mcpReq?._meta?.['poki/request_id'] };
+        if (name === 'mac') {
+          const [, description, schema] = legacy.get(args.tool);
+          if (args.describe) return { content: [{ type: 'text', text: JSON.stringify({ description, inputSchema: z.toJSONSchema(schema, { io: 'input' }) }) }] };
+          args = { ...args, arguments: schema.parse(args.arguments) };
+        }
+        const result = await call(name === 'mac' ? args.tool : name === 'status' ? 'poki_mcp_status' : name, name === 'mac' ? args.arguments : args, options);
+        if (name === 'mac' || name === 'status') return { ...result, content: result.content?.filter(c => !c.text?.startsWith('Deprecated:')) };
+        if (!legacy.has(name) || result.content?.some(c => c.text?.startsWith('Deprecated:'))) return result;
+        return { ...result, content: [...(result.content ?? []), { type: 'text', text: `Deprecated: ${name} remains callable for one release. Use mac {tool: "${name}", arguments: <same arguments>} instead.` }] };
+      }
       catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; }
     });
   }
   if (process.env.POKI_MCP_TOOLS !== 'all') {
     server.server.setRequestHandler('tools/list', () => ({
-      tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
+      tools: definitions.filter(([name]) => defaultTools.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
         name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
         annotations: { readOnlyHint },
       })),

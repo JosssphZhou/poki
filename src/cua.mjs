@@ -1,4 +1,4 @@
-// The computer-use profile (POKI_TOOL_PROFILE=cua).
+// The Mac computer-use tools.
 //
 // Modeled on how desktop computer-use tools work: one call does some actions and then reads the
 // screen once. The answer is facts only: the numbered elements of that one read (marked new when
@@ -340,6 +340,10 @@ export async function look(ctx, args = {}) {
 }
 
 export async function act(ctx, args = {}) {
+  if (args.finish || args.actions?.some(action => ['run', 'handoff', 'wait_until', 'back'].some(key => key in action)
+    || action.via !== undefined || action.drag?.hold_ms !== undefined)) {
+    throw new Error('finish, routines/run, handoff, wait_until, back, via and drag.hold_ms are not supported on Mac. Nothing was sent. Use mac for legacy actions.');
+  }
   ctx = backend(ctx);
   const memory = state(ctx), actions = args.actions ?? [], done = [];
   // A number that is not in the latest read is refused before anything is sent, with the list now.
@@ -372,7 +376,6 @@ export async function act(ctx, args = {}) {
 
 export const definitions = [
   ['look', 'Read the screen now: the app in front, the numbered elements (role, label = value, [x,y,w,h] in screen points; + marks elements new since the last read), and a screenshot. full=true lists every element. Numbers refer to this read only.', { type: 'object', properties: { full: { type: 'boolean' } }, additionalProperties: false }, true],
-  ['do', 'Run actions in order, then read the screen once and return the same facts as look, with a screenshot. Actions: {tap: n} or {tap: [x, y]}; {type: "text", ref?: n, clear?} (taps n first, then types the text as key presses; text the keyboard cannot type is pasted with your clipboard saved and put back); {key: "return"|"delete"|...}; {swipe: "up"|"down"|"left"|"right"} or {swipe: {direction, in?: n, distance?: "short"|"long"}} (direction is where the finger moves); {scroll_to: "text"} or {scroll_to: {text or ref, in?: n, direction?: "down", max_swipes?: 6}} (swipes until it is fully on screen); {long_press: n or [x, y] or {ref, ms?}}; {drag: {from: n or [x, y], to: n or [x, y], ms?}}; {pinch: {ref or x, y, scale}}; {button: "home"|"lock"}; {launch: "bundle id"} or {launch: {bundle, fresh: true}} (fresh ends the app first); {wait: ms}. Points are in the same screen points as the element frames. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Several known steps can go in one call; you judge the result from the elements and the screenshot.', { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' }, minItems: 0, maxItems: 20 }, full: { type: 'boolean' } }, required: ['actions'], additionalProperties: false }, false],
+  ['do', 'Run actions in order, then read the screen once and return the same facts as look, with a screenshot. Actions: {tap: n} or {tap: [x, y]}; {type: "text", ref?: n, clear?} (taps n first, then types the text as key presses; text the keyboard cannot type is pasted with your clipboard saved and put back); {key: "return"|"delete"|...}; {swipe: "up"|"down"|"left"|"right"} or {swipe: {direction, in?: n, distance?: "short"|"long"}} (direction is where the finger moves); {scroll_to: "text"} or {scroll_to: {text or ref, in?: n, direction?: "down", max_swipes?: 6}} (swipes until it is fully on screen); {long_press: n or [x, y] or {ref, ms?}}; {drag: {from: n or [x, y], to: n or [x, y], ms?}}; {pinch: {ref or x, y, scale}}; {button: "home"|"lock"}; {launch: "bundle id"} or {launch: {bundle, fresh: true}} (fresh ends the app first); {wait: ms}. Points are in the same screen points as the element frames. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Several known steps can go in one call; you judge the result from the elements and the screenshot. Mac has no approval protection for payments, deleting or sending messages. App finish=true, routines/run, handoff, wait_until, back, via and drag.hold_ms are not supported on Mac and are rejected before actions are sent. Use mac for legacy actions.', { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' }, minItems: 0, maxItems: 20 }, full: { type: 'boolean' }, finish: { type: 'boolean' } }, required: ['actions'], additionalProperties: false }, false],
 ];
-export const tools = new Set(['look', 'do', 'list_apps', 'list_devices', 'select_device', 'poki_mcp_status']);
-export const instructions = 'look reads the screen; do runs actions and then reads it. Both return the numbered elements and a screenshot. Use the numbers from the latest answer. Decide what happened from the elements and the picture.';
+export const instructions = 'look reads the screen; do runs actions then reads it. Use refs from the latest answer. status reports Mac state. mac {tool, arguments} exposes Mac capabilities; mac {tool, describe:true} gives their schemas. Mac has no approval protection for payments, deleting or sending messages through input. App routines, handoff, finish and stable refs are not supported. Do not assume App safety guarantees.';

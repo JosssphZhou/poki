@@ -18,7 +18,10 @@ try {
       const path = join(dir, `${Date.now()}-${index}.${content.mimeType === 'image/jpeg' ? 'jpg' : 'png'}`);
       await writeFile(path, Buffer.from(content.data, 'base64'), { mode: 0o600 });
       console.log(path);
-    } else if (content.type === 'text') console.log(content.text);
+    } else if (content.type === 'text') {
+      if (content.text.startsWith('Deprecated:')) console.error(content.text);
+      else console.log(content.text);
+    }
   }
   if (result.isError) process.exitCode = 1;
   else if (name === 'select_device') console.error('Note: this selection lasts only for this run. bin/call.mjs closes its session on exit, so pass "device" in each later call, or use an MCP client session to keep a selection.');

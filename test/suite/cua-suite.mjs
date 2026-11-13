@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The fixed device suite for the computer-use profile (POKI_TOOL_PROFILE=cua): three generic tasks on
+// The fixed device suite for the default look/do tools: three generic tasks on
 // built-in apps, each started fresh, driven the way a model drives the tools, one decision per tool call, each decision
 // made only from the previous answer. Run it on the server after every build:
 //
@@ -22,7 +22,7 @@ const only = arg('task');
 const client = new Client({ name: 'cua-suite', version: '1' });
 await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { 'x-poki-mcp-session': 'cua-suite', ...(token ? { Authorization: `Bearer ${token}` } : {}) } } }));
 const listed = (await client.listTools()).tools.map(t => t.name);
-if (!listed.includes('do') || !listed.includes('look')) { console.error(`This server does not list look and do (it lists ${listed.join(', ')}). Start it with POKI_TOOL_PROFILE=cua.`); process.exit(2); }
+if (!listed.includes('do') || !listed.includes('look')) { console.error(`This server does not list look and do (it lists ${listed.join(', ')}). Update the MCP checkout and restart its service; look and do are in the default look/do/status/mac catalog.`); process.exit(2); }
 
 const textOf = result => result.content?.find(b => b.type === 'text')?.text ?? '';
 // The element number of the first line whose label matches, as a model would pick it from the list.

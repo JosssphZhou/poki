@@ -1,27 +1,28 @@
 # Tool behavior and conventions
 
-**Poki MCP** is a local macOS MCP server that lets AI clients inspect and control an iPhone or iOS Simulator. By default it lists the tools for phone tasks, and it can expose a complete catalog for screenshots, accessibility and Vision OCR inspection, touch and keyboard input, application management, screen recording, and diagnostics.
+**Poki MCP** is a local macOS MCP server that lets AI clients inspect and control an iPhone or iOS Simulator. By default it lists `look`, `do`, `status`, and `mac`. The `mac` wrapper preserves the complete set of capabilities for screenshots, accessibility and Vision OCR inspection, touch and keyboard input, application management, screen recording, and diagnostics.
 
 - **Screen & UI Inspection**: Capture screenshots (`take_screenshot`, `save_screenshot`) and inspect UI hierarchies via Accessibility or Vision OCR (`list_elements`).
 - **Touch & Keyboard Input**: Send taps, swipes, hardware keys, and Unicode text across simulators and paired physical devices.
 - **App & Device Lifecycle**: Manage applications, open URLs, inspect containers, record video, and run diagnostic checks.
-- **Local Daemon Architecture**: Runs a local service (`127.0.0.1:47825` by default) with serialized device execution, per-client session isolation, and interactive local approval gates for sensitive actions. Loopback only unless `POKI_BIND_HOST` names another address, and `POKI_HOST_ALLOW` then lists the `Host` names it answers to; `127.0.0.1` is always served, because local clients read that endpoint from `mcp.json`.
+- **Local Daemon Architecture**: Runs a local service (`127.0.0.1:47825` by default) with serialized device execution, per-client session isolation, and local approval gates for selected management tools. Mac input has no approval protection for payments, deleting or sending messages. Loopback only unless `POKI_BIND_HOST` names another address, and `POKI_HOST_ALLOW` then lists the `Host` names it answers to; `127.0.0.1` is always served, because local clients read that endpoint from `mcp.json`.
 
-Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) with remote connection maintenance definitions in [`src/tools.mjs`](../src/tools.mjs). MCP serves them through `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools.
+Legacy capability names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json); [`src/tools.mjs`](../src/tools.mjs) registers the catalog and default discovery list. `status {}` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools. It reports real Mac state, not App runner, relay or phone-side approval state.
 
 ## MCP tool profiles
 
-The default `tools/list` response contains the tools for phone tasks. Tool names, arguments, and execution behavior are unchanged.
+The default `tools/list` response contains four tools. See the [complete migration table](mcp-app-tools.md) for every legacy name and the App platform differences.
 
-| Use | Default tools |
+| Use | Default tool and arguments |
 | --- | --- |
-| Service and devices | `poki_mcp_status`, `list_devices`, `select_device` |
-| Read the screen | `list_elements`, `take_screenshot`, `get_foreground_app` |
-| Apps and URLs | `list_apps`, `launch_app`, `terminate_app`, `open_url` |
-| Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
-| Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
+| Read the screen | `look {full?}` |
+| Perform supported actions, then read the screen | `do {actions, full?, finish?}`; `finish:true` is not supported on Mac |
+| Service and device state | `status {}` |
+| All legacy and Mac-specific capabilities | `mac {tool, arguments}`; `mac {tool, describe:true}` returns the original description and argument schema without executing it |
 
-The runtime default list is defined in `src/tools.mjs`. The complete catalog includes simulator management, app installation, recording, location, appearance, drawing with `touch_path` and `draw_strokes`, and device leases.
+For example, call `mac {tool:"start_recording", describe:true}` to inspect the parameters, then `mac {tool:"start_recording", arguments:{device:"DEVICE_ID"}}` to record. The whitelist and original argument validation remain in force. Simulator management, Xcode builds, app installation, recording, diagnostics, location, appearance, drawing and device leases are all retained.
+
+Old tool names remain directly callable for one release and return migration notices, but default discovery does not list them. App `routines` is not implemented and is not registered. Phone-side handoff, stable element numbers and the App's approval protections are not implemented on Mac.
 
 ### Complete catalog
 
@@ -49,15 +50,15 @@ Direct HTTP clients receive the daemon's profile. Starting the daemon with `POKI
 
 ### Calls and device selection
 
-Profiles affect discovery only. Every tool remains callable by name through `tools/call`, including tools absent from `tools/list`. The same applies to steps inside `batch_commands`. Argument validation, approvals, cancellation, and device arbitration still apply.
+The default/full setting affects discovery only. Use `mac {tool:"name", arguments:{...}}` from the default catalog to run a legacy capability. For one release, old names also remain callable directly through `tools/call`. Inside `mac {tool:"batch_commands", arguments:{commands:[...]}}`, each step keeps its original `{tool, arguments}` shape; do not nest another `mac` wrapper. Original argument validation, selected management-tool approvals, cancellation, and device arbitration still apply.
 
-Consecutive device calls do not require `acquire_device`. With one available device, calls select it automatically. With multiple devices, `list_devices` and `select_device` identify the target. An explicit lease remains available for sessions that need exclusive access across several calls. Another session's lease can still block access.
+Consecutive device calls do not require `acquire_device`. With one available device, calls select it automatically. With multiple devices, call `mac {tool:"list_devices", arguments:{}}`, then `mac {tool:"select_device", arguments:{device:"DEVICE_ID"}}` to identify the target. An explicit lease remains available for sessions that need exclusive access across several calls. Another session's lease can still block access.
 
 Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing tool allowlist determines which tools reach its model.
 
-### Computer-use profile: look and do
+### Default computer-use tools: look and do
 
-`POKI_TOOL_PROFILE=cua` lists only `look`, `do`, `list_apps`, `list_devices`, `select_device` and `poki_mcp_status`, with short server instructions. It works the way desktop computer-use tools do: `do` runs a list of actions in order (tap by element number or point, type, key, swipe, scroll_to, long_press, drag, pinch, button, launch, wait), waits a short fixed time after the last one, and reads the screen once; `look` reads it without acting. Each answer lists the screen's elements with numbers for the next call, marks the ones that are new since the previous read, names what disappeared, and attaches a screenshot. There is no verdict: the model decides what happened from the elements and the picture.
+`look` and `do` are in the default four-tool catalog with `status` and `mac`; `POKI_TOOL_PROFILE=cua` no longer selects a separate list. It works the way desktop computer-use tools do: `do` runs a list of actions in order (tap by element number or point, type, key, swipe, scroll_to, long_press, drag, pinch, button, launch, wait), waits a short fixed time after the last one, and reads the screen once; `look` reads it without acting. Each answer lists the screen's elements with numbers for the next call, marks the ones that are new since the previous read, names what disappeared, and attaches a screenshot. There is no verdict: the model decides what happened from the elements and the picture.
 
 - Each action is reported as `sent`, `not_sent` or `unknown`. Nothing after a failed action is sent, and an `unknown` action is never sent again. Element numbers that are not in the latest read are refused before anything is sent.
 - `look` and `do` work on a physical iPhone through the native bridge, on a booted simulator, and on a phone running WebDriverAgent (see below). A physical iPhone needs the bridge built from this version by `./bin/setup`, because typing uses its `type_keys` and `pasteboard` operations.
@@ -86,7 +87,7 @@ Ask your agent for the task you want done:
 Start an iPhone simulator, open Settings, and tell me the iOS version.
 ```
 
-Three tools handle most interactions:
+Start with `look` and `do` for screen inspection and input. For the legacy workflows below, call `mac {tool:"name", arguments:{...}}`; use `describe:true` first when the parameters are unknown.
 
 - `batch_commands` runs a known multi-step task in a single call and returns the visible on-screen text at the end, saving a screenshot round trip.
 - `fill` focuses an input field, replaces its text, and verifies the new value.
@@ -106,9 +107,11 @@ Inside a batch, a touch step (`tap`, `tap_text`, `double_tap`, `long_press`, `go
 
 Accessibility can miss changes that affect only pixels, such as Calculator's display after AC. A default batch can still stop with `no_change` in that case. An unverified tap does not produce `no_change`; inspect the final screenshot before reporting the task result.
 
-## All MCP tools
+## Legacy capabilities through mac
 
-| Group | Tool | What it does |
+The names in this table are values of `mac.tool`, not additional tools in default discovery. Original parameters go in `mac.arguments`, unchanged. This convention also applies to capability names in the reference sections below. To inspect a schema, use `mac {tool:"name", describe:true}`. Old names remain directly callable for one release, and `POKI_MCP_TOOLS=all` still lists them.
+
+| Group | Capability | What it does |
 | --- | --- | --- |
 | Devices | `list_devices` | Find attached iOS devices and booted or previously used simulators. |
 | Devices | `start_simulator` | Boot an existing simulator by id or name, or create one from an available model. |
@@ -172,7 +175,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Batches | `batch_commands` | Do a whole known task in one call: launch the app, tap, fill, scroll, go back and answer alerts, each {tool, arguments}. |
 | Batches | `run_code` | Run an async JavaScript function on an isolated worker, calling device tools with `await tools.<name>(args)`, so the code loops, filters and decides each next step from the results in one call instead of a model round trip per step. |
 
-`run_code` is in the complete catalog, not the default `tools/list`, so it is reached by name or after `POKI_MCP_TOOLS=all`. The sandbox exposes only `tools`, `input` and `console`: no require, file system, network, process or timers. A tool error throws and the code can catch it; an action receipt with `sent=false` or an unknown outcome stops the script and returns the steps already run, as `batch_commands` does; cancellation and timeout also stop it and cancel the device call in progress. The result lists every tool call with its name, elapsed time and receipt. Default limits are 120 seconds and 60 tool calls, set with `timeout_seconds` and `max_tool_calls`. Use it for predictable multi-step work such as scrolling until something appears and then reading it; use a single tool for a one-step action, and return to the model when the next step needs visual judgement.
+Run scripts with `mac {tool:"run_code", arguments:{code:"...", input:{...}}}` from default discovery. Inside the script, keep `tools.<name>(args)` calls unchanged. The legacy `run_code` name remains directly callable for one release and discoverable with `POKI_MCP_TOOLS=all`. The sandbox exposes only `tools`, `input` and `console`: no require, file system, network, process or timers. A tool error throws and the code can catch it; an action receipt with `sent=false` or an unknown outcome stops the script and returns the steps already run, as `batch_commands` does; cancellation and timeout also stop it and cancel the device call in progress. The result lists every tool call with its name, elapsed time and receipt. Default limits are 120 seconds and 60 tool calls, set with `timeout_seconds` and `max_tool_calls`. Use it for predictable multi-step work such as scrolling until something appears and then reading it; use a single tool for a one-step action, and return to the model when the next step needs visual judgement.
 
 ## Agent skills
 
@@ -226,7 +229,7 @@ Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input
 ## Efficient short workflows
 
 - **Put the whole known task in one batch:** When the request already names what to do, send `launch_app` and every step in one `batch_commands` call. `launch_app` on a simulator returns once the interface is readable; `tap_text`, `fill` and `handle_alert` wait five seconds for their target to appear and hold still (a recognition already running on a screen accessibility cannot read may finish a few seconds later), so a batch can cross screens; the reply ends with the visible text, so a closing `take_screenshot` is only needed for pixels. Leave out a step when whether to do it depends on what an earlier step shows, or when it needs the user's decision. A wrong target stops the batch without tapping and reports the closest text on screen. Each step result reports `elapsed_ms`, which reflects server-side execution time only and excludes model reasoning and client round-trip overhead.
-- **Use `fill` for known input fields:** Call `fill` directly instead of chaining `tap` and `type_text`; `field` can be left out when one text field is visible. On physical devices, `fill` focuses, replaces, and verifies text within a single native input session to avoid an extra connection wait. On simulators it taps, waits for focus and types, and a verified mismatch is an error. Plain text typed on a simulator first switches its keyboard to `en_US` (`simctl keyboard`), because a simulator created on a Chinese Mac types through Pinyin and rewrites Latin text and punctuation; the setting stays on that simulator. Because `fill` replaces existing field content, review your draft beforehand; reserve `type_text` for appending to an already-focused field.
+- **Use `fill` for known input fields:** Call `mac {tool:"fill", arguments:{text:"...", field:"..."}}` instead of chaining `tap` and `type_text`; `field` can be left out when one text field is visible. On physical devices, `fill` focuses, replaces, and verifies text within a single native input session to avoid an extra connection wait. On simulators it taps, waits for focus and types, and a verified mismatch is an error. Plain text typed on a simulator first switches its keyboard to `en_US` (`simctl keyboard`), because a simulator created on a Chinese Mac types through Pinyin and rewrites Latin text and punctuation; the setting stays on that simulator. Because `fill` replaces existing field content, review your draft beforehand; reserve `type_text` for appending to an already-focused field.
 - **Review and submit with `return`:** To inspect text before sending, `fill` and read the `screen` it returns. After verifying the draft, submit using `press_key` with `return` and inspect the resulting screen. Do not re-enter the full text or call `type_text` with an empty string to submit. Note that `text_verified` only confirms text entry into the field and `sent` only confirms the action was dispatched; neither guarantees application-level delivery.
 - **Handle `CoreDeviceError` 4016 via observed UI:** If launching an app fails with `CoreDeviceError` 4016, inspect the current screen and continue through an observed Home Screen or App Switcher entry point. Do not repeatedly retry the same launch path unless device conditions change. This serves as invocation guidance and does not permanently mark the app as unavailable after a single failure.
 
