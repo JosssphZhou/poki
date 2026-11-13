@@ -68,13 +68,15 @@ struct ModelSettingsView: View {
 /// use (main's In Use rows), and Add Account while there is none. The chat model is changed on Poki's
 /// card, its one place.
 private struct InUseCard: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     var add: () -> Void
 
     var body: some View {
         let has = ModelKeys.hasUsableKey
         let provider = ModelKeys.selectedProvider
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
+            let heading = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+            heading {
                 if has { ProviderTile(provider: provider, size: 44) } else { SettingsIcon(symbol: "sparkles", warns: true, size: 44) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: has ? ModelKeys.selectedModelName : String(localized: "No Account"))

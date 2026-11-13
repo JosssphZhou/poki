@@ -72,6 +72,10 @@ struct PokiDetailsView: View {
                         SettingsRow(title: "Appearance", symbol: "circle.lefthalf.filled", value: String(localized: appearance.title))
                     }
                     .accessibilityIdentifier("details.appearance")
+                    NavigationLink(value: DetailsRoute.interfaceSize) {
+                        SettingsRow(title: "Interface Size", symbol: "textformat.size")
+                    }
+                    .accessibilityIdentifier("general.interfaceSize")
                 } footer: {
                     Text(verbatim: "Poki \(model.signer.installedVersion) (\(model.signer.installedBuild))")
                         .monospacedDigit()
@@ -116,6 +120,8 @@ struct PokiDetailsView: View {
                     ApprovalsSettingsView()
                 case .appearance:
                     AppearanceView()
+                case .interfaceSize:
+                    InterfaceSizeSettingsView()
                 } }
                 .settingsPage()
             }
@@ -161,7 +167,7 @@ struct PokiDetailsView: View {
 }
 
 enum DetailsRoute: Hashable {
-    case model, history, conversations, voice, connection, advanced, agents, updates, approvals, appearance
+    case model, history, conversations, voice, connection, advanced, agents, updates, approvals, appearance, interfaceSize
 }
 
 /// Settings > Conversations: the archived conversations, each one line as in the drawer, to open, bring
@@ -762,10 +768,10 @@ struct GroupedSection<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 13)).foregroundStyle(Color(.secondaryLabel)).padding(.horizontal, 16)
+            Text(title).font(.footnote).foregroundStyle(Color(.secondaryLabel)).padding(.horizontal, 16)
             VStack(spacing: 0) { content }.groupCard()
             if let footer {
-                Text(footer).font(.system(size: 13)).foregroundStyle(Color(.secondaryLabel)).padding(.horizontal, 16)
+                Text(footer).font(.footnote).foregroundStyle(Color(.secondaryLabel)).padding(.horizontal, 16)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -773,7 +779,7 @@ struct GroupedSection<Content: View>: View {
 }
 
 struct Chevron: View {
-    var body: some View { Text(verbatim: "›").font(.system(size: 17, weight: .semibold)).foregroundStyle(Color(.tertiaryLabel)) }
+    var body: some View { Text(verbatim: "›").font(.body.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel)) }
 }
 
 private struct DetailsIssueRow: View {
@@ -814,7 +820,17 @@ enum PowerTile: Equatable {
 /// The provider's letter on its coloured tile.
 struct ProviderTile: View {
     var provider: ModelProvider
-    var size: CGFloat = 29
+    @ScaledMetric(relativeTo: .body) private var scaledSize: CGFloat = 29
+    private let baseSize: CGFloat
+
+    init(provider: ModelProvider, size: CGFloat = 29) {
+        self.provider = provider
+        baseSize = size
+        _scaledSize = ScaledMetric(wrappedValue: size, relativeTo: .body)
+    }
+
+    private var size: CGFloat { min(baseSize * 1.5, max(baseSize * 0.9, scaledSize)) }
+
     var body: some View {
         Group {
             if let logo = provider.logo {

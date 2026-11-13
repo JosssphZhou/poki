@@ -48,6 +48,15 @@ enum HomeMotion {
     }
 }
 
+/// The portrait and both of its anchors must use the same scale during the home-to-chat flight.
+private struct HomeSizes: DynamicProperty {
+    @ScaledMetric(relativeTo: .body) private var factor = 1.0
+    private var scale: CGFloat { min(1.2, max(0.9, factor)) }
+    var avatar: CGFloat { HomeMotion.avatar * scale }
+    var homeAvatar: CGFloat { HomeMotion.homeAvatar * scale }
+    var button: CGFloat { max(44, HomeMotion.button * scale) }
+}
+
 // MARK: Poki's picture
 
 extension PokiMood {
@@ -127,6 +136,7 @@ extension View {
 /// is drawn at one size, so nothing is made again on the way. A tap says hi and opens Poki's
 /// card. In the chat VoiceOver reads the top bar's Poki instead, which is the same button.
 struct PokiFlight: View {
+    private var sizes = HomeSizes()
     var status: PokiStatus
     var home: Bool
     var writing = false
@@ -140,7 +150,7 @@ struct PokiFlight: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let side = home ? HomeMotion.homeAvatar : HomeMotion.avatar
+        let side = home ? sizes.homeAvatar : sizes.avatar
         if let place = places[home ? .home : .top] {
             Button(action: tap) {
                 PokiPicture(mood: status.mood, side: side, pokes: pokes).contentShape(.circle)
@@ -172,24 +182,25 @@ struct PokiFlight: View {
 /// in the picture's face; the word for it is at the top of Poki's card and in what VoiceOver reads.
 /// On the home page the picture is over the greeting and the bar's middle is empty.
 struct PokiHead: View {
+    private var sizes = HomeSizes()
     var home: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
-            Color.clear.frame(width: HomeMotion.avatar, height: HomeMotion.avatar).picturePlace(.top)
+            Color.clear.frame(width: sizes.avatar, height: sizes.avatar).picturePlace(.top)
             // Glass in a group is drawn by the group, so the capsule comes and goes rather than fading;
             // its place stays, and the bar keeps its height on both pages.
             ZStack {
                 if !home {
                     Text(verbatim: "Poki")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(Color(.label))
-                        .padding(.horizontal, 12).frame(height: 24)
+                        .font(.caption.weight(.semibold)).foregroundStyle(Color(.label))
+                        .padding(.horizontal, 12).frame(minHeight: 24)
                         .glassSurface(in: Capsule())
                         .glassAppearing()
                 }
             }
-            .frame(height: 24)
+            .frame(minHeight: 24)
             .animation(HomeMotion.landing(home, reduceMotion), value: home)
         }
     }
@@ -210,6 +221,7 @@ struct PokiHead: View {
 /// edge effect. The new-conversation button looks the same on the home page: there, the page already
 /// being a new conversation, a tap starts the message instead (`newConversation` decides what).
 struct ChatTopBar: View {
+    private var sizes = HomeSizes()
     var status: PokiStatus
     var home: Bool
     /// A task is under way: no new conversation until it ends or is stopped.
@@ -247,7 +259,7 @@ struct ChatTopBar: View {
                 .accessibilityLabel(Text("New Conversation"))
                 .accessibilityIdentifier("home.newChat")
             }
-            .padding(.top, (HomeMotion.avatar - HomeMotion.button) / 2)
+            .padding(.top, (sizes.avatar - sizes.button) / 2)
             Button(action: openDetails) {
                 PokiHead(home: home).contentShape(.rect)
             }
@@ -258,7 +270,7 @@ struct ChatTopBar: View {
             .accessibilityLabel(Text(verbatim: "Poki, " + PokiStatusCopy.word(status)))
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("chat.header.details")
-            .padding(.horizontal, HomeMotion.button + 12)
+            .padding(.horizontal, sizes.button + 12)
         }
         .glassGroup()
         .padding(.horizontal, 16).padding(.top, 2).padding(.bottom, 4)
@@ -271,7 +283,7 @@ struct ChatTopBar: View {
         Image(systemName: symbol)
             .font(.body.weight(.semibold))
             .foregroundStyle(Color(.label).opacity(dim ? 0.35 : 1))
-            .frame(width: HomeMotion.button, height: HomeMotion.button)
+            .frame(width: sizes.button, height: sizes.button)
             .contentShape(.circle)
     }
 }
@@ -403,6 +415,7 @@ struct HomeGreetingView: View {
 /// rows of glass pills over the message field. A pill fills the message field; nothing is sent until
 /// you send it.
 struct HomePage<Footer: View>: View {
+    private var sizes = HomeSizes()
     var home: Bool
     /// Suggestions yield their space while the message field has focus.
     var writing = false
@@ -426,7 +439,7 @@ struct HomePage<Footer: View>: View {
                 VStack(spacing: 0) {
                     VStack(spacing: 12) {
                         // Poki's picture, 16 points over the greeting (board 头像位置 丙); the chat draws it here.
-                        Color.clear.frame(width: HomeMotion.homeAvatar, height: HomeMotion.homeAvatar)
+                        Color.clear.frame(width: sizes.homeAvatar, height: sizes.homeAvatar)
                             .picturePlace(.home)
                             .padding(.bottom, 4)
                         HomeGreetingView(date: greetedAt)

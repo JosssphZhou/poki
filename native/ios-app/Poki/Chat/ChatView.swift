@@ -1193,6 +1193,13 @@ struct ComposerInputView: View {
     /// A swipe down that started on a message scrolled away from its first line: it scrolls the message.
     @State private var swipeScrolls: Bool?
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var scaledButton = 44.0
+    @ScaledMetric(relativeTo: .body) private var fieldHeight = 112.0
+
+    private var buttonSide: CGFloat { min(56, max(44, scaledButton)) }
+    private var expanded: Bool { focused || typeSize >= .xxxLarge }
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -1213,10 +1220,10 @@ struct ComposerInputView: View {
             }
             // One row on one glass sheet (ESP-376): plus, the message, and the one button that talks,
             // sends or stops. The buttons inside are plain fills: no glass on glass.
-            HStack(alignment: .bottom, spacing: 10) {
+            ComposerLayout(expanded: expanded) {
                 plus
                 // An app's name in the message shows as its capsule (ESP-377); the text itself stays plain.
-                CapsuleField(text: $input, focused: $focused, maxLines: 6, scroll: fieldScroll,
+                CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll,
                              onSwipe: { up in if up { focused = true } else if focused { focused = false } }, onSubmit: submit)
                     .overlay(alignment: .topLeading) {
                         if input.isEmpty {
@@ -1225,17 +1232,20 @@ struct ComposerInputView: View {
                                 .padding(.top, 6).allowsHitTesting(false).accessibilityHidden(true)
                         }
                     }
-                    .frame(minHeight: 48)
-                if dictation.on { dictating } else if dictationButton, !running { microphone }
-                mainButton
+                    .padding(.horizontal, expanded ? 8 : 0)
+                    .accessibilitySortPriority(1)
+                HStack(spacing: 4) {
+                    if dictation.on { dictating } else if dictationButton, !running { microphone }
+                    mainButton
+                }
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             }
-            .padding(8)
+            .padding(6)
             .contentShape(.rect)
             .onTapGesture { focused = true }
             .simultaneousGesture(swipe)
-            .glassSurface(in: RoundedRectangle(cornerRadius: 32, style: .continuous), fallback: .bar)
-            // Controls in a bar stop growing where the system's bars do; the message itself grows freely.
-            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            .glassSurface(in: RoundedRectangle(cornerRadius: expanded ? 24 : (buttonSide + 12) / 2, style: .continuous), fallback: .bar)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
         }
         .animation(.snappy, value: dictation.on)
         .animation(.snappy, value: running)
@@ -1310,7 +1320,7 @@ struct ComposerInputView: View {
             Image(systemName: "mic.fill")
                 .font(.body.weight(.medium)).foregroundStyle(Tint.red)
                 .symbolEffect(.pulse, isActive: true)
-                .frame(width: 40, height: 48).contentShape(.rect)
+                .frame(width: buttonSide, height: buttonSide).contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Stop Dictation"))
@@ -1322,7 +1332,7 @@ struct ComposerInputView: View {
         Button { dictation.start(model, after: input) } label: {
             Image(systemName: "mic")
                 .font(.body.weight(.medium)).foregroundStyle(Color(.label))
-                .frame(width: 40, height: 48).contentShape(.rect)
+                .frame(width: buttonSide, height: buttonSide).contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(voice.isOn)
@@ -1349,8 +1359,8 @@ struct ComposerInputView: View {
                 .accessibilityIdentifier("composer.files")
         } label: {
             Image(systemName: "plus")
-                .font(.title3.weight(.medium)).foregroundStyle(Color(.label))
-                .frame(width: 48, height: 48)
+                .font(.title3.weight(.medium)).dynamicTypeSize(...DynamicTypeSize.xxxLarge).foregroundStyle(Color(.label))
+                .frame(width: buttonSide, height: buttonSide)
                 .background(Color(.label).opacity(scheme == .dark ? 0.16 : 0.12), in: .circle)
                 .contentShape(.circle)
         }
@@ -1395,7 +1405,7 @@ struct ComposerInputView: View {
                 .font(.body.weight(.semibold))
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(running ? Tint.onSolid : .white)
-                .frame(width: 48, height: 48)
+                .frame(width: buttonSide, height: buttonSide)
                 .background(running ? Tint.solid : Tint.blue, in: .circle)
                 .overlay {
                     if running {
@@ -1411,6 +1421,7 @@ struct ComposerInputView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(running ? "Stop" : canSend ? "Send" : "Talk to Poki"))
         .accessibilityIdentifier("composer.main")
+        .accessibilityShowsLargeContentViewer()
         .contextMenu {
             if !running, hasText {
                 Button("New Line", systemImage: "return") {

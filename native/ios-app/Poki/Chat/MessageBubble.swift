@@ -14,6 +14,7 @@ struct MessageBubble: View {
     var text: String
     /// The last bubble of its run has the small corner on its side.
     var tail: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var scheme
 
@@ -86,7 +87,7 @@ struct MessageBubble: View {
     private var withCapsules: Text {
         let segments = CapsuleText.segments(text)
         guard segments.contains(where: { if case .app = $0 { true } else { false } }) else { return Text(rendered) }
-        let font = UIFont.preferredFont(forTextStyle: .body)
+        let font = UIFont.preferredFont(forTextStyle: .body, compatibleWith: UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(typeSize)))
         return segments.reduce(Text(verbatim: "")) { line, segment in
             switch segment {
             case .text(let words):

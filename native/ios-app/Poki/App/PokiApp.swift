@@ -73,6 +73,8 @@ struct RootView: View {
     @State private var welcoming = false
     /// A setup step a link opened while the first run is up: it opens there.
     @State private var welcomeLink: SetupStep?
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @AppStorage(AppInterfaceSize.defaultsKey) private var interfaceSize = AppInterfaceSize.system
     @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @Namespace private var profile
 
@@ -265,6 +267,16 @@ struct RootView: View {
                 for window in scene.windows { window.overrideUserInterfaceStyle = style }
             }
         }
+        .onChange(of: interfaceSize, initial: true) { _, value in
+            for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+                for window in scene.windows { AppInterfaceSize.apply(value, to: window) }
+            }
+        }
+        .onChange(of: typeSize, initial: true) { _, _ in
+            for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+                for window in scene.windows { AppInterfaceSize.updateNavigationFonts(in: window) }
+            }
+        }
         .onAppear(perform: openLaunchScreen)
         .task {
             #if DEBUG
@@ -381,6 +393,8 @@ struct RootView: View {
             openDetails([DetailsRoute.model])
         case "memory":
             openDetails([SettingsRoute.memory])
+        case "interfaceSize":
+            openDetails([DetailsRoute.interfaceSize])
         case "appearance":
             openDetails([DetailsRoute.appearance])
         case "steps":

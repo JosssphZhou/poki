@@ -17,10 +17,12 @@ struct SettingsIcon: View {
     var warns = false
     /// Grey instead of blue, for the entry at the bottom of the conversations.
     var neutral = false
+    private let maximumSize: CGFloat
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 30
     @ScaledMetric(relativeTo: .body) private var glyph: CGFloat = 13.5
 
     init(symbol: String, warns: Bool = false, neutral: Bool = false, size: CGFloat = 30) {
+        maximumSize = max(44, size * 1.5)
         self.symbol = symbol
         self.warns = warns
         self.neutral = neutral
@@ -30,9 +32,9 @@ struct SettingsIcon: View {
 
     var body: some View {
         Image(systemName: symbol)
-            .font(.system(size: glyph, weight: .semibold))
+            .font(.system(size: glyph * min(1, maximumSize / size), weight: .semibold))
             .foregroundStyle(warns ? Tint.amberInk : neutral ? Color(.label) : Tint.blueText)
-            .frame(width: size, height: size)
+            .frame(width: min(size, maximumSize), height: min(size, maximumSize))
             .background(warns ? Tint.amberSoft : neutral ? Color(.tertiarySystemFill) : Tint.blueSoft, in: .circle)
             // Compound's: the ground does not make the row taller.
             .padding(.vertical, -4)
@@ -121,12 +123,13 @@ extension SettingsLabel where Title == Text, Icon == Image {
 private struct SettingsLabelIcon<Icon: View>: View {
     @Environment(\.isEnabled) private var isEnabled
     @ScaledMetric(relativeTo: .body) private var size = 30.0
+    @ScaledMetric(relativeTo: .body) private var glyph = 15.0
     @ViewBuilder var icon: Icon
     var body: some View {
         icon
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: glyph * min(1, 44 / size), weight: .semibold))
             .foregroundStyle(Tint.blueText)
-            .frame(width: size, height: size)
+            .frame(width: min(size, 44), height: min(size, 44))
             .background(Tint.blueSoft, in: .circle)
             // A row that can't be used yet (Add Agent before the relay) greys its icon too.
             .opacity(isEnabled ? 1 : 0.4)
