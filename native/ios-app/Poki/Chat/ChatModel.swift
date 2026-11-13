@@ -137,15 +137,6 @@ struct ApprovalNote: Equatable, Codable {
     /// A refusal the owner can lift by saying yes in the chat (With Message Reply).
     var reply = false
     var answered: Date?
-    /// The approval's one sentence and kinds (`PendingApproval`); nil in a note saved before them.
-    var ask: String? = nil
-    var byAgent: Bool? = nil
-    var kinds: [String]? = nil
-
-    /// What the card says it asked: the same sentence and kinds as the Live Activity.
-    var asked: PendingApproval? {
-        ask.map { PendingApproval(id: id, app: app, summary: summary, reason: why, expires: .distantPast, ask: $0, byAgent: byAgent ?? false, kinds: kinds ?? []) }
-    }
 }
 
 /// The chat: the owner's messages, Poki's answers and the steps it takes, and the model loop that runs
@@ -549,6 +540,8 @@ final class ChatModel {
         task?.cancel()
         // A question waiting for its answer holds the task: it ends unanswered.
         endQuestion(nil)
+        // A browser step waiting for a page or for the owner ends too.
+        PokiBrowser.shared.taskStopped()
         // A step waiting for an approval would hold the task until the approval ran out.
         if kind == .poki, ChatModel.delegatedBusy == nil { for approval in app.approvals { app.resolve(approval, approved: false) } }
         finishPlan()
@@ -660,6 +653,8 @@ final class ChatModel {
                 for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting { steps[i].state = result.success ? .done : .failed }
             }
             return PokiCore.ToolAnswer(text: Harness.resultRecorded, jpeg: nil, isError: false)
+        case let name where WebTools.names.contains(name):
+            return await WebTools.perform(name, arguments: call.arguments)
         default:
             if call.name == "do" { noteTyping(args) }
             phoneStepUnderWay = true
@@ -776,8 +771,8 @@ final class ChatModel {
 
     nonisolated static func sendingWords(_ approval: PendingApproval, typed: String, to: String?) -> AskWords {
         let place = approval.app.isEmpty || approval.app == "unknown" || approval.app.contains("(") ? nil : ActivityWords.local(approval.app)
-        return AskWords(title: to.map { String(localized: "Send this to \($0)?") } ?? approval.sentence,
-                        detail: place.map { String(localized: "\($0), sent as you") } ?? approval.kindLine ?? "",
+        return AskWords(title: to.map { String(localized: "Send this to \($0)?") } ?? approval.question,
+                        detail: place.map { String(localized: "\($0), sent as you") } ?? approval.reasonLine,
                         quote: typed)
     }
 
@@ -814,7 +809,7 @@ final class ChatModel {
                 if let i = steps.lastIndex(where: { $0.state == .current }) {
                     steps[i].state = .waiting
                 } else {
-                    steps.append(PlanStep(approval.sentence, state: .waiting))
+                    steps.append(PlanStep(approval.summary, state: .waiting))
                 }
             }
             let route = ApprovalClassifier.route(approval, voiceOn: app.voice.isOn)
@@ -824,7 +819,7 @@ final class ChatModel {
             noteID = nil
             if let words = sendingWords(approval) { askWords[approval.id] = words }
             asked = ApprovalNote(id: approval.id, summary: approval.summary, app: approval.app, why: approval.reason,
-                                 byModel: route != .owner, state: .asking, ask: approval.ask, byAgent: approval.byAgent, kinds: approval.kinds)
+                                 byModel: route != .owner, state: .asking)
             setNote(.approval(asked!))
         case .approvalEnded(let id, let approved):
             askWords[id] = nil
@@ -951,16 +946,6 @@ final class ChatModel {
             default: "WhatsApp"
             }
         }
-        /// `-pokiChat lunch`: an agent's own sentence for a payment, and an earlier delete the rules
-        /// worded themselves, allowed.
-        static var lunchApproval: PendingApproval {
-            PendingApproval(id: "lunch", app: "Lunch", summary: "Tap “Place order”", reason: "a payment (\"place order\")", expires: Date().addingTimeInterval(48),
-                            ask: String(localized: "Order lunch from Sample Noodles, ¥38 in total"), byAgent: true, kinds: ["payment"])
-        }
-        static var lunchDeleted: ApprovalNote {
-            ApprovalNote(id: "lunch-delete", summary: "Tap “Delete”, then tap “Delete”", app: "Lunch", why: "multiple sensitive actions: action 1: deleting (\"delete\"); action 2: deleting (\"delete\")",
-                         byModel: false, state: .allowed, answered: Date().addingTimeInterval(-30), ask: "Delete in Lunch", byAgent: false, kinds: ["deleting"])
-        }
         /// `-pokiChat question|questionApps|questionMeaning|answered`: the questions of the boards.
         static var concert: String { String(localized: "Find Saturday’s concert tickets on Damai") }
         static var concertQuestion: ChatQuestion {
@@ -994,7 +979,7 @@ final class ChatModel {
         }
     }
 
-    /// `-pokiChat empty|working|approval|lunch|handoff|failed|approved|demo`: the boards' conversations, for
+    /// `-pokiChat empty|working|approval|handoff|failed|approved|rested|demo`: the boards' conversations, for
     /// the build's screenshots only. Nothing is sent.
     private func loadSample(_ scene: String) {
         let start = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: Date()) ?? Date()
@@ -1021,9 +1006,6 @@ final class ChatModel {
             // The last step waits for your answer (the chat shows its card above the message field).
             modelPlan = Sample.momSteps
             entries = [ChatEntry(.time(start)), ChatEntry(.you(Sample.mom, delivered: true)), onIt, steps(Sample.momSteps, done: 3, then: .waiting)]
-        case "lunch":
-            entries = [ChatEntry(.time(start)), ChatEntry(.you(String(localized: "Order my usual lunch"), delivered: true)), onIt,
-                       ChatEntry(.note(.approval(Sample.lunchDeleted)))]
         case "handoff":
             // The phone is back with you for the passcode: the step waits, the card says it is your turn.
             modelPlan = Sample.coffeeSteps
