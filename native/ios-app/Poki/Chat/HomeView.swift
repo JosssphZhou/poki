@@ -36,7 +36,7 @@ enum HomeMotion {
     static func flight(_ reduce: Bool) -> Animation { paced(reduce ? fade : .smooth(duration: 0.35)) }
     /// The message field taking the home page up, or letting it down: the greeting and Poki's picture
     /// over it move on this one animation.
-    static let lift = Animation.snappy(duration: 0.3)
+    static let lift = Animation.smooth(duration: 0.3)
 
     static func ground(_ reduce: Bool) -> Animation { paced(reduce ? fade : .easeInOut(duration: 0.45).delay(0.06)) }
     static func pills(_ home: Bool, _ reduce: Bool) -> Animation {
@@ -449,6 +449,7 @@ struct HomePage<Footer: View>: View {
     @Environment(\.coveredByDrawer) private var covered
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     private let shortcutStore = HomeShortcutStore.shared
     /// Picked as the page comes in, so it does not change while you look at it.
     @State private var greetedAt = Date.now
@@ -468,56 +469,19 @@ struct HomePage<Footer: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ScrollView {
-                VStack(spacing: 0) {
-                    VStack(spacing: 12) {
-                        // Poki's picture, 16 points over the greeting (board 头像位置 丙); the chat draws it here.
-                        Color.clear.frame(width: sizes.homeAvatar, height: sizes.homeAvatar)
-                            .picturePlace(.home)
-                            .padding(.bottom, 4)
-                        HomeGreetingView(date: greetedAt)
-                        footer()
-                    }
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    // The board's picture 258 points from the screen's top, the greeting 354: under the top
-                    // bar, whose middle keeps the chat's picture and name in height, that is 112 points.
-                    .padding(.top, writing ? 24 : max(24, min(112, geometry.size.height * 0.29 - 72)))
-                    .opacity(home ? 1 : 0)
-                    .offset(y: home || reduceMotion ? 0 : -rise)
-                    .animation(HomeMotion.flight(reduceMotion), value: home)
-                    .onChange(of: home) { _, shown in if shown { greetedAt = .now } }
-
-                    Spacer(minLength: 24)
-                    if !writing, !editorTyping {
-                        VStack(spacing: 8) {
-                            let shortcuts = shortcutStore.shortcuts
-                            if typeSize.isAccessibilitySize {
-                                ForEach(shortcuts) { idea in shortcut(idea, row: 0) }
-                            } else {
-                                // Three on top, or the larger half of more than six.
-                                let top = max(3, (shortcuts.count + 1) / 2)
-                                row(Array(shortcuts.prefix(top)), at: 0, speed: HomeMotion.pillSpeeds.top, start: 64)
-                                if shortcuts.count > top { row(Array(shortcuts.dropFirst(top)), at: 1, speed: HomeMotion.pillSpeeds.bottom, start: 0) }
-                            }
-                        }
-                        .padding(.top, 2)
-                        .padding(.horizontal, typeSize.isAccessibilitySize ? 18 : 0)
-                        // A sideways drag on the rows scrolls them; it does not pull the drawer out.
-                        .scrollsSideways(home && !typeSize.isAccessibilitySize)
-                        .opacity(home ? 1 : 0)
-                        .offset(y: home || reduceMotion ? 0 : 14)
-                        .animation(HomeMotion.pills(home, reduceMotion), value: home)
-                    }
-                    Spacer().frame(height: 34)
+            let inset = max(24, min(112, geometry.size.height * 0.29 - 72))
+            // A regular-height greeting fits without a vertical scroll view. Keeping the same
+            // layout as the keyboard opens avoids scroll corrections while the composer expands.
+            if typeSize.isAccessibilitySize || verticalSizeClass == .compact {
+                ScrollView {
+                    content(inset: inset, height: geometry.size.height, scrolls: true)
                 }
-                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollDismissesKeyboard(.interactively)
+            } else {
+                content(inset: inset, height: geometry.size.height, scrolls: false)
             }
-            .scrollBounceBehavior(.basedOnSize)
-            .scrollDismissesKeyboard(.interactively)
         }
-        .animation(HomeMotion.lift, value: writing)
-        .animation(HomeMotion.lift, value: editorTyping)
         .task(id: SessionStore.shared.sessions.count) {
             shortcutStore.refresh(sessions: SessionStore.shared.sessions, routines: RoutineStore.shared.routines)
         }
@@ -539,6 +503,57 @@ struct HomePage<Footer: View>: View {
         }
         .onChange(of: editing) { _, open in if open == nil { editorTyping = false } }
         .sensoryFeedback(.impact(weight: .medium), trigger: holds)
+    }
+
+    private func content(inset: CGFloat, height: CGFloat, scrolls: Bool) -> some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                // Poki's picture, 16 points over the greeting (board 头像位置 丙); the chat draws it here.
+                Color.clear.frame(width: sizes.homeAvatar, height: sizes.homeAvatar)
+                    .picturePlace(.home)
+                    .padding(.bottom, 4)
+                HomeGreetingView(date: greetedAt)
+                footer()
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+            // The board's picture 258 points from the screen's top, the greeting 354: under the top
+            // bar, whose middle keeps the chat's picture and name in height, that is 112 points.
+            // A fixed top layout keeps the regular greeting out of the keyboard's layout pass.
+            // In a scrollable layout, reserve the actual space so large text stays reachable.
+            .padding(.top, scrolls && !writing ? inset : 24)
+            .offset(y: scrolls || writing ? 0 : inset - 24)
+            .animation(reduceMotion ? nil : HomeMotion.lift, value: writing)
+            .opacity(home ? 1 : 0)
+            .offset(y: home || reduceMotion ? 0 : -rise)
+            .animation(HomeMotion.flight(reduceMotion), value: home)
+            .onChange(of: home) { _, shown in if shown { greetedAt = .now } }
+
+            Spacer(minLength: 24)
+            if !writing, !editorTyping {
+                VStack(spacing: 8) {
+                    let shortcuts = shortcutStore.shortcuts
+                    if typeSize.isAccessibilitySize {
+                        ForEach(shortcuts) { idea in shortcut(idea, row: 0) }
+                    } else {
+                        // Three on top, or the larger half of more than six.
+                        let top = max(3, (shortcuts.count + 1) / 2)
+                        row(Array(shortcuts.prefix(top)), at: 0, speed: HomeMotion.pillSpeeds.top, start: 64)
+                        if shortcuts.count > top { row(Array(shortcuts.dropFirst(top)), at: 1, speed: HomeMotion.pillSpeeds.bottom, start: 0) }
+                    }
+                }
+                .padding(.top, 2)
+                .padding(.horizontal, typeSize.isAccessibilitySize ? 18 : 0)
+                // A sideways drag on the rows scrolls them; it does not pull the drawer out.
+                .scrollsSideways(home && !typeSize.isAccessibilitySize)
+                .opacity(home ? 1 : 0)
+                .offset(y: home || reduceMotion ? 0 : 14)
+                .animation(HomeMotion.pills(home, reduceMotion), value: home)
+                .transition(.opacity)
+            }
+            Spacer().frame(height: 34)
+        }
+        .frame(maxWidth: .infinity, minHeight: height)
     }
 
     /// The part of the pressed pill that shows, in the page's own points: a pill at an end of a row is
