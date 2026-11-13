@@ -9,6 +9,10 @@ enum WebTools {
 
     @MainActor private static let checkout = try! Regex(#"(?i)\b(check out|complete (order|purchase|booking)|confirm (order|purchase|payment)|free trial)\b|结账|結帳|试用|試用"#)
 
+    /// A short button or link label that pays or orders. Core's payment words miss some of these: a
+    /// trial that starts, and a payment word inside a label of five words or more.
+    @MainActor private static let paying = try! Regex(#"(?i)\b(pay|purchase|buy|checkout|check out|place order|complete (order|purchase|booking)|confirm (order|purchase|payment)|subscribe|start (a |your )?(free )?trial|free trial)\b|付款|支付|下单|购买|结账|订阅|试用"#)
+
     private static func object(_ properties: [String: Any], _ required: [String]) -> [String: Any] {
         ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
     }
@@ -136,8 +140,8 @@ enum WebTools {
             for label in action["labels"] as? [String] ?? [] {
                 let control = label.replacingOccurrences(of: "提交订单", with: "下单")
                     .replacingOccurrences(of: "提交訂單", with: "下单")
-                let reason = rules.reason(forBrowserControl: control)
-                    ?? (control.contains(checkout) ? rules.reason(forBrowserControl: "pay") : nil)
+                let pays = control.contains(checkout) || control.count <= 40 && control.contains(paying)
+                let reason = rules.reason(forBrowserControl: control) ?? (pays ? rules.reason(forBrowserControl: "pay") : nil)
                 if let reason, !reasons.contains(reason) { reasons.append(reason) }
             }
             if reasons.isEmpty, action["submitting"] as? Bool == true, action["searching"] as? Bool != true {
