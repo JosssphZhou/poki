@@ -22,6 +22,8 @@ public struct CoreConfig: Sendable {
     public var busyWait: Double
     /// How long a call waits for a runner that is starting (the app wakes it when a call comes in).
     public var runnerWait: Double
+    /// Extra time for read-only recovery while the foreground app is not answering.
+    public var appResponseWait: Double = 60
     /// The form the element tree is asked for: "xml" (the default) or "json". WDA's JSON tree fetches
     /// each element's custom actions from the accessibility server, one round trip per element,
     /// whatever is excluded; its XML tree leaves them out unless asked. On the CI simulator the XML
@@ -215,6 +217,7 @@ public struct ToolFacts: Sendable, Equatable {
 public enum CoreEvent: Sendable, Equatable {
     case relay(RelayState)
     case toolStarted(ToolActivity)
+    case screenWaiting(seconds: Int, session: String?)
     case toolFinished(ToolActivity, ToolOutcome, ToolFacts)
     case approvalRequested(Approval)
     case approvalEnded(id: String, approved: Bool?)
@@ -518,7 +521,10 @@ public final class PokiCore: @unchecked Sendable {
         public let text: String
         public let jpeg: Data?
         public let isError: Bool
-        public init(text: String, jpeg: Data?, isError: Bool) { self.text = text; self.jpeg = jpeg; self.isError = isError }
+        public let failure: ToolFailure?
+        public init(text: String, jpeg: Data?, isError: Bool, failure: ToolFailure? = nil) {
+            self.text = text; self.jpeg = jpeg; self.isError = isError; self.failure = failure
+        }
     }
 
     /// Calls `look`, `do` or `status` from inside the app, the same way an MCP client's `tools/call`
@@ -527,7 +533,7 @@ public final class PokiCore: @unchecked Sendable {
     public func callTool(_ name: String, arguments: String) async -> ToolAnswer {
         let args = (try? JSON.parse(arguments)) ?? .object([:])
         let output = await call(name, args)
-        return ToolAnswer(text: output.text, jpeg: output.jpeg, isError: output.isError)
+        return ToolAnswer(text: output.text, jpeg: output.jpeg, isError: output.isError, failure: output.failure)
     }
 
     /// The tools as MCP lists them (name, description, inputSchema), as a JSON array, and the
@@ -568,9 +574,10 @@ public final class PokiCore: @unchecked Sendable {
         }
         let gateWaited = now() - received
         gate.current = "\(name): \(activity.summary)"
+        computer.callSession = session
         emit(.toolStarted(activity))
         // The owner's time on an approval, and the runner's start, come on top of the tool's own time.
-        let deadline = config.toolDeadline + (name == "do" ? config.approvalWait : 0) + config.runnerWait + 1
+        let deadline = config.toolDeadline + (name == "do" ? config.approvalWait : 0) + config.runnerWait + config.appResponseWait + 1
         var output: ToolResult
         computer.failureLog.value = nil
         do {

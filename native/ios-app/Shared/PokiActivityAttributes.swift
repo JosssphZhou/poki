@@ -27,6 +27,7 @@ struct PokiActivityAttributes: ActivityAttributes {
         /// What the agent is doing, in a few words ("Tap “Send”"), or the phase's line, in English: the
         /// face words it in the system's language (ActivityWords).
         var headline: String
+        var screenWaitSeconds: Int?
         /// The status word in place of the phase's own ("Runner Stopped").
         var label: String?
         /// The app in front.

@@ -48,6 +48,7 @@ final class LocalRunnerTests: XCTestCase {
         let host = FakeHost()
         var config = CoreConfig(approvalWait: 0.3, toolDeadline: 6, actionCap: 2, readTimeout: 1, busyWait: 0.2, treeFormat: "json", humanize: false)
         config.sensitive.enabled = false
+        config.appResponseWait = 0
         let lanes = LocalRunner(serve: phone.serve, unanswered: unanswered)
         lanes.heldFor = heldFor
         return (PokiCore(config: config, host: host, transport: lanes), host)

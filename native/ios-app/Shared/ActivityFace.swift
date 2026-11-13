@@ -272,12 +272,13 @@ extension PokiState {
                 kicker: total.map { String(activity: "Step \(step) of \($0)") } ?? String(activity: "Step \(step)"),
                 place: name,
                 meta: since.map { ActivityFace.Meta.elapsed($0) } ?? ActivityFace.Meta.none,
-                content: doing ?? StatusWord.running.text,
+                content: screenWaitSeconds.map { String(activity: "Waiting for the app to respond (\($0)s)") } ?? doing ?? StatusWord.running.text,
                 previous: plan == nil ? previous.map { ActivityWords.step($0) } : planStep(step - 1),
                 bottom: .progress(step: step, total: total, stop: true),
                 failedSteps: failedSteps ?? [],
                 thumbnail: hasThumbnail ? .large : .none,
-                compact: .steps(text: name, count: total.map { "\(step)/\($0)" } ?? String(activity: "Step \(step)")))
+                compact: .steps(text: screenWaitSeconds == nil ? name : String(activity: "Waiting for app"),
+                                count: screenWaitSeconds.map { "\($0)s" } ?? total.map { "\(step)/\($0)" } ?? String(activity: "Step \(step)")))
         case .approval, .deciding:
             guard let approval else { return quietFace }
             let question = approval.question

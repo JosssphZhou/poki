@@ -343,6 +343,13 @@ final class SessionStore {
                 session.updated = Date()
                 put(session)
             }
+        case .screenWaiting(let seconds, let id?):
+            update(agent: id) { session in
+                if let i = session.entries.lastIndex(where: { if case .step(_, nil) = $0.kind { return true }; return false }) {
+                    session.entries[i].kind = .step(String(localized: "Waiting for the app to respond (\(seconds)s)"), ok: nil)
+                }
+            }
+        case .screenWaiting(_, nil): break
         case .toolStarted(_, let summary, let id?):
             currentSession = id
             update(agent: id) { session in

@@ -59,6 +59,7 @@ final class LiveCore: CoreSession {
         case .relay(.connecting): return .relay(.connecting)
         case .relay(.ready): return .relay(.ready)
         case .relay(.offline(let why)): return .relay(.offline(why))
+        case .screenWaiting(let seconds, let session): return .screenWaiting(seconds: seconds, session: session)
         case .toolStarted(let activity): return .toolStarted(name: activity.name, summary: activity.summary, session: activity.session)
         case .toolFinished(let activity, let outcome, let facts):
             let delivery: String

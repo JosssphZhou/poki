@@ -1,10 +1,15 @@
 import Foundation
 
 /// What a tool call answers: facts as text, a screenshot when there is one, and whether it failed.
+public enum ToolFailure: Sendable, Equatable {
+    case appUnresponsive
+}
+
 public struct ToolResult: Sendable {
     public var text: String
     public var jpeg: Data?
     public var isError = false
+    public var failure: ToolFailure? = nil
 }
 
 /// A sent action failed: whether it may have reached the phone.
@@ -93,6 +98,8 @@ final class Computer: @unchecked Sendable {
         self.memory = config.memory ?? RoutineStore.shared
     }
 
+    var callSession: String?
+
     // MARK: Reading and answering
 
     func screenSize(until: Double) async throws -> ScreenSize {
@@ -113,7 +120,36 @@ final class Computer: @unchecked Sendable {
     /// only what changed since the read before (a `do`); `full` lists every element, as the tree has it.
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
         let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
-        let reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
+        var reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
+        if !reading.treeRead, config.appResponseWait > 0,
+           let status = try? await runner.raw("GET", "/status", timeout: 1, countsAsMiss: false),
+           status["busy"]?["seconds"]?.double != nil {
+            let began = now()
+            let ends = min(began + config.appResponseWait, until + config.appResponseWait - 0.5)
+            var pause = 0.5
+            repeat {
+                emit(.screenWaiting(seconds: Int(now() - began), session: callSession))
+                await sleep(seconds: min(pause, max(0, ends - now())))
+                if Task.isCancelled { break }
+                pause = min(4, pause * 2)
+                guard ends - now() > 0.6 else { break }
+                guard let status = try? await runner.raw("GET", "/status", timeout: min(1, ends - now() - 0.5), countsAsMiss: false) else { continue }
+                if status["busy"]?["seconds"]?.double == nil, ends - now() > 0.6 {
+                    reading = await runner.read(timeout: min(config.readTimeout, ends - now() - 0.5), format: config.treeFormat, callEnds: ends)
+                }
+            } while !reading.treeRead && now() < ends && !Task.isCancelled
+            if !reading.treeRead {
+                let picture = try? await runner.screenshot(timeout: 1)
+                let jpeg = picture.flatMap { try? host.jpeg(fromPNG: $0, width: Self.pictureWidth(size), quality: 0.6) }
+                let reason = Task.isCancelled ? "The read was stopped." : "The app did not respond to screen reading after waiting. Try again once the app is ready."
+                var lines = ["error: \(reason)"] + did.map { "did: \($0)" }
+                if let error { lines.append("error: \(error)") }
+                lines += extra
+                lines.append("No action was retried. The picture is for observation only; no current elements were read.")
+                return ToolResult(text: lines.joined(separator: "\n"), jpeg: jpeg, isError: true,
+                                  failure: Task.isCancelled ? nil : .appUnresponsive)
+            }
+        }
         if size == nil { _ = try? await screenSize(until: now() + 1.5) }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
@@ -139,7 +175,7 @@ final class Computer: @unchecked Sendable {
             lines += extra + kept + staleNote
             return ToolResult(text: lines.joined(separator: "\n"), jpeg: stale, isError: true)
         }
-        let treeRead = !reading.elements.isEmpty || reading.notes.isEmpty
+        let treeRead = reading.treeRead
         let sameApp = reading.foreground?.bundleID == nil || reading.foreground?.bundleID == lastForeground?.bundleID
         lastForeground = reading.foreground ?? lastForeground
         if config.isPoki(reading.foreground) { return pokiInFront(reading, did: did, error: error, extra: extra) }
@@ -429,14 +465,17 @@ final class Computer: @unchecked Sendable {
         guard await locked else { return result }
         var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         lines.insert("screen: locked (the owner has to unlock the phone before anything can be done)", at: min(1, lines.count))
-        return ToolResult(text: lines.joined(separator: "\n"), jpeg: result.jpeg, isError: result.isError)
+        result.text = lines.joined(separator: "\n")
+        return result
     }
 
     /// The answer with the reason for a restart this side made, reported once: the model learns why
     /// its last calls got nothing and that the runner is a fresh one (its numbers start over).
     func restartNote(_ result: ToolResult) -> ToolResult {
         guard let why = runner.lastRestart.update({ r -> String? in defer { r = nil }; return r }) else { return result }
-        return ToolResult(text: "runner: \(why); this is the new runner\n" + result.text, jpeg: result.jpeg, isError: result.isError)
+        var result = result
+        result.text = "runner: \(why); this is the new runner\n" + result.text
+        return result
     }
 
     /// WDA's lock state, without a session; unknown counts as unlocked (a failed read must not block).

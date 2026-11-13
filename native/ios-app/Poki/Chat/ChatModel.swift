@@ -369,6 +369,7 @@ final class ChatModel {
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
+        phoneReadFailure = nil; screenWaitID = nil
         app.chatTaskBegan()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
@@ -387,6 +388,8 @@ final class ChatModel {
     }
 
     private var lastOutcome: PiLoop.Outcome?
+    private var phoneReadFailure: String?
+    private var screenWaitID: UUID?
 
     /// Runs a task an outside agent handed over (`ask_poki`) and answers with Poki's last words, how the
     /// task ended, and finish_task's summary and answer.
@@ -413,6 +416,7 @@ final class ChatModel {
     static var delegatedBusy: String?
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
+        let outcome = phoneReadFailure.map { PiLoop.Outcome.failed($0) } ?? outcome
         finishPlan()
         // The turn is over: the phone goes back to the app the task began in (Poki's chat, where the
         // reply is), or stays where it is and the reply goes out as a notification that can be answered
@@ -491,6 +495,12 @@ final class ChatModel {
                         continue
                     }
                     client.answer(call, await perform(call))
+                    if let failure = phoneReadFailure {
+                        finishPlan()
+                        add(.note(.problem(failure)))
+                        app.chatTaskEnded(reply: failure, session: sessionID, acted: toolCalls > 0)
+                        return
+                    }
                 }
                 if stopped { return }
             case .again:
@@ -517,7 +527,19 @@ final class ChatModel {
     private func perform(_ call: ToolCall) async -> PokiCore.ToolAnswer {
         awaitingModel = false
         let started = Date()
+        if let failure = phoneReadFailure {
+            return PokiCore.ToolAnswer(text: failure, jpeg: nil, isError: true)
+        }
         let answer = await performCall(call)
+        if answer.failure == .appUnresponsive, !stopAsked, !Task.isCancelled {
+            let words = String(localized: "The app is not responding to screen reading. Try again once it is ready.")
+            phoneReadFailure = words
+            taskResult = TaskResult(success: false, summary: words, details: [], answer: nil)
+            updatePlan { steps in
+                for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting { steps[i].state = .failed }
+            }
+            loop?.stop()
+        }
         // A launch that went through says which app the task is for; a refused one says nothing.
         if call.name == "do", !answer.isError {
             for app in TaskApps.launches(inArguments: call.arguments) { taskApps.launch(app) }
@@ -592,6 +614,18 @@ final class ChatModel {
     private func observe(_ event: ShellEvent) {
         guard running else { return }
         switch event {
+        case .screenWaiting(let seconds, let session):
+            guard session == nil else { return }
+            let words = String(localized: "Waiting for the app to respond (\(seconds)s)")
+            if let id = screenWaitID, let i = entries.firstIndex(where: { $0.id == id }) {
+                entries[i].kind = .step(words, ok: nil)
+                persist()
+            } else {
+                let entry = ChatEntry(.step(words, ok: nil))
+                screenWaitID = entry.id
+                entries.append(entry)
+                persist()
+            }
         case .toolStarted(let name, let summary, let session):
             guard session == nil else { return }
             guard name == "do", modelPlan == nil else { return }
@@ -601,6 +635,11 @@ final class ChatModel {
             }
         case .toolFinished(let summary, let delivery, let stepApp, _, _, let session):
             guard session == nil else { return }
+            if let id = screenWaitID, let i = entries.firstIndex(where: { $0.id == id }) {
+                entries[i].kind = .step(String(localized: "Waiting for the app to respond"), ok: !delivery.hasPrefix("failed"))
+                screenWaitID = nil
+                persist()
+            }
             if summary != "Look at the screen" {
                 taskApps.step(in: stepApp)
                 taskApp = taskApps.target(request: taskRequest)
@@ -926,6 +965,13 @@ struct TaskResult: Decodable, Equatable {
         summary = try c.decode(String.self, forKey: .summary)
         details = (try? c.decodeIfPresent([Detail].self, forKey: .details)) ?? []
         answer = (try? c.decodeIfPresent(Answer.self, forKey: .answer)) ?? nil
+    }
+
+    init(success: Bool, summary: String, details: [Detail], answer: Answer?) {
+        self.success = success
+        self.summary = summary
+        self.details = details
+        self.answer = answer
     }
 
     /// The requested facts for whoever handed the task over, such as "answer (field): Battery: 81%".

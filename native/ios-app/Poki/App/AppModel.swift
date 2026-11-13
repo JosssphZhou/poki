@@ -1356,9 +1356,15 @@ final class AppModel {
         case .relay(let status):
             if status != relayStatus { log.add("relay", "\(status)") }
             relayStatus = status
+        case .screenWaiting(let seconds, _):
+            let words = String(localized: "Waiting for the app to respond (\(seconds)s)")
+            activityText = words
+            lastAgentActivity = Date()
+            activity.update { $0.headline = words; $0.screenWaitSeconds = seconds }
         case .toolStarted(_, let summary, _):
             lastAgentActivity = Date(); lastStepAt = Date()
             stepUnderWay = (summary, Date())
+            activity.update { $0.screenWaitSeconds = nil }
             activityText = summary
             log.add("agent", "started: \(summary)")
             if problem?.hasPrefix("An approval ran out") == true { problem = nil }
@@ -1374,6 +1380,7 @@ final class AppModel {
         case .toolFinished(let summary, let delivery, let app, let thumbnail, let error, _):
             lastAgentActivity = Date(); lastStepAt = Date()
             stepUnderWay = nil
+            activity.update { $0.screenWaitSeconds = nil }
             lastAction = "\(summary), \(delivery)"
             activityText = "Idle"
             let failed = delivery.hasPrefix("failed")

@@ -81,6 +81,7 @@ public struct Reading: Sendable {
     public var png: Data?
     public var notes: [String] = []
     public var ms = 0
+    public var treeRead = false
 }
 
 /// WDA's JSON source as a flat list of the elements worth listing: not the application root, with a
@@ -354,6 +355,7 @@ extension Runner {
                 }
             }
         }
+        reading.treeRead = treeCame
         reading.ms = Int(((now() - started) * 1000).rounded())
         return reading
     }
