@@ -1,7 +1,7 @@
 import Foundation
 import UserNotifications
 
-/// A time-sensitive notification for each approval, so the person hears about it even when the Live
+/// A time-sensitive notification for each approval, so the person sees it even when the Live
 /// Activity is off, dismissed or hidden (and, before iOS 26, as the way to answer it). Touch and hold
 /// it for Allow (Face ID or the passcode first) and Don't Allow. PokiCore sends no input while an
 /// approval waits, so only the person can press them.
@@ -38,7 +38,6 @@ enum ApprovalNotice {
         if let kinds = approval.kindLine { content.subtitle = kinds }
         content.categoryIdentifier = category
         content.userInfo = ["approval": approval.id]
-        content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.threadIdentifier = "approvals"
         let request = UNNotificationRequest(identifier: "approval-\(approval.id)", content: content, trigger: nil)

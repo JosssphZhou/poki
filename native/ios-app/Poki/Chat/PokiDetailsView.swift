@@ -379,6 +379,7 @@ struct HandsView: View {
 /// under the hood (diagnostics, the log, testing options).
 struct HealthView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(CueSounds.enabledKey) private var cueSoundsEnabled = true
 
     var body: some View {
         List {
@@ -410,6 +411,11 @@ struct HealthView: View {
                 }
                 .foregroundStyle(Color(.label))
                 .accessibilityIdentifier("moreSettings.notifications")
+
+                Toggle(isOn: $cueSoundsEnabled) {
+                    SettingsLabel("Sound Effects", systemImage: "speaker.wave.2")
+                }
+                .accessibilityIdentifier("moreSettings.soundEffects")
             } header: {
                 Text("This iPhone")
             }

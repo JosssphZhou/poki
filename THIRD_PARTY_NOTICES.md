@@ -148,3 +148,7 @@ The desktop app and its core crate ([desktop/](desktop/), AGPL-3.0-only) are wri
 - **Apple root certificate.** `desktop/core/certs/AppleRootCA.der` is Apple Inc.'s public root certificate, used only to pin TLS to Apple's hosts.
 - **Type.** Geist by Vercel, SIL Open Font License 1.1 ([desktop/app/public/fonts/LICENSE-Geist.txt](desktop/app/public/fonts/LICENSE-Geist.txt)).
 - **Shell.** [Tauri 2](https://tauri.app) (MIT/Apache-2.0) with its opener, dialog, clipboard-manager and log plugins; window-vibrancy (MIT); React (MIT); Vite (MIT). Rust crate licences are listed by `cargo license` in `desktop/`.
+
+## iPhone task cue sounds
+
+[UI SFX](https://github.com/romainsimon/uisfx), copyright Yuki Capital, dedicates its audio to the public domain under CC0 1.0 Universal. Poki includes `start.mp3`, `notification.mp3`, `complete.mp3`, and `blocked.mp3` from `packages/uisfx/sounds/minimal/` at revision `9950fe66f993a6660dab9c2651dcbcd899ffd83b`, plus PCM CAF conversions of those recordings. The originals, [audio license](native/ios-app/Poki/Resources/CueSounds/LICENSE-AUDIO.txt), and [conversion notes](native/ios-app/Poki/Resources/CueSounds/README.md) are retained together. The upstream player's MIT-licensed code is not included.

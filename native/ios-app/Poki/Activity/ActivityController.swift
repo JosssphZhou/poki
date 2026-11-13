@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 ///
 /// AppModel only describes the state (`update`, `record`); this class decides what deserves a pop-up.
 /// It compares each new state with the last one and, for the moments that matter, sends the update with
-/// an `AlertConfiguration`, which lights the screen, expands the Dynamic Island and plays a sound:
+/// an `AlertConfiguration`, which lights the screen and expands the Dynamic Island:
 ///
 /// - approval asked (always, never throttled): the screen lights even when locked;
 /// - a run finishes (quiet for `finishAfter`), a problem, a pairing code, paired.
@@ -243,7 +243,7 @@ final class ActivityController {
         }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
-            alert = critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence)
+            alert = critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence, silent: true)
             remindHalfway(approval)
         }
         if state.approval == nil, let was = old.approval {
@@ -292,7 +292,7 @@ final class ActivityController {
             try? await Task.sleep(for: .seconds(half))
             guard !Task.isCancelled, let self, self.state.phase == .approval, self.state.approval?.id == approval.id else { return }
             AppLog.shared.add("activity", "approval \(approval.id) reminded halfway")
-            self.send(alert: self.critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence), critical: true)
+            self.send(alert: self.critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence, silent: true), critical: true)
         }
     }
 
@@ -380,12 +380,13 @@ final class ActivityController {
         let now = Date()
         guard now.timeIntervalSince(lastAlert) >= alertSpacing else { return nil }
         lastAlert = now
-        return AlertConfiguration(title: "\(title)", body: "\(body)", sound: .default)
+        // A quiet stretch between steps is not task completion. ChatModel owns the completion cue.
+        return AlertConfiguration(title: "\(title)", body: "\(body)", sound: .named("cue-silence.caf"))
     }
 
-    private func critical(_ title: String, _ body: String) -> AlertConfiguration {
+    private func critical(_ title: String, _ body: String, silent: Bool = false) -> AlertConfiguration {
         lastAlert = Date()
-        return AlertConfiguration(title: "\(title)", body: "\(body)", sound: .default)
+        return AlertConfiguration(title: "\(title)", body: "\(body)", sound: silent ? .named("cue-silence.caf") : .default)
     }
 
     // MARK: Sending

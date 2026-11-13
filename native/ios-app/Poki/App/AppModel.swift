@@ -34,6 +34,7 @@ final class AppModel {
     /// Poki keeps its own signing: the Apple Account, the next build ready ahead of time, Install.
     let signer = SelfSigner()
     let voice: VoiceModel
+    let cueSounds = CueSounds(output: SystemCueOutput())
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
@@ -1556,7 +1557,9 @@ final class AppModel {
 
     /// Each request is answered by the owner on its own card or notification.
     private func askOwner(_ approval: PendingApproval) {
+        guard !approvals.contains(where: { $0.id == approval.id }) else { return }
         approvals.append(approval)
+        cueSounds.approvalPresented(approval.id)
         log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary) (\(approval.reason)); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
         let caller = currentCaller
         activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?"; $0.caller = caller }
