@@ -517,6 +517,35 @@ enum Appearance: String, CaseIterable, Identifiable {
         case .dark: .dark
         }
     }
+
+    @MainActor
+    func select(reduceMotion: Bool, updatePreference: () -> Void) {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
+            .flatMap(\.windows)
+            .filter { $0.isKeyWindow && !$0.isHidden }
+        let snapshots: [(window: UIWindow, view: UIView)] = reduceMotion ? [] : windows.compactMap { window in
+            guard let view = window.snapshotView(afterScreenUpdates: false) else { return nil }
+            view.frame = window.bounds
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            window.addSubview(view)
+            return (window, view)
+        }
+        // The outgoing frame includes the old checkmark. Reveal the new selection and colors together.
+        updatePreference()
+        for window in windows { window.overrideUserInterfaceStyle = style }
+        for (window, view) in snapshots {
+            window.layoutIfNeeded()
+            UIView.animate(withDuration: 0.26, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
+                view.alpha = 0
+            } completion: { _ in
+                view.removeFromSuperview()
+            }
+        }
+    }
 }
 
 /// Settings › Appearance: Automatic, Light or Dark.
@@ -529,9 +558,8 @@ struct AppearanceView: View {
             Section {
                 ForEach(Appearance.allCases) { option in
                     Button {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
-                            choice = option.rawValue
-                        }
+                        guard choice != option.rawValue else { return }
+                        option.select(reduceMotion: reduceMotion) { choice = option.rawValue }
                     } label: {
                         HStack {
                             Text(option.title).foregroundStyle(Color(.label))
