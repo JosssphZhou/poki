@@ -1177,14 +1177,14 @@ struct ComposerInputView: View {
     /// Settings, where the OpenAI key that Talk with Poki needs is added (or Live Voice turned on).
     var openVoiceKey: () -> Void = {}
     @State private var dictation = FieldDictation()
-    /// The ways to speak, open over the message field.
-    @State private var ways: VoiceWays?
+    /// Talk with Poki was asked for with no voice key: the field says so, in its own place.
+    @State private var needsKey = false
     /// When the talk on now began, for its time in the field.
     @State private var talkStarted: Date?
     @State private var sent: (text: String, at: Date)?
     @State private var sends = 0
-    /// Settings › Voice: the microphone for dictation beside Send. Off unless you turn it on.
-    @AppStorage(FieldDictation.buttonKey) private var dictationButton = false
+    /// Settings › Voice: the microphone for dictation beside the main button. On unless you turn it off.
+    @AppStorage(FieldDictation.buttonKey) private var dictationButton = FieldDictation.buttonShown
     /// Photos and PDFs for the next message, and the three ways to add them.
     @State private var attachments: [ChatAttachment] = []
     @State private var choosingPhotos = false
@@ -1210,18 +1210,6 @@ struct ComposerInputView: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
                     .transition(.opacity)
             }
-            if let ways {
-                VoiceWaysPanel(step: ways, dictate: {
-                    self.ways = nil
-                    dictation.start(model, after: input)
-                }, talk: {
-                    if voice.canTalkLive { self.ways = nil; openVoice() } else { self.ways = .needsKey }
-                }, addKey: {
-                    self.ways = nil
-                    openVoiceKey()
-                }, close: { self.ways = nil })
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
             if !attachments.isEmpty {
                 AttachmentStrip(attachments: attachments) { item in
                     withAnimation(.snappy) { attachments.removeAll { $0.id == item.id } }
@@ -1234,6 +1222,11 @@ struct ComposerInputView: View {
                     TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
                             interrupt: voice.stopTalking, end: voice.stop,
                             retry: { voice.dismissProblem(); openVoice() }, dismiss: voice.dismissProblem)
+                        .transition(.blurReplace)
+                } else if needsKey {
+                    // In the field's own place and on its glass, as the talk's bar is: nothing floats
+                    // over the field or slides out from behind it.
+                    VoiceKeyNotice(addKey: { needsKey = false; openVoiceKey() }, close: { needsKey = false })
                         .transition(.blurReplace)
                 } else {
                 Group {
@@ -1257,7 +1250,7 @@ struct ComposerInputView: View {
             }
             .padding(8)
             .contentShape(.rect)
-            .onTapGesture { if voice.talkState == nil { focused = true } }
+            .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
             .simultaneousGesture(swipe)
             .glassSurface(in: RoundedRectangle(cornerRadius: 32, style: .continuous), fallback: .bar)
             // Controls in a bar stop growing where the system's bars do; the message itself grows freely.
@@ -1265,19 +1258,27 @@ struct ComposerInputView: View {
         }
         .animation(.snappy, value: dictation.on)
         .animation(TalkMotion.enter, value: voice.talkState != nil)
-        .animation(.snappy, value: ways)
+        .animation(TalkMotion.enter, value: needsKey)
         .onChange(of: voice.isOn, initial: true) { _, on in talkStarted = on ? Date() : nil }
-        // Asked for from a link or Poki's profile: the ways to speak, or what Talk with Poki is missing.
-        .onChange(of: voice.waysAsked, initial: true) { _, asked in
-            guard let asked else { return }
-            voice.waysAsked = nil
+        // Talk with Poki with no voice key, from the field's button, a link or Poki's profile: what it is
+        // missing. The keyboard goes down: the field it belongs to is not on screen.
+        .onChange(of: voice.keyAsked, initial: true) { _, asked in
+            guard asked else { return }
+            voice.keyAsked = false
             focused = false
-            ways = asked
+            needsKey = true
         }
-        // Writing, a task starting, or a talk starting elsewhere puts the ways to speak away.
-        .onChange(of: input) { _, text in if !text.isEmpty, !dictation.on { ways = nil } }
-        .onChange(of: focused) { _, now in if now { ways = nil } }
-        .onChange(of: running) { _, now in if now { ways = nil } }
+        // The talk's bar stands where the field was: the keyboard goes down with the field.
+        .onChange(of: voice.talkState != nil) { _, talking in if talking { focused = false; needsKey = false } }
+        // A suggestion picked or a task starting puts the key's message away.
+        .onChange(of: input) { _, text in if !text.isEmpty, !dictation.on { needsKey = false } }
+        // The keyboard asked for (a suggestion, New Conversation) while the talk's bar stands in the
+        // field's place has no field to go to; over the key's message it brings the field back.
+        .onChange(of: focused) { _, now in
+            guard now else { return }
+            if voice.talkState != nil { focused = false } else { needsKey = false }
+        }
+        .onChange(of: running) { _, now in if now { needsKey = false } }
         .animation(.snappy, value: running)
         .animation(.snappy, value: attachments)
         .animation(.snappy, value: problem)
@@ -1322,15 +1323,14 @@ struct ComposerInputView: View {
         }
         #if DEBUG && targetEnvironment(simulator)
         .onAppear { if let item = TestAttachment.take() { attachments.append(item) } }
-        // Screenshots of talking, from a simulator's development build: `-pokiTalk ways` (the two ways to
-        // speak), `needs-key` (Talk with Poki without a key), `add-key` (where its Add Key leads), `talk` (a talk under way; with
+        // Screenshots of talking, from a simulator's development build: `-pokiTalk needs-key` (Talk with
+        // Poki without a key), `add-key` (where its Add Key leads), `talk` (a talk under way; with
         // `-pokiTalkRehearsal 1` it runs TalkRehearsal's turn) and `ended` (that talk, ended by End).
         .task {
             guard let shot = UserDefaults.standard.string(forKey: "pokiTalk") else { return }
             try? await Task.sleep(for: .seconds(1))
             switch shot {
-            case "ways": ways = .choose
-            case "needs-key": ways = .needsKey
+            case "needs-key": needsKey = true
             case "add-key": openVoiceKey()
             case "talk":
                 openVoice()
@@ -1454,9 +1454,11 @@ struct ComposerInputView: View {
     /// as a ring around it.
     private var mainButton: some View {
         Button {
-            if running { stop() } else if canSend { submit() } else { ways = ways == nil ? VoiceWays.choose : nil }
+            // On an empty field: Talk with Poki, at once (the owner, 2026-11-13). Dictation has its own
+            // button beside this one. Without a voice key `openVoice` has the field say so.
+            if running { stop() } else if canSend { submit() } else { dictation.stop(model); openVoice() }
         } label: {
-            Image(systemName: running ? "stop.fill" : canSend ? "arrow.up" : ways != nil ? "xmark" : "waveform")
+            Image(systemName: running ? "stop.fill" : canSend ? "arrow.up" : "waveform")
                 .font(.body.weight(.semibold))
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(running ? Tint.onSolid : .white)
@@ -1474,9 +1476,8 @@ struct ComposerInputView: View {
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(running ? "Stop" : canSend ? "Send" : ways != nil ? "Close" : "Speak"))
+        .accessibilityLabel(Text(running ? "Stop" : canSend ? "Send" : "Talk with Poki"))
         .accessibilityIdentifier("composer.main")
-        .sensoryFeedback(.selection, trigger: ways)
         .contextMenu {
             if !running, hasText {
                 Button("New Line", systemImage: "return") {
@@ -1511,6 +1512,9 @@ struct ComposerInputView: View {
 final class FieldDictation {
     /// The setting (Settings › Voice) that shows the microphone beside Send.
     nonisolated static let buttonKey = "pokiDictationButton"
+    /// Shown unless turned off (the owner, 2026-11-13): the field's main button starts a talk with Poki,
+    /// so the microphone is the one way to dictate.
+    nonisolated static let buttonShown = true
     /// Set once the first launch of the version with this setting has decided it (see `keepButtonForUpgrade`).
     nonisolated static let buttonSettledKey = "pokiDictationButton.settled"
 
@@ -1589,6 +1593,10 @@ final class FieldDictation {
 /// still hearing them), Poki's answers, and its steps as grey lines.
 struct LiveVoiceTranscript: View {
     var voice: VoiceModel
+    @Environment(\.colorScheme) private var scheme
+    /// Words still being heard are lighter than words said. On the light page a bubble much lighter
+    /// than that all but disappears into the ground.
+    private var hearing: Double { scheme == .dark ? 0.6 : 0.85 }
 
     var body: some View {
         if voice.isOn || !voice.lines.isEmpty {
@@ -1601,7 +1609,7 @@ struct LiveVoiceTranscript: View {
                     let pending = i == lines.count - 1 && line.role == .you && voice.phase == .hearing
                     switch line.role {
                     case .you:
-                        MessageBubble(direction: .outgoing, text: line.text, tail: true).opacity(pending ? 0.55 : 1)
+                        MessageBubble(direction: .outgoing, text: line.text, tail: true).opacity(pending ? hearing : 1)
                     case .poki:
                         MessageBubble(direction: .incoming, text: line.text, tail: true)
                     case .tool, .note:
@@ -1609,7 +1617,7 @@ struct LiveVoiceTranscript: View {
                     }
                 }
                 if voice.phase == .hearing, lines.last?.role != .you {
-                    MessageBubble(direction: .outgoing, text: String(localized: "Listening…"), tail: true).opacity(0.55)
+                    MessageBubble(direction: .outgoing, text: String(localized: "Listening…"), tail: true).opacity(hearing)
                 }
             }
             .animation(PlanMotion.enter, value: voice.lines)

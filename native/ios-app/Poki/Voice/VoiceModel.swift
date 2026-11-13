@@ -289,22 +289,18 @@ final class VoiceModel {
         self.holdMicrophone = holdMicrophone
         self.connection = connection
         self.time = time
-        // In the background Poki stops listening, also while still connecting, unless an answer is still due
-        // or a step it was asked for is running: that step brings another app to the front itself, and the
-        // conversation ends as soon as its result is said.
+        // Poki in the background goes on with the talk (the owner, 2026-11-13): you speak to it from the
+        // app you went to, and the Live Activity says what it is doing and carries End. It ends there as
+        // it does in front, when nobody speaks for `followUp` after an answer. Only the wait for a server
+        // that says nothing is shorter there.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.inBackground = true
-                guard self.isOn else { return }
-                guard !self.answerDue else {
-                    // Kept for what is still due, but not for ever: the wait for the server now has 30 s.
-                    self.lastActivity = self.time.now()
-                    if self.ready { self.watchForStall(session: self.session) }
-                    return
-                }
-                self.log.add("voice", "Poki went to the background with nothing left to say: conversation ended")
-                self.stop()
+                guard self.isOn, self.answerDue else { return }
+                // What is still due is waited for, but not for ever: the wait for the server now has 30 s.
+                self.lastActivity = self.time.now()
+                if self.ready { self.watchForStall(session: self.session) }
             }
         }
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
@@ -329,10 +325,10 @@ final class VoiceModel {
     /// Without one, voice is dictation into the message field, turn by turn.
     var canTalkLive: Bool { VoiceDirect.apiKey != nil || bridge != nil || rehearsing }
 
-    /// The ways to speak, asked for from outside the message field: `poki://voice` (the two ways, never
-    /// the microphone by itself), or Talk with Poki from Poki's profile with no live voice (what is
-    /// missing). The message field opens them and sets this back.
-    var waysAsked: VoiceWays?
+    /// Talk with Poki was asked for with no live voice (no OpenAI key, no voice bridge), from the message
+    /// field's button, Poki's profile or `poki://voice`: the message field says what is missing, with
+    /// the way to the key, and sets this back.
+    var keyAsked = false
 
     /// A simulator's development build that asked for TalkRehearsal: talks connect to it, with no key.
     var rehearsing: Bool {
@@ -394,12 +390,20 @@ final class VoiceModel {
         return true
     }
 
+    /// Takes the Mac voice bridge's address off this iPhone. A talk that runs through it ends first: its
+    /// next step would go to the bridge.
+    func removeBridge() {
+        if isLive || isConnecting, VoiceDirect.apiKey == nil { stop() }
+        bridge = nil
+        VoiceBridge.saved = nil
+    }
+
     /// `poki://voice` can come from any web page, message or app, so it only shows the Voice tab. A link
     /// never changes the voice bridge and never turns on the microphone: the person enters the address
     /// and taps Talk to Poki in the app.
     func open(_ url: URL) {
         let asked = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []).map(\.name)
-        if !asked.isEmpty { log.add("voice", "a link asked for \(asked.joined(separator: ", ")); links only open the ways to speak") }
+        if !asked.isEmpty { log.add("voice", "a link asked for \(asked.joined(separator: ", ")); links only bring the chat to the front") }
     }
 
     #if DEBUG
@@ -598,15 +602,9 @@ final class VoiceModel {
     private var idle: Bool { link != nil && ready && !answerDue }
 
     /// Once idle, the conversation waits `followUp` for the person to go on; if nobody speaks it ends and
-    /// lets go of the microphone. In the background (an answer just said) it ends at once.
+    /// lets go of the microphone. The same in front and in the background.
     private func endIfDone() {
-        guard idle else { return }
-        if inBackground {
-            log.add("voice", "the answer has played in the background: conversation ended")
-            stop()
-            return
-        }
-        guard endWindow == nil else { return }
+        guard idle, endWindow == nil else { return }
         endWindow = Task { [weak self, time] in
             await time.sleep(Self.followUp)
             guard let self, !Task.isCancelled else { return }
