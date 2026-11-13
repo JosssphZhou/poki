@@ -506,6 +506,8 @@ final class AppModel {
         let resumingStandby = runner.state == "standby" && keptSessionCandidate && !inProcessUsedUp
         guard automationPath == .inProcess, sessionOn, !runnerPaused, runner.isRunning || resumingStandby else { return }
         if InProcessWDA.automationDeclined { return }
+        // 所有预热入口都必须等待旧暂停结束，否则迟到的暂停会关闭新恢复的自动化。
+        guard automationPausesPending == 0 else { return }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
         // Poki in front, the owner is told just before it (Continue opens; elsewhere the Live
         // Activity asks for the passcode once an open takes 5 s).

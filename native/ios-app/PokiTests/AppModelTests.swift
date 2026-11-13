@@ -585,6 +585,10 @@ final class InProcessPasscodeTests: XCTestCase {
         await waitFor("automation pause pending") { self.session.isHoldingPause }
         let prepares = session.prepareCount
         model.wakeRunner()
+        model.warmInProcess("an agent connected")
+        model.warmInProcess("Poki came to the front")
+        model.warmInProcess("an agent's call while the session was not open")
+        try? await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(session.prepareCount, prepares)
         XCTAssertFalse(model.host.currentRunner.isRunning)
         session.releasePause()
@@ -606,6 +610,10 @@ final class InProcessPasscodeTests: XCTestCase {
         await waitFor("automation pause pending") { self.session.isHoldingPause }
         model.wakeRunner()
         await waitFor("pause timeout reported") { self.model.host.currentRunner.describe.contains("pause_timeout") }
+        let prepares = session.prepareCount
+        model.warmInProcess("an agent connected after timeout")
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(session.prepareCount, prepares)
         XCTAssertFalse(model.host.currentRunner.isRunning)
         session.holdNextOpen()
         session.releasePause()
