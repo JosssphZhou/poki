@@ -201,30 +201,32 @@ private struct InterfaceSizePreview: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .topBar {
-                ChatTopBar(status: PokiStatus(.ready), home: false, busy: false,
-                           openThreads: {}, newConversation: {}, openDetails: {})
-                    .overlayPreferenceValue(PicturePlaceKey.self) { anchors in
-                        GeometryReader { proxy in
-                            PokiFlight(status: PokiStatus(.ready), home: false, writing: false,
-                                       places: anchors.mapValues { proxy[$0] }, pokes: 0, tap: {})
-                        }
-                    }
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text(verbatim: "Poki"))
-            }
-            .bottomBar(softEdge: true) {
-                ComposerInputView(input: .constant(""), focused: .constant(false), running: false,
-                                  send: { _, _ in }, stop: {}, openVoice: {})
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("Message Poki"))
-                    .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
-                    .frame(maxWidth: 720)
-            }
+            .defaultScrollAnchor(.top, for: .initialOffset)
+        }
+        .topBar {
+            ChatTopBar(status: PokiStatus(.ready), home: false, busy: false,
+                       openThreads: {}, newConversation: {}, openDetails: {})
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(verbatim: "Poki"))
+        }
+        .bottomBar(softEdge: true) {
+            ComposerInputView(input: .constant(""), focused: .constant(false), running: false,
+                              send: { _, _ in }, stop: {}, openVoice: {})
+                .allowsHitTesting(false)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("Message Poki"))
+                .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
+                .frame(maxWidth: 720)
         }
         .background { HomeBackdrop(home: false, working: false, frozen: true) }
+        .overlayPreferenceValue(PicturePlaceKey.self) { anchors in
+            GeometryReader { proxy in
+                PokiFlight(status: PokiStatus(.ready), home: false, writing: false,
+                           places: anchors.mapValues { proxy[$0] }, pokes: 0, tap: {})
+            }
+            .allowsHitTesting(false)
+        }
         .clipShape(.rect(cornerRadius: 24))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(Color(.separator).opacity(0.4), lineWidth: 0.5))
         .accessibilityIdentifier("interfaceSize.preview")
