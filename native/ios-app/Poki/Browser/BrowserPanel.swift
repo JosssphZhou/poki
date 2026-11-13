@@ -110,6 +110,9 @@ struct BrowserPanel: View {
                 .buttonStyle(.bordered)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel(Text("Take Over"))
+                .accessibilityShowsLargeContentViewer {
+                    Label("Take Over", systemImage: "hand.raised")
+                }
             if chat.running {
                 Button("Stop", systemImage: "stop.fill", action: stopTask)
                     .labelStyle(.iconOnly)
@@ -117,14 +120,22 @@ struct BrowserPanel: View {
                     .buttonBorderShape(.circle)
                     .tint(.red)
                     .accessibilityLabel(Text("Stop"))
+                    .accessibilityShowsLargeContentViewer {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
             } else {
                 Button("Close Browser", systemImage: "xmark") { withAnimation(.snappy) { browser.close() } }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
                     .accessibilityLabel(Text("Close Browser"))
+                    .accessibilityShowsLargeContentViewer {
+                        Label("Close Browser", systemImage: "xmark")
+                    }
             }
         }
+        .controlSize(.large)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     @ViewBuilder private var page: some View {

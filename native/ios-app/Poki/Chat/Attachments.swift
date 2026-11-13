@@ -142,6 +142,9 @@ struct AttachmentStrip: View {
         .offset(x: cornerOffset, y: -cornerOffset)
         .accessibilityLabel(Text("Remove"))
         .accessibilityIdentifier("composer.attachment.remove")
+        .accessibilityShowsLargeContentViewer {
+            Label("Remove", systemImage: "xmark")
+        }
     }
 }
 

@@ -80,6 +80,7 @@ struct TalkBar: View {
     var dismiss: () -> Void
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
+    private var controlSize = CompactControlMetrics(base: 44, maximum: 52)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -152,15 +153,17 @@ struct TalkBar: View {
             Image(systemName: symbol)
                 .font(.body.weight(.medium)).foregroundStyle(Color(.label))
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: 44, height: 44)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .frame(width: controlSize.side, height: controlSize.side)
                 .background(Color(.label).opacity(scheme == .dark ? 0.16 : 0.1), in: .circle)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(label))
         .accessibilityIdentifier(identifier)
-        .accessibilityShowsLargeContentViewer()
+        .accessibilityShowsLargeContentViewer {
+            Label(label, systemImage: symbol)
+        }
     }
 
     private func capsule(_ title: LocalizedStringKey, fill: Color, ink: Color, identifier: String, action: @escaping () -> Void) -> some View {

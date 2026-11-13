@@ -22,7 +22,9 @@ struct SessionsView: View {
     @State private var newName = ""
     @Environment(\.inThreadsDrawer) private var inDrawer
     @Environment(\.drawerSliding) private var sliding
+    @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .title) private var headerIcon = 32.0
+    private var controlSize = CompactControlMetrics()
 
     private var store: SessionStore { SessionStore.shared }
     private var sampleHome: String? { UserDefaults.standard.string(forKey: "pokiHome") }
@@ -77,7 +79,7 @@ struct SessionsView: View {
         .background(Tint.sidebar)
     }
 
-    /// Floating over the list's foot: a new conversation, in the leading corner, and Settings in the trailing one.
+    /// A new conversation in the leading corner, and Settings in the trailing one.
     private var controls: some View {
         HStack(spacing: 12) {
             Button {
@@ -90,14 +92,14 @@ struct SessionsView: View {
                         .labelStyle(PillLabelStyle())
                         .fixedSize()
                         .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: controlSize.side)
                     Image(systemName: "square.and.pencil")
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                        .frame(minWidth: 48)
+                        .frame(width: controlSize.side, height: controlSize.side)
                 }
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.white)
-                .padding(.vertical, 8)
-                .frame(minHeight: 48)
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)
@@ -107,13 +109,19 @@ struct SessionsView: View {
             .disabled(chat.running)
             .accessibilityLabel(Text("New Conversation"))
             .accessibilityIdentifier("threads.newChat")
-            .accessibilityShowsLargeContentViewer()
+            .accessibilityShowsLargeContentViewer {
+                Label("New Conversation", systemImage: "square.and.pencil")
+            }
             Spacer(minLength: 0)
             SettingsEntryButton()
                 .fixedSize()
         }
         .glassGroup(spacing: 8)
         .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 4)
+        .background {
+            // Keep large text and status marks from showing through the floating controls.
+            if typeSize.isAccessibilitySize { Tint.sidebar.ignoresSafeArea(edges: .bottom) }
+        }
     }
 
     private func heading(_ day: Day) -> some View {

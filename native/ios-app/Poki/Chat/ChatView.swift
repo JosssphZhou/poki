@@ -814,19 +814,24 @@ enum ChatFollow: Equatable {
 /// Back to the newest message, over the bottom of a conversation you have scrolled up in.
 private struct NewestButton: View {
     var action: () -> Void
+    private var controlSize = CompactControlMetrics(base: 44, maximum: 52)
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.down")
                 .font(.body.weight(.semibold))
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Color(.label))
-                .frame(width: 40, height: 40)
+                .frame(width: controlSize.side, height: controlSize.side)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
         .glassSurface(in: Circle(), interactive: true)
         .accessibilityLabel(Text("Newest Messages", tableName: "Chat"))
         .accessibilityIdentifier("chat.latest")
+        .accessibilityShowsLargeContentViewer {
+            Label { Text("Newest Messages", tableName: "Chat") } icon: { Image(systemName: "arrow.down") }
+        }
     }
 }
 
@@ -949,6 +954,7 @@ private struct StepLine: View {
 // licence file). Changed: Poki's picture at the board's 56 pt instead of 20, the 12 pt name with its
 // chevron, no video button, and a view of its own instead of a toolbar item.
 struct MessageListHeader: View {
+    private var backSize = CompactControlMetrics(base: 44, maximum: 52)
     var dark: Bool
     /// The model answering, under the name (the chat); nil on the voice page.
     var subtitle: String? = nil
@@ -985,11 +991,17 @@ struct MessageListHeader: View {
         .overlay(alignment: .topLeading) {
             if let back, UserDefaults.standard.string(forKey: "pokiChat") == nil, UserDefaults.standard.string(forKey: "pokiVoiceSample") == nil {
                 Button(action: back) {
-                    Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).foregroundStyle(dark ? .white : Site.blue)
-                        .frame(width: 44, height: 44).contentShape(.rect)
+                    Image(systemName: "chevron.backward")
+                        .font(.title3.weight(.semibold))
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .foregroundStyle(dark ? .white : Site.blue)
+                        .frame(width: backSize.side, height: backSize.side).contentShape(.rect)
                 }
                 .buttonStyle(.plain).padding(.leading, 6)
                 .accessibilityLabel(Text("Sessions"))
+                .accessibilityShowsLargeContentViewer {
+                    Label("Sessions", systemImage: "chevron.backward")
+                }
             }
         }
         .background {
@@ -1205,10 +1217,18 @@ struct ComposerInputView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var scaledButtonDiameter = 44.0
+    @ScaledMetric(relativeTo: .body) private var scaledControlInset = 6.0
+    @ScaledMetric(relativeTo: .body) private var scaledControlSpacing = 8.0
     @ScaledMetric(relativeTo: .body) private var fieldHeight = 112.0
 
     private var buttonDiameter: CGFloat { min(56, max(36, scaledButtonDiameter)) }
     private var buttonHitSide: CGFloat { max(44, buttonDiameter) }
+    private var controlInset: CGFloat { min(8, max(4, scaledControlInset)) }
+    private var controlSpacing: CGFloat { min(12, max(6, scaledControlSpacing)) }
+    private var cornerRadius: CGFloat {
+        let radius = (buttonHitSide + 2 * controlInset) / 2
+        return expanded ? min(24, radius) : radius
+    }
     private var expanded: Bool { focused || typeSize >= .xxxLarge }
 
     private var voice: VoiceModel { model.voice }
@@ -1249,7 +1269,7 @@ struct ComposerInputView: View {
                     .frame(height: min(voiceContentHeight, noticeHeight))
                     .transition(.blurReplace)
                 } else {
-                    ComposerLayout(expansion: expanded ? 1 : 0) {
+                    ComposerLayout(expansion: expanded ? 1 : 0, spacing: controlSpacing) {
                         plus
                         // An app's name in the message shows as its capsule (ESP-377); the text itself stays plain.
                         CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll,
@@ -1273,10 +1293,10 @@ struct ComposerInputView: View {
                     .transition(.blurReplace)
                 }
             }
-            .padding(6)
+            .padding(controlInset)
             .contentShape(.rect)
             .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
-            .glassSurface(in: RoundedRectangle(cornerRadius: expanded ? 24 : (buttonHitSide + 12) / 2, style: .continuous), fallback: .bar)
+            .glassSurface(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), fallback: .bar)
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: expanded)
         }
         .animation(.snappy, value: dictation.on)
@@ -1402,6 +1422,9 @@ struct ComposerInputView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text("Stop Dictation"))
+        .accessibilityShowsLargeContentViewer {
+            Label("Stop Dictation", systemImage: "mic.fill")
+        }
     }
 
     /// Settings › Voice turned it on: dictation into the field. The words appear in the field; nothing
@@ -1416,7 +1439,9 @@ struct ComposerInputView: View {
         .disabled(voice.isOn)
         .accessibilityLabel(Text("Dictate"))
         .accessibilityIdentifier("composer.dictate")
-        .accessibilityShowsLargeContentViewer()
+        .accessibilityShowsLargeContentViewer {
+            Label("Dictate", systemImage: "mic")
+        }
     }
 
     // MARK: The plus menu
@@ -1449,7 +1474,9 @@ struct ComposerInputView: View {
         .disabled(attachments.count >= Self.most)
         .accessibilityLabel(Text("Add Photos or Files"))
         .accessibilityIdentifier("composer.plus")
-        .accessibilityShowsLargeContentViewer()
+        .accessibilityShowsLargeContentViewer {
+            Label("Add Photos or Files", systemImage: "plus")
+        }
     }
 
     private func addPhotos(_ items: [PhotosPickerItem]) async {
@@ -1505,7 +1532,10 @@ struct ComposerInputView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(running ? "Stop" : canSend ? "Send" : "Talk with Poki"))
         .accessibilityIdentifier("composer.main")
-        .accessibilityShowsLargeContentViewer()
+        .accessibilityShowsLargeContentViewer {
+            Label(running ? "Stop" : canSend ? "Send" : "Talk with Poki",
+                  systemImage: running ? "stop.fill" : canSend ? "arrow.up" : "waveform")
+        }
         .contextMenu {
             if !running, hasText {
                 Button("New Line", systemImage: "return") {

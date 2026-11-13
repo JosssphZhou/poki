@@ -261,7 +261,9 @@ struct ChatTopBar: View {
                         .glassSurface(in: Circle(), interactive: true)
                         .accessibilityLabel(Text("Conversations"))
                         .accessibilityIdentifier("chat.threads")
-                        .accessibilityShowsLargeContentViewer()
+                        .accessibilityShowsLargeContentViewer {
+                            Label("Conversations", systemImage: "line.3.horizontal")
+                        }
                 }
                 Spacer(minLength: 8)
                 Button {
@@ -276,7 +278,9 @@ struct ChatTopBar: View {
                 .sensoryFeedback(.impact(weight: .light), trigger: homeTaps)
                 .accessibilityLabel(Text("New Conversation"))
                 .accessibilityIdentifier("home.newChat")
-                .accessibilityShowsLargeContentViewer()
+                .accessibilityShowsLargeContentViewer {
+                    Label("New Conversation", systemImage: "square.and.pencil")
+                }
             }
             .padding(.top, (sizes.avatar - sizes.button) / 2)
             Button(action: openDetails) {
