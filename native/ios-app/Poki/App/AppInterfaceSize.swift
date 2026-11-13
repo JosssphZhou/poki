@@ -56,8 +56,11 @@ enum AppInterfaceSize {
 struct InterfaceSizeSettingsView: View {
     @AppStorage(AppInterfaceSize.defaultsKey) private var preference = AppInterfaceSize.system
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pendingIndex: Int?
     @State private var dragging = false
+
+    private let sliderHeight: CGFloat = 52
 
     private var followsSystem: Bool { AppInterfaceSize.category(for: preference) == nil }
     private var index: Int {
@@ -67,20 +70,29 @@ struct InterfaceSizeSettingsView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            List {
-                Section {
-                    controls
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(spacing: 0) {
+                        controls
+                    }
+                    .padding(.horizontal, 20)
+                    .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 25))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        SettingsHeader("Preview")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 20)
+                        InterfaceSizePreview()
+                            .dynamicTypeSize(previewSize)
+                            .frame(height: max(520, geometry.size.height * 0.72) + (followsSystem ? sliderHeight : 0))
+                    }
                 }
-                Section {
-                    InterfaceSizePreview()
-                        .dynamicTypeSize(previewSize)
-                        // Leave enough room for the real chat components at accessibility sizes.
-                        .frame(height: max(520, geometry.size.height * 0.72))
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                } header: {
-                    SettingsHeader("Preview")
-                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 20)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: followsSystem)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
@@ -96,10 +108,15 @@ struct InterfaceSizeSettingsView: View {
     @ViewBuilder private var controls: some View {
         Toggle("Follow System", isOn: Binding(
             get: { followsSystem },
-            set: { preference = $0 ? AppInterfaceSize.system : UIContentSizeCategory(typeSize).rawValue }
+            set: { followsSystem in
+                preference = followsSystem ? AppInterfaceSize.system : UIContentSizeCategory(typeSize).rawValue
+            }
         ))
+        .padding(.vertical, 10)
+        .frame(minHeight: 52)
         .accessibilityIdentifier("interfaceSize.followSystem")
-        if !followsSystem {
+        VStack(spacing: 0) {
+            Divider()
             Slider(value: Binding(
                 get: { Double(pendingIndex ?? index) },
                 set: { value in
@@ -127,7 +144,14 @@ struct InterfaceSizeSettingsView: View {
             .tint(Color(.secondaryLabel))
             .accessibilityValue(Text("Size \((pendingIndex ?? index) + 1) of \(AppInterfaceSize.categories.count)"))
             .accessibilityIdentifier("interfaceSize.slider")
+            .frame(maxHeight: .infinity)
         }
+        .frame(height: sliderHeight)
+        .opacity(followsSystem ? 0 : 1)
+        .frame(height: followsSystem ? 0 : sliderHeight, alignment: .top)
+        .clipped()
+        .allowsHitTesting(!followsSystem)
+        .accessibilityHidden(followsSystem)
     }
 
     private func endpoint(_ label: LocalizedStringKey, size: CGFloat) -> some View {
