@@ -156,15 +156,6 @@ struct SiteToggleStyle: ToggleStyle {
     }
 }
 
-/// The bear, round.
-struct BearAvatar: View {
-    var size: CGFloat
-    var body: some View {
-        Image("Bear").resizable().scaledToFill().frame(width: size, height: size).clipShape(.circle)
-            .accessibilityHidden(true)
-    }
-}
-
 /// A sheet's title row: an optional back link, the title in the middle, an optional Done.
 struct SheetHeader: View {
     var title: Text

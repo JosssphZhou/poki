@@ -199,6 +199,36 @@ struct PokiAvatar: View {
     }
 }
 
+/// Poki's app icon, small, as the home screen shows it: the icon itself, read from the app's own
+/// icon files, in the icon's rounded square. A still picture, for the places where the
+/// three-dimensional bear is not drawn. Without icon files (a test bundle), the round bear stands in.
+struct PokiAppIcon: View {
+    var size: CGFloat
+
+    /// The largest of the app's icon files.
+    static let image: UIImage? = {
+        let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any]
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        let files = primary?["CFBundleIconFiles"] as? [String] ?? []
+        let name = primary?["CFBundleIconName"] as? String
+        return (files.reversed() + [name].compactMap { $0 }).lazy.compactMap { UIImage(named: $0) }.max { $0.size.width < $1.size.width }
+    }()
+
+    var body: some View {
+        Group {
+            if let image = Self.image {
+                Image(uiImage: image).resizable().interpolation(.high)
+            } else {
+                Image("Bear").resizable()
+            }
+        }
+        .scaledToFill()
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.2237, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
 /// A dot and the status word: "● Ready".
 struct PokiStatusLine: View {
     var status: PokiStatus
