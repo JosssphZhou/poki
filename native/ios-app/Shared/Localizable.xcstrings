@@ -90,24 +90,24 @@
         }
       }
     },
-    "Your plan is ready. You can review it here and make changes whenever you like.": {
+    "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your plan is ready. You can review it here and make changes whenever you like."
+            "value": "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "明天的计划已准备好。你可以随时查看安排，或继续告诉我需要调整的地方。"
+            "value": "明天的安排  \n09:00　先完成最重要的事  \n12:00　吃午饭，休息一下  \n12:45　出门散步  \n14:00　集中回复消息  \n16:30　整理今天的进度"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "明天的計劃已準備好。你可以隨時查看安排，或繼續告訴我需要調整的地方。"
+            "value": "明天的安排  \n09:00　先完成最重要的事  \n12:00　吃午餐，休息一下  \n12:45　出門散步  \n14:00　集中回覆訊息  \n16:30　整理今天的進度"
           }
         }
       }

@@ -194,7 +194,7 @@ private struct InterfaceSizePreview: View {
                              state: .done, app: AppIconStore.name("com.apple.reminders") ?? "Reminders", started: started,
                              ended: started.addingTimeInterval(2), plannedTotal: 1)
                     MessageBubble(direction: .outgoing, text: String(localized: "Show me the full plan."), tail: true)
-                    MessageBubble(direction: .incoming, text: String(localized: "Your plan is ready. You can review it here and make changes whenever you like."), tail: true)
+                    MessageBubble(direction: .incoming, text: String(localized: "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress."), tail: true)
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
                 .frame(maxWidth: 720)
