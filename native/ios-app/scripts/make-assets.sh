@@ -25,11 +25,20 @@ cp "$ICON" "$APP/AppIcon.appiconset/icon-1024.png"
 echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"},{"appearances":[{"appearance":"luminosity","value":"dark"}],"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"version":1,"author":"poki"}}' > "$APP/AppIcon.appiconset/Contents.json"
 mkdir -p "$APP/AccentColor.colorset"
 echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x20","green":"0x84","blue":"0xFD","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
-# The launch screen's ground: the home page's own top colour (HomeBackdrop, LightMesh.home's first row), light
-# and dark, so the screen iOS shows while Poki opens turns into the home page without a change of ground.
-mkdir -p "$APP/LaunchBackground.colorset"
-echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0xF5","green":"0xF7","blue":"0xFA","alpha":"1.000"}}},{"appearances":[{"appearance":"luminosity","value":"dark"}],"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x05","green":"0x07","blue":"0x0D","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/LaunchBackground.colorset/Contents.json"
 bear "$APP"
+# The launch screen (LaunchScreen.storyboard) is the Bear picture in the middle of a ground that meets it on every
+# side, so the square does not show: scripts/launch-ground.swift reads the ground from the picture's own edge.
+# One set of pictures for light and dark. The picture's left and bottom edges cut the bear off, so the picture
+# fades into the ground over its last 10 points (30 of its 360 pixels) at those two edges. POKI_LAUNCH_FEATHER
+# sets another width in pixels; 0 leaves the picture as it is, with the bear cut straight.
+launch="$(mktemp -d)"
+swift "$HERE/scripts/launch-ground.swift" "$APP/Bear.imageset/bear@3x.png" "$launch" "${POKI_LAUNCH_FEATHER:-30}"
+for part in band top bottom bear; do
+  mkdir -p "$APP/Launch-$part.imageset"
+  mv "$launch/$part.png" "$APP/Launch-$part.imageset/$part@3x.png"
+  echo '{"images":[{"filename":"'"$part"'@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/Launch-$part.imageset/Contents.json"
+done
+rmdir "$launch"
 # The app icon as a picture for the app's own pages (the conversations' header), small: 64 points at 3x.
 mkdir -p "$APP/PokiIcon.imageset"
 sips -Z 192 "$ICON" --out "$APP/PokiIcon.imageset/icon@3x.png" >/dev/null
@@ -65,11 +74,6 @@ bears() {
   done
 }
 bears "$APP"
-# The launch screen's bear: the ready bear, its flat bottom edge (the picture stops at the chest) faded out over its
-# last 36 pixels (12 points) so no straight line shows on the launch screen's plain ground. Nothing above that changes.
-mkdir -p "$APP/LaunchBear.imageset"
-swift "$HERE/scripts/fade-bottom.swift" "$HERE/Poki/ActivityBears/ActivityBear-ready.png" "$APP/LaunchBear.imageset/bear@3x.png" 36
-echo '{"images":[{"filename":"bear@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/LaunchBear.imageset/Contents.json"
 
 WIDGET="$HERE/PokiWidgets/Assets.xcassets"
 catalog "$WIDGET"
