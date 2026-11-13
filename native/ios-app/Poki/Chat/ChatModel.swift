@@ -409,6 +409,11 @@ final class ChatModel {
         let record = TaskRecord(session: sessionID, task: lastOwnerText ?? "", calls: Array(calls.suffix(toolCalls)), result: taskResult,
                                 seconds: Date().timeIntervalSince(taskStart))
         Self.afterTask?(record)
+        if !isSample {
+            ChatDebugLog.add(ChatDebugLog.entry(model: "\(engine), \(ModelKeys.selectedProvider.rawValue)/\(ModelKeys.selectedModel)",
+                                                named: AppIconStore.bundleIDs(namedIn: record.task), calls: record.calls,
+                                                finished: taskResult?.success, seconds: record.seconds))
+        }
         SessionStore.shared.taskEnded(sessionID, success: taskResult?.success, stopped: stopAsked)
         if kind == .poki, taskResult?.success == true { Haptics.done() }
     }
