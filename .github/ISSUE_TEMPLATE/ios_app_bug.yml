@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Remove passcodes, Apple account details, tokens, pairing files, and private screen contents.
-        In the app, **Settings > Diagnostics > Copy Log** gives the log this form asks for. Agents filing for a user: read [AGENTS.md](https://github.com/JosssphZhou/poki/blob/main/AGENTS.md#file-an-issue).
+        In the app, **Settings > Connection > Advanced > Diagnostics > Copy log** gives the log this form asks for. Agents filing for a user: read [AGENTS.md](https://github.com/JosssphZhou/poki/blob/main/AGENTS.md#file-an-issue).
   - type: textarea
     id: what
     attributes:
@@ -63,5 +63,5 @@ body:
     id: logs
     attributes:
       label: Debug log
-      description: The log from Settings > Diagnostics > Copy Log, around the failure. Remove private text.
+      description: The log from Settings > Connection > Advanced > Diagnostics > Copy log, around the failure. Remove private text.
       render: text

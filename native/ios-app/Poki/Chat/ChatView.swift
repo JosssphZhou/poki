@@ -76,8 +76,8 @@ struct ChatView: View {
                             }
                         }
                     }
-                    Button("Accounts", systemImage: "person.crop.circle", action: openModel)
-                    Button("Status and Settings", systemImage: "gearshape", action: openDetails)
+                    Button("Model", systemImage: "person.crop.circle", action: openModel)
+                    Button("Settings", systemImage: "gearshape", action: openDetails)
                 } label: { Image(systemName: "ellipsis.circle") }
                 .accessibilityLabel(Text("More"))
             }

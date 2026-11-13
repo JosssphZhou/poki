@@ -6,7 +6,7 @@ struct VoiceView: View {
     @Environment(AppModel.self) private var app
     /// Set when Voice is a sheet over Home: the Done button closes it.
     var close: (() -> Void)?
-    /// Pushed in the Poki tab: no navigation stack or Done of its own.
+    /// Pushed from Settings › Model: no navigation stack or Done of its own.
     var embedded = false
     @State private var bridgeText = ""
     @State private var editingBridge = false
@@ -36,7 +36,7 @@ struct VoiceView: View {
                     else if voice.canTalkLive {
                         Text("Talk with Poki, behind the black button on the message field, is a live conversation: Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. Dictate only turns your words into text.")
                     } else {
-                        Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Poki › Model. Dictation in the message field works with every model.")
+                        Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Settings › Model. Dictation in the message field works with every model.")
                     }
                 }
                 if voice.lastTurnMS != nil || voice.bridge != nil || VoiceDirect.apiKey == nil {

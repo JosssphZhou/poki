@@ -22,6 +22,8 @@ Build numbers are the GitHub Actions run number of the release workflow.
 - The Memory page is flat on paper: a tap on a routine or a note asks whether to forget it, and notes are added in place.
 - The relay address, each agent’s page and the Activity log are flat on paper.
 - The setup items’ pages, Signing, Advanced, Diagnostics and the Log are flat on paper, with labels in sentence case.
+- The tab bar is gone. Poki opens on a New chat page with Poki in its window; Chats is one swipe away, and Settings is behind the gear on Chats. Setup is now Settings › Connection, and Accounts is Settings › Model.
+- What you press is black: the accent colour is ink, and the launch screen is the page’s own paper.
 
 ### Fixed
 - PokiTests run to the end on the iOS 26.3 simulator: a tunnel that went away no longer stopped the run.

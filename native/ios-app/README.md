@@ -3,7 +3,7 @@
 One app for everything a user does on the phone: setup (Developer Mode, on-device pairing, UI
 Automation, the loopback, the first-session passcode), starting and stopping a session, the Live
 Activity with Allow and Don’t allow for sensitive actions, the MCP address for each client (text, QR, copy),
-and a Debug tab (the former Poki Probe). Native SwiftUI on the iOS 26 SDK with Liquid Glass.
+and Diagnostics (the former Poki Probe). Native SwiftUI on the iOS 26 SDK with Liquid Glass.
 
 Poki automates the phone in its own process: it opens the XCTest automation session itself
 (`Poki/Native/InProcess.m`, answered to PokiCore by `Poki/Runtime/InProcessWDA.swift`), so Poki is
@@ -12,7 +12,7 @@ the only app to install. The older Runner path (WebDriverAgent as a second bundl
 and is chosen per launch with `-automationPath runner`.
 
 A third path, **Native services**, is the default from iOS 27; earlier iOS versions default to the
-XCTest session above, and Testing Options (Setup › Advanced) switches between the two. It uses the
+XCTest session above, and Diagnostics (Settings › Connection › Advanced) switches between the two. It uses the
 paired accessibility, screenshot and HID services shared with the Mac/Linux bridge, without opening an
 XCTest session or showing its automation banner. Those services stream the screen and take touches
 only from iOS 27 (#1 on iOS 18.6.2 and #18 on iOS 26.6 could not tap). The normal PokiCore control
@@ -25,18 +25,20 @@ the in-process path. Changing paths takes effect on the next app launch.
 | Path | What |
 |---|---|
 | `Poki/App` | App entry (Chat and Voice pages), status words and issues, all steps, the app model (on/off, runner sleep and wake, events, approvals, pairing, setup steps) |
-| `Poki/Setup` | Setup, one guided page with live checks |
+| `Poki/Front` | The front: the New chat and Chats pages, Settings and its Connection page, the paper colours and row styles every page uses |
+| `Poki/BearPoses` | Poki’s poses, one picture each (`scripts/make-assets.sh` puts them in the asset catalogs) |
+| `Poki/Setup` | The setup items’ own pages, each with its live check |
 | `Poki/Loopback` | Local VPN configuration and status, live developer-service checks, external VPN choices |
 | `Poki/Activity` | Live Activity controller (state, steps, thumbnail in the App Group) |
 | `Poki/Connect` | Relay identity (Ed25519 key, label, connector secrets in the keychain), MCP address with QR |
 | `Poki/Runtime` | PokiCore and PokiLauncher glue, background keep-alive (location, then silent audio) |
 | `Poki/Voice` | Talk to Poki: an OpenAI Realtime session over WebRTC, the calls it asks for, test runs |
 | `Poki/Debug` | 10.7.0.1 checks, the background hold test, the Live Activity preview |
-| `Shared` | Live Activity attributes and views, the Approve/Deny/Stop App Intents (app and widget) |
+| `Shared` | Live Activity attributes and views, the Allow, Don’t allow, Stop and End talk App Intents, Poki’s light (app and widget) |
 | `PokiWidgets` | The Live Activity widget |
 | `PokiTunnel` | Local-only IPv4 TCP packet tunnel; no server, DNS or internet default route |
 
-PokiCore (Swift, `native/ios/PokiCore`) and PokiLauncher (Rust with a C ABI, `native/launcher`) are described in `docs/ios-core.md`. Poki has no default relay: the person deploys their own (`deploy/cf-relay/DEPLOY.md`) and enters its address in the Connect tab.
+PokiCore (Swift, `native/ios/PokiCore`) and PokiLauncher (Rust with a C ABI, `native/launcher`) are described in `docs/ios-core.md`. Poki has no default relay: the person deploys their own (`deploy/cf-relay/DEPLOY.md`) and enters its address in Settings › Agents.
 
 ## Build
 
@@ -54,7 +56,7 @@ open native/ios-app/Poki.xcodeproj
 
 `native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
 
-`-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice` opens that screen at launch (home is the chat, setup its full-screen flow, connect the Settings sheet, debug Diagnostics inside it, details Poki's details, steps its history); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
+`-pokiScreen chat|chats|setup|connect|settings|debug|activity|steps|connector|model|voice` opens that screen at launch (chat is Poki's chat, chats the list of chats, setup Settings › Connection, connect Settings › Agents, debug Diagnostics, activity the Live Activity's samples, steps the Activity Log, model the accounts); `-pokiChat empty|working|approved` and `-pokiVoice ready|listening|working` show the ESP-171 boards' sample chat and voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
 
 Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
@@ -94,7 +96,7 @@ Poki is in English and Simplified Chinese and follows the iPhone's language. The
 
 ## Voice
 
-Voice (the waveform button beside the gear on Home, a sheet) talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the
+Voice (Talk with Poki, behind the black button on the message field) talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the
 audio track, Poki's voice plays on the speaker, and events travel on the `oai-events` data channel.
 The phone never holds an OpenAI key. The voice bridge on the person's Mac (`bin/voice-bridge.mjs`)
 keeps the key and gives the phone a client secret that expires after 60 seconds:
@@ -199,7 +201,7 @@ connection explicitly; an existing service response alone does not finish the se
   app** in Poki. Poki's VPN stays off, so Karing continues to own the single packet tunnel. See the
   [maintainer's iOS support record](https://github.com/KaringX/karing/issues/899); verify the installed
   version and the developer-service check before continuing.
-- **Built-in (default)**: Setup > Connect to this iPhone > Enable local connection. Approve iOS's
+- **Built-in (default)**: Settings › Connection › Loopback › Enable local connection. Approve iOS's
   VPN configuration prompt. Poki reflects only IPv4 TCP to `10.7.0.1/32`; normal internet routes and
   DNS are unchanged. The connection may displace another packet-tunnel VPN. Poki does not silently
   change an external VPN configuration or start its local VPN merely because the app opened. While
@@ -255,7 +257,7 @@ signs the app, so the owner is not sent through setup again.
 
 Install and launch
 - [ ] Install `Poki-unsigned.ipa`. Runner path only: also install the runner IPA with the same signing, and open Poki Runner by hand: no passcode prompt, no automation banner; it opens Poki (or shows Open Poki).
-- [ ] Launch Poki: the Setup tab shows a badge with the steps left, and no Install Poki Runner step.
+- [ ] Launch Poki: the gear on the chats page has a dot while a step is left, and Settings › Connection lists the steps left, with no Install Poki Runner step.
 
 Setup
 - [ ] Each step opens in turn; Open Settings starts a Live Activity with the step number and what to tap.
@@ -274,4 +276,4 @@ Turned on
 
 Connect
 - [ ] Add a connector: the sheet shows the URL, a QR that scans to the same URL, and Copy works.
-- [ ] Revoke by swiping: the connector disappears and the relay answers 404 for it.
+- [ ] Revoke by pressing and holding the agent (or Revoke access on its page): the connector disappears and the relay answers 404 for it.

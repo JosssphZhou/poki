@@ -551,14 +551,14 @@ final class AppModel {
 
     /// The one thing to do for the local connection, for the person, as the installer says it.
     var loopbackSentence: String {
-        if tunnel.available { return "In Poki, open Setup > Connect to this iPhone and turn on Poki's own connection." }
+        if tunnel.available { return "In Poki, open Settings > Connection > Loopback and turn on Poki's own connection." }
         guard let app = ProxyApps.all.first(where: \.isInstalled) else {
-            return "Install a VPN app that can reach 10.7.0.1 (Karing, Surge, Loon or Shadowrocket), then in Poki open Setup > Connect to this iPhone."
+            return "Install a VPN app that can reach 10.7.0.1 (Karing, Surge, Loon or Shadowrocket), then in Poki open Settings > Connection > Loopback."
         }
         switch app.install {
-        case .url: return "In Poki, open Setup > Connect to this iPhone > \(app.name), tap Install, then confirm in \(app.name)."
+        case .url: return "In Poki, open Settings > Connection > Loopback > \(app.name), tap Install, then confirm in \(app.name)."
         case .toggle(let setting): return "In \(app.name), set \(setting), and keep \(app.name) connected."
-        case .snippet: return "In Poki, open Setup > Connect to this iPhone > \(app.name) and add the lines it shows to \(app.name)."
+        case .snippet: return "In Poki, open Settings > Connection > Loopback > \(app.name) and add the lines it shows to \(app.name)."
         }
     }
 
@@ -1661,7 +1661,7 @@ final class AppModel {
 
     var setupComplete: Bool { SetupStep.shown.allSatisfy(isDone) }
 
-    /// A step as Home, the tab badge and the status pill show it: the loopback's first check after
+    /// A step as the Chats page and the card in Settings show it: the loopback's first check after
     /// launch (a connection was chosen before) counts as done until it says otherwise, so Poki shows
     /// Ready rather than Paused and a warning for the second it takes. The Setup page keeps isDone.
     func looksDone(_ step: SetupStep) -> Bool {

@@ -26,7 +26,7 @@ mkdir -p "$APP/AppIcon.appiconset"
 swift "$COMPOSE" "$APPICON" "$APP/AppIcon.appiconset/icon-1024.png" 1024 1.0 "$BLUE"
 echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"version":1,"author":"poki"}}' > "$APP/AppIcon.appiconset/Contents.json"
 mkdir -p "$APP/AccentColor.colorset"
-echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x20","green":"0x84","blue":"0xFD","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
+echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x11","green":"0x11","blue":"0x10","alpha":"1.000"}}},{"idiom":"universal","appearances":[{"appearance":"luminosity","value":"dark"}],"color":{"color-space":"srgb","components":{"red":"0xF4","green":"0xF4","blue":"0xF1","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
 # The launch screen's ground: the page's own paper (Paper.page), so the first frame does not flash.
 mkdir -p "$APP/Paper.colorset"
 echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0xFA","green":"0xFA","blue":"0xF9","alpha":"1.000"}}},{"idiom":"universal","appearances":[{"appearance":"luminosity","value":"dark"}],"color":{"color-space":"srgb","components":{"red":"0x0C","green":"0x0C","blue":"0x0D","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/Paper.colorset/Contents.json"

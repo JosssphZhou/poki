@@ -120,9 +120,9 @@ jobs:
           kill $LOGPID 2>/dev/null || true
           cp "$DOCS/inprocess-probe.json" build/ 2>/dev/null || true
           for f in $(ls -t ~/Library/Logs/DiagnosticReports/Poki-*.ips 2>/dev/null | head -1); do head -120 "$f"; cp "$f" build/ || true; done
-          # The Sessions list with the two sessions, as the owner would open it.
+          # The Chats page with the two sessions, as the owner would open it.
           xcrun simctl terminate "$UDID" nz.zheha.poki || true
-          xcrun simctl launch "$UDID" nz.zheha.poki > /dev/null
+          xcrun simctl launch "$UDID" nz.zheha.poki -pokiScreen chats > /dev/null
           sleep 5
           xcrun simctl io "$UDID" screenshot build/sessions-after.png > /dev/null || true
           xcrun simctl terminate "$UDID" nz.zheha.poki || true
@@ -303,7 +303,7 @@ jobs:
           crashed=0
           for look in light dark; do
             xcrun simctl ui "$UDID" appearance "$look"
-            for screen in home setup connect debug activity; do
+            for screen in home chats settings setup connect model debug activity; do
               xcrun simctl terminate "$UDID" nz.zheha.poki || true
               xcrun simctl launch "$UDID" nz.zheha.poki -pokiScreen "$screen" > /dev/null
               sleep 4
@@ -312,11 +312,11 @@ jobs:
               grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the $screen screen ($look)"; crashed=1; }
             done
             xcrun simctl terminate "$UDID" nz.zheha.poki || true
-            xcrun simctl launch "$UDID" nz.zheha.poki -pokiScreen home -pokiSample YES > /dev/null
+            xcrun simctl launch "$UDID" nz.zheha.poki -pokiScreen chats -pokiSample YES > /dev/null
             sleep 4
-            xcrun simctl io "$UDID" screenshot "shots/home-sample-$look.png" > /dev/null
+            xcrun simctl io "$UDID" screenshot "shots/chats-sample-$look.png" > /dev/null
             xcrun simctl spawn "$UDID" launchctl list > out/simulator/launchctl.txt 2>&1 || true
-            grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the sample home screen ($look)"; crashed=1; }
+            grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the sample chats screen ($look)"; crashed=1; }
             # Poki's chat (a sample conversation) and an outside agent's session, opened over Sessions.
             for extra in "chat -pokiChat working" "session -pokiSample YES"; do
               name=${extra%% *}
@@ -333,7 +333,7 @@ jobs:
           PAD=$(xcrun simctl create poki-pad "$PADTYPE" "$RUNTIME")
           xcrun simctl boot "$PAD" && xcrun simctl bootstatus "$PAD" -b
           xcrun simctl install "$PAD" "$APP"
-          for screen in home setup connect; do
+          for screen in home chats setup connect; do
             xcrun simctl terminate "$PAD" nz.zheha.poki 2>/dev/null || true
             xcrun simctl launch "$PAD" nz.zheha.poki -pokiScreen "$screen" > /dev/null
             sleep 4

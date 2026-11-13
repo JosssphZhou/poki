@@ -65,6 +65,38 @@
         }
       }
     },
+    "%@ is still to do" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“%@”尚未完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「%@」尚未完成"
+          }
+        }
+      }
+    },
+    "%@ is still to do. Fix it" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "“%@”尚未完成，去处理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "「%@」尚未完成，前往處理"
+          }
+        }
+      }
+    },
     "%@ key" : {
       "localizations" : {
         "zh-Hans" : {
@@ -225,6 +257,38 @@
         }
       }
     },
+    "%lld connected" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已连接 %lld 个"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已連接 %lld 個"
+          }
+        }
+      }
+    },
+    "%lld days left" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "还剩 %lld 天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "還剩 %lld 天"
+          }
+        }
+      }
+    },
     "%lld lines" : {
       "localizations" : {
         "zh-Hans" : {
@@ -337,22 +401,21 @@
         }
       }
     },
-    "1 item" : {
+    "1 day left" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 项"
+            "state" : "needs_review",
+            "value" : "还剩 1 天"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 項"
+            "state" : "needs_review",
+            "value" : "還剩 1 天"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "1 link" : {
       "localizations" : {
@@ -483,18 +546,18 @@
         }
       }
     },
-    "A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Poki › Model. Dictation in the message field works with every model." : {
+    "A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Settings › Model. Dictation in the message field works with every model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "实时对话使用 OpenAI 的 Realtime 语音，需要在“Poki › 模型”中添加 OpenAI API 密钥。信息栏里的听写适用于所有模型。"
+            "value" : "实时对话使用 OpenAI 的 Realtime 语音，需要在“设置 › 模型”中添加 OpenAI API 密钥。信息栏里的听写适用于所有模型。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "實時對話使用 OpenAI 的 Realtime 語音，需要在「Poki › 模型」中新增 OpenAI API 金鑰。資訊欄裡的聽寫適用於所有模型。"
+            "value" : "實時對話使用 OpenAI 的 Realtime 語音，需要在「設定 › 模型」中新增 OpenAI API 金鑰。資訊欄裡的聽寫適用於所有模型。"
           }
         }
       },
@@ -631,22 +694,21 @@
       },
       "extractionState" : "manual"
     },
-    "Accounts and Models" : {
+    "Activity" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "账户与模型"
+            "state" : "needs_review",
+            "value" : "活动"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "賬戶與模型"
+            "state" : "needs_review",
+            "value" : "活動"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Activity Log" : {
       "localizations" : {
@@ -747,18 +809,18 @@
         }
       }
     },
-    "Add a model key first: tap my picture, then Model." : {
+    "Add a model key first: open Settings, then Model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先添加模型密钥。轻点头像，再选择“模型”。"
+            "value" : "请先添加模型密钥。打开“设置”，再选择“模型”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先新增模型金鑰。輕點頭像，再選擇「模型」。"
+            "value" : "請先新增模型金鑰。打開「設定」，再選擇「模型」。"
           }
         }
       }
@@ -779,23 +841,6 @@
         }
       }
     },
-    "Add an Account" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "添加账户"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新增賬戶"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Add an account" : {
       "localizations" : {
         "zh-Hans" : {
@@ -808,6 +853,38 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "新增賬戶"
+          }
+        }
+      }
+    },
+    "Add an account in Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在“模型”中添加账户"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "在「模型」中新增賬戶"
+          }
+        }
+      }
+    },
+    "Add an agent" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "添加智能体"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "新增 AI 代理"
           }
         }
       }
@@ -895,18 +972,18 @@
         }
       }
     },
-    "Add your %@ key: tap my picture, then Model." : {
+    "Add your %@ key: open Settings, then Model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请添加 %@ 密钥。轻点头像，再选择“模型”。"
+            "value" : "请添加 %@ 密钥。打开“设置”，再选择“模型”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請新增 %@ 金鑰。輕點頭像，再選擇「模型」。"
+            "value" : "請新增 %@ 金鑰。打開「設定」，再選擇「模型」。"
           }
         }
       }
@@ -1550,18 +1627,18 @@
         }
       }
     },
-    "Anthropic did not accept the key. Check it in Poki › Model." : {
+    "Anthropic did not accept the key. Check it in Settings › Model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anthropic 密钥无效。请前往“Poki”›“模型”检查。"
+            "value" : "Anthropic 密钥无效。请前往“设置”›“模型”检查。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Anthropic 金鑰無效。請前往「Poki」›「模型」檢查。"
+            "value" : "Anthropic 金鑰無效。請前往「設定」›「模型」檢查。"
           }
         }
       }
@@ -1730,22 +1807,6 @@
         }
       }
     },
-    "Approvals" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "批准"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "批准"
-          }
-        }
-      }
-    },
     "Approved" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1780,22 +1841,6 @@
       },
       "extractionState" : "manual"
     },
-    "Ask Before Sensitive Steps" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "敏感步骤先问我"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "敏感步驟先問我"
-          }
-        }
-      }
-    },
     "Ask Poki" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1808,6 +1853,22 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "問 Poki"
+          }
+        }
+      }
+    },
+    "Ask before sensitive steps" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "敏感步骤前先询问"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "敏感步驟前先詢問"
           }
         }
       }
@@ -2056,6 +2117,22 @@
       },
       "extractionState" : "manual"
     },
+    "Changes take effect the next time Poki opens." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更改在下次打开 Poki 时生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "變更會在下次打開 Poki 時生效。"
+          }
+        }
+      }
+    },
     "Chat model" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2072,6 +2149,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Chats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "聊天"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "聊天"
+          }
+        }
+      }
     },
     "Check that Developer Mode is on (Settings → Privacy & Security → Developer Mode) and that iOS is 17.4 or later." : {
       "extractionState" : "manual",
@@ -2860,6 +2953,22 @@
         }
       }
     },
+    "Developer Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "开发者模式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "開發者模式"
+          }
+        }
+      }
+    },
     "Developer Mode is on" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2921,23 +3030,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "聽寫"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Dictation Only" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅听写"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅聽寫"
           }
         }
       },
@@ -3171,6 +3263,22 @@
         }
       }
     },
+    "Each agent gets its own MCP address. Press and hold an agent to revoke it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每个智能体都有自己的 MCP 地址。长按某个智能体可撤销它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每個 AI 代理都有自己的 MCP 位址。按住某個 AI 代理可撤銷它。"
+          }
+        }
+      }
+    },
     "Edit address and key" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3287,23 +3395,6 @@
       },
       "extractionState" : "manual"
     },
-    "Enter Your Passcode Next" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接下来请输入锁屏密码"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接下來請輸入鎖屏密碼"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Enter the code shown here and on the Lock Screen." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3353,6 +3444,23 @@
         }
       }
     },
+    "Enter your passcode next" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接下来请输入锁屏密码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接下來請輸入鎖屏密碼"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
     "Enter your relay's address first (Settings › Relay). Poki has no default relay." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3366,6 +3474,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先在「設定 › 中轉」中輸入你的中轉地址。Poki 沒有預設中轉。"
+          }
+        }
+      }
+    },
+    "Every action an agent took here" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "智能体在这里执行的每一步操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 代理在這裡執行的每一步操作"
           }
         }
       }
@@ -3468,23 +3592,6 @@
           }
         }
       }
-    },
-    "External Agents" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "外部智能体"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "外部AI 代理"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "External App" : {
       "localizations" : {
@@ -3663,23 +3770,6 @@
         }
       }
     },
-    "Fix the items below. Each one has a dot on its tab." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请修复以下项目。每个项目所在的标签页上都有一个圆点。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請修復以下專案。每個專案所在的標籤頁上都有一個圓點。"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "For a code, first turn on device code sign-in for Codex in ChatGPT › Settings › Security. Then enter the code on auth.openai.com/codex/device." : {
       "localizations" : {
         "zh-Hans" : {
@@ -3842,6 +3932,54 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Good afternoon." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "下午好。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "午安。"
+          }
+        }
+      }
+    },
+    "Good evening." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "晚上好。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "晚上好。"
+          }
+        }
+      }
+    },
+    "Good morning." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "早上好。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "早安。"
+          }
+        }
+      }
     },
     "Handoff" : {
       "localizations" : {
@@ -4346,6 +4484,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配對檔案無效。%@"
+          }
+        }
+      }
+    },
+    "It can use this iPhone" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "它可以使用这台 iPhone"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "它可以使用這台 iPhone"
+          }
+        }
+      }
+    },
+    "It can’t be deleted." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法刪除。"
           }
         }
       }
@@ -5101,22 +5271,21 @@
         }
       }
     },
-    "MCP Relay" : {
+    "MCP relay" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "MCP 中转"
+            "state" : "needs_review",
+            "value" : "MCP 中继"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "MCP 中轉"
+            "state" : "needs_review",
+            "value" : "MCP 中繼"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Mac voice bridge" : {
       "localizations" : {
@@ -5446,39 +5615,21 @@
         }
       }
     },
-    "New Chat" : {
+    "New chat" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "新聊天"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
+            "state" : "needs_review",
             "value" : "新聊天"
           }
         }
-      },
-      "extractionState" : "manual"
-    },
-    "New Chat with Poki" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "与 Poki 新建聊天"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "與 Poki 新建聊天"
-          }
-        }
-      },
-      "extractionState" : "manual"
+      }
     },
     "New conversation" : {
       "localizations" : {
@@ -5579,23 +5730,6 @@
         }
       }
     },
-    "No Sessions Yet" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚无会话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚無會話"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "No Steps Yet" : {
       "localizations" : {
         "zh-Hans" : {
@@ -5680,22 +5814,37 @@
         }
       }
     },
-    "No chat account" : {
+    "No chat has “%@” in it." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "无聊天账户"
+            "state" : "needs_review",
+            "value" : "没有包含“%@”的聊天。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "無聊天賬戶"
+            "state" : "needs_review",
+            "value" : "沒有包含「%@」的聊天。"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
+    },
+    "No chats yet. Write or talk to start one." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "还没有聊天。写一句或说一句就能开始。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "還沒有聊天。寫一句或說一句就能開始。"
+          }
+        }
+      }
     },
     "No computer required." : {
       "localizations" : {
@@ -5862,23 +6011,6 @@
         }
       }
     },
-    "Not Used Yet" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未使用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未使用"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Not allowed, so Poki skipped that step" : {
       "localizations" : {
         "zh-Hans" : {
@@ -6043,6 +6175,22 @@
       },
       "extractionState" : "manual"
     },
+    "Not used yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尚未使用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尚未使用"
+          }
+        }
+      }
+    },
     "Notes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -6174,22 +6322,21 @@
         }
       }
     },
-    "Off. Agents and chats can’t use this iPhone." : {
+    "Off. Nothing can use this iPhone" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "已关闭。智能体和聊天无法使用此 iPhone。"
+            "state" : "needs_review",
+            "value" : "已关闭。任何程序都无法使用此 iPhone"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "已關閉。AI 代理和聊天無法使用此 iPhone。"
+            "state" : "needs_review",
+            "value" : "已關閉。任何程式都無法使用此 iPhone"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Offline" : {
       "localizations" : {
@@ -6256,22 +6403,21 @@
       },
       "extractionState" : "manual"
     },
-    "On, ready for a task" : {
+    "On. Poki and your agents can use this iPhone" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "已开启，可以接受任务"
+            "state" : "needs_review",
+            "value" : "已开启。Poki 和你的智能体可以使用此 iPhone"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "已開啟，可以接受任務"
+            "state" : "needs_review",
+            "value" : "已開啟。Poki 和你的 AI 代理可以使用此 iPhone"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Online" : {
       "localizations" : {
@@ -6740,18 +6886,18 @@
         }
       }
     },
-    "OpenAI did not accept the key. Check it in Poki › Model." : {
+    "OpenAI did not accept the key. Check it in Settings › Model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OpenAI 密钥无效。请前往“Poki”›“模型”检查。"
+            "value" : "OpenAI 密钥无效。请前往“设置”›“模型”检查。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "OpenAI 金鑰無效。請前往「Poki」›「模型」檢查。"
+            "value" : "OpenAI 金鑰無效。請前往「設定」›「模型」檢查。"
           }
         }
       }
@@ -6937,23 +7083,6 @@
         }
       }
     },
-    "Opens Setup" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开配置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟配置"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Optional" : {
       "localizations" : {
         "zh-Hans" : {
@@ -6982,6 +7111,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可選。不連 Mac 也想續簽時，可以在這裡登入 Apple 賬號，讓 Poki 自己續簽。"
+          }
+        }
+      }
+    },
+    "Other agents, such as Claude Code or Codex on your Mac, can use this iPhone through Poki." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他智能体（例如 Mac 上的 Claude Code 或 Codex）可以通过 Poki 使用此 iPhone。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他 AI 代理（例如 Mac 上的 Claude Code 或 Codex）可以透過 Poki 使用此 iPhone。"
           }
         }
       }
@@ -7163,6 +7308,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已配對"
+          }
+        }
+      }
+    },
+    "Paired with Poki" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已与 Poki 配对"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已與 Poki 配對"
           }
         }
       }
@@ -7513,23 +7674,6 @@
       },
       "extractionState" : "manual"
     },
-    "Poki Restarts to Turn On" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 需重新启动才能开启"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 需重新啟動才能開啟"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Poki Runner" : {
       "localizations" : {
         "zh-Hans" : {
@@ -7663,18 +7807,18 @@
       },
       "extractionState" : "manual"
     },
-    "Poki asks you before an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet: on the Live Activity, in a notification, or here in Poki. Turned off, agents do all of that without asking. Changes take effect the next time Poki opens." : {
+    "Poki asks you before it or an agent pays, deletes, sends a message, places a call, types a password or does anything in Wallet." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "代理付款、删除、发消息、打电话、输入密码或在钱包里操作之前，Poki 会先问你，你可以在实时活动、通知或 Poki 里批准。关掉后，这些操作都不再询问。更改在下次打开 Poki 时生效。"
+            "state" : "needs_review",
+            "value" : "在 Poki 或智能体付款、删除、发送信息、拨打电话、输入密码或在“钱包”中操作之前，Poki 会先询问你。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "代理付款、刪除、發訊息、打電話、輸入密碼或在錢包裡操作之前，Poki 會先問你，你可以在實時活動、通知或 Poki 裡批准。關掉後，這些操作都不再詢問。更改在下次開啟 Poki 時生效。"
+            "state" : "needs_review",
+            "value" : "在 Poki 或 AI 代理付款、刪除、傳送訊息、撥打電話、輸入密碼或在「錢包」中操作之前，Poki 會先詢問你。"
           }
         }
       }
@@ -7761,22 +7905,21 @@
         }
       }
     },
-    "Poki can’t work fully yet" : {
+    "Poki can’t use this iPhone" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 还不能完全工作"
+            "state" : "needs_review",
+            "value" : "Poki 无法使用此 iPhone"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 還不能完全工作"
+            "state" : "needs_review",
+            "value" : "Poki 無法使用此 iPhone"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Poki closed after you stopped it. Open it to turn it on again." : {
       "localizations" : {
@@ -7827,6 +7970,22 @@
         }
       }
     },
+    "Poki drives this iPhone through Apple’s developer tools, so all of these have to stay on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 通过 Apple 的开发者工具操作此 iPhone，因此这些项目都需要保持开启。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 透過 Apple 的開發者工具操作此 iPhone，因此這些項目都需要保持開啟。"
+          }
+        }
+      }
+    },
     "Poki has no default relay. Deploy your own to your Cloudflare account with deploy/cf-relay/deploy.sh from the Poki repository, then enter the address it prints. Screenshots and taps pass only through that relay." : {
       "localizations" : {
         "zh-Hans" : {
@@ -7839,6 +7998,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 沒有預設中轉。請用 Poki 倉庫中的 deploy/cf-relay/deploy.sh 把中轉部署到你自己的 Cloudflare 賬戶，再輸入它輸出的地址。截圖和輕點只經過這個中轉。"
+          }
+        }
+      }
+    },
+    "Poki has nothing to think with" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 还没有可用的模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 還沒有可用的模型"
+          }
+        }
+      }
+    },
+    "Poki is off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 已關閉"
           }
         }
       }
@@ -7892,6 +8083,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Poki is ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 已就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 已就緒"
+          }
+        }
+      }
     },
     "Poki is running a task. Install when it has finished." : {
       "localizations" : {
@@ -7978,6 +8185,22 @@
       },
       "extractionState" : "manual"
     },
+    "Poki keeps running" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 保持运行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 保持執行"
+          }
+        }
+      }
+    },
     "Poki keeps the key now; chatting with %@ comes in an update. Until then, choose Anthropic or OpenAI." : {
       "localizations" : {
         "zh-Hans" : {
@@ -8060,6 +8283,22 @@
         }
       }
     },
+    "Poki needs a hand" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 需要你帮忙"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Poki 需要你幫忙"
+          }
+        }
+      }
+    },
     "Poki needs attention" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8138,6 +8377,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 已重新啟動，以便AI 代理重新看到螢幕。開啟後會自動開啟。"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Poki restarts to turn on" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 需重新启动才能开启"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 需重新啟動才能開啟"
           }
         }
       },
@@ -8286,6 +8542,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 會自行關閉。更新完成後請重新開啟。"
+          }
+        }
+      },
+      "extractionState" : "manual"
+    },
+    "Poki will close to finish the update" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 将关闭以完成更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 將關閉以完成更新"
           }
         }
       },
@@ -8807,23 +9080,6 @@
         }
       }
     },
-    "Relay offline" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "中转离线"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "中轉離線"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Release channel" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8922,23 +9178,6 @@
       },
       "extractionState" : "manual"
     },
-    "Rename Session" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新命名会话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新命名會話"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Rename agent" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8989,6 +9228,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Reorder my usual lunch" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再点一份我常吃的午餐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再點一份我常吃的午餐"
+          }
+        }
+      }
     },
     "Replace key" : {
       "localizations" : {
@@ -9269,22 +9524,21 @@
       },
       "extractionState" : "manual"
     },
-    "Search Sessions" : {
+    "Search chats" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜索会话"
+            "state" : "needs_review",
+            "value" : "搜索聊天"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
-            "state" : "translated",
-            "value" : "搜尋會話"
+            "state" : "needs_review",
+            "value" : "搜尋聊天"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Send" : {
       "localizations" : {
@@ -9433,6 +9687,22 @@
       },
       "extractionState" : "manual"
     },
+    "Set your relay address first. Each agent gets its own MCP address on it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "请先设置中继地址。每个智能体都会在其上获得自己的 MCP 地址。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請先設定中繼位址。每個 AI 代理都會在其上取得自己的 MCP 位址。"
+          }
+        }
+      }
+    },
     "Set your relay address first: each agent’s address is on your relay." : {
       "localizations" : {
         "zh-Hans" : {
@@ -9531,6 +9801,38 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "Setup isn’t finished" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "配置尚未完成"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "配置尚未完成"
+          }
+        }
+      }
+    },
+    "Setup isn’t finished. Fix it" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "配置尚未完成，去处理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "配置尚未完成，前往處理"
+          }
+        }
+      }
     },
     "Share" : {
       "localizations" : {
@@ -9646,34 +9948,34 @@
       },
       "extractionState" : "manual"
     },
-    "Sign in to ChatGPT again: tap my picture, then Model." : {
+    "Sign in to ChatGPT again: open Settings, then Model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请重新登录 ChatGPT。轻点头像，再选择“模型”。"
+            "value" : "请重新登录 ChatGPT。打开“设置”，再选择“模型”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重新登入 ChatGPT。輕點頭像，再選擇「模型」。"
+            "value" : "請重新登入 ChatGPT。打開「設定」，再選擇「模型」。"
           }
         }
       }
     },
-    "Sign in to ChatGPT first: tap my picture, then Model." : {
+    "Sign in to ChatGPT first: open Settings, then Model." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先登录 ChatGPT。轻点头像，再选择“模型”。"
+            "value" : "请先登录 ChatGPT。打开“设置”，再选择“模型”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先登入 ChatGPT。輕點頭像，再選擇「模型」。"
+            "value" : "請先登入 ChatGPT。打開「設定」，再選擇「模型」。"
           }
         }
       }
@@ -9805,6 +10107,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "簽名"
+          }
+        }
+      }
+    },
+    "Signing and updates" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "签名与更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "簽署與更新"
           }
         }
       }
@@ -9991,23 +10309,6 @@
         }
       }
     },
-    "Start a chat with Poki, or connect an agent such as Claude or Codex in Agents. Every session shows up here." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "与 Poki 开始聊天，或在“智能体”中连接 Claude、Codex 等智能体。所有会话都会显示在这里。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "與 Poki 開始聊天，或在「AI 代理」中連線 Claude、Codex 等AI 代理。所有會話都會顯示在這裡。"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Start hold" : {
       "localizations" : {
         "zh-Hans" : {
@@ -10089,23 +10390,6 @@
           }
         }
       }
-    },
-    "Status and Settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "状态与设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "狀態與設定"
-          }
-        }
-      },
-      "extractionState" : "manual"
     },
     "Step %lld, in %@" : {
       "localizations" : {
@@ -11168,23 +11452,6 @@
         }
       }
     },
-    "The model Poki’s chat and voice use on this iPhone. Memory holds the routines and notes every agent shares." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 的聊天和语音在此 iPhone 上使用的模型。记忆保存所有智能体共用的例程和备忘。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Poki 的聊天和語音在此 iPhone 上使用的模型。記憶儲存所有AI 代理共用的例程和備忘。"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "The model declined this request." : {
       "localizations" : {
         "zh-Hans" : {
@@ -11347,6 +11614,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "當 Poki 開啟或在後臺執行時，中轉伺服器會將請求轉發至此 iPhone。伺服器不儲存任何資料。裝置離線時，客戶端會收到明確的錯誤提示。"
+          }
+        }
+      }
+    },
+    "The relay is offline. Check it" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "中继已离线，去查看"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "中繼已離線，前往查看"
           }
         }
       }
@@ -11809,6 +12092,38 @@
         }
       }
     },
+    "Turn it on to give it a task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "打开后就能给它任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "開啟後就能給它任務"
+          }
+        }
+      }
+    },
+    "Turn on" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "去开启"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "前往開啟"
+          }
+        }
+      }
+    },
     "Turn on **Enable UI Automation**." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11992,40 +12307,6 @@
       },
       "extractionState" : "manual"
     },
-    "Turns Poki off" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭 Poki"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉 Poki"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "Turns Poki on" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开启 Poki"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟 Poki"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
     "Type" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12104,6 +12385,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在輸入「在路上了」"
+          }
+        }
+      }
+    },
+    "UI Automation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "UI 自动化"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "UI 自動化"
           }
         }
       }
@@ -12750,6 +13047,22 @@
         }
       },
       "extractionState" : "manual"
+    },
+    "What should Poki do?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "想让 Poki 做什么？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "想讓 Poki 做什麼？"
+          }
+        }
+      }
     },
     "What’s on this afternoon?" : {
       "localizations" : {

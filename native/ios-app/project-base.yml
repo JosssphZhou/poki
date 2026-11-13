@@ -54,8 +54,8 @@ targets:
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, zh-Hans, zh-Hant]
         UILaunchScreen:
-          UIColorName: AccentColor
-          UIImageName: Bear
+          UIColorName: Paper
+          UIImageName: Pose-rest
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:

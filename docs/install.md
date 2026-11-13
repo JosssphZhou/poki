@@ -136,7 +136,7 @@ To use a physical iPhone, first pair it with your Mac over USB. After that, keep
 - Where iOS asks for the passcode before automation (the XCTest session), it asks when you tap Start,
   while you are there, not in the middle of a task. A session that fails to open is reopened by Poki itself.
 - Before an update installs, Poki ends its Live Activity and background task.
-- Agents › Safety holds Approvals and the Activity Log. Settings has a Contribute section above Updates.
+- Settings holds Ask before sensitive steps; the Activity log is in Settings › Agents. Settings has a Contribute section above Updates.
 - How Poki picks its control method, and what happens without a loopback: see
   [ios-loopback.md](ios-loopback.md#which-method-does-the-work).
 

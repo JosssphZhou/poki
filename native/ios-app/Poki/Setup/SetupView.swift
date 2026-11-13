@@ -663,7 +663,7 @@ private struct BackgroundPage: View {
 // MARK: Checklist
 
 /// Setup as one checklist: everything Poki needs to run on this iPhone, each with a tick or what is
-/// wrong, and a tap opens its fix. It is on the Chats page (the steps still open) and in the Poki tab.
+/// wrong, and a tap opens its fix. It is Settings › Connection.
 struct SetupChecklist: View {
     @Environment(AppModel.self) private var model
     @State private var guiding = false

@@ -87,7 +87,7 @@ final class HandoffTests: XCTestCase {
         let off = try XCTUnwrap(try hello()["loopback"] as? [String: Any])
         XCTAssertEqual(off["working"] as? Bool, false)
         XCTAssertEqual(off["say"] as? String, model.loopbackSentence)
-        XCTAssertTrue(model.loopbackSentence.contains("Connect to this iPhone") || model.loopbackSentence.contains("10.7.0.1"))
+        XCTAssertTrue(model.loopbackSentence.contains("Connection > Loopback") || model.loopbackSentence.contains("10.7.0.1"))
         model.loopback.simulate(.working(ms: 9))
         model.handoffTick()
         XCTAssertEqual((try hello()["loopback"] as? [String: Any])?["working"] as? Bool, true)
