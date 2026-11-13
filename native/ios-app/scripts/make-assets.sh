@@ -25,6 +25,10 @@ cp "$ICON" "$APP/AppIcon.appiconset/icon-1024.png"
 echo '{"images":[{"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"},{"appearances":[{"appearance":"luminosity","value":"dark"}],"filename":"icon-1024.png","idiom":"universal","platform":"ios","size":"1024x1024"}],"info":{"version":1,"author":"poki"}}' > "$APP/AppIcon.appiconset/Contents.json"
 mkdir -p "$APP/AccentColor.colorset"
 echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x20","green":"0x84","blue":"0xFD","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/AccentColor.colorset/Contents.json"
+# The launch screen's ground: the home page's own top colour (HomeBackdrop, LightMesh.home's first row), light
+# and dark, so the screen iOS shows while Poki opens turns into the home page without a change of ground.
+mkdir -p "$APP/LaunchBackground.colorset"
+echo '{"colors":[{"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0xF5","green":"0xF7","blue":"0xFA","alpha":"1.000"}}},{"appearances":[{"appearance":"luminosity","value":"dark"}],"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x05","green":"0x07","blue":"0x0D","alpha":"1.000"}}}],"info":{"version":1,"author":"poki"}}' > "$APP/LaunchBackground.colorset/Contents.json"
 bear "$APP"
 # The app icon as a picture for the app's own pages (the conversations' header), small: 64 points at 3x.
 mkdir -p "$APP/PokiIcon.imageset"

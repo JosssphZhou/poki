@@ -57,9 +57,11 @@ targets:
         # home page's suggestion rows move once a frame.
         CADisableMinimumFrameDurationOnPhone: true
         UIViewControllerBasedStatusBarAppearance: false
+        # The screen iOS shows while Poki opens: the home page's ground (LaunchBackground, light and dark) with
+        # the bear on its own, without a ground (ActivityBear-ready, 136 points), so nothing square sits on it.
         UILaunchScreen:
-          UIColorName: AccentColor
-          UIImageName: Bear
+          UIColorName: LaunchBackground
+          UIImageName: ActivityBear-ready
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIApplicationSceneManifest:
