@@ -56,6 +56,8 @@ enum AppInterfaceSize {
 struct InterfaceSizeSettingsView: View {
     @AppStorage(AppInterfaceSize.defaultsKey) private var preference = AppInterfaceSize.system
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var pendingIndex: Int?
+    @State private var dragging = false
 
     private var followsSystem: Bool { AppInterfaceSize.category(for: preference) == nil }
     private var index: Int {
@@ -71,6 +73,7 @@ struct InterfaceSizeSettingsView: View {
                 }
                 Section {
                     InterfaceSizePreview()
+                        .dynamicTypeSize(previewSize)
                         // Leave enough room for the real chat components at accessibility sizes.
                         .frame(height: max(520, geometry.size.height * 0.72))
                         .listRowInsets(EdgeInsets())
@@ -85,6 +88,11 @@ struct InterfaceSizeSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    private var previewSize: DynamicTypeSize {
+        guard let pendingIndex else { return typeSize }
+        return DynamicTypeSize(AppInterfaceSize.categories[pendingIndex]) ?? typeSize
+    }
+
     @ViewBuilder private var controls: some View {
         Toggle("Follow System", isOn: Binding(
             get: { followsSystem },
@@ -93,18 +101,31 @@ struct InterfaceSizeSettingsView: View {
         .accessibilityIdentifier("interfaceSize.followSystem")
         if !followsSystem {
             Slider(value: Binding(
-                get: { Double(index) },
-                set: { preference = AppInterfaceSize.categories[Int($0.rounded())].rawValue }
+                get: { Double(pendingIndex ?? index) },
+                set: { value in
+                    let step = Int(value.rounded())
+                    if dragging {
+                        pendingIndex = step
+                    } else {
+                        preference = AppInterfaceSize.categories[step].rawValue
+                    }
+                }
             ), in: 0...Double(AppInterfaceSize.categories.count - 1), step: 1) {
                 Text("Interface Size")
             } minimumValueLabel: {
                 endpoint("Interface Size Minimum", size: 14)
             } maximumValueLabel: {
                 endpoint("Interface Size Maximum", size: 18)
+            } onEditingChanged: { editing in
+                dragging = editing
+                if !editing, let pendingIndex {
+                    preference = AppInterfaceSize.categories[pendingIndex].rawValue
+                    self.pendingIndex = nil
+                }
             }
-            .sensoryFeedback(.selection, trigger: preference)
+            .sensoryFeedback(.selection, trigger: pendingIndex ?? index)
             .tint(Color(.secondaryLabel))
-            .accessibilityValue(Text("Size \(index + 1) of \(AppInterfaceSize.categories.count)"))
+            .accessibilityValue(Text("Size \((pendingIndex ?? index) + 1) of \(AppInterfaceSize.categories.count)"))
             .accessibilityIdentifier("interfaceSize.slider")
         }
     }

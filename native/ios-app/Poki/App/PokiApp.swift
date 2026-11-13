@@ -278,12 +278,17 @@ struct RootView: View {
                 }
             }
         }
-        .onChange(of: interfaceSize, initial: true) { _, value in
+        .task(id: interfaceSize) {
+            // Defer the trait change past startup layout, and coalesce closely spaced commits.
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
             for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-                for window in scene.windows { AppInterfaceSize.apply(value, to: window) }
+                for window in scene.windows { AppInterfaceSize.apply(interfaceSize, to: window) }
             }
         }
-        .onChange(of: typeSize, initial: true) { _, _ in
+        .task(id: typeSize) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
                 for window in scene.windows { AppInterfaceSize.updateNavigationFonts(in: window) }
             }
