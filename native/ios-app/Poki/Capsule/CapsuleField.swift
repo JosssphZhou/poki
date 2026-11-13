@@ -66,6 +66,8 @@ struct CapsuleField: UIViewRepresentable {
         var parent: CapsuleField
         /// The message was scrolled away from its first line when the swipe began.
         private var startedScrolled = false
+        /// This swipe has already asked for the keyboard.
+        private var raised = false
 
         init(parent: CapsuleField) { self.parent = parent }
 
@@ -87,12 +89,21 @@ struct CapsuleField: UIViewRepresentable {
 
         @objc func swiped(_ pan: UIPanGestureRecognizer) {
             guard let view = pan.view as? UITextView else { return }
+            let (move, speed) = (pan.translation(in: view), pan.velocity(in: view))
+            let upright = abs(move.y) > abs(move.x) * 1.5
             switch pan.state {
-            case .began: startedScrolled = Self.scrolledDown(view)
+            case .began:
+                startedScrolled = Self.scrolledDown(view)
+                raised = false
+            case .changed:
+                // Up brings the keyboard while the finger is still moving, not when it lifts.
+                if !raised, upright, move.y < -12 {
+                    raised = true
+                    parent.onSwipe?(true)
+                }
             case .ended:
-                let (move, speed) = (pan.translation(in: view), pan.velocity(in: view))
-                guard abs(move.y) > abs(move.x) * 1.5 else { return }
-                if move.y < -24 || speed.y < -600 { parent.onSwipe?(true) }
+                guard upright else { return }
+                if !raised, move.y < -24 || speed.y < -600 { parent.onSwipe?(true) }
                 if move.y > 24 || speed.y > 600, !startedScrolled { parent.onSwipe?(false) }
             default: break
             }

@@ -1288,10 +1288,15 @@ struct ComposerInputView: View {
     /// 2026-11-13), on the home page and in the chat. Only a mostly upright drag of some length counts,
     /// so a tap on plus or Send stays a tap and a sideways drag does nothing. It lives on the field
     /// alone, so the conversation above scrolls as before; a swipe down on a long message scrolled
-    /// away from its first line scrolls it back instead.
+    /// away from its first line scrolls it back instead. Up brings the keyboard while the finger is
+    /// still moving, not when it lifts.
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 12)
-            .onChanged { _ in if swipeScrolls == nil { swipeScrolls = fieldScroll.scrolledDown } }
+            .onChanged { drag in
+                if swipeScrolls == nil { swipeScrolls = fieldScroll.scrolledDown }
+                let (dx, dy) = (drag.translation.width, drag.translation.height)
+                if dy < -12, abs(dy) > abs(dx) * 1.5, !focused { focused = true }
+            }
             .onEnded { drag in
                 let scrolled = swipeScrolls ?? false
                 swipeScrolls = nil

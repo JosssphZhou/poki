@@ -465,7 +465,8 @@ struct HomePage<Footer: View>: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollDismissesKeyboard(.interactively)
         }
-        .animation(HomeMotion.lift, value: writing)
+        // With Reduce Motion the page settles on a short ease, with no bounce.
+        .animation(reduceMotion ? Animation.easeOut(duration: 0.2) : HomeMotion.lift, value: writing)
         .task(id: SessionStore.shared.sessions.count) {
             shortcutStore.refresh(sessions: SessionStore.shared.sessions, routines: RoutineStore.shared.routines)
         }
