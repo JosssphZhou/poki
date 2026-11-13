@@ -255,6 +255,19 @@ final class LookDoTests: XCTestCase {
         XCTAssertTrue(result.text.contains("screenshot: 390 px wide, 1 px = 1 screen point"), result.text)
     }
 
+    func testSplitResizeUpdatesPictureAndDropsTheOldTargets() async {
+        let (core, wda, host) = makeCore(FakeWDA(dynamicSize: true))
+        _ = await core.call("look", [:])
+        wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 290, "height": 720]]]) }
+        wda.set("GET /source") { _ in (500, ["value": ["error": "unknown error", "message": "no accessibility tree"]]) }
+        let pane = await core.call("look", [:])
+        XCTAssertEqual(host.widths.value.filter { $0 >= 200 }, [390, 290])
+        XCTAssertTrue(pane.text.contains("screenshot: 290 px wide, 1 px = 1 screen point"), pane.text)
+        let tap = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(tap.isError, tap.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+    }
+
     func testWaitUntilReadsUntilTheTextAppears() async {
         let (core, wda, _) = makeCore()
         _ = await core.call("look", [:])
