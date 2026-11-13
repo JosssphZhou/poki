@@ -3079,6 +3079,22 @@
         }
       }
     },
+    "Dusk" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "暮色"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "暮色"
+          }
+        }
+      }
+    },
     "Edit Address and Key" : {
       "localizations" : {
         "zh-Hans" : {
@@ -3488,6 +3504,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已在「%@」中完成"
+          }
+        }
+      }
+    },
+    "Firefly" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "萤火"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "螢火"
+          }
+        }
+      }
+    },
+    "First light" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "晨光"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "晨光"
           }
         }
       }
@@ -4391,6 +4439,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "日誌"
+          }
+        }
+      }
+    },
+    "Lagoon" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "潟湖"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "潟湖"
           }
         }
       }
@@ -9734,6 +9798,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "休眠"
+          }
+        }
+      }
+    },
+    "Sorbet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "雪葩"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "雪酪"
           }
         }
       }

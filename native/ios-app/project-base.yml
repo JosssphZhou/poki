@@ -36,6 +36,8 @@ targets:
     platform: iOS
     sources:
       - path: Poki
+        # Poki's poses go into the asset catalog (scripts/make-assets.sh), not into the app as loose files.
+        excludes: [BearPoses]
       - path: Shared
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift

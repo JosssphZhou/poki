@@ -13,7 +13,7 @@ Build numbers are the GitHub Actions run number of the release workflow.
 - 
 
 ### Changed
-- 
+- A new app icon: Poki on the front page’s sky.
 
 ### Fixed
 - PokiTests run to the end on the iOS 26.3 simulator: a tunnel that went away no longer stopped the run.
