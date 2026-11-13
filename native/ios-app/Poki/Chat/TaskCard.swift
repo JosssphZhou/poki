@@ -377,10 +377,9 @@ private struct TaskStepRow: View {
 /// A step waiting for your answer, above the message field: what is asked, where, the words or the
 /// button it is about, how long it waits, and the two answers. Allow takes a hold, so a stray tap
 /// never lets a step through.
+/// An approval, as one question from the rules' kind ("Allow payment?"), its countdown and the answers.
 struct ApprovalAskCard: View {
     var title: String
-    var detail: String
-    var quote: String
     var expires: Date?
     var answer: (Bool) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -390,29 +389,21 @@ struct ApprovalAskCard: View {
         // as an alert's buttons.
         let answers = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(AnswerRow())
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                PokiAvatar(size: 48, mood: .needsYou)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: title).font(.headline).foregroundStyle(Color(.label)).fixedSize(horizontal: false, vertical: true)
-                    Text(verbatim: detail).font(.footnote).foregroundStyle(Color(.secondaryLabel)).fixedSize(horizontal: false, vertical: true)
+            // At the accessibility sizes the question has the card's whole width under the bear and the
+            // countdown, so a word is never broken in the middle ("Allow pay-ment?").
+            if typeSize.isAccessibilitySize {
+                HStack(alignment: .center, spacing: 12) {
+                    PokiAvatar(size: 48, mood: .needsYou)
+                    Spacer(minLength: 0)
+                    countdown
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                if let expires, expires > Date() {
-                    // The countdown keeps its own width, so the title does not jump each second.
-                    Text(timerInterval: Date()...expires, countsDown: true)
-                        .font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(Tint.amberInk)
-                        .multilineTextAlignment(.trailing)
-                        .fixedSize()
-                        .padding(.horizontal, 10).frame(minHeight: 24)
-                        .background(Tint.amberSoft, in: .capsule)
-                        .accessibilityLabel(Text("Time left"))
+                question
+            } else {
+                HStack(alignment: .center, spacing: 12) {
+                    PokiAvatar(size: 48, mood: .needsYou)
+                    question
+                    countdown
                 }
-            }
-            if !quote.isEmpty {
-                Text(verbatim: quote).font(.callout).foregroundStyle(Color(.label))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12).padding(.horizontal, 14)
-                    .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 16, style: .continuous))
             }
             answers {
                 Button { answer(false) } label: {
@@ -425,6 +416,24 @@ struct ApprovalAskCard: View {
         .padding(18)
         // It floats over the conversation and asks for an answer: the control layer, so glass.
         .glassSurface(in: RoundedRectangle(cornerRadius: 30, style: .continuous), fallback: .card)
+    }
+
+    private var question: some View {
+        Text(verbatim: title).font(.headline).foregroundStyle(Color(.label)).fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The countdown keeps its own width, so the question does not jump each second.
+    @ViewBuilder private var countdown: some View {
+        if let expires, expires > Date() {
+            Text(timerInterval: Date()...expires, countsDown: true)
+                .font(.caption.weight(.medium)).monospacedDigit().foregroundStyle(Tint.amberInk)
+                .multilineTextAlignment(.trailing)
+                .fixedSize()
+                .padding(.horizontal, 10).frame(minHeight: 24)
+                .background(Tint.amberSoft, in: .capsule)
+                .accessibilityLabel(Text("Time left"))
+        }
     }
 }
 

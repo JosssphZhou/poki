@@ -30,6 +30,8 @@ struct ChatView: View {
     @State private var pokes = 0
     /// Where Poki's picture over the greeting ends, for the card to open under it.
     @State private var homeBottom: CGFloat?
+    /// How far Poki's picture rises from the home page into the top bar.
+    @State private var flightRise: CGFloat = 0
 
     /// A tap on Poki, on the home page or in the chat: the bear says hi and Poki's card opens.
     private func tapPoki() {
@@ -40,6 +42,8 @@ struct ChatView: View {
     @State private var draft = UserDefaults.standard.string(forKey: "pokiDraft") ?? ""
     /// The message field has the keyboard.
     @State private var writing = false
+    /// Taps on New Conversation on the home page, for the message field (`ComposerInputView.restarts`).
+    @State private var restarts = 0
     /// The page's height, for how far your first words rise.
     @State private var pageHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -115,7 +119,7 @@ struct ChatView: View {
             }
             // The home page stays in the tree while the conversation is in front, neither seen nor
             // touched, so a new conversation brings it back on the same animation.
-            HomePage(home: home, writing: writing, pick: { draft = $0; writing = true }) {
+            HomePage(home: home, writing: writing, rise: flightRise, pick: { draft = $0; writing = true }) {
                 if home, let update { UpdatePill(version: update, open: openUpdates) }
                 if home, let hint = homeHint {
                     SetupHintLine(hint: hint, openSetupStep: openSetupStep, openSetup: openSetup, openModel: openModel,
@@ -135,14 +139,14 @@ struct ChatView: View {
         .topBar {
             if !bare {
                 ChatTopBar(status: status, home: home, busy: busy, openThreads: openThreads,
-                           newConversation: chat.newConversation, openDetails: tapPoki)
+                           newConversation: { if home { restarts += 1 } else { chat.newConversation() } }, openDetails: tapPoki)
             }
         }
         .bottomBar {
             if !bare { VStack(spacing: 8) {
                 asks
                 BrowserPanel()
-                ComposerInputView(input: $draft, focused: $writing, running: busy, answering: chat.waitingQuestion?.other == true, progress: progress,
+                ComposerInputView(input: $draft, focused: $writing, running: busy, answering: chat.waitingQuestion?.other == true, progress: progress, restarts: restarts,
                                   send: { chat.send($0, attachments: $1) }, stop: chat.stop, openVoice: openVoice)
             }
             .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
@@ -152,8 +156,8 @@ struct ChatView: View {
         .overlayPreferenceValue(PicturePlaceKey.self) { anchors in
             GeometryReader { proxy in
                 if !bare {
-                    PokiFlight(status: status, home: home, places: anchors.mapValues { proxy[$0] }, pokes: pokes, tap: tapPoki,
-                               landed: { homeBottom = $0 })
+                    PokiFlight(status: status, home: home, writing: writing, places: anchors.mapValues { proxy[$0] }, pokes: pokes,
+                               tap: tapPoki, landed: { homeBottom = $0 }, travel: { flightRise = $0 })
                 }
             }
         }
@@ -177,19 +181,15 @@ struct ChatView: View {
     /// The step waiting for your answer, or the hand-over, above the message field.
     @ViewBuilder private var asks: some View {
         if sampleScene == "approval" {
-            let sample = ChatModel.Sample.approval, words = ChatModel.Sample.approvalWords
-            ApprovalAskCard(title: words.title, detail: words.detail, quote: words.quote, expires: sample.expires, answer: { _ in })
+            let sample = ChatModel.Sample.approval
+            ApprovalAskCard(title: sample.question, expires: sample.expires, answer: { _ in })
         } else if sampleScene == "handoff" {
             TurnCard(text: Self.local(AppModel.handoffWording(.passcode)), done: {})
         } else if let ask = chat.demoAsk {
-            let words = ChatModel.Sample.demoWords
-            ApprovalAskCard(title: words.title, detail: words.detail, quote: words.quote, expires: ask.expires, answer: chat.answerDemo)
+            ApprovalAskCard(title: ChatModel.Sample.demoApproval.question, expires: ask.expires, answer: chat.answerDemo)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let approval = model.approvals.first {
-            // A message of this chat's own task: who it goes to and the words. Any other step: the step.
-            let words = chat.askWords[approval.id]
-            ApprovalAskCard(title: words?.title ?? approval.question, detail: words?.detail ?? approval.reasonLine,
-                            quote: words?.quote ?? ActivityWords.label(approval.summary), expires: approval.expires,
+            ApprovalAskCard(title: approval.question, expires: approval.expires,
                             answer: { approved in model.resolve(approval, approved: approved) })
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let text = model.handoffText {
@@ -1190,6 +1190,10 @@ struct ComposerInputView: View {
     var answering = false
     /// How far the running task is, 0 to 1, for the ring around Stop; nil when unknown.
     var progress: Double? = nil
+    /// Goes up with each tap on New Conversation on the home page: a message under way (words or
+    /// pictures) is cleared and the keyboard goes down, as the page first was; an empty field takes
+    /// the keyboard.
+    var restarts = 0
     var send: (String, [ChatAttachment]) -> Void
     var stop: () -> Void
     /// Starts the live voice conversation.
@@ -1288,6 +1292,15 @@ struct ComposerInputView: View {
                 if let image { add { try AttachmentReader.photo(image) } }
             }
             .ignoresSafeArea()
+        }
+        .onChange(of: restarts) {
+            if !input.isEmpty || !attachments.isEmpty {
+                input = ""
+                withAnimation(.snappy) { attachments = [] }
+                focused = false
+            } else {
+                focused = true
+            }
         }
         #if DEBUG && targetEnvironment(simulator)
         .onAppear { if let item = TestAttachment.take() { attachments.append(item) } }

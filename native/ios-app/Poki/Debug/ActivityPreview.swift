@@ -138,7 +138,7 @@ struct ActivityPreview: View {
         var approval = PokiState(phase: .approval, headline: "Allow this step?", thumbnailVersion: 1)
         approval.app = messages
         // What PokiCore asks for when the agent taps Send in Messages.
-        approval.approval = PendingApproval(id: "a", app: messages, summary: String(localized: "Tap “Send”"), reason: "sending a message (\"send\")", expires: now.addingTimeInterval(25))
+        approval.approval = PendingApproval(id: "a", app: messages, summary: String(localized: "Tap “Send”"), reason: ChatModel.Sample.reason, expires: now.addingTimeInterval(25))
         approval.since = now.addingTimeInterval(-61)
         approval.stepCount = 4
 
@@ -243,7 +243,7 @@ private struct LockScreenFrame: View {
     var state: PokiState
     var body: some View {
         let card = RoundedRectangle(cornerRadius: ActivityMetrics.lockCorner, style: .continuous)
-        LockScreenCard(face: state.face)
+        LockScreenCard(face: state.face).dynamicTypeSize(...ActivityMetrics.largestType)
             .frame(maxWidth: 371)
             .background(ActivityTheme.current.lockBackground ?? Color(.secondarySystemGroupedBackground), in: card)
             .containerShape(card)
@@ -272,7 +272,7 @@ private struct TopBannerFrame: View {
             .padding(.top, 10)
             .padding(.bottom, 6)
 
-            LockScreenCard(face: state.face)
+            LockScreenCard(face: state.face).dynamicTypeSize(...ActivityMetrics.largestType)
                 .frame(maxWidth: 371)
                 .background(ActivityTheme.current.lockBackground ?? Site.boardBlue, in: card)
                 .containerShape(card)
@@ -297,12 +297,12 @@ private struct IslandExpandedFrame: View {
         let shape = RoundedRectangle(cornerRadius: ActivityMetrics.islandCorner, style: .continuous)
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
-                IslandLeading(face: face)
+                IslandLeading(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
                 Spacer(minLength: 120)
-                IslandTrailing(face: face)
+                IslandTrailing(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
             }
             .frame(height: ActivityMetrics.systemCameraRow, alignment: .top)
-            IslandBottom(face: face)
+            IslandBottom(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
         }
         .frame(width: 374)
         .clipShape(RoundedRectangle(cornerRadius: ActivityMetrics.islandClipCorner).inset(by: ActivityMetrics.islandClip))
@@ -328,25 +328,30 @@ private struct IslandExpandedFrame: View {
 /// The compact island: the bear's block, the camera, the words, and the minimal circle beside it.
 private struct IslandCompactFrame: View {
     var state: PokiState
+    /// `-pokiActivityClip YES`: the line the system cuts at, dashed red, to compare with the design.
+    private let clip = UserDefaults.standard.bool(forKey: "pokiActivityClip")
     var body: some View {
         let face = state.face
+        let inset = ActivityMetrics.compactClip
         HStack(spacing: 12) {
             HStack(spacing: 0) {
-                CompactLeading(face: face)
+                CompactLeading(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
                 Spacer(minLength: 0).frame(width: 125.33)
-                CompactTrailing(face: face).frame(minWidth: 44, alignment: .trailing).padding(.trailing, 7)
+                CompactTrailing(face: face).dynamicTypeSize(...ActivityMetrics.largestType).frame(minWidth: 44, alignment: .trailing).padding(.trailing, 7)
             }
             .frame(height: ActivityMetrics.compactHeight)
             .background(.black, in: .capsule)
             .clipShape(.capsule)
             .overlay { Capsule().strokeBorder(ActivityTheme.current.outline, lineWidth: 1) }
-            MinimalView(face: face)
+            .overlay { if clip { Capsule().inset(by: inset).stroke(.red, style: StrokeStyle(lineWidth: 0.75, dash: [2, 2])) } }
+            MinimalView(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
                 .background(.black, in: .circle)
                 .overlay { Circle().strokeBorder(ActivityTheme.current.outline, lineWidth: 1) }
+                .overlay { if clip { Circle().inset(by: inset).stroke(.red, style: StrokeStyle(lineWidth: 0.75, dash: [2, 2])) } }
             // Short of room (the phone on its side, a second Live Activity): each block in a 28-point circle.
             HStack(spacing: 4) {
-                CompactLeading(face: face)
-                CompactTrailing(face: face)
+                CompactLeading(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
+                CompactTrailing(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
             }
             .environment(\.narrowIslandPreview, true)
             .padding(.horizontal, 4)
