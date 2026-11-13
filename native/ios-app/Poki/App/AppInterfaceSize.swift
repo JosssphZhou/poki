@@ -111,8 +111,11 @@ struct InterfaceSizeSettingsView: View {
     }
 
     private var previewSize: DynamicTypeSize {
-        guard let pendingIndex else { return typeSize }
-        return DynamicTypeSize(AppInterfaceSize.categories[pendingIndex]) ?? typeSize
+        // The window applies the saved preference asynchronously. Keep showing the selected
+        // size after the drag ends, even while the window still reports its previous category.
+        let category = pendingIndex.map { AppInterfaceSize.categories[$0] }
+            ?? AppInterfaceSize.category(for: preference)
+        return category.flatMap { DynamicTypeSize($0) } ?? typeSize
     }
 
     @ViewBuilder private var controls: some View {
