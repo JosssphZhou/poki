@@ -275,8 +275,13 @@ struct IslandBottom: View {
         }
         .frame(height: height)
         .frame(maxWidth: .infinity)
+        // A talk with Poki is on: the brand band along the island's lower edge, under the words.
+        .background(alignment: .bottom) {
+            if face.talkGlow, !dimmed { TalkGlow().transition(.opacity) }
+        }
         .foregroundStyle(palette.text)
         .environment(\.colorScheme, .dark)
+        .animation(dimmed ? nil : ActivityMotion.phase, value: face.talkGlow)
         .animation(dimmed ? nil : ActivityMotion.phase, value: face.bear)
         .animation(dimmed ? nil : ActivityMotion.step, value: face.content)
     }
@@ -291,11 +296,14 @@ struct IslandBottom: View {
                     if line { RunLine(palette: palette).padding(.top, 11) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if stop {
-                    // In the lowest island the circle sits a little higher, clear of the corner.
-                    StopButton(surface: .island)
-                        .padding(.top, (line ? 16 : 6) + 9)
-                        .transition(.opacity)
+                if stop || face.endsTalk {
+                    // In the lowest island the circles sit a little higher, clear of the corner.
+                    HStack(spacing: 10) {
+                        if face.endsTalk { EndTalkButton(circle: true) }
+                        if stop { StopButton(surface: .island) }
+                    }
+                    .padding(.top, (line ? 16 : 6) + 9)
+                    .transition(.opacity)
                 }
             }
             .padding(.trailing, 20)
@@ -372,11 +380,11 @@ struct CompactTrailing: View {
     @ViewBuilder private func narrow(_ palette: ActivityPalette) -> some View {
         let side = ActivityMetrics.narrowCircle
         switch face.compact {
-        case .app(let app, let since):
+        case .app(let app, _):
             if let icon = AppIconFile.image(app) {
                 AppIcon(image: icon, side: ActivityMetrics.narrowIcon).frame(width: side, height: side)
-            } else if let since {
-                RunTime(since: since, font: theme.narrowTimer, colour: palette.text, width: 26).frame(width: side, height: side)
+            } else {
+                DefaultAppIcon(size: ActivityMetrics.narrowIcon).frame(width: side, height: side)
             }
         case .elapsed(let since):
             RunTime(since: since, font: theme.narrowTimer, colour: palette.text, width: 26).frame(width: side, height: side)
@@ -400,11 +408,11 @@ struct CompactTrailing: View {
     private func wide(_ palette: ActivityPalette) -> some View {
         ZStack {
             switch face.compact {
-            case .app(let app, let since):
+            case .app(let app, _):
                 if let icon = AppIconFile.image(app) {
                     AppIcon(image: icon, side: ActivityMetrics.compactIcon).padding(.trailing, 3)
-                } else if let since {
-                    RunTime(since: since, font: theme.compact.monospacedDigit(), colour: palette.text, width: 42)
+                } else {
+                    DefaultAppIcon(size: ActivityMetrics.compactIcon).padding(.trailing, 3)
                 }
             case .elapsed(let since):
                 RunTime(since: since, font: theme.compact.monospacedDigit(), colour: palette.text, width: 42)
@@ -663,9 +671,15 @@ private struct Control: View {
         let palette = theme.palette(surface)
         switch face.bottom {
         case .none:
-            EmptyView()
+            if face.endsTalk { EndTalkButton(circle: false).transition(.opacity) }
         case .progress(_, let stop):
-            if stop, surface == .lockScreen { StopButton(surface: surface).transition(.opacity) }
+            if surface == .lockScreen {
+                HStack(spacing: 8) {
+                    if stop { StopButton(surface: surface) }
+                    if face.endsTalk { EndTalkButton(circle: false) }
+                }
+                .transition(.opacity)
+            }
         case .approval(let id):
             ApprovalButtons(approvalID: id, surface: surface)
                 .transition(.activityRow)
@@ -756,7 +770,8 @@ enum AppIconFile {
     @MainActor static var preview: ((String) -> UIImage?)?
 
     static func url(_ app: String) -> URL? {
-        let name = app.utf8.prefix(64).map { String(format: "%02x", $0) }.joined()
+        let key = KnownApps.find(app)?.id ?? app.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = key.lowercased().utf8.prefix(64).map { String(format: "%02x", $0) }.joined()
         return SharedContainer.url?.appendingPathComponent("app-icons", isDirectory: true).appendingPathComponent(name + ".png")
     }
 
@@ -885,6 +900,35 @@ struct StopButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(String(activity: "Stop")))
+    }
+}
+
+/// End during a talk with Poki: ends the talk and closes the microphone; a task Poki is on goes on.
+/// Beside the island's Stop, a circle with the microphone struck through; elsewhere a white capsule
+/// that says End, drawn as Stop is. Ending a talk here is pull request #250's interaction.
+struct EndTalkButton: View {
+    var circle: Bool
+    private let theme = ActivityTheme.current
+    var body: some View {
+        Button(intent: EndTalkIntent()) {
+            if circle {
+                let side = ActivityMetrics.stopCircle
+                Image(systemName: "mic.slash.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: side, height: side)
+                    .background(.white.opacity(0.18), in: .circle)
+                    .contentShape(.circle)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.slash.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(ActivityTheme.red)
+                    Text(String(activity: "End")).font(theme.button).foregroundStyle(Color(hex: 0x111111))
+                }
+                .padding(.horizontal, 14)
+                .frame(height: ActivityMetrics.stopCapsule)
+                .background(.white, in: .capsule)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(String(activity: "End talk")))
     }
 }
 

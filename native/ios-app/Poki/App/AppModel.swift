@@ -203,6 +203,8 @@ final class AppModel {
     private let pairer: DevicePairing
     private let pairingKeepAlive = KeepAlive()
     private let activity = ActivityController()
+    /// The Live Activity during a talk with Poki: what the talk is doing, and End.
+    private var talkActivity: TalkActivity?
     let log = AppLog.shared
     private var eventsTask: Task<Void, Never>?
     private var handoffTimer: Timer?
@@ -257,6 +259,7 @@ final class AppModel {
     func inProcessReadyForProbe() { inProcessSession = .open; host.update(runner: .running); probeDriven = true }
 
     func phoneTool(_ name: String, arguments: String) async -> (text: String, isError: Bool) {
+        if let message = signer.installMessage { return (message, true) }
         let result = await core.tool(name, arguments: arguments)
         return (result.text, result.isError)
     }
@@ -307,10 +310,14 @@ final class AppModel {
         // Voice taps get the same rules and approval card as an agent's `do`.
         voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
                            phoneTool: { name, arguments in
+                               #if DEBUG && targetEnvironment(simulator)
+                               if TalkRehearsal.asked { return await TalkRehearsal.step() }
+                               #endif
                                let result = await core.tool(name, arguments: arguments)
                                return (result.text, result.isError)
                            },
-                           holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() })
+                           holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() },
+                           connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
@@ -352,6 +359,8 @@ final class AppModel {
         // The same answers from the approval notification's own buttons.
         ApprovalNotice.registerActions()
         listenForApprovals()
+        talkActivity = TalkActivity(voice: voice, activity: activity, deviceName: { UIDevice.current.name },
+                                    keepsActivity: { [weak self] in self?.sessionOn == true })
         // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
         // stream for good, so a pump per session would go silent after the first Turn off (no steps,
         // no approvals, no relay state in the log, which is what happened on the phone).
@@ -586,6 +595,7 @@ final class AppModel {
     /// setup step the person just did in Settings.
     func becameActive() {
         inFront = true
+        guard signer.installFinish == .idle else { return }
         InProcessWDA.gate.withLock { $0.inFront = true }
         cameToFront = Date()
         // A pairing file and disk image Poki Setup put in the container while Poki was running (or
@@ -639,7 +649,7 @@ final class AppModel {
     var loopbackSentence: String {
         if tunnel.available { return "In Poki, open Setup > Connect to this iPhone and turn on Poki's own connection." }
         guard let app = ProxyApps.all.first(where: \.isInstalled) else {
-            return "Install a VPN app that can reach 10.7.0.1 (Karing, Surge, Loon or Shadowrocket), then in Poki open Setup > Connect to this iPhone."
+            return "Install the free LocalDevVPN from the App Store and tap Connect in it. Another VPN app that can reach 10.7.0.1 also works, such as Karing, Surge, Loon or Shadowrocket: in Poki, open Setup > Connect to this iPhone and follow the line for it."
         }
         switch app.install {
         case .url: return "In Poki, open Setup > Connect to this iPhone > \(app.name), tap Install, then confirm in \(app.name)."
@@ -1516,10 +1526,23 @@ final class AppModel {
                 guard state.phase == .working, state.stepCount == 0, state.approval == nil, state.handoff == nil else { return }
                 state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil
             }
+            // The owner's own reply still reaches them when they are elsewhere (a task sent from a shortcut).
+            if !inFront, let reply, session == AskPoki.chat?.sessionID { postReply(reply) }
             return
         }
         finishTask()
         activity.finishNow(alert: true)
+    }
+
+    /// A reply that touched no phone, while Poki is not in front (Send Task to Poki from a shortcut): the
+    /// notification is where the owner reads it. A tap opens Poki.
+    private func postReply(_ reply: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Poki"
+        content.body = reply
+        content.sound = .default
+        content.threadIdentifier = "chat"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "poki-reply", content: content, trigger: nil))
     }
 
     func runTool(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
@@ -1973,7 +1996,7 @@ final class AppModel {
 
     // MARK: Relay and connectors
 
-    static let noRelay = "Enter your relay’s address first in Settings › External Agents › Address. Poki has no default relay."
+    static let noRelay = "Enter your relay’s address first in Settings › Agents › Address. Poki has no default relay."
 
     /// Saves the relay address the person entered; false when it is not one. A running session moves
     /// to the new relay at once.
