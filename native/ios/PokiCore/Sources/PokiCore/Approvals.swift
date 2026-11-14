@@ -36,9 +36,14 @@ public struct SensitivityRules: Sendable, Equatable {
 
     static func matches(_ text: String, _ words: [String], actionButton: Bool = false) -> String? {
         let lowered = text.lowercased()
-        // Punctuation (including hyphens) separates words too; a long descriptive row must not
-        // become a short action merely because it has no spaces.
-        let short = lowered.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).count <= 4
+        // Split punctuation-separated prose, but count numeric pieces inside an amount or dated
+        // filename with their surrounding token, so a short action stays short.
+        let wordCount = lowered.split(whereSeparator: { $0.isWhitespace }).reduce(0) { count, token in
+            let parts = token.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            let words = parts.filter { $0.contains(where: { $0.isLetter }) }
+            return count + (parts.isEmpty ? 0 : max(1, words.count))
+        }
+        let short = wordCount <= 4
         let boundary: (Character?) -> Bool = { c in c.map { !$0.isLetter && !$0.isNumber } ?? true }
         for word in words {
             let w = word.lowercased()
