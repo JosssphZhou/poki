@@ -108,11 +108,15 @@ POKI_HTTP_ENDPOINT_HOST=203.0.113.9 POKI_HTTP_ENDPOINT_OPT_IN=1 xcodegen generat
 `NSExceptionDomains` entry for that host with `NSExceptionAllowsInsecureHTTPLoads` set to YES. The
 built `Poki/Info.plist` contains no `NSAllowsArbitraryLoads` and no denylist.
 
-**Request scope.** Only the named host may be reached over cleartext HTTP, on any port and path.
-Apple does not allow a port in an `NSExceptionDomains` key, so the exception is host-wide. Only the
-custom provider's chat and model-list requests use that host. Every built-in provider, the relay,
-and all other hosts keep full ATS. An IP-literal exception does not cover a DNS name for the same
-server, and a DNS-name exception does not cover its IP literal.
+**Request scope.** `NSAllowsLocalNetworking` already permits plain HTTP to loopback, `.local`,
+unqualified and private-network hosts. That covers the voice bridge, the in-process debug server at
+`http://127.0.0.1:8765/v1`, and a gateway on the same LAN. `PlainHTTPPolicy` keeps those addresses
+working without warning. The opt-in adds one more host, normally a public IP or a DNS name. Only
+that host may then be reached over cleartext HTTP, on any port and path. Apple does not allow a
+port in an `NSExceptionDomains` key, so the exception is host-wide. Only the custom provider's chat
+and model-list requests use that host. Every built-in provider, the relay, and all other hosts keep
+full ATS. An IP-literal exception does not cover a DNS name for the same server, and a DNS-name
+exception does not cover its IP literal.
 
 Plain HTTP sends the key, when there is one, and the whole conversation unencrypted. The Custom
 Endpoint screen warns before the address is used. Use HTTPS when the gateway is not on a network you
