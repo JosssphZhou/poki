@@ -32981,6 +32981,22 @@
           }
         }
       }
+    },
+    "Walk Elements in 10 Seconds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 秒后逐个读取元素"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 秒後逐一讀取元素"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
