@@ -183,5 +183,8 @@ createInterface({ input: process.stdin }).on('line', async line => {
     send({ id: request.id, err: { kind: error.kind || 'message', message: error.message } });
   }
 });
+if (process.env.POKI_FAKE_ENV_LOG) {
+  writeFile(process.env.POKI_FAKE_ENV_LOG, JSON.stringify({ http_host: process.env.POKI_HTTP_ENDPOINT_HOST ?? null }));
+}
 process.stderr.write(`fake bridge for ${udid} (${phoneName}) started\n`);
 send({ event: 'ready', data: { version: '0.2.1-319' } });

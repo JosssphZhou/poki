@@ -120,9 +120,28 @@ exception does not cover its IP literal.
 
 Plain HTTP sends the key, when there is one, and the whole conversation unencrypted. The Custom
 Endpoint screen warns before the address is used. Use HTTPS when the gateway is not on a network you
-trust. A prebuilt release IPA has no exception, so a plain-HTTP address is refused by ATS. An owner
-who needs one must build with the variables above, or Poki Setup must inject the same single-host
-exception when it re-signs the IPA. The latter is not implemented here.
+trust. A prebuilt release IPA has no exception until the owner opts in. There are two entry points,
+both using the same host value and the same request scope.
+
+**Install time, for a prebuilt IPA.** Run Poki Setup with `--allow-http-host <host>`, repeatable for
+more than one host:
+
+```sh
+node bin/install-iphone.mjs run --allow-http-host 203.0.113.9
+```
+
+The installer passes the hosts to the signing bridge in `POKI_HTTP_ENDPOINT_HOST`.
+`desktop/core/src/sign/mod.rs` writes one `NSExceptionDomains` entry per host into
+`Payload/Poki.app/Info.plist` before signing. It keeps `NSAllowsLocalNetworking`, preserves any
+entry the build declared, and never writes `NSAllowsArbitraryLoads`. Extensions are untouched. A
+host with a scheme, port, path or userinfo is rejected by the installer and ignored by the signer.
+Bring the flag again on a renewal, because a renewal re-signs a freshly downloaded IPA. Both
+`run` and `--update-only` accept it, so an existing exception is not silently lost. A plain-HTTP
+gateway sends its key in cleartext, so name only a host you trust.
+
+**Build time, for a self-built IPA.** Set the variables in the example above when running
+`xcodegen generate`. `PlainHTTPPolicy` reads `NSExceptionDomains` from the app's own Info.plist, so
+both entry points produce the same behaviour in the app.
 
 ## Voice
 
