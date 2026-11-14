@@ -33,7 +33,7 @@ struct CapsuleField: UIViewRepresentable {
         view.showsVerticalScrollIndicator = false
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.accessibilityIdentifier = "capsule.field"
-        view.accessibilityLabel = String(localized: "Message Poki")
+        view.accessibilityLabel = AppLocalization.text(LocalizedStringResource("Message Poki"))
         view.updateFont(for: UIContentSizeCategory(typeSize))
         view.setPlain(text)
         let swipe = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.swiped(_:)))
@@ -46,7 +46,7 @@ struct CapsuleField: UIViewRepresentable {
     func updateUIView(_ view: CapsuleTextView, context: Context) {
         context.coordinator.parent = self
         view.updateFont(for: UIContentSizeCategory(typeSize))
-        view.accessibilityLabel = String(localized: "Message Poki")
+        view.accessibilityLabel = AppLocalization.text(LocalizedStringResource("Message Poki"))
         // A write from outside (a recommendation, dictation, Send emptying the field): render it whole,
         // caret at the end.
         if view.plainText != text { view.setPlain(text) }

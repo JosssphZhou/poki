@@ -1,284 +1,622 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Finish Setup" : {
+  "Finish Setup": {
+    "extractionState": "manual",
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "完成设置"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "完成設定"
+        }
+      }
+    }
+  },
+  "Interface Size Minimum": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "小"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "小"
+        }
+      }
+    }
+  },
+  "Interface Size Maximum": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "大"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "大"
+        }
+      }
+    }
+  },
+  "Show me the full plan.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Show me the full plan."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "给我看看完整计划。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "給我看看完整計劃。"
+        }
+      }
+    }
+  },
+  "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "明天的安排  \n09:00　先完成最重要的事  \n12:00　吃午饭，休息一下  \n12:45　出门散步  \n14:00　集中回复消息  \n16:30　整理今天的进度"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "明天的安排  \n09:00　先完成最重要的事  \n12:00　吃午餐，休息一下  \n12:45　出門散步  \n14:00　集中回覆訊息  \n16:30　整理今天的進度"
+        }
+      }
+    }
+  },
+  "Help me plan tomorrow.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Help me plan tomorrow."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "帮我安排一下明天的计划。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "幫我安排一下明天的計劃。"
+        }
+      }
+    }
+  },
+  "Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "上午先完成最重要的事情，午间留出吃饭和散步的时间。\n\n我还可以帮你设置提醒。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "上午先完成最重要的事情，午間留出吃飯和散步的時間。\n\n我還可以幫你設定提醒。"
+        }
+      }
+    }
+  },
+  "Reminder created": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reminder created"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已创建提醒"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已建立提醒"
+        }
+      }
+    }
+  },
+  "Tomorrow at 9:00 AM": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tomorrow at 9:00 AM"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "明天上午 9:00"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "明天上午 9:00"
+        }
+      }
+    }
+  },
+  "Interface Size": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Interface Size"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "界面大小"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "介面大小"
+        }
+      }
+    }
+  },
+  "Size %lld of %lld": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Size %lld of %lld"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "大小 %1$lld / %2$lld"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "大小 %1$lld / %2$lld"
+        }
+      }
+    }
+  },
+  "Preview": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Preview"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "预览"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "預覽"
+        }
+      }
+    }
+  },
+    "%@ is chosen, but nothing answers at 10.7.0.1 right now. Open %@, make sure it is connected with the loopback on, then come back; this page updates by itself." : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is chosen, but nothing answers at 10.7.0.1 right now. Open %@, make sure it is connected with the loopback on, then come back; this page updates by itself."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成设置"
+            "value" : "已选择 %@，但 10.7.0.1 目前没有响应。请打开 %@，确认已连接并开启回环，然后返回；此页面会自动更新。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成設定"
+            "value" : "已選擇 %@，但 10.7.0.1 目前沒有回應。請打開 %@，確認已連線並開啟迴路，然後返回；此頁面會自動更新。"
           }
         }
       }
     },
-    "Follow System": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow System"
+    "%@ · Coming in an update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Coming in an update"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跟随系统"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 将在后续更新中提供"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跟隨系統"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 將在後續更新中提供"
           }
         }
       }
     },
-    "Interface Size Minimum": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A"
+    "%@ · Text chat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Text chat"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 文字聊天"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "小"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 文字聊天"
           }
         }
       }
     },
-    "Interface Size Maximum": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A"
+    "%@ · Text chat and live voice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Text chat and live voice"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 文字聊天和实时语音"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 文字聊天和即時語音"
           }
         }
       }
     },
-    "Show me the full plan.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show me the full plan."
+    "Agents' actions go through" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agents' actions go through"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "给我看看完整计划。"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代理操作可正常执行"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "給我看看完整計劃。"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代理操作可正常執行"
           }
         }
       }
     },
-    "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress."
+    "As reported by users of %@; not checked against its documentation. The status on the Loopback page tells whether it works." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "As reported by users of %@; not checked against its documentation. The status on the Loopback page tells whether it works."
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "明天的安排  \n09:00　先完成最重要的事  \n12:00　吃午饭，休息一下  \n12:45　出门散步  \n14:00　集中回复消息  \n16:30　整理今天的进度"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "根据 %@ 用户反馈整理，尚未核对其文档。是否可用请查看“回环”页面的状态。"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "明天的安排  \n09:00　先完成最重要的事  \n12:00　吃午餐，休息一下  \n12:45　出門散步  \n14:00　集中回覆訊息  \n16:30　整理今天的進度"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "根據 %@ 使用者回報整理，尚未核對其文件。是否可用請查看「迴路」頁面的狀態。"
           }
         }
       }
     },
-    "Help me plan tomorrow.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Help me plan tomorrow."
+    "Background Hold" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Background Hold"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "帮我安排一下明天的计划。"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后台保持"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "幫我安排一下明天的計劃。"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "背景保持"
           }
         }
       }
     },
-    "Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder."
+    "Dictation to %@; Poki reads the answer aloud" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictation to %@; Poki reads the answer aloud"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上午先完成最重要的事情，午间留出吃饭和散步的时间。\n\n我还可以帮你设置提醒。"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "听写发送给 %@；Poki 会朗读回复"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上午先完成最重要的事情，午間留出吃飯和散步的時間。\n\n我還可以幫你設定提醒。"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聽寫傳送給 %@；Poki 會朗讀回覆"
           }
         }
       }
     },
-    "Reminder created": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reminder created"
+    "Follow System" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow System"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已创建提醒"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随系统"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已建立提醒"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟隨系統"
           }
         }
       }
     },
-    "Tomorrow at 9:00 AM": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tomorrow at 9:00 AM"
+    "Language" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "明天上午 9:00"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "明天上午 9:00"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語言"
           }
         }
       }
     },
-    "Interface Size": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Interface Size"
+    "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memory holds the routines and notes every agent shares. Diagnostics: logs, checks, background hold, addresses, and Live Activity preview."
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "界面大小"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "记忆保存供所有代理共享的流程和笔记。诊断包含日志、检查、后台保持、地址和实时活动预览。"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "介面大小"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶儲存供所有代理共用的流程與筆記。診斷包含日誌、檢查、背景保持、位址與即時動態預覽。"
           }
         }
       }
     },
-    "Size %lld of %lld": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Size %lld of %lld"
+    "Optional, for live voice without an OpenAI key on this iPhone: run bin/voice-bridge.mjs on your Mac and enter the address it gives." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional, for live voice without an OpenAI key on this iPhone: run bin/voice-bridge.mjs on your Mac and enter the address it gives."
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大小 %1$lld / %2$lld"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选：如需在此 iPhone 未配置 OpenAI 密钥时使用实时语音，请在 Mac 上运行 bin/voice-bridge.mjs，并输入其提供的地址。"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "大小 %1$lld / %2$lld"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選用：如需在此 iPhone 未設定 OpenAI 金鑰時使用即時語音，請在 Mac 上執行 bin/voice-bridge.mjs，並輸入其提供的位址。"
           }
         }
       }
     },
-    "Preview": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preview"
+    "Pairing on the phone itself needs iOS 27; this iPhone runs iOS %@. Pair it from a computer instead." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing on the phone itself needs iOS 27; this iPhone runs iOS %@. Pair it from a computer instead."
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "预览"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在手机上配对需要 iOS 27；此 iPhone 运行的是 iOS %@。请改用电脑配对。"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "預覽"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在手機上配對需要 iOS 27；此 iPhone 執行的是 iOS %@。請改用電腦配對。"
+          }
+        }
+      }
+    },
+    "Poki could not reach the voice service. Check the network, then try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 无法连接语音服务。请检查网络后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 無法連線語音服務。請檢查網路後再試。"
+          }
+        }
+      }
+    },
+    "Poki keeps this key; chatting with %@ comes in an update." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki keeps this key; chatting with %@ comes in an update."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会保存此密钥；与 %@ 聊天的功能将在后续更新中提供。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會儲存此金鑰；與 %@ 聊天的功能將在後續更新中提供。"
+          }
+        }
+      }
+    },
+    "That file could not be imported: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That file could not be imported: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法导入此文件：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法匯入此檔案：%@"
           }
         }
       }
@@ -3532,6 +3870,12 @@
     },
     "Dismissed %@’s cookie banner: “%@”" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已關閉 %1$@ 的 Cookie 提示：「%2$@」"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3542,6 +3886,12 @@
     },
     "Dismissed %@’s privacy notice: “%@”" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已關閉 %1$@ 的私隱通知：「%2$@」"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3552,6 +3902,12 @@
     },
     "Dismissed %@’s terms notice: “%@”" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已關閉 %1$@ 的條款通知：「%2$@」"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -4154,6 +4510,12 @@
     },
     "Forward" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前進"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -5834,6 +6196,12 @@
     },
     "Look for “%@”" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尋找「%@」"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7550,24 +7918,24 @@
         }
       }
     },
-    "Open https://github.com/JosssphZhou/poki in the built-in browser and star it. If I am not signed in to GitHub, open https://github.com/login?return_to=/JosssphZhou/poki and hand that page to me" : {
+    "Open the GitHub app on this iPhone, go to the JosssphZhou/poki repository, and star it. If the app is not installed, stop and ask me to install it from the App Store. Do not use a browser. If I am not signed in, stop on the login screen and let me sign in myself. If I have already starred the repository, tell me and leave it starred." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open https://github.com/JosssphZhou/poki in the built-in browser and star it. If I am not signed in to GitHub, open https://github.com/login?return_to=/JosssphZhou/poki and hand that page to me"
+            "value" : "Open the GitHub app on this iPhone, go to the JosssphZhou/poki repository, and star it. If the app is not installed, stop and ask me to install it from the App Store. Do not use a browser. If I am not signed in, stop on the login screen and let me sign in myself. If I have already starred the repository, tell me and leave it starred."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在内置浏览器打开 https://github.com/JosssphZhou/poki，给 Poki 点个 Star。如果我没登录 GitHub，就打开 https://github.com/login?return_to=/JosssphZhou/poki 交给我自己登录"
+            "value" : "打开这台 iPhone 上的 GitHub 应用，进入 JosssphZhou/poki 仓库页，点 Star。如果没有安装 GitHub 应用，就停下并提示我先去 App Store 安装，不要使用浏览器。如果我没有登录，就停在登录页，交给我自己登录。如果我已经点过 Star，就告诉我，不要取消。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在內建瀏覽器打開 https://github.com/JosssphZhou/poki，給 Poki 點個 Star。如果我沒登入 GitHub，就打開 https://github.com/login?return_to=/JosssphZhou/poki 交給我自己登入"
+            "value" : "打開這台 iPhone 上的 GitHub 應用程式，進入 JosssphZhou/poki 儲存庫頁面，點 Star。如果沒有安裝 GitHub 應用程式，就停下並提示我先去 App Store 安裝，不要使用瀏覽器。如果我沒有登入，就停在登入頁，交給我自己登入。如果我已經點過 Star，就告訴我，不要取消。"
           }
         }
       }
@@ -9620,6 +9988,12 @@
     },
     "Read the page" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取頁面"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9646,6 +10020,12 @@
     },
     "Reload" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新載入"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11449,6 +11829,12 @@
     },
     "Stop Task" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止任務"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -11951,6 +12337,12 @@
     },
     "The page Poki is using. Double-tap to take over." : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 正在使用的網頁。點兩下接管。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13118,6 +13510,38 @@
         }
       }
     },
+    "The voice bridge answered %lld: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音桥接返回错误（%lld），%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音橋接返回錯誤（%lld），%@"
+          }
+        }
+      }
+    },
+    "The voice connection took too long. Check the network, then try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语音连接超时。请检查网络后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音連線逾時。請檢查網路後再試。"
+          }
+        }
+      }
+    },
     "This Anthropic key can’t use %@." : {
       "localizations" : {
         "zh-Hans" : {
@@ -13954,6 +14378,12 @@
     },
     "Type “%@” in “%@”" : {
       "localizations" : {
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「%2$@」中輸入「%1$@」"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14197,6 +14627,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "夜深了，"
+          }
+        }
+      }
+    },
+    "Waking" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在唤醒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在喚醒"
+          }
+        }
+      }
+    },
+    "WebRTC made no connection offer." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebRTC 未能发起连接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebRTC 未能發起連線。"
           }
         }
       }
@@ -15222,6 +15684,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iOS 會把它顯示為 VPN。開啟後可能斷開其他 VPN App。如需保留相容的 VPN，請改用上方的代理 App。"
+          }
+        }
+      }
+    },
+    "no reason given" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未说明原因"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未說明原因"
           }
         }
       }
@@ -32518,6 +32996,29 @@
         }
       }
     },
+    "If the update has not finished after a few seconds, swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If the update has not finished after a few seconds, swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果几秒内没完成，请从多任务界面划掉 Poki 再打开。重新打开 Poki 前，功能暂不可用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如果幾秒內沒完成，請從多工處理畫面滑掉 Poki 再開啟。重新開啟 Poki 前，功能暫不可用。"
+          }
+        }
+      }
+    },
     "Finishing the Update" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -32541,117 +33042,25 @@
         }
       }
     },
-    "Installing the update. Do not close Poki in the app switcher. Features are unavailable until you reopen Poki." : {
+    "Installing the update. Features are unavailable until you reopen Poki." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Installing the update. Do not close Poki in the app switcher. Features are unavailable until you reopen Poki."
+            "value" : "Installing the update. Features are unavailable until you reopen Poki."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在安装更新。请不要在多任务界面划掉 Poki。重新打开 Poki 前，功能暂不可用。"
+            "value" : "正在安装更新。重新打开 Poki 前，功能暂不可用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在安裝更新。請不要在多工處理畫面滑掉 Poki。重新開啟 Poki 前，功能暫不可用。"
-          }
-        }
-      }
-    },
-    "You can return to the Home Screen and wait. Poki closes by itself when the update is installed. Open Poki again afterwards. If nothing changes, update Poki from Poki Setup on your computer." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You can return to the Home Screen and wait. Poki closes by itself when the update is installed. Open Poki again afterwards. If nothing changes, update Poki from Poki Setup on your computer."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可以回到主屏幕等待。更新安装完成后，Poki 会自动关闭，之后请重新打开 Poki。如果一直没有变化，请用电脑上的 Poki Setup 更新。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可以回到主畫面等待。更新安裝完成後，Poki 會自動關閉，之後請重新開啟 Poki。如果一直沒有變化，請用電腦上的 Poki Setup 更新。"
-          }
-        }
-      }
-    },
-    "The update is installed. Waiting for Poki to close. Features are unavailable until you reopen Poki." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The update is installed. Waiting for Poki to close. Features are unavailable until you reopen Poki."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新版已安装，正在等待 Poki 关闭。重新打开 Poki 前，功能暂不可用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新版已安裝，正在等待 Poki 關閉。重新開啟 Poki 前，功能暫不可用。"
-          }
-        }
-      }
-    },
-    "The update is installed. Swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The update is installed. Swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新版已安装。请在多任务界面向上划掉 Poki，然后重新打开。重新打开前，功能暂不可用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新版已安裝。請在多工處理畫面向上滑掉 Poki，然後重新開啟。重新開啟前，功能暫不可用。"
-          }
-        }
-      }
-    },
-    "To finish the update, swipe up on Poki in the app switcher to close it, then open Poki again. If the update is still available, try again. Features are unavailable until you reopen Poki." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "To finish the update, swipe up on Poki in the app switcher to close it, then open Poki again. If the update is still available, try again. Features are unavailable until you reopen Poki."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请在多任务界面向上划掉 Poki，然后重新打开以完成更新。如果仍显示可用更新，请重试。重新打开前，功能暂不可用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請在多工處理畫面向上滑掉 Poki，然後重新開啟以完成更新。如果仍顯示可用更新，請重試。重新開啟前，功能暫不可用。"
+            "value" : "正在安裝更新。重新開啟 Poki 前，功能暫不可用。"
           }
         }
       }

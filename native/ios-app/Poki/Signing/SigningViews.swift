@@ -76,6 +76,11 @@ struct SignerActivityRows: View {
         if let error = signer.lastError {
             Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
         }
+        if let error = signer.updateCheckError {
+            Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+        } else if let notice = signer.latest?.source_notice {
+            Section { Label(notice, systemImage: "info.circle") }
+        }
     }
 }
 
@@ -110,7 +115,7 @@ struct SigningSection: View {
                 LabeledContent { Text(verbatim: "\(latest.version) (\(latest.build))") } label: { Label("Update Available", systemImage: "sparkles") }
             } else if let next = signer.next {
                 LabeledContent {
-                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day().year()))")
+                    Text(next.kind == "update" ? "\(next.version) (\(next.build))" : "Until \(next.expires.formatted(.dateTime.month(.abbreviated).day().year().locale(AppLocalization.locale)))")
                         .fixedSize(horizontal: false, vertical: true)
                 } label: {
                     Label(next.kind == "update" ? "Update Ready" : "Refresh Ready", systemImage: "checkmark.seal")
@@ -128,7 +133,7 @@ struct SigningSection: View {
                 } else {
                     NavigationLink {
                         Form { AccountPage() }
-                            .navigationTitle("Apple Account")
+                            .navigationTitle(AppLocalization.text("Apple Account"))
                             .navigationBarTitleDisplayMode(.inline)
                     } label: {
                         Label("Sign In to Download the Update", systemImage: "person.crop.circle.badge.plus")
@@ -161,13 +166,13 @@ struct SigningSection: View {
 
     private var footer: String {
         if let blocker = signer.updateBlocker { return blocker }
-        if !signer.signedIn { return String(localized: "Poki Setup on your Mac renews Poki when this iPhone is connected.") }
+        if !signer.signedIn { return AppLocalization.text(LocalizedStringResource("Poki Setup on your Mac renews Poki when this iPhone is connected.")) }
         if signer.next != nil {
             return model.signingIdle
-                ? String(localized: "Installing closes Poki for a moment. Your chats and setup stay.")
-                : (model.signingBusyReason ?? "") + " " + String(localized: "Install is available when Poki isn’t running a task.")
+                ? AppLocalization.text(LocalizedStringResource("Installing closes Poki for a moment. Your chats and setup stay."))
+                : (model.signingBusyReason ?? "") + " " + AppLocalization.text(LocalizedStringResource("Install is available when Poki isn’t running a task."))
         }
-        return String(localized: "Poki gets the next build ready by itself, \(Int(SelfSigner.refreshWithDaysLeft)) days before it expires or when your channel has an update. It installs only when you tap Install.")
+        return AppLocalization.text(LocalizedStringResource("Poki gets the next build ready by itself, \(Int(SelfSigner.refreshWithDaysLeft)) days before it expires or when your channel has an update. It installs only when you tap Install."))
     }
 }
 
@@ -182,8 +187,8 @@ struct ExpiryWarning {
     }
 
     var message: String {
-        let when = expiry.formatted(date: .abbreviated, time: .shortened)
-        return String(localized: "Poki stops opening after \(when). Connect this iPhone to your Mac and ask your agent to renew it.")
+        let when = expiry.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLocalization.locale))
+        return AppLocalization.text(LocalizedStringResource("Poki stops opening after \(when). Connect this iPhone to your Mac and ask your agent to renew it."))
     }
 }
 
@@ -212,28 +217,14 @@ struct SigningOptionsPage: View {
     @State private var checked = false
     private var signer: SelfSigner { model.signer }
 
-    /// Shown most stable first, as the person reads them.
-    private var channels: [SelfSigner.Channel] {
-        let order = ["stable", "beta", "alpha", "pre-alpha"]
-        return (signer.status?.channels ?? []).sorted { (order.firstIndex(of: $0.id) ?? 9) < (order.firstIndex(of: $1.id) ?? 9) }
-    }
-
     var body: some View {
         Form {
             Section {
-                Picker("Release Channel", selection: Binding(get: { signer.status?.channel ?? "stable" }, set: { id in Task { await signer.setChannel(id) } })) {
-                    ForEach(channels) { Text($0.title).tag($0.id) }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            } header: {
-                Text("Release Channel")
-            } footer: {
-                Text("Poki prepares updates from this channel and more stable channels. If none has a release, it uses the next available less stable channel.")
+                LabeledContent("Updates") { Text(verbatim: "Beta") }
             }
             Section {
                 LabeledContent("Installed") { Text(verbatim: "\(signer.installedVersion) (\(signer.installedBuild))") }
-                LabeledContent("Newest on This Channel") {
+                LabeledContent("Newest Beta") {
                     if let latest = signer.latest {
                         Text(verbatim: "\(latest.version) (\(latest.build))")
                     } else {
@@ -246,7 +237,7 @@ struct SigningOptionsPage: View {
             } header: {
                 Text("Version")
             } footer: {
-                Text("Poki looks on GitHub for the newest build on the chosen channel.")
+                Text("Poki checks R2 for Beta updates and uses GitHub if R2 is unavailable.")
             }
             .task(id: signer.status?.channel) {
                 checked = false
@@ -268,7 +259,7 @@ struct SigningOptionsPage: View {
             Section {
                 NavigationLink {
                     Form { AccountPage() }
-                        .navigationTitle("Apple Account")
+                        .navigationTitle(AppLocalization.text("Apple Account"))
                         .navigationBarTitleDisplayMode(.inline)
                 } label: {
                     LabeledContent {
@@ -283,7 +274,7 @@ struct SigningOptionsPage: View {
             }
             SignerActivityRows(signer: signer)
         }
-        .navigationTitle("Signing")
+        .navigationTitle(AppLocalization.text("Signing"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { anisette = signer.status?.anisette ?? "" }
     }

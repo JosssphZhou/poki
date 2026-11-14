@@ -183,7 +183,7 @@ extension ChatAttachment {
     /// What VoiceOver says for it.
     var label: String {
         switch kind {
-        case .photo: String(localized: "Photo")
+        case .photo: AppLocalization.text(LocalizedStringResource("Photo"))
         case .pdf(let name): name
         }
     }
