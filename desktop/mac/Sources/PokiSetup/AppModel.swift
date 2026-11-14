@@ -318,9 +318,7 @@ final class AppModel: ObservableObject {
     /// release. The device's record keeps the build, so renewals sign it again.
     func installTestBuild(_ b: TestBuild, udid: String) async throws -> InstallAnswer {
         guard let ref = b.ref else { throw CoreError(kind: "error", message: "This build is not ready yet.") }
-        let answer: InstallAnswer = try await job("install") {
-            try await bridge.call("install", ["udid": udid, "test_build": ref, "hand_off": false])
-        }
+        let answer = try await installClosingPoki(udid: udid, ["udid": udid, "test_build": ref, "hand_off": false])
         await refreshRecords()
         await refreshPhones()
         await refreshTestBuilds()
@@ -472,12 +470,69 @@ final class AppModel: ObservableObject {
     }
 
     func install(udid: String, ipa: URL?, handOff: Bool) async throws -> InstallAnswer {
-        let answer: InstallAnswer = try await job("install") {
-            try await bridge.call("install", ["udid": udid, "ipa": ipa?.path, "hand_off": handOff])
-        }
+        let answer = try await installClosingPoki(udid: udid, ["udid": udid, "ipa": ipa?.path, "hand_off": handOff])
         await refreshRecords()
         await refreshPhones()
         return answer
+    }
+
+    // MARK: Closing Poki before an update
+
+    /// The question on screen: Poki is open on this device, close it?
+    @Published var closeAsk: CloseAsk?
+    private var closeAnswer: CheckedContinuation<Bool, Never>?
+
+    struct CloseAsk: Identifiable {
+        let id = UUID()
+        var name: String
+    }
+
+    private func deviceName(_ udid: String) -> String {
+        phones.first(where: { $0.id == udid })?.title ?? records.first(where: { $0.udid == udid })?.phoneName ?? "the device"
+    }
+
+    /// Asks whether to close Poki on the device, and waits for the answer.
+    func askToClosePoki(udid: String) async -> Bool {
+        if dev.prefs.closeWithoutAsking { return true }
+        closeAnswer?.resume(returning: false)
+        return await withCheckedContinuation { c in
+            closeAnswer = c
+            closeAsk = CloseAsk(name: deviceName(udid))
+        }
+    }
+
+    func answerClose(_ yes: Bool) {
+        let c = closeAnswer
+        closeAnswer = nil
+        closeAsk = nil
+        c?.resume(returning: yes)
+    }
+
+    /// Before an update replaces Poki: when Poki is running on the device, asks to close it (or
+    /// closes it without asking when Developer says so). True means go on and close Poki; the
+    /// core still checks right before it installs.
+    func okToReplacePoki(udid: String) async -> Bool {
+        let installed = records.contains(where: { $0.udid == udid }) || phones.first(where: { $0.id == udid })?.record != nil
+        guard installed, !dev.prefs.closeWithoutAsking else { return true }
+        let running = try? await bridge.call("poki_running", ["udid": udid], as: Bool?.self)
+        guard running == .some(.some(true)) else { return true }
+        return await askToClosePoki(udid: udid)
+    }
+
+    /// Runs an install that may replace a running Poki: asks first, and asks again if Poki was
+    /// opened while Poki Setup signed it.
+    func installClosingPoki(udid: String, _ args: [String: Any?]) async throws -> InstallAnswer {
+        guard await okToReplacePoki(udid: udid) else {
+            throw CoreError(kind: "cancelled", message: "Nothing was installed. Poki is still open on \(deviceName(udid)).")
+        }
+        var withClose = args
+        withClose["close_poki"] = true
+        do {
+            return try await job("install") { try await bridge.call("install", withClose) }
+        } catch let e as CoreError where e.kind == "poki_running" {
+            guard await askToClosePoki(udid: udid) else { throw e }
+            return try await job("install") { try await bridge.call("install", withClose) }
+        }
     }
 
     func pair(udid: String) async throws {
@@ -491,6 +546,8 @@ final class AppModel: ObservableObject {
     }
 
     func renew(udid: String) async throws {
+        // A renewal closes Poki before it installs; asked first when Poki is open.
+        guard await okToReplacePoki(udid: udid) else { return }
         let _: Record = try await job("renew") { try await bridge.call("renew", ["udid": udid]) }
         await refreshRecords()
     }

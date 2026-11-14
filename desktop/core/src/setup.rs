@@ -275,6 +275,9 @@ pub struct Options {
     /// The test build `ipa` came from (Developer > Test Builds), kept in the device's record so
     /// renewals can sign it again.
     pub test_build: Option<crate::devbuilds::BuildRef>,
+    /// Close Poki on the device before replacing it. Without it, an install that finds Poki
+    /// running stops with [`Error::PokiRunning`] so the person can be asked first.
+    pub close_poki: bool,
 }
 
 #[cfg(feature = "device")]
@@ -384,6 +387,9 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     device::install::install_profiles(&phone, &built.profiles, reporter).await?;
     let existing = device::install::find_apps(&phone, crate::POKI_BUNDLE_ID).await.unwrap_or_default();
     let upgrade = existing.iter().any(|a| a.bundle_id == built.bundle_id);
+    if upgrade {
+        make_sure_poki_is_closed(&phone, opts.close_poki, reporter).await?;
+    }
     device::install::install_ipa(&phone, &built.ipa, upgrade, reporter).await?;
 
     reporter.step("pairing_file", "Giving Poki its pairing file");
@@ -453,6 +459,45 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
 }
 
 #[cfg(feature = "device")]
+/// Before an update replaces Poki: checks it is not running, and closes it when `close` says so.
+/// When the device cannot say what is running (the developer disk image is not mounted, an older
+/// iOS), the update goes on, as it did before this check.
+pub async fn make_sure_poki_is_closed(phone: &Phone, close: bool, reporter: &Reporter) -> Result<()> {
+    reporter.step("close", "Making sure Poki is closed");
+    if !matches!(device::ddi::mounted(phone).await, Ok(true)) {
+        let _ = device::ddi::mount(phone, &Reporter::silent()).await;
+    }
+    match device::running::poki(phone).await {
+        Ok(list) if list.is_empty() => {
+            reporter.done("close", Some("Poki is not running".into()));
+            Ok(())
+        }
+        Ok(_) if close => {
+            reporter.part("close", 0.5, Some("Closing Poki on the device".into()));
+            device::running::close_poki(phone).await?;
+            reporter.done("close", Some("Closed Poki".into()));
+            Ok(())
+        }
+        Ok(_) => Err(Error::PokiRunning("Poki is open on the device. Close it before updating, or let Poki Setup close it.".into())),
+        Err(e) => {
+            reporter.note("close", format!("Could not check whether Poki is running ({e}). Updating anyway."));
+            reporter.done("close", None);
+            Ok(())
+        }
+    }
+}
+
+/// Whether Poki is running on the device: Some(true or false), or None when the device cannot say.
+#[cfg(feature = "device")]
+pub async fn poki_running(udid: &str) -> Result<Option<bool>> {
+    let phone = pick_phone(Some(udid)).await?;
+    if !matches!(device::ddi::mounted(&phone).await, Ok(true)) {
+        let _ = device::ddi::mount(&phone, &Reporter::silent()).await;
+    }
+    Ok(device::running::poki(&phone).await.ok().map(|l| !l.is_empty()))
+}
+
+#[cfg(feature = "device")]
 /// Signs Poki again for a phone this computer set up and reinstalls it (an upgrade keeps data).
 pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Result<keeper::Record> {
     let rec = keeper::get(udid)?.ok_or_else(|| Error::msg("This computer did not set up that iPhone."))?;
@@ -480,6 +525,8 @@ pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Resu
         let out = crate::paths::cache_dir()?.join(format!("Poki-{}-{}.ipa", team.team_id, udid));
         let built = sign_for_team(signer, &team, Some((udid, &facts.name)), &ipa, zipp.as_deref(), &out, reporter).await?;
         device::install::install_profiles(&phone, &built.profiles, reporter).await?;
+        // A renewal runs by itself, or after the person was asked: it closes Poki first.
+        make_sure_poki_is_closed(&phone, true, reporter).await?;
         device::install::install_ipa(&phone, &built.ipa, true, reporter).await?;
         let apple_id = signer.account.apple_id().unwrap_or("").to_string();
         hand_signing_identity(&phone, &built, &apple_id, reporter).await;

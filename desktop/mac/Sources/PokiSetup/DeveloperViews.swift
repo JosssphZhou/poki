@@ -398,6 +398,10 @@ private struct TestBuildSync: View {
                     ForEach(devices) { Text(verbatim: $0.name).tag($0.id) }
                 }
             }
+            Toggle(isOn: pref(\.closeWithoutAsking)) {
+                Text("Close Poki Without Asking")
+                Text("When Poki is open on the device and an install or renewal replaces it")
+            }
             Toggle(isOn: pref(\.keepOnRenew)) {
                 Text("Renewals Keep the Test Build")
                 Text("Otherwise renewing a device installs the release again")

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, failureKind, failureText, onProgress, type Account, type Handoff, type PhoneRow } from "../api";
+import { api, failureKind, failureText, installClosingPoki, onProgress, type Account, type Handoff, type PhoneRow } from "../api";
 import { t } from "../i18n";
 import { Capsule, Card, ErrorBox, INSTALL_WEIGHTS, JobBar, Pill, Qr, useInterval, useSteps } from "../ui";
 
@@ -39,7 +39,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
     if (!phone) return;
     setRunning(true); setError(null); setResult(null); setCertQuestion(false); reset();
     try {
-      const r = await api.install(phone.phone.udid, false);
+      const r = await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false);
       setResult({ notes: r.notes, handoff: r.handoff, name: r.record.phone_name, version: r.record.version });
     } catch (e) {
       const text = failureText(e);

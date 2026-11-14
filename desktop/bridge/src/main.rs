@@ -293,7 +293,9 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             let seed_ddi: bool = arg::<Option<bool>>(a, "seed_ddi")?.unwrap_or(true);
             // A test build from Developer > Test Builds: downloaded (once) during the install.
             let test_build: Option<devbuilds::BuildRef> = arg(a, "test_build")?;
-            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi, test_build };
+            // The person was asked (or chose Close Poki Without Asking): close Poki before replacing it.
+            let close_poki: bool = arg::<Option<bool>>(a, "close_poki")?.unwrap_or(false);
+            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi, test_build, close_poki };
             let result = with_signer(state, async |s| setup::run(s, opts, &r).await).await;
             *state.busy.lock().await = false;
             let done = result?;
@@ -432,6 +434,8 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             r.done("release", None);
             ok(json!({ "ipa": ipa }))
         }
+        // Before an install asks whether to close Poki: true, false, or null when the device cannot say.
+        "poki_running" => ok(setup::poki_running(&arg::<String>(a, "udid")?).await?),
         "test_build_next" => ok(devbuilds::next_to_sync().await?),
         "test_build_synced" => ok(devbuilds::mark_synced(arg(a, "run_id")?)?),
         "test_builds_delete_downloads" => ok(devbuilds::delete_downloads()?),

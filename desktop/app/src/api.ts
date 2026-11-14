@@ -32,7 +32,7 @@ export type Release = { tag: string; version: string; build: string; published_a
 export type ChannelInfo = { id: ChannelId; title: string; selected: boolean; latest: Release | null };
 
 // Developer: the GitHub sign-in and test builds from GitHub Actions.
-export type DevPrefs = { only_mine: boolean; branch: string | null; with_pr_only: boolean; auto_download: boolean; auto_install: boolean; auto_install_udid: string | null; keep_on_renew: boolean };
+export type DevPrefs = { only_mine: boolean; branch: string | null; with_pr_only: boolean; auto_download: boolean; auto_install: boolean; auto_install_udid: string | null; keep_on_renew: boolean; close_without_asking: boolean };
 export type DevState = { signed_in: boolean; login: string | null; source: "github" | "cli" | "token" | null; cli_available: boolean; can_sign_in: boolean; prefs: DevPrefs; synced_run: number | null; downloads_bytes: number; repo: string };
 export type GithubSignIn = { device_code: string; user_code: string; verification_uri: string; interval: number; expires_in: number };
 export type PullRef = { number: number; title: string; url: string; state: string; draft: boolean };
@@ -59,7 +59,8 @@ export const api = {
   teams: () => invoke<Team[]>("teams"),
   chooseTeam: (teamId: string) => invoke<void>("choose_team", { teamId }),
   setAnisette: (source: Anisette) => invoke<void>("set_anisette", { source }),
-  install: (udid: string | null, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null) => invoke<InstallResult>("install", { udid, ipa, handOff, testBuild }),
+  install: (udid: string | null, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null, closePoki = false) => invoke<InstallResult>("install", { udid, ipa, handOff, testBuild, closePoki }),
+  pokiRunning: (udid: string) => invoke<boolean | null>("poki_running", { udid }),
   devState: () => invoke<DevState>("dev_state"),
   devSetPrefs: (prefs: DevPrefs) => invoke<DevState>("dev_set_prefs", { prefs }),
   githubSignInStart: () => invoke<GithubSignIn>("github_sign_in_start"),
@@ -112,4 +113,34 @@ export function failureText(e: unknown): string {
 }
 export function failureKind(e: unknown): string {
   return e && typeof e === "object" && "kind" in e ? String((e as Failure).kind) : "message";
+}
+
+/** Asks whether to close Poki on the device (a native dialog). */
+export async function askToClosePoki(name: string): Promise<boolean> {
+  const { t } = await import("./i18n");
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return ask(t("Poki is open on the device, in front or in the background. Poki Setup closes it so the update installs cleanly. You can skip this question under Developer, Test Builds."), { title: `${t("Close Poki on")} ${name}?`, kind: "warning", okLabel: t("Close Poki and Update"), cancelLabel: t("Cancel") });
+}
+
+/** Before an update replaces Poki: asks to close it when it is running (unless Developer says not to ask). */
+export async function okToReplacePoki(udid: string, name: string): Promise<boolean> {
+  const dev = await api.devState().catch(() => null);
+  if (dev?.prefs.close_without_asking) return true;
+  const records = await api.records().catch(() => [] as Record_[]);
+  if (!records.some((r) => r.udid === udid)) return true;
+  const running = await api.pokiRunning(udid).catch(() => null);
+  return running === true ? askToClosePoki(name) : true;
+}
+
+/** An install that may replace a running Poki: asks first, and again if Poki was opened meanwhile. */
+export async function installClosingPoki(udid: string, name: string, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null): Promise<InstallResult> {
+  const dev = await api.devState().catch(() => null);
+  if (!(await okToReplacePoki(udid, name))) throw { kind: "cancelled", message: "Nothing was installed. Poki is still open on the device." } as Failure;
+  try {
+    return await api.install(udid, handOff, ipa, testBuild, true);
+  } catch (e) {
+    if (failureKind(e) !== "poki_running" || dev?.prefs.close_without_asking) throw e;
+    if (!(await askToClosePoki(name))) throw e;
+    return await api.install(udid, handOff, ipa, testBuild, true);
+  }
 }

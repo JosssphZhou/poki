@@ -198,7 +198,7 @@ pub struct InstallResult {
 }
 
 #[tauri::command]
-pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<String>, ipa: Option<String>, hand_off: bool, test_build: Option<devbuilds::BuildRef>) -> R<InstallResult> {
+pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<String>, ipa: Option<String>, hand_off: bool, test_build: Option<devbuilds::BuildRef>, close_poki: Option<bool>) -> R<InstallResult> {
     {
         let mut busy = state.busy.lock().await;
         if *busy {
@@ -207,7 +207,7 @@ pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<Stri
         *busy = true;
     }
     let r = reporter(&app, "install");
-    let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi: true, test_build };
+    let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi: true, test_build, close_poki: close_poki.unwrap_or(false) };
     let result = with_signer(&state, async |s| setup::run(s, opts, &r).await).await;
     *state.busy.lock().await = false;
     let done = result?;
@@ -435,3 +435,6 @@ pub fn test_build_synced(run_id: u64) -> R<devbuilds::State> { Ok(devbuilds::mar
 
 #[tauri::command]
 pub fn test_builds_delete_downloads() -> R<devbuilds::State> { Ok(devbuilds::delete_downloads()?) }
+
+#[tauri::command]
+pub async fn poki_running(udid: String) -> R<Option<bool>> { Ok(setup::poki_running(&udid).await?) }

@@ -54,11 +54,14 @@ pub struct Prefs {
     /// Renewing a device that has a test build signs the same build again (else the release).
     #[serde(default = "yes")]
     pub keep_on_renew: bool,
+    /// Close Poki on the device before an install replaces it, without asking first.
+    #[serde(default)]
+    pub close_without_asking: bool,
 }
 fn yes() -> bool { true }
 
 impl Default for Prefs {
-    fn default() -> Self { Prefs { only_mine: true, branch: None, with_pr_only: false, auto_download: false, auto_install: false, auto_install_udid: None, keep_on_renew: true } }
+    fn default() -> Self { Prefs { only_mine: true, branch: None, with_pr_only: false, auto_download: false, auto_install: false, auto_install_udid: None, keep_on_renew: true, close_without_asking: false } }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

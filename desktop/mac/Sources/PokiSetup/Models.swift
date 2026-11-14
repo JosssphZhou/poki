@@ -236,9 +236,10 @@ struct DevPrefs: Decodable, Equatable {
     var autoInstall = false
     var autoInstallUdid: String?
     var keepOnRenew = true
+    var closeWithoutAsking = false
 
     var wire: [String: Any] {
-        var d: [String: Any] = ["only_mine": onlyMine, "with_pr_only": withPrOnly, "auto_download": autoDownload, "auto_install": autoInstall, "keep_on_renew": keepOnRenew]
+        var d: [String: Any] = ["only_mine": onlyMine, "with_pr_only": withPrOnly, "auto_download": autoDownload, "auto_install": autoInstall, "keep_on_renew": keepOnRenew, "close_without_asking": closeWithoutAsking]
         if let branch, !branch.isEmpty { d["branch"] = branch }
         if let autoInstallUdid { d["auto_install_udid"] = autoInstallUdid }
         return d

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, failureText, onProgress, type Handoff, type Record_ } from "../api";
+import { api, failureText, okToReplacePoki, onProgress, type Handoff, type Record_ } from "../api";
 import { t } from "../i18n";
 import { Capsule, Card, ErrorBox, JobBar, Pill, Qr, RENEW_WEIGHTS, useSteps } from "../ui";
 
@@ -18,6 +18,8 @@ export default function Phones() {
   }, []);
 
   const renew = async (udid: string) => {
+    const name = records.find((r) => r.udid === udid)?.phone_name ?? t("Device");
+    if (!(await okToReplacePoki(udid, name))) return;
     setBusy(udid); setError(null); reset();
     try { await api.renew(udid); } catch (e) { fail(failureText(e)); setError(failureText(e)); }
     setBusy(null); load();

@@ -3,6 +3,11 @@ import { useSyncExternalStore } from "react";
 
 export type Lang = "en" | "zh-Hans";
 const zh: Record<string, string> = {
+  "Close Poki on": "关闭以下设备上的 Poki",
+  "Close Poki and Update": "关闭 Poki 并更新",
+  "Close Poki without asking": "不询问直接关闭 Poki",
+  "Poki is open on the device, in front or in the background. Poki Setup closes it so the update installs cleanly. You can skip this question under Developer, Test Builds.": "Poki 正在设备上运行（前台或后台）。Poki Setup 会先关闭它，让更新顺利安装。你可以在“开发者 › 测试版本”中跳过这个询问。",
+  "Making sure Poki is closed": "正在确认 Poki 已关闭",
   "Devices": "设备",
   "Device": "设备",
   "Developer": "开发者",

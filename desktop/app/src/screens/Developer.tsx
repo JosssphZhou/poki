@@ -1,6 +1,6 @@
 // Developer: the GitHub sign-in, and test builds from GitHub Actions artifacts (core devbuilds).
 import { useEffect, useMemo, useState } from "react";
-import { api, buildRef, failureText, onProgress, type DevPrefs, type DevState, type GithubSignIn, type PhoneRow, type Record_, type TestBuild, type TestBuildListing } from "../api";
+import { api, buildRef, failureText, installClosingPoki, onProgress, type DevPrefs, type DevState, type GithubSignIn, type PhoneRow, type Record_, type TestBuild, type TestBuildListing } from "../api";
 import { t } from "../i18n";
 import { Capsule, Card, ErrorBox, INSTALL_WEIGHTS, JobBar, Pill, Toggle, useInterval, useSteps } from "../ui";
 
@@ -141,7 +141,7 @@ export function TestBuilds({ dev, setDev }: { dev: DevState | null; setDev: (d: 
     if (!phone) { setError(t("Connect the device to install on.")); return; }
     setRunning("install"); setError(null); install.reset();
     try {
-      await api.install(phone.phone.udid, false, ipa, b ? buildRef(b) : null);
+      await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false, ipa, b ? buildRef(b) : null);
       api.records().then(setRecords);
       load();
     } catch (e) { const m = failureText(e); install.fail(m); setError(m); }
@@ -242,6 +242,7 @@ export function TestBuilds({ dev, setDev }: { dev: DevState | null; setDev: (d: 
                 {[...rows.map((r) => ({ id: r.phone.udid, name: r.facts?.name ?? r.phone.udid })), ...records.filter((r) => !rows.some((x) => x.phone.udid === r.udid)).map((r) => ({ id: r.udid, name: r.phone_name }))].map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             )}
+            <Toggle on={prefs.close_without_asking} onChange={(v) => setPrefs({ ...prefs, close_without_asking: v })} label={t("Close Poki without asking")} />
             <Toggle on={prefs.keep_on_renew} onChange={(v) => setPrefs({ ...prefs, keep_on_renew: v })} label={t("Renewals keep the test build")} />
           </div>
           <div className="muted small" style={{ marginTop: 8 }}>{t("Poki Setup checks GitHub every two minutes and takes new builds that match the filters.")}</div>
@@ -268,7 +269,7 @@ export function useTestBuildSync(dev: DevState | null, setDev: (d: DevState) => 
       const account = await api.account().catch(() => null);
       if (p.auto_install && target && account?.signed_in) {
         try {
-          await api.install(target.phone.udid, false, null, buildRef(next));
+          await installClosingPoki(target.phone.udid, target.facts?.name ?? t("Device"), false, null, buildRef(next));
           notify(`${t("Installed test build")} ${next.run_number}`);
         } catch (e) { notify(`${t("Test build")} ${next.run_number} ${failureText(e)}`); }
         setDev(await api.testBuildSynced(next.run_id));

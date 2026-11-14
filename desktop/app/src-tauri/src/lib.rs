@@ -96,6 +96,7 @@ pub fn run() {
             commands::channels,
             commands::set_channel,
             commands::qr_svg,
+            commands::poki_running,
             commands::dev_state,
             commands::dev_set_prefs,
             commands::github_sign_in_start,
