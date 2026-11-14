@@ -322,6 +322,8 @@ final class AppModel {
                            connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
+        // inFront starts true before the first scene callback, including a background launch.
+        activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
             await self?.askToConnect(client: client, callback: callback, connector: connector) ?? false

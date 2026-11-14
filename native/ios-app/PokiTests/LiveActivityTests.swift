@@ -12,6 +12,26 @@ final class LiveActivityTests: XCTestCase {
 
     override func tearDown() async throws { AppLocalization.shared.preference = language }
 
+    func testBackgroundStartIsDeferredAndKeepsTheActivityWanted() {
+        let controller = ActivityController()
+        var consulted = 0
+        controller.canStart = { consulted += 1; return false }
+        controller.start(deviceName: "Test iPhone")
+        XCTAssertEqual(consulted, 1, "Direct starts must consult foreground eligibility too")
+        XCTAssertFalse(controller.isRunning)
+        XCTAssertNil(controller.lastError, "Deferral should not produce an ActivityKit visibility error")
+
+        controller.update { $0.phase = .working; $0.headline = "Working" }
+        XCTAssertEqual(consulted, 2, "The deferred start must remain wanted for later work")
+        XCTAssertFalse(controller.isRunning)
+        XCTAssertNil(controller.lastError)
+        XCTAssertEqual(controller.state.phase, .working, "Background state updates must still be kept")
+
+        controller.end(dismissalPolicy: .immediate)
+        controller.update { $0.headline = "Later work" }
+        XCTAssertEqual(consulted, 2, "Ending clears the deferred activity too")
+    }
+
     /// The Live Activity counts the chat's plan from the first step on the phone (the chat publishes it
     /// before that step, while the activity is idle or still shows the last run as finished), and a
     /// finished run's plan never carries into the next run.
