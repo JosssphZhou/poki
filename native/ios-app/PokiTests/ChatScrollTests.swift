@@ -22,7 +22,7 @@ final class ChatScrollTests: XCTestCase {
         readBack(scroll)
         XCTAssertGreaterThan(gap(scroll), 400)
 
-        feed.entries.append(ChatEntry(.you("Order my usual coffee", delivered: false)))
+        feed.entries.append(ChatEntry(.you("Open the sample document", delivered: false)))
         settle { self.gap(scroll) < 2 }
         XCTAssertLessThan(gap(scroll), 2, "The message just sent must be in view")
     }
@@ -32,12 +32,43 @@ final class ChatScrollTests: XCTestCase {
         readBack(scroll)
         let reading = scroll.contentOffset.y
 
-        feed.entries.append(ChatEntry(.poki("Sent. Mom has it. Anything else?")))
+        feed.entries.append(ChatEntry(.poki("The sample document is open.")))
         pump(1)
         XCTAssertEqual(scroll.contentOffset.y, reading, accuracy: 1, "A reply must not pull you away from what you are reading")
     }
 
-    /// The owner's case, on the chat page itself with its demo conversation: a new conversation, the
+    func testResizingTheRootKeepsAnUnsentDraftInTheSameConversation() throws {
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
+        let chat = ChatModel(app: app)
+        let session = chat.sessionID
+        let container = UIViewController()
+        let root = UIHostingController(rootView: RootView().environment(app).environment(chat))
+        container.addChild(root)
+        root.view.frame = CGRect(x: 0, y: 0, width: 476, height: 669)
+        container.view.addSubview(root.view)
+        root.didMove(toParent: container)
+        let window = try show(Color.clear)
+        window.rootViewController = container
+        settle { Self.find(CapsuleTextView.self, in: window) != nil }
+        let field = try XCTUnwrap(Self.find(CapsuleTextView.self, in: window))
+        let draft = "Keep this draft through rotation"
+        field.becomeFirstResponder()
+        field.insertText(draft)
+        settle { field.text == draft }
+        XCTAssertEqual(field.text, draft)
+        field.resignFirstResponder()
+
+        for size in [CGSize(width: 669, height: 951), CGSize(width: 951, height: 669), CGSize(width: 476, height: 669)] {
+            root.view.frame.size = size
+            root.view.setNeedsLayout()
+            root.view.layoutIfNeeded()
+            pump(0.45)
+            XCTAssertEqual(Self.find(CapsuleTextView.self, in: window)?.text, draft)
+            XCTAssertEqual(chat.sessionID, session)
+        }
+    }
+
+    /// The chat page with its demo conversation: a new conversation, the
     /// keyboard up, a message sent, then Poki's reply, the task card growing step by step and the
     /// approval card over the message field. The page stayed at its top, and the reply and the task
     /// card went under the approval card and the keyboard.
@@ -56,7 +87,7 @@ final class ChatScrollTests: XCTestCase {
         settle { field.isFirstResponder }
         pump(1)
 
-        chat.send("Text Mom I’m on my way")
+        chat.send("Run the sample approval flow")
         // The approval card slides in over the message field after the last step.
         settle(for: 12) { chat.demoAsk != nil }
         XCTAssertNotNil(chat.demoAsk, "The demo must reach its approval card")
@@ -126,8 +157,8 @@ final class ChatScrollTests: XCTestCase {
 
     private final class Feed: ObservableObject {
         @Published var entries: [ChatEntry] = (0..<30).flatMap { i in
-            [ChatEntry(.you("Question \(i): what is on my calendar this afternoon?", delivered: true)),
-             ChatEntry(.poki("Answer \(i): a design review at three and a call with the bank at five."))]
+            [ChatEntry(.you("Question \(i): what is in the sample document?", delivered: true)),
+             ChatEntry(.poki("Answer \(i): the first section contains a summary and the second contains examples."))]
         }
     }
 

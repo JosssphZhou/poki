@@ -306,7 +306,9 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         let viewport = native.viewport
         if let previous = readGeometry.withLock({ $0 }), previous.display.routesDisplay.boolValue || geometry.routesDisplay.boolValue {
             guard previous.display.bounds == geometry.bounds, previous.display.peer == geometry.peer,
-                  previous.display.toFixed == geometry.toFixed, previous.pane == viewport else {
+                  previous.display.nativeSize == geometry.nativeSize,
+                  previous.display.toFixed == geometry.toFixed, previous.display.orientation == geometry.orientation,
+                  previous.display.orientationRevision == geometry.orientationRevision, previous.pane == viewport else {
                 throw Refusal("invalid argument", "the display or split changed since the last read; look at the new pane before tapping")
             }
         }

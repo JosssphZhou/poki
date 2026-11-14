@@ -37,6 +37,8 @@ typedef struct {
     NSInteger orientation;
     BOOL panePlacementKnown;
     BOOL routesDisplay;
+    /// Invalidates a read even if the phone rotates out and back before the next action.
+    uint64_t orientationRevision;
 } PKDisplayGeometry;
 
 /// Finds the pane on the opposite edge of a side-by-side window; CGRectNull for other layouts.

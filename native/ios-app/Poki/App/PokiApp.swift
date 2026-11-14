@@ -56,6 +56,8 @@ struct RootView: View {
     @Environment(ChatModel.self) private var chat
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsSidebar = false
+    // Both navigation layouts share the composer while the window changes size.
+    @State private var draft = UserDefaults.standard.string(forKey: "pokiDraft") ?? ""
 
     private static let sidebarWidth: CGFloat = 375
     private static let minimumChatWidth: CGFloat = 375
@@ -121,6 +123,7 @@ struct RootView: View {
 
     private func chatPage(split: Bool) -> some View {
         ChatView(
+            sharedDraft: $draft,
             openDetails: { under in
                 cardUnder = under
                 statusOpen = true

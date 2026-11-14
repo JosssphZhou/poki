@@ -1,5 +1,6 @@
 #import "InProcess.h"
 #import "RecoveredNative.h"
+#import <TargetConditionals.h>
 #import <dlfcn.h>
 #import <notify.h>
 #import <objc/message.h>
@@ -471,10 +472,22 @@ static BOOL PKIsDuo(void) {
     static BOOL duo;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+#if TARGET_OS_SIMULATOR
+        const char *model = getenv("SIMULATOR_MODEL_IDENTIFIER");
+        duo = model && strcmp(model, "iPhone19,4") == 0;
+#else
         struct utsname system;
         if (uname(&system) == 0) duo = strcmp(system.machine, "iPhone19,4") == 0;
+#endif
     });
     return duo;
+}
+
+static BOOL PKSameDisplay(PKDisplayGeometry a, PKDisplayGeometry b) {
+    return CGRectEqualToRect(a.bounds, b.bounds) && CGRectEqualToRect(a.peer, b.peer) &&
+        CGSizeEqualToSize(a.nativeSize, b.nativeSize) &&
+        CGAffineTransformEqualToTransform(a.toFixed, b.toFixed) && a.orientation == b.orientation &&
+        a.orientationRevision == b.orientationRevision;
 }
 
 /// Match XCTest's active screens to the visible UIKit display in either orientation. One iPhone
@@ -581,6 +594,8 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
     /// Counts touches, keys, buttons and app changes; a shared search from before one is not reused.
     uint64_t _inputs;
     PKFrontSearch *_search;
+    UIDeviceOrientation _lastPhysicalOrientation;
+    uint64_t _orientationRevision;
 }
 
 + (instancetype)shared {
@@ -596,6 +611,26 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
 }
 
 - (uint64_t)generation { return _sessions.generation; }
+
+- (void)trackDuoOrientation {
+    if (!PKIsDuo()) return;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UIDevice *device = UIDevice.currentDevice;
+        [device beginGeneratingDeviceOrientationNotifications];
+        self->_lastPhysicalOrientation = device.orientation;
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(duoOrientationChanged:)
+                                                    name:UIDeviceOrientationDidChangeNotification object:nil];
+    });
+}
+
+- (void)duoOrientationChanged:(NSNotification *)notification {
+    UIDeviceOrientation orientation = UIDevice.currentDevice.orientation;
+    if ((!UIDeviceOrientationIsPortrait(orientation) && !UIDeviceOrientationIsLandscape(orientation)) ||
+        orientation == _lastPhysicalOrientation) return;
+    _lastPhysicalOrientation = orientation;
+    _orientationRevision++;
+}
 
 - (NSDictionary<NSString *, id> *)prepare {
     NSError *error;
@@ -685,7 +720,7 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
 }
 
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout {
-    return [self touch:fingers timeout:timeout geometry:(PKDisplayGeometry){CGRectNull, CGRectNull, CGSizeZero, CGAffineTransformIdentity, UIInterfaceOrientationPortrait, NO, NO}];
+    return [self touch:fingers timeout:timeout geometry:(PKDisplayGeometry){CGRectNull, CGRectNull, CGSizeZero, CGAffineTransformIdentity, UIInterfaceOrientationPortrait, NO, NO, 0}];
 }
 
 - (PKOutcome *)touch:(NSArray<NSArray<PKTouchPoint *> *> *)fingers timeout:(double)timeout geometry:(PKDisplayGeometry)geometry {
@@ -711,8 +746,7 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
         BOOL confirmed;
         @synchronized (self) {
             confirmed = [screen respondsToSelector:@selector(displayID)] && [_capturedDisplay isEqual:@([screen displayID])] &&
-                CGRectEqualToRect(geometry.bounds, _capturedGeometry.bounds) && CGRectEqualToRect(geometry.peer, _capturedGeometry.peer) &&
-                CGAffineTransformEqualToTransform(geometry.toFixed, _capturedGeometry.toFixed) && CGRectEqualToRect(_viewport, _capturedViewport);
+                PKSameDisplay(geometry, _capturedGeometry) && CGRectEqualToRect(_viewport, _capturedViewport);
         }
         if (!confirmed) return [PKOutcome delivery:PKDeliveryNotSent code:@"target_display_unavailable" detail:@"look again to confirm the current display"];
         // The orientation-only initializer encodes display 0, even when XCTest now considers
@@ -741,6 +775,8 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
     if (!proxy || !PKSignature(proxy, dispatch, "v", @[@"@", @"d", @"@?"])) {
         return [PKOutcome delivery:PKDeliveryNotSent code:@"event_dispatch_abi_mismatch" detail:@"the daemon proxy has no event synthesis with the expected signature"];
     }
+    if (geometry.routesDisplay && !PKSameDisplay(geometry, self.displayGeometry))
+        return [PKOutcome delivery:PKDeliveryNotSent code:@"display_changed" detail:@"look again before tapping"];
     SRActionContext *context = [self contextFor:session generation:generation];
     NSError *error;
     if (![context commit:&error]) return [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription detail:nil];
@@ -751,7 +787,10 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
         [context receiveReply:replyError];
     }];
     [context markDispatched];
-    return [self await:context timeout:timeout started:started generation:generation];
+    PKOutcome *outcome = [self await:context timeout:timeout started:started generation:generation];
+    if (geometry.routesDisplay && !PKSameDisplay(geometry, self.displayGeometry))
+        return [PKOutcome delivery:PKDeliveryUnknown code:@"display_changed_after_dispatch" detail:@"verify where the gesture landed"];
+    return outcome;
 }
 
 - (PKOutcome *)type:(NSString *)text timeout:(double)timeout {
@@ -828,8 +867,7 @@ static NSData *PKCropped(NSData *data, CGRect viewport, PKDisplayGeometry geomet
             // the tree read; during a held request use only a previously confirmed split crop.
             PKDisplayGeometry current = self.displayGeometry;
             if ((!CGRectIsNull(geometry.peer) || !CGRectIsNull(current.peer)) &&
-                (!CGRectEqualToRect(geometry.bounds, current.bounds) || !CGRectEqualToRect(geometry.peer, current.peer) ||
-                 !CGAffineTransformEqualToTransform(geometry.toFixed, current.toFixed))) {
+                !PKSameDisplay(geometry, current)) {
                 if (code) *code = @"display_changed_during_screenshot";
                 return nil;
             }
@@ -1069,6 +1107,7 @@ static const int PKFrontKey = -1;
 - (PKDisplayGeometry)displayGeometry {
     __block PKDisplayGeometry result;
     void (^read)(void) = ^{
+        [self trackDuoOrientation];
         for (UIScene *candidate in UIApplication.sharedApplication.connectedScenes) {
             if (![candidate isKindOfClass:UIWindowScene.class]) continue;
             BOOL visible = candidate.activationState == UISceneActivationStateForegroundActive ||
@@ -1127,10 +1166,10 @@ static const int PKFrontKey = -1;
                 else orientation = scene.interfaceOrientation;
                 if (orientation == UIInterfaceOrientationUnknown) orientation = UIInterfaceOrientationPortrait;
             }
-            result = (PKDisplayGeometry){upright.bounds, peer, screen.nativeBounds.size, transform, orientation, panePlacementKnown, routesDisplay};
+            result = (PKDisplayGeometry){upright.bounds, peer, screen.nativeBounds.size, transform, orientation, panePlacementKnown, routesDisplay, self->_orientationRevision};
             return;
         }
-        result = (PKDisplayGeometry){UIScreen.mainScreen.bounds, CGRectNull, CGSizeZero, CGAffineTransformIdentity, UIInterfaceOrientationPortrait, NO, NO};
+        result = (PKDisplayGeometry){UIScreen.mainScreen.bounds, CGRectNull, CGSizeZero, CGAffineTransformIdentity, UIInterfaceOrientationPortrait, NO, NO, self->_orientationRevision};
     };
     if (NSThread.isMainThread) read(); else dispatch_sync(dispatch_get_main_queue(), read);
     return result;
