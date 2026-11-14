@@ -288,7 +288,7 @@ private struct LiveVoiceFeature: View {
                     }
                 }
             } footer: {
-                Text("Live voice is a spoken conversation with OpenAI’s Realtime model: it listens, taps and types, and answers out loud.")
+                Text("Live voice listens and replies aloud. GPT Live 1 delegates phone tasks to Poki’s selected chat model. GPT Realtime 2.1 is also available.")
             }
             Section {
                 ForEach(ModelCatalog.voiceAll) { choice in

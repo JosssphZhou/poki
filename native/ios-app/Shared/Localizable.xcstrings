@@ -1,6 +1,52 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Live voice listens and replies aloud. GPT Live 1 delegates phone tasks to Poki’s selected chat model. GPT Realtime 2.1 is also available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live voice listens and replies aloud. GPT Live 1 delegates phone tasks to Poki’s selected chat model. GPT Realtime 2.1 is also available."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音负责听和说。GPT Live 1 会将手机操作交给 Poki 当前选择的聊天模型执行，也可选择 GPT Realtime 2.1。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時語音負責聽和說。GPT Live 1 會將手機操作交給 Poki 目前選擇的聊天模型執行，也可選擇 GPT Realtime 2.1。"
+          }
+        }
+      }
+    },
+    "GPT Live 1 could not connect. Switching to GPT Realtime 2.1." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPT Live 1 could not connect. Switching to GPT Realtime 2.1."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPT Live 1 连接失败，正在切换到 GPT Realtime 2.1。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GPT Live 1 連線失敗，正在切換到 GPT Realtime 2.1。"
+          }
+        }
+      }
+    },
     "%@ is chosen, but nothing answers at 10.7.0.1 right now. Open %@, make sure it is connected with the loopback on, then come back; this page updates by itself." : {
       "extractionState" : "manual",
       "localizations" : {
