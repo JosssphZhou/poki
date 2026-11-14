@@ -32950,6 +32950,22 @@
           }
         }
       }
+    },
+    "End Sleep Screen and Check in 10 Seconds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束睡眠屏幕并在 10 秒后检查"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束睡眠螢幕並在 10 秒後檢查"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
