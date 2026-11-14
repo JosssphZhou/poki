@@ -32805,6 +32805,134 @@
           }
         }
       }
+    },
+    "iPhone History" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone 历史记录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone 歷史記錄"
+          }
+        }
+      }
+    },
+    "Keep Poki Awake During the Test" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测试期间保持 Poki 运行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測試期間保持 Poki 執行"
+          }
+        }
+      }
+    },
+    "Minutes to Run" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行分钟数"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行分鐘數"
+          }
+        }
+      }
+    },
+    "Read in 10 Seconds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 秒后读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 秒後讀取"
+          }
+        }
+      }
+    },
+    "Read Screen Once" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取一次屏幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取一次螢幕"
+          }
+        }
+      }
+    },
+    "Reads the screen as text through the accessibility service, with no automation session. Nothing is stored, and the log holds only counts, timings and app names. After a read, note whether iOS showed a banner, an indicator or a prompt. For the background run, tap Start, use the iPhone as usual, then come back." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过辅助功能服务以文本方式读取屏幕，不开启自动化会话。不会存储任何内容，日志只包含数量、耗时和 App 名称。读取后，请留意 iOS 是否显示了横幅、指示器或提示。进行后台运行测试时，轻点“开始”，照常使用 iPhone，然后返回。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透過輔助使用服務以文字方式讀取螢幕，不開啟自動化工作階段。不會儲存任何內容，日誌只包含數量、耗時和 App 名稱。讀取後，請留意 iOS 是否顯示了橫幅、指示器或提示。進行背景執行測試時，輕點「開始」，照常使用 iPhone，然後返回。"
+          }
+        }
+      }
+    },
+    "Seconds Between Reads" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取间隔秒数"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取間隔秒數"
+          }
+        }
+      }
+    },
+    "Start Background Run" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始后台运行测试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開始背景執行測試"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
