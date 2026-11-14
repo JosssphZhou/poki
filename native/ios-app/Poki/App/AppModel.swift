@@ -1213,6 +1213,16 @@ final class AppModel {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "poki-agent-done", content: content, trigger: nil))
     }
 
+    /// The agent handed a screen to the owner: while it is the owner's turn nothing is automated, so
+    /// the session and the banner go once the step that handed over is through. The agent's next
+    /// look or step opens a new one.
+    private func closeForHandoff() {
+        guard automationPath == .inProcess, sessionOn, !runnerPaused, inProcessSession == .open, approvals.isEmpty, !probeDriven else { return }
+        log.add("runner", "the owner's turn: closing the automation session; the banner goes with it")
+        closeInProcess("the owner's turn")
+        standBy(reason: nil, keepingDone: true)
+    }
+
     private func closeAfterTask(_ why: String) {
         guard automationPath == .inProcess, sessionOn, !runnerPaused, !chatTaskActive, approvals.isEmpty,
               handoffText == nil, activityText == "Idle" else { return }
@@ -1469,6 +1479,7 @@ final class AppModel {
             stepUnderWay = nil
             lastAction = "\(summary), \(delivery)"
             activityText = "Idle"
+            if handoffText != nil { closeForHandoff() }
             let failed = delivery.hasPrefix("failed")
             log.add("agent", "\(failed ? "failed" : "done"): \(summary) · \(delivery.prefix(160))" + (error.map { " · \($0)" } ?? ""))
             if let app { currentApp = app }
@@ -1657,7 +1668,46 @@ final class AppModel {
             return PokiCore.ToolAnswer(text: "not_sent: Poki could not turn on: \(why) Nothing was sent. Tell the owner what to fix.", jpeg: nil, isError: true)
         }
         lastAgentActivity = Date(); lastStepAt = Date()
+        // With Poki in front and no session open, automation (and iOS's banner) waits until the task
+        // has left Poki: a look is answered here, and the app a do opens first is opened by Poki
+        // itself before the session is.
+        if automationPath == .inProcess, inProcessSession == .idle, !Self.onSimulator, UIApplication.shared.applicationState == .active {
+            if name == "look" {
+                return PokiCore.ToolAnswer(text: "app: Poki\npoki: Poki is in front, showing the owner's chat with you, so no screen of the task is read yet and automation has not started. Start the task in its app: do {launch: \"bundle id\"}, or do {run: \"name\"} for a saved routine.", jpeg: nil, isError: false)
+            }
+            if name == "do" { await openBeforeAutomation(arguments) }
+        }
         return await core.callTool(name, arguments: arguments)
+    }
+
+    /// The app a `do` opens first, where the call says: its first action's launch, or the app of the
+    /// routine it runs.
+    private func firstApp(of arguments: String) -> String? {
+        guard let args = try? JSON.parse(arguments) else { return nil }
+        let first = args["actions"]?.array?.first
+        if let bundle = first?["launch"]?.string { return bundle }
+        if let name = first?["run"]?.string ?? args["run"]?.string, let routine = RoutineStore.shared.routine(named: name) {
+            return routine.app ?? routine.steps.first?.action["launch"]?.string
+        }
+        return nil
+    }
+
+    /// Opens that app from Poki, without automation, and waits for Poki to leave the front, so the
+    /// session opens (and the banner shows) over the task's app and not over Poki. Only once iOS has
+    /// allowed automation since the iPhone restarted: the first open of a boot brings up the passcode
+    /// screen and has to happen with Poki in front. Where iOS will not open the app this way, the
+    /// call goes on as before and the session opens in Poki.
+    private func openBeforeAutomation(_ arguments: String) async {
+        guard InProcessWDA.gate.withLock({ $0.startedThisBoot }),
+              let bundle = firstApp(of: arguments), bundle != Bundle.main.bundleIdentifier else { return }
+        guard AppOpener.open(bundle) else {
+            log.add("runner", "iOS did not open \(bundle) for Poki without automation: the session opens in Poki")
+            return
+        }
+        for _ in 0..<25 where UIApplication.shared.applicationState == .active { try? await Task.sleep(for: .milliseconds(100)) }
+        let left = UIApplication.shared.applicationState != .active
+        if left { InProcessWDA.opened.withLock { $0 = (bundle, Date()) } }
+        log.add("runner", left ? "opened \(bundle) before automation: the session opens over it, not over Poki" : "\(bundle) was asked to open but Poki is still in front: the session opens in Poki")
     }
 
     /// After Stop: waits until the phone has finished the action a stopped call had already sent.
@@ -2181,4 +2231,18 @@ enum BootClock {
         guard sysctl(&mib, 2, &boot, &size, nil, 0) == 0 else { return 0 }
         return Double(boot.tv_sec)
     }()
+}
+
+/// Opens an app by its bundle id from Poki while Poki is in front, as the Home Screen would, with no
+/// automation session. False when this iOS offers no way or refuses.
+enum AppOpener {
+    static func open(_ bundle: String) -> Bool {
+        guard let workspaceClass = objc_getClass("LSApplicationWorkspace") as? NSObject,
+              workspaceClass.responds(to: NSSelectorFromString("defaultWorkspace")),
+              let workspace = workspaceClass.perform(NSSelectorFromString("defaultWorkspace"))?.takeUnretainedValue() as? NSObject else { return false }
+        let selector = NSSelectorFromString("openApplicationWithBundleID:")
+        guard workspace.responds(to: selector), let method = workspace.method(for: selector) else { return false }
+        typealias Open = @convention(c) (NSObject, Selector, NSString) -> Bool
+        return unsafeBitCast(method, to: Open.self)(workspace, selector, bundle as NSString)
+    }
 }
