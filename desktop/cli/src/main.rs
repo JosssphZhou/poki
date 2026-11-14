@@ -449,7 +449,7 @@ async fn run() -> Result<()> {
             if !signer.signed_in() {
                 return Err(anyhow!("Sign in first: poki-setup login you@example.com"));
             }
-            let done = setup::run(&mut signer, setup::Options { udid, ipa, signing_zip, wait: Some(Duration::from_secs(wait)), hand_off, seed_ddi }, &reporter).await?;
+            let done = setup::run(&mut signer, setup::Options { udid, ipa, signing_zip, wait: Some(Duration::from_secs(wait)), hand_off, seed_ddi, test_build: None }, &reporter).await?;
             for n in &done.notes {
                 reporter.note("install", n.clone());
             }

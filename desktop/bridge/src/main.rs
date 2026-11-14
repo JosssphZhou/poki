@@ -9,7 +9,7 @@
 //! Requests run concurrently; the Apple account is behind one lock, as in the Tauri shell.
 //! Logs go to stderr. The process ends when stdin closes.
 use poki_setup_core::apple::anisette::Source;
-use poki_setup_core::{Error, Progress, Reporter, device, keeper, mcp, pairshare, relay, release, setup, support};
+use poki_setup_core::{Error, Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -291,7 +291,9 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             let r = out.reporter("install");
             // Poki counts pairing as done only with the disk image in place, so it goes in with the pairing file.
             let seed_ddi: bool = arg::<Option<bool>>(a, "seed_ddi")?.unwrap_or(true);
-            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi };
+            // A test build from Developer > Test Builds: downloaded (once) during the install.
+            let test_build: Option<devbuilds::BuildRef> = arg(a, "test_build")?;
+            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi, test_build };
             let result = with_signer(state, async |s| setup::run(s, opts, &r).await).await;
             *state.busy.lock().await = false;
             let done = result?;
@@ -406,6 +408,33 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             release::set_channel(channel.parse()?)?;
             ok(release::channels().await?)
         }
+        // Developer > GitHub Account and Test Builds.
+        "dev_state" => ok(devbuilds::state()),
+        "dev_set_prefs" => ok(devbuilds::set_prefs(arg(a, "prefs")?).await?),
+        "github_sign_in_start" => ok(devbuilds::sign_in_start().await?),
+        "github_sign_in_finish" => {
+            let pending: devbuilds::SignIn = arg(a, "pending")?;
+            ok(devbuilds::sign_in_finish(&pending).await?)
+        }
+        "github_sign_in_cancel" => {
+            devbuilds::sign_in_cancel();
+            ok(devbuilds::state())
+        }
+        "github_use_cli" => ok(devbuilds::use_cli().await?),
+        "github_use_token" => ok(devbuilds::use_token(&arg::<String>(a, "token")?).await?),
+        "github_sign_out" => ok(devbuilds::sign_out()?),
+        "test_builds" => ok(devbuilds::list(arg::<Option<bool>>(a, "fresh")?.unwrap_or(false)).await?),
+        "test_build_download" => {
+            let artifact_id: u64 = arg(a, "artifact_id")?;
+            let r = out.reporter("download");
+            r.step("release", "Downloading the test build");
+            let (ipa, _) = devbuilds::fetch(artifact_id, &r, "release").await?;
+            r.done("release", None);
+            ok(json!({ "ipa": ipa }))
+        }
+        "test_build_next" => ok(devbuilds::next_to_sync().await?),
+        "test_build_synced" => ok(devbuilds::mark_synced(arg(a, "run_id")?)?),
+        "test_builds_delete_downloads" => ok(devbuilds::delete_downloads()?),
         "relay_state" => ok(relay::remembered()?),
         "relay_worker" => ok(relay::worker_status().await?),
         "relay_token_saved" => ok(relay::saved_token().is_some()),

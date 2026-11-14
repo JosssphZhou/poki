@@ -272,6 +272,9 @@ pub struct Options {
     pub hand_off: bool,
     /// Pre-seed the developer disk image into Poki's container.
     pub seed_ddi: bool,
+    /// The test build `ipa` came from (Developer > Test Builds), kept in the device's record so
+    /// renewals can sign it again.
+    pub test_build: Option<crate::devbuilds::BuildRef>,
 }
 
 #[cfg(feature = "device")]
@@ -347,12 +350,24 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     let team = signer.team().await?;
     reporter.done("account", Some(format!("{} ({})", team.name, if team.is_free { "free, 7-day signing" } else { "paid" })));
 
-    reporter.step("release", "Getting Poki");
+    match &opts.test_build {
+        Some(b) if opts.ipa.is_none() => reporter.step("release", &format!("Downloading test build {}", b.run_number)),
+        _ => reporter.step("release", "Getting Poki"),
+    }
     let (ipa, signing_zip, tag) = match &opts.ipa {
+        None if opts.test_build.is_some() => {
+            let b = opts.test_build.as_ref().expect("checked above");
+            let (ipa, zipp) = crate::devbuilds::fetch(b.artifact_id, reporter, "release").await?;
+            (ipa, zipp, b.tag())
+        }
         Some(p) => {
             let beside = p.with_file_name("Poki-signing.zip");
             let zipp = opts.signing_zip.clone().or_else(|| beside.is_file().then_some(beside));
-            (p.clone(), zipp, format!("local:{}", p.file_name().unwrap_or_default().to_string_lossy()))
+            let tag = match &opts.test_build {
+                Some(b) => b.tag(),
+                None => format!("local:{}", p.file_name().unwrap_or_default().to_string_lossy()),
+            };
+            (p.clone(), zipp, tag)
         }
         None => {
             let rel = release::latest().await?;
@@ -430,6 +445,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
         last_error: None,
         wifi_address: facts.wifi_address.clone(),
         pairing_handed_off: handed,
+        test_build: opts.test_build.clone(),
     };
     keeper::put(rec.clone())?;
     reporter.done("all", Some(format!("Poki {} is on {}", built.version, facts.name)));
@@ -448,15 +464,26 @@ pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Resu
         let facts = device::info::read(&phone).await?;
         let teams = signer.teams().await?;
         let team = teams.into_iter().find(|t| t.team_id == rec.team_id).ok_or_else(|| Error::msg(format!("The Apple ID signed in is not on team {} any more.", rec.team_name)))?;
-        let rel = release::latest().await?;
-        let (ipa, zipp) = release::fetch(&rel, reporter).await?;
+        // A test build is signed again while renewals keep test builds (Developer > Test Builds).
+        let kept = match &rec.test_build {
+            Some(b) => crate::devbuilds::for_renewal(b, reporter).await.map(|found| (found, b.clone())),
+            None => None,
+        };
+        let (ipa, zipp, tag, test_build) = match kept {
+            Some(((ipa, zipp), b)) => (ipa, zipp, b.tag(), Some(b)),
+            None => {
+                let rel = release::latest().await?;
+                let (ipa, zipp) = release::fetch(&rel, reporter).await?;
+                (ipa, zipp, rel.tag, None)
+            }
+        };
         let out = crate::paths::cache_dir()?.join(format!("Poki-{}-{}.ipa", team.team_id, udid));
         let built = sign_for_team(signer, &team, Some((udid, &facts.name)), &ipa, zipp.as_deref(), &out, reporter).await?;
         device::install::install_profiles(&phone, &built.profiles, reporter).await?;
         device::install::install_ipa(&phone, &built.ipa, true, reporter).await?;
         let apple_id = signer.account.apple_id().unwrap_or("").to_string();
         hand_signing_identity(&phone, &built, &apple_id, reporter).await;
-        Ok(keeper::Record { version: built.version, build: built.build, release_tag: rel.tag, signed_at: keeper::now(), profile_expires_at: built.profile_expires_at, last_checked_at: Some(keeper::now()), last_error: None, wifi_address: facts.wifi_address.clone().or(rec.wifi_address.clone()), ..rec.clone() })
+        Ok(keeper::Record { version: built.version, build: built.build, release_tag: tag, test_build, signed_at: keeper::now(), profile_expires_at: built.profile_expires_at, last_checked_at: Some(keeper::now()), last_error: None, wifi_address: facts.wifi_address.clone().or(rec.wifi_address.clone()), ..rec.clone() })
     }
     .await;
     match result {

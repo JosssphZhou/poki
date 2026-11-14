@@ -16,6 +16,12 @@ struct ContentView: View {
                         Label(p.title, systemImage: p.symbol).tag(p)
                     }
                 }
+                // For people developing Poki. Test Builds shows once GitHub is signed in.
+                Section("Developer") {
+                    ForEach(model.dev.signedIn ? [Page.testBuilds, .github] : [Page.github]) { p in
+                        Label(p.title, systemImage: p.symbol).tag(p)
+                    }
+                }
             }
             .listStyle(.sidebar)
             .noTopEdgeFade()
@@ -29,6 +35,8 @@ struct ContentView: View {
                 case .account: AccountView()
                 case .relay: RelayView()
                 case .debug: DiagnosticsView()
+                case .testBuilds: TestBuildsView()
+                case .github: GitHubAccountView()
                 }
             }
             .navigationTitle(model.page.title)
