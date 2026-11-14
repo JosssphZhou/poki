@@ -373,8 +373,14 @@ struct KeyEntry: View {
             Form {
                 if provider == .custom {
                     Section {
-                        TextField("https://…/v1", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        TextField("https://…/v1 or http://…/v1", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         TextField("Model, such as llama-4-maverick", text: $modelID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if plainHTTP {
+                            Text("This address is plain HTTP. The key and your chats travel unencrypted. Use it only on a network you trust, or switch the gateway to HTTPS.").foregroundStyle(Color(.systemOrange))
+                            if !PlainHTTPPolicy.isAllowed(url) {
+                                Text("This build has no plain-HTTP exception for this host. It needs POKI_HTTP_ENDPOINT_HOST set to this host when Poki is built.").foregroundStyle(Color(.systemRed))
+                            }
+                        }
                     } header: { Text("Address and model") }
                 }
                 Section {
@@ -430,6 +436,10 @@ struct KeyEntry: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave || testing) }
             }
         }
+    }
+
+    private var plainHTTP: Bool {
+        url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("http://")
     }
 
     /// The key a test sends: the one typed, else the saved one. A custom endpoint may have none, but

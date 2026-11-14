@@ -1,0 +1,15 @@
+# Opt in to one plain-HTTP Custom Endpoint host at build time. Not included by default.
+#
+#   POKI_HTTP_ENDPOINT_HOST=203.0.113.9 POKI_HTTP_ENDPOINT_OPT_IN=1 xcodegen generate --spec project.yml
+#
+# ATS stays on for every other host. The exception names exactly one host, so only requests to
+# that host may use cleartext HTTP. An IP literal does not cover a DNS name for the same server,
+# and a DNS name does not cover its IP (Apple's NSExceptionDomains rules).
+targets:
+  Poki:
+    info:
+      properties:
+        NSAppTransportSecurity:
+          NSExceptionDomains:
+            ${POKI_HTTP_ENDPOINT_HOST}:
+              NSExceptionAllowsInsecureHTTPLoads: true

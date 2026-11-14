@@ -93,6 +93,33 @@ Poki ships English, Simplified Chinese and Traditional Chinese. Settings › Lan
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
 
+## Plain-HTTP Custom Endpoint hosts
+
+The app keeps App Transport Security on. `project-base.yml` declares only `NSAllowsLocalNetworking`,
+which covers the voice bridge and loopback services. A Custom Endpoint address normally uses HTTPS.
+
+To use a plain-HTTP gateway, whoever builds Poki must opt in by naming exactly one host:
+
+```sh
+POKI_HTTP_ENDPOINT_HOST=203.0.113.9 POKI_HTTP_ENDPOINT_OPT_IN=1 xcodegen generate --spec project.yml
+```
+
+`project.yml` and `project-external.yml` then include `project-http-endpoint.yml`, which adds one
+`NSExceptionDomains` entry for that host with `NSExceptionAllowsInsecureHTTPLoads` set to YES. The
+built `Poki/Info.plist` contains no `NSAllowsArbitraryLoads` and no denylist.
+
+**Request scope.** Only the named host may be reached over cleartext HTTP, on any port and path.
+Apple does not allow a port in an `NSExceptionDomains` key, so the exception is host-wide. Only the
+custom provider's chat and model-list requests use that host. Every built-in provider, the relay,
+and all other hosts keep full ATS. An IP-literal exception does not cover a DNS name for the same
+server, and a DNS-name exception does not cover its IP literal.
+
+Plain HTTP sends the key, when there is one, and the whole conversation unencrypted. The Custom
+Endpoint screen warns before the address is used. Use HTTPS when the gateway is not on a network you
+trust. A prebuilt release IPA has no exception, so a plain-HTTP address is refused by ATS. An owner
+who needs one must build with the variables above, or Poki Setup must inject the same single-host
+exception when it re-signs the IPA. The latter is not implemented here.
+
 ## Voice
 
 Voice (the waveform button beside the gear on Home, a sheet) talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the

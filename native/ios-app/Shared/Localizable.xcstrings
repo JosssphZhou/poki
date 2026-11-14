@@ -15229,18 +15229,50 @@
         }
       }
     },
-    "https://…/v1" : {
+    "https://…/v1 or http://…/v1" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "https://…/v1"
+            "value" : "https://…/v1 or http://…/v1"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "https://…/v1"
+            "value" : "https://…/v1 or http://…/v1"
+          }
+        }
+      }
+    },
+    "This address is plain HTTP. The key and your chats travel unencrypted. Use it only on a network you trust, or switch the gateway to HTTPS." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该地址使用明文 HTTP，密钥和聊天内容不会加密。请只在可信网络中使用，或把网关切换到 HTTPS。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此位址使用明文 HTTP，金鑰與聊天內容不會加密。請只在可信網路中使用，或把閘道切換到 HTTPS。"
+          }
+        }
+      }
+    },
+    "This build has no plain-HTTP exception for this host. It needs POKI_HTTP_ENDPOINT_HOST set to this host when Poki is built." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此构建没有为该主机开放明文 HTTP。构建 Poki 时需要把 POKI_HTTP_ENDPOINT_HOST 设为该主机。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此建置沒有為該主機開放明文 HTTP。建置 Poki 時需要把 POKI_HTTP_ENDPOINT_HOST 設為該主機。"
           }
         }
       }
