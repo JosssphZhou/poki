@@ -69,6 +69,9 @@ final class SelfSigner {
     private(set) var teams: [Team] = []
     private(set) var ready: [String: Prepared] = [:]
     private(set) var latest: Release?
+    /// Why the last look for the newest build found none: the signer's code (`github_rate_limited`,
+    /// `github_unreachable`, or another when the channel has no build). Nil once a look finds one.
+    private(set) var latestFailure: String?
     /// What the signer is doing now, for the Setup page.
     private(set) var working: String?
     private(set) var fraction: Double?
@@ -278,8 +281,13 @@ final class SelfSigner {
     /// Works without an Apple Account. False when GitHub could not be read.
     @discardableResult
     func checkLatest() async -> Bool {
-        guard let rel = try? await SignerBridge.decode(Release.self, ["op": "check_update"]) else { return false }
+        let rel: Release
+        do { rel = try await SignerBridge.decode(Release.self, ["op": "check_update"]) } catch {
+            latestFailure = (error as? SignerError)?.code ?? ""
+            return false
+        }
         latest = rel
+        latestFailure = nil
         lastCheck = Date()
         // Found here first (the Signing page looks without waiting for the 3-hour check): the
         // download starts now too, as it would from that check.
@@ -392,6 +400,16 @@ final class SelfSigner {
 
     // MARK: Helpers
 
+    /// What the person can do when GitHub's list of releases could not be read, by the signer's code.
+    /// Nil for any other failure.
+    nonisolated static func releaseListAdvice(_ code: String) -> String? {
+        switch code {
+        case "github_rate_limited": return String(localized: "GitHub is limiting requests from this network. Switch to another network or proxy node and try again, or try again in an hour.")
+        case "github_unreachable": return String(localized: "Poki can’t reach GitHub. Check the network and try again.")
+        default: return nil
+        }
+    }
+
     private var unreachable: String {
         switch whyUnreachable() {
         case .unpaired: String(localized: "Pair this iPhone first (Setup).")
@@ -407,7 +425,7 @@ final class SelfSigner {
         defer { working = installMessage; fraction = nil }
         do { try await work() } catch {
             let code = (error as? SignerError)?.code ?? ""
-            lastError = whyUnreachable() == .cellular && ["loopback", "handshake", "unreachable"].contains(code) ? LoopbackMonitor.needsWiFi : error.localizedDescription
+            lastError = whyUnreachable() == .cellular && ["loopback", "handshake", "unreachable"].contains(code) ? LoopbackMonitor.needsWiFi : Self.releaseListAdvice(code) ?? error.localizedDescription
             log.add("signing", "\(title ?? "signer"): \(error.localizedDescription)")
         }
     }

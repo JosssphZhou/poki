@@ -215,6 +215,16 @@ struct SigningOptionsPage: View {
         return (signer.status?.channels ?? []).sorted { (order.firstIndex(of: $0.id) ?? 9) < (order.firstIndex(of: $1.id) ?? 9) }
     }
 
+    /// Why the channel's newest build is not shown. Not Found is for a channel with no build; GitHub
+    /// turning the request away or not answering says so instead.
+    private var noLatest: Text {
+        switch signer.latestFailure ?? "" {
+        case "github_rate_limited": return Text("Limited by GitHub")
+        case "github_unreachable": return Text("Can’t Reach GitHub")
+        default: return Text("Not Found")
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -234,7 +244,7 @@ struct SigningOptionsPage: View {
                     if let latest = signer.latest {
                         Text(verbatim: "\(latest.version) (\(latest.build))")
                     } else {
-                        (checked ? Text("Not Found") : Text("Checking…")).foregroundStyle(Color(.secondaryLabel))
+                        (checked ? noLatest : Text("Checking…")).foregroundStyle(Color(.secondaryLabel))
                     }
                 }
                 if let latest = signer.latest {
@@ -243,7 +253,11 @@ struct SigningOptionsPage: View {
             } header: {
                 Text("Version")
             } footer: {
-                Text("Poki looks on GitHub for the newest build on the chosen channel.")
+                if checked, let advice = SelfSigner.releaseListAdvice(signer.latestFailure ?? "") {
+                    Text(advice)
+                } else {
+                    Text("Poki looks on GitHub for the newest build on the chosen channel.")
+                }
             }
             .task(id: signer.status?.channel) {
                 checked = false

@@ -5,6 +5,7 @@ use crate::{Error, Result, Reporter, paths};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
+use std::time::Duration;
 
 pub const DEFAULT_REPO: &str = "JosssphZhou/poki";
 
@@ -184,17 +185,70 @@ fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder().user_agent(format!("PokiSetup/{}", crate::VERSION)).timeout(std::time::Duration::from_secs(600)).build()?)
 }
 
+/// The waits before asking GitHub for the release list again: three tries in all.
+const LIST_PAUSES: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(3)];
+/// The longest wait GitHub can ask for that is still sat out before the next try.
+const LONGEST_RESET_WAIT: Duration = Duration::from_secs(30);
+
 async fn list() -> Result<Vec<GhRelease>> {
-    let mut list: Vec<GhRelease> = client()?
-        .get(format!("https://api.github.com/repos/{}/releases?per_page=100", repo()))
-        .header("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await?
-        .error_for_status()
-        .map_err(|e| Error::msg(format!("Could not read Poki's releases from GitHub ({e}). Check the connection and try again.")))?
-        .json()
-        .await?;
+    read_list(&client()?, &format!("https://api.github.com/repos/{}/releases?per_page=100", repo()), &LIST_PAUSES).await
+}
+
+/// Why one try at the release list got nothing.
+enum Miss {
+    /// 403 or 429: this network has used up the requests GitHub allows without a sign-in (60 an
+    /// hour for each address, which people behind one proxy share). With the wait GitHub asked
+    /// for, when it is short enough to sit out.
+    Limited(Option<Duration>),
+    /// No answer: no connection, or it timed out.
+    Unreachable,
+    /// Anything else. Asking again would not change it.
+    Other(Error),
+}
+
+/// The wait GitHub asks for before the next request (`retry-after`, else the time until
+/// `x-ratelimit-reset`), when it is at most [`LONGEST_RESET_WAIT`].
+fn reset_wait(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let number = |name: &str| headers.get(name)?.to_str().ok()?.trim().parse::<u64>().ok();
+    let secs = number("retry-after").or_else(|| {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+        number("x-ratelimit-reset")?.checked_sub(now)
+    })?;
+    Some(Duration::from_secs(secs)).filter(|wait| *wait <= LONGEST_RESET_WAIT)
+}
+
+async fn read_list_once(http: &reqwest::Client, url: &str) -> std::result::Result<Vec<GhRelease>, Miss> {
+    let unreachable = |e: reqwest::Error| {
+        tracing::warn!("GitHub did not answer with the release list: {e:?}");
+        Miss::Unreachable
+    };
+    let res = http.get(url).header("Accept", "application/vnd.github+json").timeout(Duration::from_secs(30)).send().await.map_err(unreachable)?;
+    if matches!(res.status().as_u16(), 403 | 429) {
+        return Err(Miss::Limited(reset_wait(res.headers())));
+    }
+    let res = res.error_for_status().map_err(|e| Miss::Other(Error::msg(format!("Could not read Poki's releases from GitHub ({e}). Check the connection and try again."))))?;
+    res.json().await.map_err(|e| if e.is_decode() { Miss::Other(e.into()) } else { unreachable(e) })
+}
+
+/// The releases at `url`. A rate-limited answer or none at all is asked for again after each of
+/// `pauses`, or after the wait GitHub asked for when that is the longer of the two.
+async fn read_list(http: &reqwest::Client, url: &str, pauses: &[Duration]) -> Result<Vec<GhRelease>> {
+    let mut pauses = pauses.iter();
+    let mut list = loop {
+        let miss = match read_list_once(http, url).await {
+            Ok(list) => break list,
+            Err(Miss::Other(e)) => return Err(e),
+            Err(miss) => miss,
+        };
+        let Some(pause) = pauses.next() else {
+            return Err(if matches!(miss, Miss::Limited(_)) { Error::GitHubRateLimited } else { Error::GitHubUnreachable });
+        };
+        tokio::time::sleep(match miss {
+            Miss::Limited(Some(wait)) => wait.max(*pause),
+            _ => *pause,
+        })
+        .await;
+    };
     list.retain(|r| !r.draft);
     // Newest first by publication, whatever order GitHub lists them in.
     list.sort_by(|a, b| b.published_at.cmp(&a.published_at));
@@ -636,6 +690,77 @@ mod tests {
             html_url: None,
             assets: ipa.map(|n| vec![GhAsset { name: n.into(), browser_download_url: format!("https://x/{n}") }]).unwrap_or_default(),
         }
+    }
+
+    /// A local server that gives one answer to each request, in order, then repeats the last one.
+    /// Returns its address and the number of requests it has answered.
+    async fn answers(list: Vec<String>) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::Ordering;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/releases", listener.local_addr().unwrap());
+        let answered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = answered.clone();
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match socket.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => request.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let n = count.fetch_add(1, Ordering::SeqCst);
+                let _ = socket.write_all(list[n.min(list.len() - 1)].as_bytes()).await;
+                let _ = socket.shutdown().await;
+            }
+        });
+        (url, answered)
+    }
+
+    fn answer(status: &str, headers: &str, body: &str) -> String {
+        format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}", body.len())
+    }
+
+    /// GitHub's answer once a network has spent its hour's requests; this reset is in the year 2100.
+    fn limited() -> String {
+        answer(
+            "403 Forbidden",
+            "x-ratelimit-limit: 60\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 4102444800\r\n",
+            r#"{"message":"API rate limit exceeded for 203.0.113.7.","documentation_url":"https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"}"#,
+        )
+    }
+
+    fn listed() -> String {
+        answer("200 OK", "", r#"[{"tag_name":"app-0.4.0","prerelease":false,"draft":false,"published_at":"2026-11-13T05:00:00Z","body":null,"assets":[]}]"#)
+    }
+
+    /// A client that goes straight to the local server, whatever proxy this machine has set.
+    fn direct() -> reqwest::Client { reqwest::Client::builder().no_proxy().build().unwrap() }
+
+    #[tokio::test]
+    async fn a_rate_limited_answer_is_asked_again() {
+        let (url, _) = answers(vec![limited(), listed()]).await;
+        let list = read_list(&direct(), &url, &[Duration::ZERO; 2]).await.unwrap();
+        assert_eq!(list[0].tag_name, "app-0.4.0");
+    }
+
+    #[tokio::test]
+    async fn a_spent_allowance_and_no_answer_are_told_apart() {
+        let (url, answered) = answers(vec![limited()]).await;
+        let e = read_list(&direct(), &url, &[Duration::ZERO; 2]).await.err().unwrap();
+        assert_eq!(e.kind(), "github_rate_limited");
+        let text = e.to_string();
+        assert!(text.contains("another network or proxy node") && text.contains("in an hour"), "{text}");
+        assert_eq!(answered.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+        // Nothing listens on a port that has just been closed.
+        let closed = format!("http://{}/releases", tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap());
+        let e = read_list(&direct(), &closed, &[Duration::ZERO; 2]).await.err().unwrap();
+        assert_eq!(e.kind(), "github_unreachable");
+        assert!(e.to_string().contains("Check the connection"), "{e}");
     }
 
     #[test]

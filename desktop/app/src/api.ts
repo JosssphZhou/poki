@@ -1,6 +1,7 @@
 // The commands the Rust side offers, typed.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { t } from "./i18n";
 
 export type Failure = { kind: string; message: string };
 export type Progress =
@@ -78,8 +79,9 @@ export function onProgress(job: string, f: (p: Progress) => void): Promise<Unlis
   return listen<Progress>("progress", (e) => { if (e.payload.job === job) f(e.payload); });
 }
 
+// The core's sentence for a failure, in the chosen language when i18n has it.
 export function failureText(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) return String((e as Failure).message);
+  if (e && typeof e === "object" && "message" in e) return t(String((e as Failure).message));
   return String(e);
 }
 export function failureKind(e: unknown): string {
