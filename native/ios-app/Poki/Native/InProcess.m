@@ -495,7 +495,7 @@ static BOOL PKSameDisplay(PKDisplayGeometry a, PKDisplayGeometry b) {
 static id PKAutomationScreen(PKDisplayGeometry geometry) {
     Class type = NSClassFromString(@"XCUIScreen");
     id main = [type mainScreen];
-    if (CGRectIsNull(geometry.peer)) return main;
+    if (!geometry.routesDisplay) return main;
     NSArray *screens = [type respondsToSelector:@selector(screens)] ? [(id)type screens] : nil;
     id matched = nil;
     for (id screen in screens) {
