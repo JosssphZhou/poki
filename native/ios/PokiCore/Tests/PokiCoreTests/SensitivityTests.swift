@@ -31,9 +31,7 @@ final class SensitivityTests: XCTestCase {
 
     func testDescriptiveRowsKeepTheirFalsePositiveGuards() {
         for (type, label) in [("Image", "Contact photo for Best Buy"),
-                              ("Cell", "Best Buy, Your order has shipped, Yesterday"),
-                              ("Cell", "Tap-here-to-see-this-payment-receipt"),
-                              ("Cell", "Tap-here-to-see-the-buy-receipt")] {
+                              ("Cell", "Best Buy, Your order has shipped, Yesterday")] {
             XCTAssertNil(reason(label, type: type), label)
         }
         for label in ["Display & Brightness", "PayPal", "buy1", "1pay", "repayment"] {
@@ -48,10 +46,28 @@ final class SensitivityTests: XCTestCase {
 
     func testShortActionsWithAmountsAndDatedNamesRequireApproval() {
         for label in punctuatedActions {
-            for type in ["Text", "Other"] {
+            for type in ["Text", "Other", "Cell", "Link", "StaticText", "Image", "TextField", "Unknown"] {
                 XCTAssertNotNil(reason(label, type: type), label)
             }
         }
+    }
+
+    func testHyphenatedRowsKeepTheBasesApprovalProtection() {
+        for label in ["Tap-here-to-see-this-payment-receipt", "Tap-here-to-see-the-buy-receipt"] {
+            XCTAssertNotNil(reason(label, type: "Cell"), label)
+        }
+    }
+
+    func testStructuredNonButtonPaymentSendsNothingBeforeApproval() async {
+        let wda = FakeWDA()
+        wda.source([("Link", "Tap to pay $12.00")], app: "Shop")
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        let look = await core.call("look", [:])
+        XCTAssertTrue(look.text.contains("1 Link"), look.text)
+        let result = await core.call("do", ["actions": [["tap": 1]]])
+        XCTAssertTrue(result.text.contains("approval_required"), result.text)
+        XCTAssertNotNil(core.pendingApproval)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
 
     func testNumberedOCRActionSendsNothingBeforeApproval() async {

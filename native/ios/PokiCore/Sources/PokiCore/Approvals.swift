@@ -36,13 +36,11 @@ public struct SensitivityRules: Sendable, Equatable {
 
     static func matches(_ text: String, _ words: [String], elementType: String = "Other") -> String? {
         let lowered = text.lowercased()
-        // Text from OCR and voice taps may be action labels. Keep the original short-label
-        // allowance for those targets, including names and amounts with internal punctuation.
-        // For structured non-button rows, count words in hyphenated prose separately.
-        let tokens = lowered.split(whereSeparator: \.isWhitespace)
-        let mayBeAction = elementType == "Text" || elementType == "Other"
-        let short = mayBeAction ? tokens.count <= 4 :
-            lowered.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).count <= 4
+        // Preserve the base matcher’s whitespace-based short-label protection for every type.
+        // Long Buttons and later whole-word matches add protection to that baseline.
+        let short = lowered.split(whereSeparator: \.isWhitespace).count <= 4
+        // Explicit exception agreed for this rule: digits also bound Latin words, so buy1/1pay
+        // remain unmatched even though the original matcher treated digits as boundaries.
         let boundary: (Character?) -> Bool = { c in c.map { !$0.isLetter && !$0.isNumber } ?? true }
         for word in words {
             let w = word.lowercased()
