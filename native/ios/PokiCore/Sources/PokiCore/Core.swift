@@ -403,6 +403,10 @@ public final class PokiCore: @unchecked Sendable {
     /// `switching: false` only forgets the task, for a runner the owner stopped: nothing is sent to it.
     public func finishTask(switching: Bool = true) async -> String? { await endTask(session: nil, switching: switching) }
 
+    /// The task of one session is over (its client ended the session): nothing happens when another
+    /// session began the task that is open.
+    public func finishTask(session: String) async -> String? { await endTask(session: session) }
+
     /// Only the session that began the task ends it; nil ends any.
     func endTask(session: String?, switching: Bool = true) async -> String? {
         guard await gate.enter(waiting: config.busyWait) else { return nil }

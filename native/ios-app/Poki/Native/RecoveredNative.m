@@ -175,6 +175,8 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     id _observed, _token, _enabled;
     uint64_t _generation, _enabledGeneration;
     BOOL _invalidated, _reused, _handlerFired;
+    /// When the enable of Automation Mode under way began (uptime), 0 while none is.
+    NSTimeInterval _enablingSince;
     NSString *_closeDetail, *_rebindDetail;
     /// Signalled by the current session's invalidation handler: close waits on it, not on a clock.
     dispatch_semaphore_t _gone;
@@ -194,6 +196,12 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
 }
 - (uint64_t)generation {
     [_lifecycleLock lock]; uint64_t value = _generation; [_lifecycleLock unlock]; return value;
+}
+- (double)enablingSeconds {
+    [_lifecycleLock lock];
+    double value = _enablingSince > 0 ? NSProcessInfo.processInfo.systemUptime - _enablingSince : 0;
+    [_lifecycleLock unlock];
+    return value;
 }
 - (BOOL)enableWasReused {
     [_lifecycleLock lock]; BOOL value = _reused; [_lifecycleLock unlock]; return value;
@@ -437,7 +445,12 @@ static NSArray<NSString *> *SRSelectorsWith(Class cls, NSString *part) {
     [_lifecycleLock unlock];
     if (!current) { SRFail(error, @"native_session_invalidated"); return nil; }
     if (reused) return session;
-    if (![session enableAutomationModeWithError:error]) return nil;
+    // The one call that waits on the owner: iOS shows its passcode screen from inside it. How long it
+    // has been waiting is the evidence for asking the owner; a slow session open is not.
+    [_lifecycleLock lock]; _enablingSince = NSProcessInfo.processInfo.systemUptime; [_lifecycleLock unlock];
+    BOOL enabledNow = [session enableAutomationModeWithError:error];
+    [_lifecycleLock lock]; _enablingSince = 0; [_lifecycleLock unlock];
+    if (!enabledNow) return nil;
     [_lifecycleLock lock];
     current = _observed == session && _generation == generation && !_invalidated && _token != nil;
     if (current) { _enabled = session; _enabledGeneration = generation; }

@@ -22,6 +22,12 @@ protocol InProcessAutomation: AnyObject, Sendable {
     func close() -> [String: Any]
     /// Automation Mode off with the session kept. Keys: paused, how, selectors.
     func pauseAutomation() -> [String: Any]
+    /// Seconds iOS has been asked to allow automation in the open under way; 0 while no open is there.
+    func authorizationWaitSeconds() -> Double
+}
+
+extension InProcessAutomation {
+    func authorizationWaitSeconds() -> Double { 0 }
 }
 
 /// Thread-safe: its session state is behind locks, and every call blocks on its own.
@@ -53,6 +59,10 @@ enum InProcessSession: Equatable {
             return .failed("the owner did not enter the iPhone passcode when iOS asked for it to allow automation (cancelled, or a minute passed). Nothing was sent, and Poki does not ask again by itself: the owner turns Poki off and on to be asked again",
                            fix: "Turn Poki off and on, then enter the iPhone passcode when iOS asks for it to allow automation")
         case .failed(let code, let detail):
+            if code == "session_unreadable" {
+                return .failed("the automation session opened but could not read the screen (\(detail)). Nothing was sent, and that session was closed; the next call opens a new one",
+                               fix: "Try the step again. If it keeps failing, turn Poki off and on")
+            }
             return .failed("the in-process session could not be opened (\(code)\(detail.isEmpty ? "" : ": \(detail)")); Poki tries again on the next call",
                            fix: "Open Poki and, if iOS asks, enter the passcode to allow automation")
         }
@@ -291,7 +301,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         switch outcome.delivery {
         case .sent: return .null
         case .notSent:
-            if outcome.code == "native_session_invalidated" || outcome.code == "native_action_superseded" {
+            if outcome.code == "native_session_invalidated" || outcome.code == "native_action_superseded" || outcome.code == "session_unreadable" {
                 throw Refusal("invalid session id", "the automation session ended before the action was sent (\(outcome.code ?? ""))")
             }
             throw Refusal("unknown error", "not sent: \(outcome.code ?? "unknown")\(outcome.detail.map { " (\($0))" } ?? "")")

@@ -18,6 +18,8 @@ import UIKit
 /// the app, tap its first field and type, open Settings and swipe, press Home, looking after each;
 /// `-pokiInProcess reopen -pokiProbeRounds 5` closes the session and opens it again that many times in
 /// this one process, reading the screen after each open (issue 347), with every step's seconds;
+/// `-pokiInProcess lifecycle -pokiProbeRounds 5` runs whole tasks through PokiCore (task, read, end,
+/// session closed) that many times, then one whose new session cannot read;
 /// `-pokiInProcess delivery` reopens the session, then taps and types in Poki and in Settings and
 /// brings Poki back, saying which of those arrived;
 /// `-pokiInProcess gym` runs the whole Poki Gym scorecard (native/ios-gym/check) through PokiCore on
@@ -53,6 +55,7 @@ final class InProcessProbe: ObservableObject {
             case "read": await readOnly()
             case "separate": await separateTrial()
             case "delivery": await deliveryCheck()
+            case "lifecycle": await lifecycleCheck(model: model, rounds: defaults.integer(forKey: "pokiProbeRounds") > 0 ? defaults.integer(forKey: "pokiProbeRounds") : 5)
             case "reopen": await reopenCycle(rounds: defaults.integer(forKey: "pokiProbeRounds") > 0 ? defaults.integer(forKey: "pokiProbeRounds") : 5)
             case "port": await portCheck()
             case "source": await sourceBothPaths(model: model)
@@ -282,6 +285,84 @@ final class InProcessProbe: ObservableObject {
                  fields)
         }
         note("reopen: \(passed) of \(rounds) rounds read the screen after reopening", ["step": "reopen_result", "passed": passed, "rounds": rounds])
+    }
+
+    /// Whole tasks, as the chat runs them, in this one process: each round begins a task, reads the
+    /// screen through PokiCore (which opens the session), ends the task (which closes the session and
+    /// takes iOS's banner away), and waits. Then one round in which the new session is made to fail
+    /// its readiness check: the read has to fail with that reason, the session must not be taken as
+    /// open then or a few seconds later, and the round after it has to read on a new session.
+    func lifecycleCheck(model: AppModel, rounds: Int) async {
+        guard begin("task, close, next task (\(rounds) rounds, then a session that cannot read)") else { return }
+        defer { end() }
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let device = UIDevice.current
+        note("build \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] ?? "?")), \(device.model), iOS \(device.systemVersion)", ["step": "lifecycle_build"])
+        var passed = 0, checks = 0
+        func check(_ name: String, _ ok: Bool, _ detail: String, _ fields: [String: Any] = [:]) {
+            checks += 1
+            if ok { passed += 1 }
+            note("\(ok ? "PASS" : "FAIL") \(name): \(detail)", fields.merging(["step": "lifecycle_check", "check": name, "ok": ok]) { a, _ in a })
+        }
+        func generation() async -> UInt64 {
+            await withCheckedContinuation { (c: CheckedContinuation<UInt64, Never>) in queue.async { c.resume(returning: PKInProcess.shared().generation()) } }
+        }
+        /// Waits until the session is no longer open, at most `seconds`.
+        func closed(within seconds: Double) async -> Double? {
+            let started = ProcessInfo.processInfo.systemUptime
+            while ProcessInfo.processInfo.systemUptime - started < seconds {
+                if !model.hasOpenInProcessSession, !model.preparingPhone { return ProcessInfo.processInfo.systemUptime - started }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            return nil
+        }
+        func look() async -> (text: String, failed: Bool, seconds: Double) {
+            let t = ProcessInfo.processInfo.systemUptime
+            let result = await model.runTool("look", arguments: "{}")
+            return (result.text, result.isError, ProcessInfo.processInfo.systemUptime - t)
+        }
+        func endTask() async {
+            await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in model.finishTask { c.resume() } }
+        }
+        func round(_ name: String) async -> UInt64? {
+            model.chatTaskBegan()
+            let read = await look()
+            let now = await generation()
+            let elements = read.text.split(separator: "\n").count
+            check("\(name) read", !read.failed, "\(read.failed ? "failed: \(read.text.prefix(160))" : "screen read") in \(String(format: "%.2f", read.seconds)) s, session generation \(now), \(elements) lines",
+                  ["seconds": read.seconds, "generation": now, "text": String(read.text.prefix(600))])
+            await endTask()
+            let gone = await closed(within: 8)
+            check("\(name) close", gone != nil, gone.map { String(format: "session closed %.2f s after the task ended; the banner goes with it", $0) } ?? "the session was still open 8 s after the task ended")
+            try? await Task.sleep(for: .seconds(2))
+            return read.failed ? nil : now
+        }
+        var last: UInt64 = 0
+        for i in 1...max(1, rounds) {
+            if let now = await round("round \(i)") {
+                if i > 1 { check("round \(i) new session", now != last, "generation \(last) before, \(now) now") }
+                last = now
+            }
+        }
+        // A session that opens but cannot read.
+        PKInProcess.shared().failNextReadinessCheck = true
+        model.chatTaskBegan()
+        let broken = await look()
+        let named = broken.text.contains("could not read the screen") || broken.text.contains("session_unreadable")
+        check("unreadable session reported", broken.failed && named, "the read \(broken.failed ? "failed" : "did not fail") in \(String(format: "%.2f", broken.seconds)) s: \(broken.text.prefix(240))",
+              ["seconds": broken.seconds, "text": String(broken.text.prefix(600))])
+        check("unreadable session not open", !model.hasOpenInProcessSession, "Poki \(model.hasOpenInProcessSession ? "took" : "did not take") the session as open")
+        try? await Task.sleep(for: .seconds(4))
+        check("no late ready", !model.hasOpenInProcessSession, "4 s later the session is \(model.hasOpenInProcessSession ? "open" : "still not open")")
+        let brokenGeneration = await generation()
+        await endTask()
+        try? await Task.sleep(for: .seconds(2))
+        if let after = await round("round after the failure") {
+            check("broken session not reused", after != brokenGeneration, "generation \(brokenGeneration) could not read, the next task read on \(after)")
+        }
+        PKInProcess.shared().failNextReadinessCheck = false
+        note("lifecycle: \(passed) of \(checks) checks passed", ["step": "lifecycle_done", "passed": passed, "checks": checks])
     }
 
     /// Nothing in Poki may listen on WebDriverAgent's port on the in-process path: a connection to
@@ -565,6 +646,7 @@ struct InProcessSection: View {
             Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
             Button("Close and reopen (5 rounds)") { Task { await probe.reopenCycle(rounds: 5) } }.disabled(probe.running)
             Button("Reopen, then tap, type and open an app") { Task { await probe.deliveryCheck() } }.disabled(probe.running)
+            Button("Whole tasks, 5 rounds, then a session that cannot read") { Task { await probe.lifecycleCheck(model: model, rounds: 5) } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
                 Spacer()

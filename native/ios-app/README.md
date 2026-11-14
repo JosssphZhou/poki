@@ -68,14 +68,22 @@ Poki ships English, Simplified Chinese and Traditional Chinese. Settings › Lan
   tool also leaves it off. The first phone step opens the session and waits for it before reading
   or acting. Poki shows Preparing during this wait, then continues the same step without a model
   retry. Session timing events record submission, the open request, readiness and successful reads.
-- Once opened, the session stays open throughout the task, including pauses between phone steps.
-  When no task is active, the idle timeout (default 60 s) closes it automatically. Stop and Turn Off
-  also close it. A later phone step opens it again; there is no Hide Banner When Idle setting.
+- Once opened, the session stays open while a task works, including pauses between its phone steps.
+  It closes the moment the task ends (the chat's turn ended, or an outside agent ended its MCP
+  session and no other agent is at work), as soon as Poki comes to the front for the owner, and
+  when a step hands the screen to the owner. Stop and Turn Off also close it, and Turn On opens a new
+  one in the same process. The idle timeout (default 60 s) remains for outside agents that go quiet
+  without ending their session. Nothing is tapped or typed while Poki itself is in front. A later
+  phone step opens a new session; there is no Hide Banner When Idle setting.
   `AppModel.idleSessionPolicy` selects full close by default and retains a pause-automation fallback
-  for device compatibility. Same-process close/reopen and the actual system banner must be checked
-  on the physical release candidate; simulator tests do not establish either device behavior.
+  for device compatibility.
+- A new session is ready only once it has answered with an element tree. One that cannot read is
+  closed, the step fails with the reason (`session_unreadable`), nothing is sent to it, and the next
+  phone step opens a new session. An app that is slow to answer is not a session failure.
+  Same-process close/reopen and the actual system banner must be checked on the physical release
+  candidate; simulator tests do not establish either device behavior.
 - If the first phone step needs the boot's first automation, Poki asks the owner before opening
-  iOS's passcode screen. An open that has not answered in 5 s is treated as waiting for the passcode:
+  iOS's passcode screen. Only an open that iOS has held in its own allow-automation call for 3 s is treated as waiting for the passcode (a session that is slow to open or to read is not):
   the Live Activity shows Passcode for automation, Poki asks the owner, and the agent reads that only
   the owner can enter it. If opening fails, the call reports the reason and a later phone request
   may retry. A cancelled or missed passcode prompt is not opened again until the owner turns Poki

@@ -472,6 +472,9 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     /// Counts touches, keys, buttons and app changes; a shared search from before one is not reused.
     uint64_t _inputs;
     PKFrontSearch *_search;
+    /// The generation that has answered with an element tree, and the one being checked now.
+    uint64_t _readableGeneration, _provingGeneration;
+    NSLock *_proofLock;
 }
 
 + (instancetype)shared {
@@ -482,7 +485,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (instancetype)init {
-    if ((self = [super init])) { _sessions = [SRNativeSession new]; _viewport = CGRectNull; }
+    if ((self = [super init])) { _sessions = [SRNativeSession new]; _viewport = CGRectNull; _proofLock = [NSLock new]; }
     return self;
 }
 
@@ -505,24 +508,94 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         NSString *code = [error.domain isEqualToString:@"RecoveredNative"] ? error.localizedDescription : [NSString stringWithFormat:@"%@ %ld", error.domain ?: @"unknown", (long)error.code];
         return @{@"ok": @NO, @"code": code ?: @"unknown", @"detail": detail, @"seconds": @(seconds)};
     }
+    // Ready means readable: a session that is enabled but answers no element tree is not handed out
+    // (issue 347: such a session was reported ready, and every read after it failed).
+    uint64_t generation = _sessions.generation;
     double warm = 0;
-    if (!_sessions.enableWasReused) {
-        // The first use of a new session pays for the accessibility client's first snapshot and
-        // XCUIScreen's first screenshot, seconds each (the gym: the agent's first look after prepare
-        // took 8.1 s and came with no tree and no picture; the next read took 1.6 s). Paid here, with
-        // a shallow snapshot of the front app, so the agent's first read is an ordinary one.
-        NSTimeInterval warmStarted = NSProcessInfo.processInfo.systemUptime;
-        @try {
-            id ax = nil;
-            id app = [self front:NULL ax:&ax];
-            if (app && ax) PKRequestSnapshotWithin(3, ax, app, 3, 30, NULL);
-            NSString *code = nil;
-            [self screenshot:&code];
-        } @catch (__unused NSException *e) {}
-        warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
+    NSString *unreadable = [self unreadableReason:generation warm:&warm];
+    if (unreadable) {
+        return @{@"ok": @NO, @"code": @"session_unreadable", @"detail": unreadable, @"generation": @(generation),
+                 @"seconds": @(seconds), @"warm_seconds": @(warm), @"device": [_sessions rebindDetail] ?: @"first"};
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm),
+    return @{@"ok": @YES, @"generation": @(generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm),
              @"device": [_sessions rebindDetail] ?: @"first"};
+}
+
+- (double)authorizationWaitSeconds { return [_sessions enablingSeconds]; }
+
+/// nil once this generation has answered with an element tree (checked once per generation), else
+/// why it has not. A generation that cannot read is closed, so nothing reuses it and the next
+/// prepare opens a new session.
+- (nullable NSString *)unreadableReason:(uint64_t)generation warm:(double *)warm {
+    // The check's own lookups come back through -current:outcome: and pass.
+    @synchronized (self) { if (_readableGeneration == generation || _provingGeneration == generation) return nil; }
+    [_proofLock lock];
+    @try {
+        @synchronized (self) {
+            if (_readableGeneration == generation) return nil;
+            _provingGeneration = generation;
+        }
+        NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+        NSString *why = [self proveReadable:generation];
+        if (warm) *warm = NSProcessInfo.processInfo.systemUptime - started;
+        @synchronized (self) {
+            _provingGeneration = 0;
+            if (!why) _readableGeneration = generation;
+        }
+        if (why) {
+            NSLog(@"PokiInProcess: session generation %llu cannot read (%@): closing it", generation, why);
+            if (_sessions.generation == generation) [_sessions close];
+        }
+        return why;
+    } @finally {
+        [_proofLock unlock];
+    }
+}
+
+/// One read of a new session, which also pays for the accessibility client's first snapshot and
+/// XCUIScreen's first screenshot (the gym: the agent's first look after prepare took 8.1 s and came
+/// with no tree and no picture; the next read took 1.6 s). The system application's tree is what
+/// proves the session: it answers whatever is in front, so an app that is slow or hung is not taken
+/// for a broken session. nil when it read.
+- (nullable NSString *)proveReadable:(uint64_t)generation {
+    if (self.failNextReadinessCheck) {
+        self.failNextReadinessCheck = NO;
+        return @"no element tree (failure asked for by the readiness test)";
+    }
+    @try {
+        id ax = [self accessibilityFor:generation];
+        if (!ax) return @"no accessibility client";
+        // Whether testmanagerd turned accessibility on for this session. On the simulator the load
+        // answers no and reads work, so it is not asked for there.
+        BOOL loaded = YES;
+#if !TARGET_OS_SIMULATOR
+        @synchronized (self) { loaded = _accessibilityGeneration == generation || ![ax respondsToSelector:@selector(loadAccessibility:)]; }
+#endif
+        id system = [ax respondsToSelector:@selector(systemApplication)] ? [ax systemApplication] : nil;
+        NSString *code = nil;
+        id root = system ? PKRequestSnapshotWithin(3, ax, system, 1, 1, &code) : nil;
+        id client = nil;
+        NSString *frontCode = nil;
+        id app = [self front:NULL ax:&client code:&frontCode];
+        // The front app's first snapshot is paid for here. With accessibility loaded, its own
+        // timeout is the app's and not the session's.
+        NSString *appCode = nil;
+        id appRoot = (app && client) ? PKRequestSnapshotWithin(3, client, app, 3, 30, &appCode) : nil;
+        if (!root && !appRoot) {
+            return [NSString stringWithFormat:@"no element tree from the system or from the app in front (%@)", code ?: appCode ?: frontCode ?: @"no answer"];
+        }
+        // Accessibility did not load (issue 347's reopened sessions): only a tree from the app in
+        // front itself shows that this session reads all the same.
+        if (!loaded && !appRoot) {
+            return [NSString stringWithFormat:@"accessibility did not load for this session, and the app in front gave no element tree (%@)", appCode ?: frontCode ?: @"no answer"];
+        }
+        NSString *shot = nil;
+        [self screenshot:&shot];
+        if (shot) NSLog(@"PokiInProcess: session generation %llu reads its tree; its first picture failed (%@)", generation, shot);
+        return nil;
+    } @catch (NSException *exception) {
+        return [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason ?: @""];
+    }
 }
 
 - (NSDictionary<NSString *, id> *)close {
@@ -546,7 +619,13 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         return nil;
     }
     *generation = _sessions.generation;
-    if (!session) *outcome = [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"no_session" detail:nil];
+    if (!session) { *outcome = [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"no_session" detail:nil]; return nil; }
+    // A session opened here (testmanagerd ended the last one) reads before anything is sent to it.
+    NSString *unreadable = [self unreadableReason:*generation warm:NULL];
+    if (unreadable) {
+        *outcome = [PKOutcome delivery:PKDeliveryNotSent code:@"session_unreadable" detail:unreadable];
+        return nil;
+    }
     return session;
 }
 

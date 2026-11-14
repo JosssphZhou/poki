@@ -49,6 +49,10 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     }
     func close() -> [String: Any] { lock.withLock { defer { open = false }; return ["closed": open, "generation": 1, "seconds": 0.0] } }
     func pauseAutomation() -> [String: Any] { ["paused": true, "how": "fake"] }
+    /// How long iOS has held its "allow automation" call in the open under way.
+    func setAuthorizationWait(_ seconds: Double) { lock.withLock { authorizationWait = seconds } }
+    private var authorizationWait = 0.0
+    func authorizationWaitSeconds() -> Double { lock.withLock { authorizationWait } }
 }
 
 final class FakePairing: DevicePairing {
@@ -817,6 +821,7 @@ final class InProcessPasscodeTests: XCTestCase {
         // On the simulator the launcher is WebDriverAgent on the Mac; its answer comes first.
         await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
         model.runnerChanged(RunnerStatus(state: "running"))
+        session.setAuthorizationWait(4)
         model.checkIdle(now: Date().addingTimeInterval(6))
         XCTAssertTrue(model.passcodeHint, "Poki's home asks the owner for the passcode")
         let waiting = model.host.currentRunner.describe
@@ -827,6 +832,36 @@ final class InProcessPasscodeTests: XCTestCase {
         let failed = model.host.currentRunner.describe
         XCTAssertTrue(failed.contains("owner did not enter the iPhone passcode"), failed)
         XCTAssertTrue(failed.contains("the owner turns Poki off and on"), failed)
+    }
+
+    /// Issue 347: an open that is only slow (the session, or its first read) is not iOS asking for
+    /// the passcode. Nobody is asked for it until iOS has held its own "allow automation" call.
+    func testASlowOpenAloneAsksForNoPasscode() async {
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the open is under way") { self.session.isHoldingOpen }
+        model.checkIdle(now: Date().addingTimeInterval(12))
+        XCTAssertFalse(model.passcodeHint, "a slow open is not a passcode request")
+        XCTAssertFalse(model.host.currentRunner.describe.contains("passcode"), model.host.currentRunner.describe)
+        session.answer(nil)
+        await waitFor("the session opened") { self.model.hasOpenInProcessSession }
+        XCTAssertFalse(model.passcodeHint)
+    }
+
+    /// A session that opened but answers no element tree is a failure the agent reads as such, with
+    /// the reason, and not a ready session.
+    func testAnUnreadableSessionIsReportedAndNotTakenAsOpen() async {
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the open is under way") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "code": "session_unreadable", "detail": "accessibility did not load for this session", "seconds": 1.0])
+        await waitFor("the failure is reported") { self.model.host.currentRunner.describe.contains("could not read the screen") }
+        XCTAssertFalse(model.hasOpenInProcessSession)
+        XCTAssertTrue(model.host.currentRunner.describe.contains("accessibility did not load"), model.host.currentRunner.describe)
     }
 
     func testSessionStaysOpenDuringTaskAndClosesAfterIdle() async {
