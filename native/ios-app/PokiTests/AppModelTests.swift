@@ -1211,16 +1211,21 @@ final class FrontendSubtractionTests: XCTestCase {
     }
 }
 
-private final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
+final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
     private let session: FakeAutomation
     private let lock = NSLock()
     private var reads = 0
     private var firstRead: TimeInterval?
     var firstReadAt: TimeInterval? { lock.withLock { firstRead } }
     var screenReads: Int { lock.withLock { reads } }
-    init(session: FakeAutomation) { self.session = session }
+    private let beforeRequest: (@Sendable () async -> Void)?
+    init(session: FakeAutomation, beforeRequest: (@Sendable () async -> Void)? = nil) {
+        self.session = session
+        self.beforeRequest = beforeRequest
+    }
 
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        await beforeRequest?()
         guard session.isOpen else { throw URLError(.cannotConnectToHost) }
         let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
         let value: JSON
@@ -1229,7 +1234,8 @@ private final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
         case "/status": value = ["ready": true]
         case "/wda/locked": value = false
         case "/wda/screen": value = ["screenSize": ["width": 390, "height": 844]]
-        case "/wda/activeAppInfo": value = ["bundleId": "com.apple.Preferences", "name": "Settings"]
+        case "/wda/activeAppInfo":
+            value = ["bundleId": "com.apple.Preferences", "name": "Settings"]
         case "/screenshot": value = .string("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII=")
         case "/source":
             lock.withLock {

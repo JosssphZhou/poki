@@ -28,11 +28,11 @@ final class ChatHarnessTests: XCTestCase {
 
     /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer
     /// without a session (the Debug probe's call), so routines reaches the app's own memory.
-    private func chat(on server: FakeCompletions) -> ChatModel {
+    private func chat(on server: FakeCompletions, transport: (any HTTPTransport)? = nil) -> ChatModel {
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
         ModelKeys.customModel = "fake-model"
         ModelKeys.selectedProvider = .custom
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), transport: transport)
         app.inProcessReadyForProbe()
         self.app = app
         return ChatModel(app: app, kind: .handoff, requester: "Test agent")
@@ -165,14 +165,20 @@ final class ChatHarnessTests: XCTestCase {
     func testStopEndsTheStepUnderWayAtItsNextAction() async throws {
         let waits = Array(repeating: ["wait": 1000], count: 15)
         let server = try FakeCompletions(replies: [FakeCompletions.tool("do", ["actions": waits]), FakeCompletions.text("Done.")])
-        let chat = chat(on: server)
+        let gate = ChatTransportGate()
+        let session = FakeAutomation()
+        _ = session.prepare()
+        let transport = SessionScreenTransport(session: session) { await gate.holdFirstRequest() }
+        let chat = chat(on: server, transport: transport)
+        defer { Task { await gate.release() } }
         func said() -> [String] { chat.entries.compactMap { if case .poki(let text) = $0.kind { text } else { nil } } }
 
         chat.send("Wait on the phone")
-        while chat.awaitingModel { try await Task.sleep(for: .milliseconds(50)) }
+        try await waitForTransport(gate, chat: chat)
         let stopped = ContinuousClock.now
         chat.stop()
         XCTAssertEqual(said().last, AppLocalization.text(LocalizedStringResource("Stopping…")))
+        await gate.release()
         while chat.savedCalls.isEmpty, ContinuousClock.now - stopped < .seconds(20) { try await Task.sleep(for: .milliseconds(100)) }
         let after = ContinuousClock.now - stopped
         XCTAssertLessThan(after, .seconds(3), "the do call ended \(after) after Stop")
@@ -195,7 +201,12 @@ final class ChatHarnessTests: XCTestCase {
             FakeCompletions.tool("do", ["actions": waits]),
             FakeCompletions.text("New reply."),
         ])
-        let chat = chat(on: server)
+        let gate = ChatTransportGate()
+        let session = FakeAutomation()
+        _ = session.prepare()
+        let transport = SessionScreenTransport(session: session) { await gate.holdFirstRequest() }
+        let chat = chat(on: server, transport: transport)
+        defer { Task { await gate.release() } }
         var records: [TaskRecord] = []
         ChatModel.afterTask = { records.append($0) }
         let store = SessionStore.shared
@@ -204,10 +215,7 @@ final class ChatHarnessTests: XCTestCase {
 
         chat.send("Old task")
         let deadline = ContinuousClock.now + .seconds(15)
-        while chat.awaitingModel, ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTAssertFalse(chat.awaitingModel)
+        try await waitForTransport(gate, chat: chat)
         chat.stop()
         XCTAssertEqual(store.session(original)?.lastLine, AppLocalization.text(LocalizedStringResource("Stopping…")))
 
@@ -223,6 +231,7 @@ final class ChatHarnessTests: XCTestCase {
         let destination = chat.sessionID
         XCTAssertNotEqual(destination, original)
         chat.send("New task")
+        await gate.release()
         while ContinuousClock.now < deadline {
             if records.count == 2, store.session(original)?.lastLine == AppLocalization.text(LocalizedStringResource("Stopped.")) { break }
             try await Task.sleep(for: .milliseconds(20))
@@ -240,6 +249,15 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(store.session(destination)?.outcome, .done)
     }
 
+    private func waitForTransport(_ gate: ChatTransportGate, chat: ChatModel) async throws {
+        let deadline = ContinuousClock.now + .seconds(8)
+        while !(await gate.entered), chat.running, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let entered = await gate.entered
+        _ = try XCTUnwrap(entered ? true : nil, "The tool must reach the runner transport. Replies: \(chat.savedCalls.map(\.answer))")
+    }
+
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
     /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {
@@ -254,6 +272,24 @@ final class ChatHarnessTests: XCTestCase {
 
 /// An OpenAI chat completions endpoint on 127.0.0.1: each request is kept and answered with the next
 /// scripted turn as one server-sent event.
+private actor ChatTransportGate {
+    private(set) var entered = false
+    private var released = false
+    private var pending: CheckedContinuation<Void, Never>?
+
+    func holdFirstRequest() async {
+        guard !entered, !released else { return }
+        entered = true
+        await withCheckedContinuation { pending = $0 }
+    }
+
+    func release() {
+        released = true
+        pending?.resume()
+        pending = nil
+    }
+}
+
 final class FakeCompletions: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "fake-completions")
