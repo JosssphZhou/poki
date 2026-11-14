@@ -96,7 +96,7 @@ Comprueba la nota en Notas: el título debe ser "Poki Demo" y el contenido debe 
 
 **¿Necesito mi propia cuenta del modelo?** Sí. Inicia sesión con ChatGPT Plus o Pro, introduce una clave API de Anthropic, OpenAI, Gemini, DeepSeek u OpenRouter, o usa tu servidor compatible con OpenAI. Las conversaciones por voz también requieren una clave de modelo de voz. Consulta [qué necesitas](#qué-necesitas).
 
-**¿Qué hago si no aparecen actualizaciones, por ejemplo en una red de China continental?** Las versiones actuales consultan primero el catálogo firmado de R2 y recurren a GitHub si no pueden conectarse. Las antiguas pueden seguir usando GitHub. Sigue las instrucciones del error; una firma o suma de comprobación incorrecta debe detener la actualización.
+**¿Qué hago si no aparecen actualizaciones, por ejemplo en una red de China continental?** Poki consulta GitHub. Algunas redes no pueden acceder o alcanzan los límites 403 y 429. Prueba otra red o servidor proxy, o usa Renew en Poki Setup desde el ordenador. Consulta [actualizar Poki](#actualizar-poki).
 
 **¿Poki cambia cosas en mi iPhone? ¿Pide permiso antes?** Ejecuta tus peticiones en apps reales, incluido el envío de mensajes, y envía el contenido de la pantalla al servicio de modelos configurado. Los pagos, las eliminaciones y las acciones en Wallet siempre requieren confirmación. Para otros pasos sensibles, como enviar mensajes o escribir contraseñas, eliges en Ajustes > Aprobaciones cómo pregunta o si debe preguntar. Consulta los [problemas conocidos](#problemas-conocidos).
 

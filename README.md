@@ -96,7 +96,7 @@ Check the new note in Notes: the title must be "Poki Demo" and the body must con
 
 **Do I need my own model account?** Yes. Sign in with a ChatGPT Plus or Pro plan, or paste an API key from Anthropic, OpenAI, Gemini, DeepSeek or OpenRouter, or use your own OpenAI-compatible server. Talking with Poki also needs a voice model key. See [What you need](#what-you-need).
 
-**No update shows up, for example on a network in mainland China. What now?** Current builds check the signed R2 catalog first and use GitHub if the source cannot be reached. Older builds may still use GitHub. Follow the error’s recovery instructions; a signature or checksum failure must stop the update.
+**No update shows up, for example on a network in mainland China. What now?** Poki looks for updates on GitHub, and some networks cannot reach it or hit GitHub's 403 and 429 limits. Try another network or proxy node, or update from the computer with Renew in Poki Setup. See [Update Poki](#update-poki).
 
 **Will Poki change things on my iPhone, and does it ask first?** Poki works in your real apps and does what you ask, including sending messages, and the screen contents go to the model service you set up. Payments, deletions and actions in Wallet always need your confirmation. For other sensitive steps, such as sending a message or typing a password, you choose in Settings > Approvals how Poki asks, or whether it asks. See [Known issues](#known-issues).
 
