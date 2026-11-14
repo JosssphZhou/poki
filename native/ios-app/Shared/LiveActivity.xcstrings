@@ -807,6 +807,40 @@
         }
       }
     },
+    "End" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束"
+          }
+        }
+      }
+    },
+    "End talk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结束对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "結束對話"
+          }
+        }
+      }
+    },
     "Enter your passcode" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1128,19 +1162,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开启代理或 LocalDevVPN"
+            "value" : "连接 LocalDevVPN 或开启代理"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enable in proxy app or LocalDevVPN."
+            "value" : "Connect LocalDevVPN or enable in proxy app."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟代理或 LocalDevVPN"
+            "value" : "連線 LocalDevVPN 或開啟代理"
           }
         }
       }
@@ -1151,19 +1185,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开代理或 LocalDevVPN 后返回"
+            "value" : "连 LocalDevVPN 或开代理后返回"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Enable in proxy or LocalDevVPN, then return."
+            "value" : "Connect LocalDevVPN or enable proxy, then return."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開代理或 LocalDevVPN 後返回"
+            "value" : "連 LocalDevVPN 或開代理後返回"
           }
         }
       }
@@ -2547,29 +2581,6 @@
         }
       }
     },
-    "Speak to Poki, or tap to open Voice." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speak, or tap for Voice"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "直接说话或轻点打开语音"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "直接說話或輕點開啟語音"
-          }
-        }
-      }
-    },
     "Stalled" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2810,6 +2821,23 @@
         }
       }
     },
+    "Talk with Poki" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 对话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 對話"
+          }
+        }
+      }
+    },
     "Tap" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2886,29 +2914,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輕點螢幕"
-          }
-        }
-      }
-    },
-    "Tap to return to Voice." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tap to return to Voice"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "轻点返回语音"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "輕點返回語音"
           }
         }
       }

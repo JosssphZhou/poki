@@ -1,6 +1,18 @@
 import SwiftUI
 import WebKit
 
+/// The same browser mark on a visit and on the task that used it.
+struct BrowserIcon: View {
+    var body: some View {
+        Image(systemName: "globe")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(Color.accentColor, in: Circle())
+            .accessibilityHidden(true)
+    }
+}
+
 /// Poki's browser in the conversation, where a task began using it, above the answer the task gives:
 /// the live page while it is this conversation's page in use, otherwise the site it showed.
 struct BrowserCard: View {
@@ -14,17 +26,12 @@ struct BrowserCard: View {
             BrowserPanel()
         } else {
             HStack(spacing: 10) {
-                Image(systemName: "globe")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Color.accentColor, in: Circle())
-                    .accessibilityHidden(true)
+                BrowserIcon()
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(visit.host.isEmpty ? String(localized: "Poki’s Browser") : visit.host)
+                    Text(visit.host.isEmpty ? AppLocalization.text(LocalizedStringResource("Poki’s Browser")) : visit.host)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                    Text(visit.title.isEmpty ? String(localized: "Done") : visit.title)
+                    Text(visit.title.isEmpty ? AppLocalization.text(LocalizedStringResource("Done")) : visit.title)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -66,14 +73,9 @@ struct BrowserPanel: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "globe")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(Color.accentColor, in: Circle())
-                .accessibilityHidden(true)
+            BrowserIcon()
             VStack(alignment: .leading, spacing: 1) {
-                Text(browser.host.isEmpty ? String(localized: "Poki’s Browser") : browser.host)
+                Text(browser.host.isEmpty ? AppLocalization.text(LocalizedStringResource("Poki’s Browser")) : browser.host)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Text(status)
@@ -123,10 +125,10 @@ struct BrowserPanel: View {
     }
 
     private var status: String {
-        if case .person(let reason?) = browser.owner, !reason.isEmpty { return String(localized: "Waiting for you: \(reason)") }
-        if browser.ownerHasIt { return String(localized: "You have the page") }
-        if chat.running { return browser.steps.last?.text ?? String(localized: "Poki is browsing") }
-        return browser.title.isEmpty ? String(localized: "Done") : browser.title
+        if case .person(let reason?) = browser.owner, !reason.isEmpty { return AppLocalization.text(LocalizedStringResource("Waiting for you: \(reason)")) }
+        if browser.ownerHasIt { return AppLocalization.text(LocalizedStringResource("You have the page")) }
+        if chat.running { return browser.steps.last?.text ?? AppLocalization.text(LocalizedStringResource("Poki is browsing")) }
+        return browser.title.isEmpty ? AppLocalization.text(LocalizedStringResource("Done")) : browser.title
     }
 
     private func stopTask() {
@@ -191,11 +193,11 @@ struct BrowserTakeOverSheet: View {
                             .background(.bar)
                     }
                 }
-                .navigationTitle(browser.host.isEmpty ? String(localized: "Poki’s Browser") : browser.host)
+                .navigationTitle(browser.host.isEmpty ? AppLocalization.text(LocalizedStringResource("Poki’s Browser")) : browser.host)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(running ? String(localized: "Hand Back") : String(localized: "Done")) { browser.handBack() }
+                        Button(running ? AppLocalization.text(LocalizedStringResource("Hand Back")) : AppLocalization.text(LocalizedStringResource("Done"))) { browser.handBack() }
                     }
                     if running {
                         ToolbarItem(placement: .cancellationAction) {

@@ -13,7 +13,7 @@ and is chosen per launch with `-automationPath runner`, or in General › Testin
 has the in-process probes and the Background Hold experiment (752 had them in Diagnostics).
 
 A third path, **Native services**, is the default from iOS 27; earlier iOS versions default to the
-XCTest session above, and Testing Options (Setup › Advanced) switches between the two. It uses the
+XCTest session above, and Testing Options (Settings › Advanced) switches between the two. It uses the
 paired accessibility, screenshot and HID services shared with the Mac/Linux bridge, without opening an
 XCTest session or showing its automation banner. Those services stream the screen and take touches
 only from iOS 27 (#1 on iOS 18.6.2 and #18 on iOS 26.6 could not tap). The normal PokiCore control
@@ -55,28 +55,31 @@ open native/ios-app/Poki.xcodeproj
 
 `native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
 
-`-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice|session|hands|rules|health` opens that screen at launch (the app opens on the chat; home is the chat with the conversations drawer open, details Poki's profile, hands, rules and health its Automation, Approvals and General pages there, setup the Setup page under Automation, connect the External Agents page, debug Diagnostics under General, steps the Activity Log, session an outside agent's session); `-pokiChat empty|working|approval|handoff|approved|failed` shows the sample chat scenes (the greeting, a task under way, a step waiting for approval, a hand-over, a finished task, a failed one) and `-pokiVoice ready|listening|working` the voice faces; `-pokiSetupStep N` opens setup at step N, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
+`-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice|session|hands|rules|health|memory|appearance|voiceSettings|conversations|updates|language` opens that screen at launch (the app opens on the chat; home is the chat with the conversations drawer open, details Settings, hands and setup its Connection page, rules and health the Approvals and Advanced pages, connect the Agents page, memory, appearance, voiceSettings (Dictation & Mute), conversations (Archived Conversations) updates (Signing & Updates) and language (Language) their pages, debug Diagnostics under Advanced, steps the Activity Log, session an outside agent's session); `-pokiChat empty|working|approval|handoff|approved|failed` shows the sample chat scenes (the greeting, a task under way, a step waiting for approval, a hand-over, a finished task, a failed one) and `-pokiVoice ready|listening|working` the voice faces; `-pokiSetupStep N` opens setup at step N, `-pokiSettingsEnd YES` opens Settings scrolled to its end, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day.
 
-Poki is in English and Simplified Chinese and follows the iPhone's language. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
+Poki ships English, Simplified Chinese and Traditional Chinese. Settings › Language lets the owner follow the effective iOS app language or choose a Poki UI language. See [iOS UI language](../../docs/ios-localization.md) for scope and verification. The app's screens use the String Catalog `Shared/Localizable.xcstrings`, the Live Activity its own table `Shared/LiveActivity.xcstrings` (see `Shared/ActivityWords.swift`), and the permission prompts `Poki/InfoPlist.xcstrings`. Poki's own status words stay in English inside the app (the code compares them and the agent reads them) and are looked up where they reach the screen; the launcher's fix sentences have entries too. Steps an agent reports, logs and diagnostics output stay as they come. Add `-AppleLanguages '(zh-Hans)'` to a launch to see Chinese without changing the simulator's language.
 
 ## How it runs
 
-- Poki stays on once turned on, and turns on again at launch. Turning on asks for everything at once:
-  with Poki in front and no automation since the iPhone restarted, Poki first says iOS will ask for
-  the passcode, and Continue opens the session as soon as the launcher is ready, which brings up iOS's
-  passcode screen. Once the launcher has mounted the
-  disk image, Poki opens its automation session (the log says `in-process session ready`), so the
-  first look does not wait for it. The session, and with it iOS's automation banner, is closed after
-  the idle time (default 60 s), from Stop on the Live Activity or in Poki, and when Poki is turned off;
-  the next agent request opens a new one (a few seconds; iOS asks for the passcode only once per
-  boot). If it cannot be opened, an agent's call answers at once with the reason, and the next call,
-  Poki coming to the front, or an agent connecting tries again. An open that has not answered in 5 s
-  is waiting on iOS's passcode prompt (after Poki restarts, and 8 hours after the passcode was last
-  entered): the Live Activity shows Passcode for automation, Poki's home asks the owner, and the agent
-  reads that only the owner can enter it. When iOS gives up, after about a minute, the call fails with
-  that reason. A passcode screen that was cancelled or missed is not opened again, by Poki or by an
-  agent's call, until the owner turns Poki on again. Opens go through one gate: one at a time, and
-  none from the background before the boot's first automation.
+- Poki stays on once turned on, and turns on again at launch. With the default in-process path,
+  opening Poki, focusing the message field, starting dictation, choosing a shortcut, sending a
+  message, and an agent connecting only prepare dependencies. They do not open an automation
+  session. Pure chat and sandbox-browser tasks leave Automation Mode off; the read-only `status`
+  tool also leaves it off. The first phone step opens the session and waits for it before reading
+  or acting. Poki shows Preparing during this wait, then continues the same step without a model
+  retry. Session timing events record submission, the open request, readiness and successful reads.
+- Once opened, the session stays open throughout the task, including pauses between phone steps.
+  When no task is active, the idle timeout (default 60 s) closes it automatically. Stop and Turn Off
+  also close it. A later phone step opens it again; there is no Hide Banner When Idle setting.
+  `AppModel.idleSessionPolicy` selects full close by default and retains a pause-automation fallback
+  for device compatibility. Same-process close/reopen and the actual system banner must be checked
+  on the physical release candidate; simulator tests do not establish either device behavior.
+- If the first phone step needs the boot's first automation, Poki asks the owner before opening
+  iOS's passcode screen. An open that has not answered in 5 s is treated as waiting for the passcode:
+  the Live Activity shows Passcode for automation, Poki asks the owner, and the agent reads that only
+  the owner can enter it. If opening fails, the call reports the reason and a later phone request
+  may retry. A cancelled or missed passcode prompt is not opened again until the owner turns Poki
+  on again. Opens go through one gate: one at a time, with no first automation from the background.
 - Nothing listens on a port: PokiCore's requests are answered inside Poki.
 - The built-in local connection dials itself again when it fails or drops while Poki is on: 1, 2, 4, 8,
   16, 30, 30, 30 s, then it stops until the owner taps Enable Local Connection in Setup. Opening Poki
@@ -265,8 +268,9 @@ Setup
 - [ ] Let Poki stay on: Allow location shows iOS's prompt; Live Activities show as on.
 
 Turned on
-- [ ] Turn on: the Live Activity says "On. Waiting for an agent"; once the session opens, the log says `in-process session ready` and the automation banner shows.
-- [ ] An agent's first call finds the session open; its steps show on the Lock Screen and in the chat.
+- [ ] Turn on or bring Poki to the foreground: no automation banner. Focus the field, start dictation, choose a shortcut, and complete a pure-chat or sandbox-browser task: still no banner.
+- [ ] Connect an agent and call `status`: no banner or automation passcode prompt. Its first phone step shows Preparing, opens the session, and reads the screen successfully; steps show on the Lock Screen and in the chat.
+- [ ] After a completed phone task and the idle timeout, the banner disappears. A second phone task in the same app launch reopens the session and reads successfully. If this fails on the release candidate, use the internal pause-automation fallback and repeat the device check.
 - [ ] No banner flicker during a run; a slow swipe or drag does not reopen the session.
 - [ ] Runner path only: no banner until an agent's first call starts the runner; opening Poki Runner while in use shows "Poki is using this iPhone"; Stop on the Live Activity or in Poki takes the banner away within seconds and the next call starts it again; after the idle time with no calls, the banner goes away by itself.
 - [ ] Ten minutes in the background: the location pill shows and agents still reach the phone.

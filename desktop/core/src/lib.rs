@@ -32,11 +32,14 @@ pub mod paths;
 pub mod progress;
 pub mod relay;
 pub mod release;
+mod release_catalog;
 pub mod setup;
 pub mod sign;
 #[cfg(feature = "device")]
 pub mod support;
 pub mod vault;
+#[cfg(feature = "device")]
+pub mod update;
 
 pub use error::{Error, Result};
 pub use progress::{Progress, Reporter};

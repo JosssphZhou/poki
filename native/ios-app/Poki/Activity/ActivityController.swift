@@ -81,7 +81,7 @@ final class ActivityController {
     /// The device name `start` was last asked with: the activity is wanted, shown or not.
     private var wanted: String?
     /// Wanted but not shown because nothing is happening: not a fault.
-    var waitsForWork: Bool { activity == nil && wanted != nil && state.phase == .idle && hidesWhenIdle() }
+    var waitsForWork: Bool { activity == nil && wanted != nil && state.isQuiet && hidesWhenIdle() }
 
     var isRunning: Bool { activity != nil }
 
@@ -101,7 +101,7 @@ final class ActivityController {
     func start(deviceName: String) {
         wanted = deviceName
         guard activity == nil else { return }
-        if state.phase == .idle, hidesWhenIdle() { lastError = nil; return }
+        if state.isQuiet, hidesWhenIdle() { lastError = nil; return }
         guard enabled else { lastError = "Live Activities are off for Poki (Settings > Poki > Live Activities)."; return }
         // A Live Activity left from an earlier run of the app is replaced.
         for old in Activity<PokiActivityAttributes>.activities { Task { await old.end(nil, dismissalPolicy: .immediate) } }
@@ -121,7 +121,7 @@ final class ActivityController {
                     await MainActor.run { if self?.activity?.id == started.id { self?.activity = nil } }
                 }
             }
-        } catch { lastError = String(localized: "The Live Activity did not start. \(error.localizedDescription)") }
+        } catch { lastError = AppLocalization.text(LocalizedStringResource("The Live Activity did not start. \(error.localizedDescription)")) }
     }
 
     /// Counts a finished step for the step line and the run's summary.
@@ -141,22 +141,24 @@ final class ActivityController {
 
     /// Ends the Live Activity at once, after the updates already on their way, so nothing is left on
     /// the Lock Screen or in the island.
-    func end() {
+    @discardableResult
+    func end(dismissalPolicy: ActivityUIDismissalPolicy? = nil) -> Task<Void, Never>? {
         wanted = nil
         finishTimer?.cancel(); foldTimer?.cancel(); eventTimer?.cancel()
         if Self.runPhases.contains(state.phase) { logRun("cut off by ending the Live Activity") }
         worker?.cancel(); worker = nil; plainWaiting = false
-        guard let activity else { return }
+        guard let activity else { return tail }
         self.activity = nil
         // A finished run or a problem stays on the Lock Screen with its final content for a while (HIG:
         // end at once, keep the outcome readable); anything else goes at once.
         let final: ActivityContent<PokiState>? = state.phase == .done || state.phase == .problem
             ? ActivityContent(state: state, staleDate: nil, relevanceScore: 0) : nil
-        let policy: ActivityUIDismissalPolicy = final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60))
+        let policy = dismissalPolicy ?? (final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60)))
         state.guide = nil; state.pin = nil; state.since = nil; state.event = nil; state.previous = nil
         state.stepCount = 0; state.failedCount = 0; state.failedSteps = nil; state.endedAt = nil; state.decision = nil; state.plan = nil
         let previous = tail
         tail = Task { await previous?.value; await activity.end(final, dismissalPolicy: policy) }
+        return tail
     }
 
     /// Takes the activity off the screen but keeps it wanted: the next work brings it back.
@@ -168,6 +170,12 @@ final class ActivityController {
         tail = Task { await previous?.value; await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
+    /// Language is a presentation update, never an activity transition or a new automation session.
+    func languageChanged() {
+        state.uiLanguage = AppLocalization.language
+        send(alert: nil, critical: true)
+    }
+
     func update(_ change: (inout PokiState) -> Void) {
         let old = state
         change(&state)
@@ -175,9 +183,9 @@ final class ActivityController {
         let alert = transition(from: old)
         if state.phase == .working, let app = state.app { keepIcon(app) }
         // No idle activity where iOS's background task stands in: it comes with the work and goes with it.
-        if activity == nil, let wanted, state.phase != .idle, canStart() {
+        if activity == nil, let wanted, !state.isQuiet, canStart() {
             start(deviceName: wanted)
-        } else if activity != nil, state.phase == .idle, hidesWhenIdle() {
+        } else if activity != nil, state.isQuiet, hidesWhenIdle() {
             hide()
         }
         // Something needs the person and there is no Live Activity to pop up: a banner instead (an

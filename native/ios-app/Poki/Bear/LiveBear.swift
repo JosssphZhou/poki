@@ -213,23 +213,16 @@ struct BearPlayback {
     }
 }
 
-/// The white pads behind the bear's eyes, shut with the eyes. In the model they are fixed to the head,
-/// so a blink drew its line, and the smile its arc, on two whole white discs: the white-painted eyes
-/// the flat bear was faulted for. Here each pad is moved over, in the model's own mesh, from the head's
-/// joint to its eye's, so it goes wherever the eye goes and shuts with it: the eye's height squeezes the
-/// pad with the pupil, and while the eye is not open the pads fade to a faint trace and the highlight
-/// goes. Drawn as the face is drawn, in the same pass, the pads cannot fall out of step with it.
+/// Fades the white eye pads and hides the highlights as the eyes shut, using the original mesh.
+/// The pads keep their authored binding to the head; they fade out completely so the closed-eye
+/// arcs are not drawn on full white discs. Both materials still render with the face in one pass.
 ///
-/// They were drawn as two models of their own, placed each frame where the eyes were: the face is
-/// drawn a pass behind the pose and the two were apart while the head turned, a pad moved only when its
-/// look changed, and the pupils' shift to look somewhere was taken back off them even after the bear
-/// stopped looking. A white came off its eye, sank under the face on one side and showed through the
-/// cheek beside it, until the app started again. A bear without parts named `EyePad_…` and
+/// Do not rebind the pads by regenerating the imported skinned mesh here. On physical iOS 27.0,
+/// even `MeshResource.generate(from: model.mesh.contents)` with unchanged contents triggers a
+/// CoreRE assertion, not a Swift error that `try?` can catch. A bear without parts named `EyePad_…` and
 /// `Catchlight_…` and joints ending in `Eye_L` and `Eye_R` keeps its eyes as they are.
 @MainActor
 private struct EyePads {
-    /// How much of a pad shows once its eye has started to shut.
-    static let shut: Float = 0.2
     /// The eye's joint scale under which the eye counts as shutting; the blink's first step is 0.7.
     static let shutting: Float = 0.75
 
@@ -243,8 +236,8 @@ private struct EyePads {
     private var drawnOpen: Float = 1
 
     init?(bear: ModelEntity) {
-        guard var model = bear.model, let skeleton = model.mesh.contents.skeletons.first else { return nil }
-        var contents = model.mesh.contents
+        guard let model = bear.model, let skeleton = model.mesh.contents.skeletons.first else { return nil }
+        let contents = model.mesh.contents
         let names = skeleton.joints.map(\.name)
         func materialIndex(_ prefix: String) -> Int? {
             let indices = Set(contents.models.filter { $0.id.hasPrefix(prefix) }.flatMap { $0.parts.map(\.materialIndex) })
@@ -254,30 +247,14 @@ private struct EyePads {
               let white = model.materials[pad] as? PhysicallyBasedMaterial,
               let highlightMaterial = model.materials[highlight] as? PhysicallyBasedMaterial else { return nil }
         var eyes: [Int] = []
-        var models: [MeshResource.Model] = []
-        for var part in contents.models {
+        for part in contents.models {
             if part.id.hasPrefix("EyePad_") {
                 let side = part.id.dropFirst("EyePad_".count).prefix(1)
                 guard let eye = names.firstIndex(where: { $0 == "Eye_\(side)" || $0.hasSuffix("/Eye_\(side)") }) else { return nil }
                 eyes.append(eye)
-                var parts: [MeshResource.Part] = []
-                for var piece in part.parts {
-                    guard let old = piece.jointInfluences, piece.positions.count > 0 else { return nil }
-                    // Each vertex's influences, in the same places, all on the eye.
-                    let influences = old.influences.map { MeshJointInfluence(jointIndex: eye, weight: $0.weight) }
-                    piece.jointInfluences = MeshResource.JointInfluences(influences: MeshBuffer(influences),
-                                                                         influencesPerVertex: max(old.influences.count / piece.positions.count, 1))
-                    parts.append(piece)
-                }
-                part.parts = MeshPartCollection(parts)
             }
-            models.append(part)
         }
         guard eyes.count == 2 else { return nil }
-        contents.models = MeshModelCollection(models)
-        guard let mesh = try? MeshResource.generate(from: contents) else { return nil }
-        model.mesh = mesh
-        bear.model = model
         self.bear = bear
         self.eyes = eyes
         self.pad = pad
@@ -302,7 +279,7 @@ private struct EyePads {
         drawnOpen = open
         var pads = white
         if case .transparent(let opacity) = white.blending {
-            pads.blending = .transparent(opacity: .init(scale: opacity.scale * (Self.shut + (1 - Self.shut) * open), texture: opacity.texture))
+            pads.blending = .transparent(opacity: .init(scale: opacity.scale * open, texture: opacity.texture))
         }
         model.materials[pad] = pads
         model.materials[highlight] = open == 1 ? shown : hidden
@@ -324,8 +301,8 @@ extension EnvironmentValues {
 /// A poke makes it say hi (`BearMove.hi`), with a small hop and a tap you feel; a poke while it still
 /// does only gets the feel, so moves never pile up. The flat picture hops.
 struct ModelBear<Flat: View>: View {
-    /// The face is one the model has.
-    var modelled: Bool
+    /// What the bear plays; nil for a face the model does not play yet, which stays flat.
+    var act: BearAct?
     /// The square's side at rest, in points: the bear is drawn at that size and scaled from it.
     var side: CGFloat
     /// The bear is in sight: otherwise it holds its last frame and draws nothing. Leaving the screen,
@@ -345,6 +322,7 @@ struct ModelBear<Flat: View>: View {
     @State private var hops = 0
     @State private var hopped = Date.distantPast
     private var store: BearModel { BearModel.shared }
+    private var modelled: Bool { act != nil }
 
     private var usable: Bool { !reduceMotion && !DeviceStrain.shared.resting && !store.failed }
     private var showsModel: Bool { modelled && usable && drawn }
@@ -353,7 +331,7 @@ struct ModelBear<Flat: View>: View {
         ZStack {
             flat().opacity(showsModel || (modelled && usable && !waited) ? 0 : 1)
             if usable, let loaded = store.loaded {
-                LiveBear(loaded: loaded, pixels: Int((side * displayScale).rounded()), handle: handle,
+                LiveBear(loaded: loaded, pixels: Int((side * displayScale).rounded()), handle: handle, act: act ?? .ready,
                          live: live && modelled && shown && !covered && scenePhase == .active) {
                     withAnimation(waited ? .easeOut(duration: 0.3) : nil) { drawn = true }
                 }
@@ -394,6 +372,7 @@ private struct LiveBear: UIViewRepresentable {
     let loaded: BearModel.Loaded
     let pixels: Int
     let handle: BearHandle
+    let act: BearAct
     let live: Bool
     let drawn: () -> Void
 
@@ -403,7 +382,10 @@ private struct LiveBear: UIViewRepresentable {
         return canvas
     }
 
-    func updateUIView(_ canvas: BearCanvas, context: Context) { canvas.live = live }
+    func updateUIView(_ canvas: BearCanvas, context: Context) {
+        canvas.act = act
+        canvas.live = live
+    }
 
     static func dismantleUIView(_ canvas: BearCanvas, coordinator: ()) { canvas.live = false }
 }
@@ -438,6 +420,44 @@ private final class BearCanvas: UIView {
     /// The skin with the eyes, which the blink shuts.
     private var faceSkin: (index: Int, joints: BearIdleJoints)?
     private var rate = 30
+    /// A reaction to the state playing now, once.
+    private var reaction: BearReaction?
+    /// The stance for the state, and the way to it from the last one.
+    private var stance = BearStanceChange(.ready, at: CACurrentMediaTime())
+    /// While it says hi in a state with a stance of its own: the stance steps aside for the wave.
+    private var aside: (from: TimeInterval, to: TimeInterval)?
+    /// The model's pose at the top of its wave: the open mouth and the sparkles are taken from it.
+    private var helloPose: [[Transform]]?
+
+    /// What the bear plays. A change to a state with a reaction plays it once, from where the bear is.
+    var act: BearAct = .ready {
+        didSet {
+            guard act != oldValue else { return }
+            let now = CACurrentMediaTime()
+            stance.go(to: act, at: now)
+            idle.calm = ![.ready, .done, .failed].contains(act)
+            if live { resume() }
+            guard let next = BearReaction(act, at: now) else { return }
+            reaction = next
+            idle.attend(at: now)
+            idle.rest(until: next.end)
+            if live { resume() }
+        }
+    }
+
+    private func reacting(at now: TimeInterval) -> Bool { reaction.map { now < $0.end } ?? false }
+
+    /// The eyes are shut or smiling for the state: no blink then.
+    private var eyesBusy = false
+
+    /// How much of the stance shows: all of it, but for a hi, when it steps aside for the wave and back.
+    private func stepAside(at now: TimeInterval) -> Float {
+        guard let (from, to) = aside else { return 1 }
+        if now >= to + 0.3 { aside = nil; return 1 }
+        if now < from + 0.2 { return 1 - BearIdle.ease(Float((now - from) / 0.2)) }
+        if now < to { return 0 }
+        return BearIdle.ease(Float((now - to) / 0.3))
+    }
     private var pads: EyePads?
     private var playback = BearPlayback()
     private var link: CADisplayLink?
@@ -485,7 +505,7 @@ private final class BearCanvas: UIView {
         guard let renderer else { return }
 
         let entity = loaded.entity.clone(recursive: true)
-        // The eye pads are moved onto the eyes before the bear goes to the renderer.
+        // Prepare the eye materials without rebuilding the model's skinned mesh.
         func skin(_ e: Entity) -> ModelEntity? {
             if let model = e as? ModelEntity, !model.jointNames.isEmpty { return model }
             return e.children.lazy.compactMap(skin).first
@@ -531,6 +551,7 @@ private final class BearCanvas: UIView {
             poses[frame] = skins.map(\.jointTransforms)
         }
         controllers.forEach { $0.stop() }
+        helloPose = poses[Int((clips.hello * clips.fps).rounded())]
         faceSkin = skins.indices.lazy.compactMap { i in BearIdleJoints(names: self.skins[i].jointNames).map { (i, $0) } }.first
         // `-pokiBearFrame` holds a frame to look at: the bear does not move about over it.
         if held == clips.idle.lowerBound { idleSkin = faceSkin }
@@ -565,9 +586,11 @@ private final class BearCanvas: UIView {
     }
 
     fileprivate func sayHi() -> Bool {
-        guard live, presented, playback.free else { return false }
-        idle.attend(at: CACurrentMediaTime())
-        playback.greet(at: CACurrentMediaTime())
+        guard live, presented, playback.free, !reacting(at: CACurrentMediaTime()) else { return false }
+        let now = CACurrentMediaTime()
+        idle.attend(at: now)
+        playback.greet(at: now)
+        aside = (now, now + clips.length(.hi) + 0.2)
         resume()
         return true
     }
@@ -590,7 +613,7 @@ private final class BearCanvas: UIView {
     fileprivate func tick() {
         guard live, !rendering, let renderer, let layer = layer as? CAMetalLayer else { return }
         let now = CACurrentMediaTime()
-        let time = playback.time(at: now, clips: clips, steady: !moving || !idle.busy(at: now))
+        let time = playback.time(at: now, clips: clips, steady: !moving || !(idle.busy(at: now) || reacting(at: now) || stance.changing(at: now) || eyesBusy))
         guard var standing = pose(at: time * clips.fps) else { return }
         if let blink = playback.blink(at: now), let (index, joints) = faceSkin, index < standing.count {
             joints.shut(blink, in: &standing[index])
@@ -602,13 +625,21 @@ private final class BearCanvas: UIView {
             // to the side goes (1), to look at the eyes there.
             if let side = UserDefaults.standard.string(forKey: "pokiBearLook").flatMap(Float.init) { move = BearIdle.farthest(side) }
             #endif
+            move = move + stance.pose(at: now) * stepAside(at: now)
+            if let reaction, reacting(at: now) { move = move + reaction.pose(at: now) }
+            if let hello = helloPose, index < hello.count { joints.show(move, from: hello[index], in: &standing[index]) }
             joints.apply(move, to: &standing[index])
+            eyesBusy = move.shut > 0.05 || move.smile > 0.05
         }
+        if let reaction, !reacting(at: now) { self.reaction = nil }
         for (skin, joints) in zip(skins, standing) { skin.jointTransforms = joints }
         // Breathing and swaying alone are slow: a third of the rate is enough, and a third of the work.
         // A blink is drawn at the full rate from its first frame: the rate goes up a moment before it,
         // as a blink that began on a slow frame lost its first steps and looked quicker than the next.
-        let wanted = playback.move == .idle && !idle.busy(at: now) && playback.nextBlink - now > Self.lead ? 10 : 30
+        // A state with something moving in it (at work, talking, waving) is drawn at the full rate too.
+        let still: Set<BearAct> = [.ready, .done, .failed, .waiting, .paused, .thinking]
+        let wanted = playback.move == .idle && !idle.busy(at: now) && reaction == nil && !stance.changing(at: now) && still.contains(stance.act)
+            && playback.nextBlink - now > Self.lead ? 10 : 30
         if wanted != rate {
             rate = wanted
             link?.preferredFrameRateRange = CAFrameRateRange(minimum: Float(wanted), maximum: Float(wanted), preferred: Float(wanted))

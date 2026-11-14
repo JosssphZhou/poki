@@ -128,6 +128,7 @@ function format(event) {
 
 class Run {
   constructor(opts) {
+    opts = { ...opts, channel: 'beta' };
     this.opts = opts;
     this.state = opts.state;
     this.inbox = join(opts.state, 'inbox');
@@ -247,6 +248,7 @@ class Run {
     const chosen = rows.find(r => r.selected) ?? rows[0];
     this.releaseTag = chosen?.latest?.tag;
     this.releaseIpaName = chosen?.latest?.ipa_name;
+    if (chosen?.latest?.source_notice) this.emit({ event: 'note', text: chosen.latest.source_notice });
     return `${this.opts.channel}: Poki ${chosen?.latest?.version ?? '?'} (${chosen?.latest?.build ?? '?'})`;
   }
 
@@ -415,7 +417,7 @@ class Run {
         const failure = classify('install', error);
         if (!localIpa && error.kind === 'http' && this.releaseTag) {
           this.emit({ event: 'note', text: 'Poki Setup could not download the release. Downloading and verifying a local IPA with its matching signing archive.' });
-          localIpa = await downloadIpa(this.releaseTag, join(this.state, 'downloads'), this.releaseIpaName);
+          localIpa = await downloadIpa(this.releaseTag, join(this.state, 'downloads'), this.releaseIpaName, text => this.emit({ event: 'note', text }));
           continue;
         }
         const limit = manifest.errors[failure.code].retry;
@@ -467,7 +469,7 @@ class Run {
   async model_key() {
     const provider = this.opts.modelKey;
     if (!provider) return { skipped: 'not asked to give Poki a model key (pass --model-key openai to carry the Mac keychain item openai-api-key)' };
-    const typeIt = `ask the person to type the key in Poki: Agents > Accounts and Models`;
+    const typeIt = `ask the person to type the key in Poki: Settings > Models > Add Account`;
     const access = await this.access();
     if (!access) return { manual: true, skipped: `this Mac cannot reach Poki's files (this Poki Setup has no container commands and Xcode's devicectl is not installed); ${typeIt}` };
     const phone = phoneKey((await readHello(access)) ?? this.hello);
