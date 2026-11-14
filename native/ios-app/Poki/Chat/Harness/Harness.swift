@@ -32,28 +32,44 @@ enum Harness {
 
     static var instructions: String { [PokiCore.toolInstructions, system, WebTools.instructions].joined(separator: "\n\n") }
 
+    static let splitViewInstructions = """
+    You are Poki, completing the owner's task in two visible iPhone Split View apps while Poki stays in the background. Reply in the owner's language. Publish a short plan with report_plan before acting.
+    Start with look and choose pane left or right. Check the app identity and screen before acting. Choose the other pane with a fresh look before using it. The screenshot, element references and points belong to the selected pane. Use only these two apps and leave both windows in place. If the layout changes, look again to confirm it before acting. If the two apps cannot be confirmed, ask the owner to restore them.
+    To drag between panes, read the destination first, then select the source with look. Send one do action with drag: {from: source element number or [x,y], to: [x,y], to_pane: left or right}. Use the screenshot of the destination to choose its local drop point. Read the destination again and compare it with the previous evidence. For a photo, verify that the image itself appeared. Sending a gesture does not prove the item arrived. If the result is unclear, report it as unconfirmed and avoid duplicates.
+    Before entering text, check the intended field and its content. Verify the result in the same pane and keep further actions within the request. When a tool requests the owner's approval, wait for their decision. If a password, verification or system prompt needs the owner, ask them to take over with handoff and wait for them. Call finish_task after checking the last result. Set success=false when the requested outcome has not been verified.
+    """
+
     /// The instructions for a task: the above, then the saved notes and the routines that fit it.
-    @MainActor static func instructions(for task: String) -> String {
+    @MainActor static func instructions(for task: String, inSplitView: Bool = false) -> String {
+        if inSplitView {
+            if ApprovalClassifier.mode == .reply { return splitViewInstructions + "\n\n" + replyApprovals }
+            return splitViewInstructions
+        }
         let brief = PokiCore.memoryBrief(for: task)
         var parts = [instructions]
-        // Poki learns the owner's repeated tasks: a saved routine runs them in one call next time.
-        // The routines that fit are in the brief below, so the first call can be the routine itself:
-        // listing them first cost a whole model turn before anything happened on the phone. Poki is in
-        // front when a task begins, so a first look reads only the owner's chat (ESP-465). finish_task
-        // ends the chat's task and the app brings Poki back (chatTaskEnded), so a finish: true do is a
-        // step more; the save rides in the same reply instead of a turn before it.
+        // The first call can run a matching routine or launch the app directly. At this point a
+        // phone read would see the owner's Poki chat. finish_task returns the owner to Poki.
         parts.append("Choose the route from the owner's request. For a website task, start with web_open and use only web tools; do not call look or do to check readiness, open Safari, or finish the task. For an app task, start with do {run: name} when the routine below covers it, else do {launch: bundle id}. Send report_plan with the first action. Use both routes only when the owner explicitly requested a separate app part, and put that part in its own plan step with the app's name. A failed step is not permission to switch routes. Finish with finish_task. After a successful app task that was not already a routine, save its steps with routines {action: \"save\", name, description}, named the way the owner would ask for it.")
         // A model decides approvals from what the owner said. A refused step goes through once the
         // owner says yes to it, so the agent asks in words and tries again.
         if ApprovalClassifier.mode == .reply {
-            parts.append("Approvals here are decided from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, naming the step, and if they say yes, send the same step again.")
+            parts.append(replyApprovals)
         }
         if !brief.isEmpty { parts.append(brief) }
         return parts.joined(separator: "\n\n")
     }
 
+    private static let replyApprovals = "Approvals here are decided from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, naming the step, and if they say yes, send the same step again."
+
     /// Poki's own browser's tools (ESP-145) sit beside the phone's.
     static let tools: [ToolSpec] = phoneTools + WebTools.specs + [reportPlan, finishTask]
+
+    static let splitViewTools: [ToolSpec] = [
+        ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
+                 schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
+        ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
+                 schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
+    ] + phoneTools.filter { $0.name == "status" } + [reportPlan, finishTask]
 
     /// PokiCore's catalog: look, do and status.
     static let phoneTools: [ToolSpec] = {

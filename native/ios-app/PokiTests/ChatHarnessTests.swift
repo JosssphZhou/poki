@@ -28,11 +28,11 @@ final class ChatHarnessTests: XCTestCase {
 
     /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer
     /// without a session (the Debug probe's call), so routines reaches the app's own memory.
-    private func chat(on server: FakeCompletions) -> ChatModel {
+    private func chat(on server: FakeCompletions, transport: HTTPTransport? = nil) -> ChatModel {
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
         ModelKeys.customModel = "fake-model"
         ModelKeys.selectedProvider = .custom
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), transport: transport)
         app.inProcessReadyForProbe()
         self.app = app
         return ChatModel(app: app, kind: .handoff, requester: "Test agent")
@@ -42,20 +42,72 @@ final class ChatHarnessTests: XCTestCase {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
     }
 
+    func testSplitViewTaskWaitsForOriginalPairAndResumesFromFreshReads() async throws {
+        let transport = RotatingWorkspace()
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("look", ["pane": "left", "full": true]),
+            FakeCompletions.tool("look", ["pane": "right", "full": true]),
+            FakeCompletions.tool("do", ["actions": [["tap": [180, 200]]]]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Focused the draft field."]),
+            FakeCompletions.text("Focused the field."),
+        ])
+        let chat = chat(on: server, transport: transport)
+        defer { if chat.running { chat.stop() } }
+        chat.send("Find the draft and focus its field in the right pane", inSplitView: true)
+
+        for _ in 0..<100 where !chat.waitingForSplitView { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(chat.waitingForSplitView, chat.savedCalls.map(\.answer).joined(separator: "\n"))
+        XCTAssertEqual(server.requests.count, 2)
+        XCTAssertEqual(transport.taps, 0)
+
+        transport.change(to: .otherPair)
+        for _ in 0..<80 where !transport.rejectedPairWasSeen { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(transport.rejectedPairWasSeen)
+        XCTAssertTrue(chat.waitingForSplitView)
+        XCTAssertEqual(transport.taps, 0)
+
+        transport.change(to: .restored)
+        for _ in 0..<160 where chat.running { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertFalse(chat.waitingForSplitView)
+        XCTAssertTrue(chat.entries.contains { if case .poki("Focused the field.") = $0.kind { true } else { false } })
+        XCTAssertEqual(transport.taps, 1)
+        XCTAssertGreaterThanOrEqual(transport.restoredReads, 2)
+        XCTAssertTrue(server.requests.contains { Self.json($0).contains("Split View was restored") })
+    }
+
+    func testSplitViewResumesWhenRotationReturnsThePairBetweenToolCalls() async throws {
+        let transport = RotatingWorkspace(returnsBeforeNextRead: true)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("look", ["pane": "left"]),
+            FakeCompletions.tool("look", ["pane": "right"]),
+            FakeCompletions.text("Read both sides."),
+        ])
+        let chat = chat(on: server, transport: transport)
+        defer { if chat.running { chat.stop() } }
+        chat.send("Read the title in Safari and compare it with Notes", inSplitView: true)
+        let deadline = ContinuousClock.now + .seconds(12)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertEqual(transport.restoredReads, 2)
+        XCTAssertEqual(transport.taps, 0)
+        XCTAssertTrue(server.requests.contains { Self.json($0).contains("Split View was restored") })
+    }
+
     /// A note the agent saved during one task reaches the model with the next task of the same
     /// conversation.
     func testEachTaskTellsTheModelWhatMemoryHolds() async throws {
-        let note = "The owner's gym is Fitness First on Queen Street \(UUID().uuidString.prefix(6))"
+        let note = "The sample document identifier is \(UUID().uuidString.prefix(6))"
         notes.append(note)
         let done = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]])
         let server = try FakeCompletions(replies: [
             FakeCompletions.tool("routines", ["action": "remember", "text": note]), done, FakeCompletions.text("Noted."),
-            done, FakeCompletions.text("Booked."),
+            done, FakeCompletions.text("Read the identifier."),
         ])
         let chat = chat(on: server)
 
-        _ = await chat.runDelegated("Remember that my gym is Fitness First on Queen Street")
-        _ = await chat.runDelegated("Book a class at my gym")
+        _ = await chat.runDelegated("Remember the sample document's identifier")
+        _ = await chat.runDelegated("What is the sample document identifier?")
 
         let requests = server.requests
         XCTAssertEqual(requests.count, 5)
@@ -101,7 +153,7 @@ final class ChatHarnessTests: XCTestCase {
         ])
         let chat = chat(on: server)
 
-        _ = await chat.runDelegated("Book a class at my gym for tomorrow morning, the early one")
+        _ = await chat.runDelegated("What is the sample document identifier? for tomorrow morning, the early one")
         _ = await chat.runDelegated("What is the battery level?")
 
         let plans = chat.entries.filter { if case .plan = $0.kind { true } else { false } }
@@ -179,6 +231,57 @@ final class ChatHarnessTests: XCTestCase {
         while said().last != "Stopped.", ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
         XCTAssertEqual(said().last, "Stopped.")
         XCTAssertFalse(said().contains("Stopping…"))
+    }
+
+    func testSplitViewRefusesInputBeforeAnExplicitPaneRead() async throws {
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("do", ["actions": [["launch": "com.apple.Preferences"]]]),
+            FakeCompletions.tool("look", [:]),
+            FakeCompletions.text("Please restore the workspace."),
+        ])
+        let chat = chat(on: server)
+
+        chat.send("Read the left app and write in the right app", inSplitView: true)
+        let deadline = ContinuousClock.now + .seconds(12)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+
+        XCTAssertFalse(chat.running)
+        XCTAssertEqual(chat.savedCalls.map(\.name), ["do", "look"])
+        XCTAssertTrue(chat.savedCalls.allSatisfy { !$0.ok && $0.answer.hasPrefix("not_sent:") })
+        let request = try XCTUnwrap(server.requests.first)
+        let prompt = FakeCompletions.system(request)
+        XCTAssertTrue(prompt.contains("two visible iPhone Split View apps"))
+        XCTAssertFalse(prompt.contains("web_open"))
+        let offered = (request["tools"] as? [[String: Any]] ?? []).compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
+        XCTAssertEqual(Set(offered), ["look", "do", "status", "report_plan", "finish_task"])
+    }
+
+    func testSplitViewUsesTheUpdatedCustomAddressForTheSameModel() async throws {
+        let oldServer = try FakeCompletions(replies: [FakeCompletions.text("First server.")])
+        let newServer = try FakeCompletions(replies: [FakeCompletions.text("Second server.")])
+        let chat = chat(on: oldServer)
+
+        chat.send("Check the first connection", inSplitView: true)
+        var deadline = ContinuousClock.now + .seconds(12)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertEqual(oldServer.requests.count, 1)
+
+        ModelKeys.customURL = "http://127.0.0.1:\(newServer.port)/v1"
+        chat.send("Check the replacement connection", inSplitView: true)
+        deadline = ContinuousClock.now + .seconds(12)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertEqual(oldServer.requests.count, 1)
+        XCTAssertEqual(newServer.requests.count, 1)
+        let request = try XCTUnwrap(newServer.requests.first)
+        let requestText = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+        XCTAssertTrue(requestText.contains("Check the replacement connection"))
+        XCTAssertFalse(requestText.contains("Check the first connection"))
+        XCTAssertFalse(requestText.contains("First server."))
+        let replies = chat.entries.compactMap { if case .poki(let text) = $0.kind { text } else { nil } }
+        XCTAssertTrue(replies.contains("First server."))
+        XCTAssertTrue(replies.contains("Second server."))
     }
 
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
@@ -274,5 +377,79 @@ final class FakeCompletions: @unchecked Sendable {
         return messages.filter { ["system", "developer"].contains($0["role"] as? String ?? "") }.map { message in
             (message["content"] as? String) ?? ((message["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n") ?? "")
         }.joined(separator: "\n")
+    }
+}
+
+/// Reports the same pane metadata and call sequence as the device transport, with controlled layout changes.
+private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
+    enum Layout { case original, portrait, otherPair, restored }
+    let usesDynamicScreenSize = true
+    let supportsPaneSelection = true
+    private let lock = NSLock()
+    private let screenshot: String
+    private let returnsBeforeNextRead: Bool
+    private var layout = Layout.original
+    private var side = "left"
+    private var reads = 0
+    private var sawOther = false
+    private var inputs = 0
+
+    @MainActor init(returnsBeforeNextRead: Bool = false) {
+        self.returnsBeforeNextRead = returnsBeforeNextRead
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 390, height: 600))
+        screenshot = renderer.pngData { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 390, height: 600))
+        }.base64EncodedString()
+    }
+
+    func change(to layout: Layout) { lock.withLock { self.layout = layout } }
+    var restoredReads: Int { lock.withLock { reads } }
+    var rejectedPairWasSeen: Bool { lock.withLock { sawOther } }
+    var taps: Int { lock.withLock { inputs } }
+
+    private var app: String { side == "left" ? "local.safari" : "local.notes" }
+    private var other: String { side == "left" ? "local.notes" : "local.safari" }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        let raw = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
+        let path = raw.isEmpty ? "/session" : raw
+        return lock.withLock {
+            func reply(_ value: JSON = .null, status: Int = 200) -> (Int, Data) {
+                (status, (["value": value] as JSON).data())
+            }
+            switch (method, path) {
+            case ("POST", "/session"): return reply(["sessionId": "rotation-test"])
+            case ("GET", "/status"): return reply(["ready": true])
+            case ("GET", "/wda/locked"): return reply(false)
+            case ("GET", "/wda/activeAppInfo"): return reply(["bundleId": .string(app)])
+            case ("GET", "/wda/screen"): return reply(["screenSize": ["width": 390, "height": 600]])
+            case ("GET", "/screenshot"): return reply(.string(screenshot))
+            case ("GET", "/source"):
+                return reply(.string("""
+                    <XCUIElementTypeApplication type="XCUIElementTypeApplication" x="0" y="0" width="390" height="600">
+                    <XCUIElementTypeTextField type="XCUIElementTypeTextField" label="Draft field" x="100" y="180" width="160" height="44"/>
+                    </XCUIElementTypeApplication>
+                    """))
+            case ("POST", "/poki/pane"):
+                let requested = body.flatMap { try? JSON.parse($0)["side"]?.string } ?? "left"
+                if requested == "auto" { return reply() }
+                if layout == .original && requested == "right" { layout = returnsBeforeNextRead ? .restored : .portrait }
+                if layout == .portrait {
+                    return reply(["error": "invalid argument", "message": "two visible apps could not be confirmed"], status: 400)
+                }
+                side = requested
+                if layout == .otherPair { sawOther = true }
+                if layout == .restored { reads += 1 }
+                return reply(["identity": .string("\(side)/\(layout)"), "bundleId": .string(app),
+                              "otherBundleId": .string(layout == .otherPair ? "local.weather" : other),
+                              "x": side == "left" ? 0 : 390, "y": 0])
+            case ("POST", "/wda/tap"), ("POST", "/actions"):
+                inputs += 1
+                return reply()
+            case ("POST", "/appium/settings"), ("DELETE", "/session"): return reply()
+            default: return reply(["error": "unknown command", "message": .string(path)], status: 404)
+            }
+        }
     }
 }
