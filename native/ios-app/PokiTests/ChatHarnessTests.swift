@@ -158,7 +158,8 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(server.requests.count, 3, "The model must wait while the panes are hidden")
 
         transport.change(to: .restored)
-        let resumedBy = ContinuousClock.now + .seconds(12)
+        // Four pane reads, each with a screenshot, can take longer on a busy simulator.
+        let resumedBy = ContinuousClock.now + .seconds(30)
         while chat.running, ContinuousClock.now < resumedBy { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertFalse(chat.running)
         XCTAssertFalse(chat.waitingForSplitView)

@@ -44,6 +44,10 @@ typedef struct {
 /// Finds the pane on the opposite edge of a side-by-side window; CGRectNull for other layouts.
 FOUNDATION_EXPORT CGRect PKPeerPane(CGRect screen, CGRect window);
 
+/// Returns a launcher touch point only when the visible labels and accessibility frames agree on one target.
+FOUNDATION_EXPORT CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> *candidates,
+                                                    NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels, BOOL menu);
+
 /// UI automation from Poki's own process: the XCTest daemon session (testmanagerd), Automation Mode,
 /// and synthesized touch and text events. No runner app and no port. Every method blocks, so call it
 /// from a serial worker queue, never the main thread: the first enable waits for the owner to

@@ -1709,6 +1709,38 @@ static const int PKFrontKey = -1;
     } @catch (NSException *e) { return @{}; }
 }
 
+CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> *candidates,
+                                 NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels, BOOL menu) {
+    CGPoint unavailable = CGPointMake(NAN, NAN);
+    CGPoint point = unavailable;
+    for (NSString *label in visibleLabels) {
+        NSArray<NSValue *> *frames = candidates[label];
+        if (!frames.count) continue;
+        for (NSValue *value in visibleLabels[label]) {
+            CGPoint position = value.CGPointValue;
+            // The grid can report page-local x coordinates and icons on adjacent pages. Match a
+            // screenshot label to the icon's row to reject the same text in widgets or banners.
+            if (!menu) {
+                CGFloat firstRow = INFINITY, lastRow = -INFINITY;
+                for (NSValue *frame in frames) {
+                    CGRect icon = frame.CGRectValue;
+                    CGFloat middle = CGRectGetMidY(icon);
+                    if (CGRectIsEmpty(icon) || CGRectGetHeight(icon) <= 50 ||
+                        position.y < middle || position.y > CGRectGetMaxY(icon) + 8) continue;
+                    firstRow = fmin(firstRow, middle);
+                    lastRow = fmax(lastRow, middle);
+                }
+                if (!isfinite(firstRow)) continue;
+                if (lastRow - firstRow > 6) return unavailable;
+                position.y = (firstRow + lastRow) / 2 - 6;
+            }
+            if (isfinite(point.x)) return unavailable;
+            point = position;
+        }
+    }
+    return point;
+}
+
 - (nullable PKOutcome *)openWorkspaceLauncherItem:(NSArray<NSString *> *)labels menu:(BOOL)menu {
     @try {
         PKDisplayGeometry display = self.displayGeometry;
@@ -1723,22 +1755,20 @@ static const int PKFrontKey = -1;
         id root = system ? PKRequestSnapshotWithin(2, ax, system, 22, 480, NULL) : nil;
         if (!root) return nil;
         NSString *targetType = menu ? @"Button" : @"Icon";
-        NSString *targetLabel = nil;
-        CGRect icon = CGRectNull;
+        NSMutableDictionary<NSString *, NSMutableArray<NSValue *> *> *candidates = [NSMutableDictionary dictionary];
         NSMutableArray *nodes = [NSMutableArray arrayWithObject:root];
         while (nodes.count) {
             id node = nodes.lastObject;
             [nodes removeLastObject];
             NSString *label = PKText([node label]);
             if (label && [labels containsObject:label] && [PKTypeName([node elementType]) isEqualToString:targetType]) {
-                if (targetLabel) return nil;
-                targetLabel = label;
-                icon = [node frame];
+                if (!candidates[label]) candidates[label] = [NSMutableArray array];
+                [candidates[label] addObject:[NSValue valueWithCGRect:[node frame]]];
             }
             NSArray *children = [node children];
             if (children.count) [nodes addObjectsFromArray:children];
         }
-        if (!targetLabel) return nil;
+        if (!candidates.count) return nil;
         UIImage *picture = PKUprightImage([self screenshot:NULL refreshViewport:NO], display);
         if (!picture.CGImage || !CGRectIsNull(self.viewport)) return nil;
         VNRecognizeTextRequest *request = [VNRecognizeTextRequest new];
@@ -1747,24 +1777,19 @@ static const int PKFrontKey = -1;
         request.usesLanguageCorrection = NO;
         VNImageRequestHandler *recognizer = [[VNImageRequestHandler alloc] initWithCGImage:picture.CGImage options:@{}];
         if (![recognizer performRequests:@[request] error:NULL]) return nil;
-        CGRect word = CGRectNull;
-        for (VNRecognizedTextObservation *observation in request.results) {
-            if (![targetLabel isEqualToString:[observation topCandidates:1].firstObject.string]) continue;
-            if (!CGRectIsNull(word)) return nil;
-            word = observation.boundingBox;
-        }
-        if (CGRectIsEmpty(word)) return nil;
         CGRect bounds = display.bounds;
-        CGFloat x = CGRectGetMinX(bounds) + CGRectGetMidX(word) * CGRectGetWidth(bounds);
-        CGFloat y = CGRectGetMinY(bounds) + (1 - CGRectGetMidY(word)) * CGRectGetHeight(bounds);
-        // The app grid can report a page-local horizontal origin. The text matches the icon's row;
-        // the screenshot supplies its visible horizontal position. Menu items use their visible label.
-        if (!menu) {
-            if (CGRectGetHeight(icon) <= 50 || y < CGRectGetMidY(icon) || y > CGRectGetMaxY(icon) + 8) return nil;
-            y = CGRectGetMidY(icon) - 6;
+        NSMutableDictionary<NSString *, NSMutableArray<NSValue *> *> *visibleLabels = [NSMutableDictionary dictionary];
+        for (VNRecognizedTextObservation *observation in request.results) {
+            NSString *label = [observation topCandidates:1].firstObject.string;
+            if (!label || !candidates[label]) continue;
+            CGRect word = observation.boundingBox;
+            CGFloat x = CGRectGetMinX(bounds) + CGRectGetMidX(word) * CGRectGetWidth(bounds);
+            CGFloat y = CGRectGetMinY(bounds) + (1 - CGRectGetMidY(word)) * CGRectGetHeight(bounds);
+            if (!visibleLabels[label]) visibleLabels[label] = [NSMutableArray array];
+            [visibleLabels[label] addObject:[NSValue valueWithCGPoint:CGPointMake(x, y)]];
         }
-        CGPoint point = CGPointMake(x, y);
-        if (!CGRectContainsPoint(bounds, point) || self.screenLocked || self.generation != generation ||
+        CGPoint point = PKWorkspaceLauncherPoint(candidates, visibleLabels, menu);
+        if (!isfinite(point.x) || !CGRectContainsPoint(bounds, point) || self.screenLocked || self.generation != generation ||
             !PKSameDisplay(display, self.displayGeometry)) return nil;
         NSArray *finger = @[[PKTouchPoint at:point offset:0], [PKTouchPoint at:point offset:menu ? 0.08 : 0.9]];
         return [self touch:@[finger] timeout:5 geometry:display];
