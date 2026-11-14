@@ -90,8 +90,6 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         var opening = false
     }
     static let gate = OSAllocatedUnfairLock(initialState: OpenGate())
-    /// The app Poki opened itself just before a session, and when.
-    static let opened = OSAllocatedUnfairLock<(String, Date)?>(initialState: nil)
     static var automationDeclined: Bool { gate.withLock { $0.declined } }
 
     /// prepare through the gate: an answer in prepare's shape when it may not run now.
@@ -220,17 +218,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/homescreen": { [unowned self] _, _ in try self.done(self.native.press("home")) },
             "POST /wda/lock": { [unowned self] _, _ in try self.done(self.native.press("lock")) },
             "POST /wda/pressButton": { [unowned self] body, _ in try self.done(self.native.press(body?["name"]?.string ?? "")) },
-            "POST /wda/apps/launch": { [unowned self] body, _ in
-                let id = try Self.bundle(body)
-                // Poki opened this app itself a moment ago, before the session (AppModel's
-                // openBeforeAutomation): it is in front, and is not ended and started over.
-                if let (bundle, at) = Self.opened.withLock({ $0 }), bundle == id, Date().timeIntervalSince(at) < 15,
-                   self.native.frontApp()["bundleId"] as? String == id {
-                    Self.opened.withLock { $0 = nil }
-                    return .null
-                }
-                return try self.done(self.native.app(id, action: "launch"))
-            },
+            "POST /wda/apps/launch": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "launch")) },
             "POST /wda/apps/activate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "activate")) },
             "POST /wda/apps/terminate": { [unowned self] body, _ in try self.done(self.native.app(try Self.bundle(body), action: "terminate")) },
             // The clipboard is Poki's own to read and write here; WDA's wire form is base64 text.
