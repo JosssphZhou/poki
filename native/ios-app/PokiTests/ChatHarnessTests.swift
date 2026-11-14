@@ -172,13 +172,13 @@ final class ChatHarnessTests: XCTestCase {
         while chat.awaitingModel { try await Task.sleep(for: .milliseconds(50)) }
         let stopped = ContinuousClock.now
         chat.stop()
-        XCTAssertEqual(said().last, "Stopping…")
+        XCTAssertEqual(said().last, AppLocalization.text(LocalizedStringResource("Stopping…")))
         while chat.savedCalls.isEmpty, ContinuousClock.now - stopped < .seconds(20) { try await Task.sleep(for: .milliseconds(100)) }
         let after = ContinuousClock.now - stopped
         XCTAssertLessThan(after, .seconds(3), "the do call ended \(after) after Stop")
-        while said().last != "Stopped.", ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
-        XCTAssertEqual(said().last, "Stopped.")
-        XCTAssertFalse(said().contains("Stopping…"))
+        while said().last != AppLocalization.text(LocalizedStringResource("Stopped.")), ContinuousClock.now - stopped < .seconds(10) { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertEqual(said().last, AppLocalization.text(LocalizedStringResource("Stopped.")))
+        XCTAssertFalse(said().contains(AppLocalization.text(LocalizedStringResource("Stopping…"))))
     }
 
     func testStoppedTaskKeepsItsReceiptWhenCreatingAConversation() async throws {
@@ -209,7 +209,7 @@ final class ChatHarnessTests: XCTestCase {
         }
         XCTAssertFalse(chat.awaitingModel)
         chat.stop()
-        XCTAssertEqual(store.session(original)?.lastLine, "Stopping…")
+        XCTAssertEqual(store.session(original)?.lastLine, AppLocalization.text(LocalizedStringResource("Stopping…")))
 
         if switchToSavedChat {
             let saved = SavedSession(id: UUID().uuidString, kind: .poki, client: nil, title: "Existing chat",
@@ -224,7 +224,7 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertNotEqual(destination, original)
         chat.send("New task")
         while ContinuousClock.now < deadline {
-            if records.count == 2, store.session(original)?.lastLine == "Stopped." { break }
+            if records.count == 2, store.session(original)?.lastLine == AppLocalization.text(LocalizedStringResource("Stopped.")) { break }
             try await Task.sleep(for: .milliseconds(20))
         }
 
@@ -236,7 +236,7 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(store.record(destination).isEmpty)
         XCTAssertTrue(chat.savedCalls.isEmpty)
         XCTAssertEqual(store.session(original)?.outcome, .stopped)
-        XCTAssertEqual(store.session(original)?.lastLine, "Stopped.")
+        XCTAssertEqual(store.session(original)?.lastLine, AppLocalization.text(LocalizedStringResource("Stopped.")))
         XCTAssertEqual(store.session(destination)?.outcome, .done)
     }
 
