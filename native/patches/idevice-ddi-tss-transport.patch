@@ -1,0 +1,22 @@
+diff --git a/idevice/src/services/cryptexd.rs b/idevice/src/services/cryptexd.rs
+index 9bc7854..a539e77 100644
+--- a/idevice/src/services/cryptexd.rs
++++ b/idevice/src/services/cryptexd.rs
+@@ -404,7 +404,16 @@ pub async fn install_ddi(
+     request.add_cryptex1_tags(&assets.build_identity, &chip_instance, &nonce)?;
+     let response = request
+         .send()
+-        .await?
++        .await
++        .map_err(|error| match error {
++            // Both the phone tunnel and Apple's HTTP connection can return Socket.
++            // Keep the signing server's transport failure distinct at its source.
++            IdeviceError::Socket(io) => IdeviceError::Http(format!(
++                "Apple signing server socket failed ({:?})",
++                io.kind()
++            )),
++            other => other,
++        })?
+         .into_dictionary()
+         .ok_or(CryptexdError::MissingField("(TSS response)"))?;
+     // Cryptex1 responses carry the ticket under its own key on current releases

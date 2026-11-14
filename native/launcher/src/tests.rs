@@ -361,6 +361,18 @@ fn disk_image_failures_name_their_own_fix() {
     assert_eq!(network.fix.as_deref(), Some(crate::device::NETWORK_FIX));
 }
 
+#[test]
+fn disk_image_socket_failure_reports_transport_and_io_kind() {
+    let error = idevice::IdeviceError::Socket(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+    let failure = crate::ddi::classify(&error);
+    assert_eq!(failure.code, Some("ddi_socket"));
+    assert!(failure.detail.contains("UnexpectedEof"));
+    assert_ne!(failure.fix.as_deref(), Some(crate::device::NETWORK_FIX));
+
+    let missing = crate::ddi::classify(&idevice::IdeviceError::ImageNotMounted);
+    assert_eq!(missing.code, Some("ddi_mount"));
+}
+
 /// GitHub issue 69 and ESP-225: a failure on the way to the phone is not Developer Mode. Only the
 /// phone saying so (DeveloperModeStatus false, or its "Developer mode is not enabled" error) is.
 /// Anything else that cannot be told apart is "can't reach this iPhone", with the loopback first.
