@@ -72,7 +72,7 @@ struct FirstRunGuide: View {
         SetupStep.shown.enumerated().first { !model.isDone($0.element) }.map { ($0.offset + 1, $0.element) }
     }
 
-    private var ready: Bool { model.setupLooksComplete }
+    private var ready: Bool { model.setupLooksComplete && hasModel }
 
     private var mood: PokiMood {
         switch page {
@@ -105,9 +105,12 @@ struct FirstRunGuide: View {
         case .voice:
             return AppLocalization.text(LocalizedStringResource("To hear you, I need the microphone and speech recognition."))
         case .ready:
+            if !hasModel {
+                return AppLocalization.text(LocalizedStringResource("Add your model account in Settings › Models before running a task. You can browse the app now."))
+            }
             return ready
-                ? AppLocalization.text(LocalizedStringResource("Try “Order my usual coffee”. Type it, or say it."))
-                : AppLocalization.text(LocalizedStringResource("Look around now. Once the switches are on, I can use this iPhone. They are in Settings › Automation › Setup."))
+                ? AppLocalization.text(LocalizedStringResource("Try creating a new note titled “Poki Demo” with Milk, Eggs and Coffee on separate lines. Check the result in Notes."))
+                : AppLocalization.text(LocalizedStringResource("Finish the remaining steps in Settings › Connection before running a task. You can browse the app now."))
         }
     }
 

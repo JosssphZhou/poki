@@ -7,6 +7,11 @@ native/ios-app/CHANGELOG-round.md; this file is what goes into a release and the
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 Build numbers are the GitHub Actions run number of the release workflow.
 
+## [0.4.2] - Unreleased
+
+### Fixed
+- The welcome guide checks for a model account before showing All Set. It explains where to finish model or device setup and suggests creating a note whose result you can check in Notes.
+
 ## [0.4.1] - Unreleased
 
 ### Fixed

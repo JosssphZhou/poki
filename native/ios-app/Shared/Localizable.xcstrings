@@ -1428,6 +1428,28 @@
         }
       }
     },
+    "Add your model account in Settings › Models before running a task. You can browse the app now." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add your model account in Settings › Models before running a task. You can browse the app now."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行任务前，请在“设置 › 模型”中添加你自己的模型账号。现在可以先浏览应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行任務前，請在「設定 › 模型」中加入你自己的模型帳號。現在可以先瀏覽應用程式。"
+          }
+        }
+      }
+    },
     "Add your %@ key. Open Settings, then Models." : {
       "localizations" : {
         "zh-Hans" : {
@@ -5891,24 +5913,24 @@
         }
       }
     },
-    "Look around now. Once the switches are on, I can use this iPhone. They are in Settings › Automation › Setup." : {
+    "Finish the remaining steps in Settings › Connection before running a task. You can browse the app now." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Look around now. Once the switches are on, I can use this iPhone. They are in Settings › Automation › Setup."
+            "value" : "Finish the remaining steps in Settings › Connection before running a task. You can browse the app now."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "现在可以先随便看看。开关都打开后，我就能使用这台 iPhone。开关在「设置 › 自动化 › 配置」里。"
+            "value" : "运行任务前，请在“设置 › 连接”中完成剩余步骤。现在可以先浏览应用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在可以先隨便看看。開關都打開後，我就能使用這支 iPhone。開關在「設定 › 自動化 › 設定精靈」裡。"
+            "value" : "執行任務前，請在「設定 › 連線」中完成剩餘步驟。現在可以先瀏覽應用程式。"
           }
         }
       }
@@ -13659,24 +13681,24 @@
         }
       }
     },
-    "Try “Order my usual coffee”. Type it, or say it." : {
+    "Try creating a new note titled “Poki Demo” with Milk, Eggs and Coffee on separate lines. Check the result in Notes." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try “Order my usual coffee”. Type it, or say it."
+            "value" : "Try creating a new note titled “Poki Demo” with Milk, Eggs and Coffee on separate lines. Check the result in Notes."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "试试「帮我点一杯常喝的咖啡」，打字或说出来都行。"
+            "value" : "试试新建一条标题为“Poki Demo”的笔记，正文分三行写 Milk、Eggs、Coffee，然后在备忘录中核对结果。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "試試「幫我點一杯常喝的咖啡」，打字或說出來都行。"
+            "value" : "試試新增一則標題為「Poki Demo」的筆記，內文分三行寫 Milk、Eggs、Coffee，然後在備忘錄中核對結果。"
           }
         }
       }
