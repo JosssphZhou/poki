@@ -95,6 +95,17 @@ final class AutomationStartupTests: XCTestCase {
             model.passcodeHeadsUp = false
             XCTAssertNil(Self.alert(in: host), "The recovery path must work without a presented alert")
             XCTAssertFalse(model.sessionOn)
+            let notices = model.log.lines.filter { $0.contains("iOS will ask for the passcode") }.count
+            for _ in 0..<2 {
+                let answer = await model.runTool("look", arguments: "{}")
+                XCTAssertTrue(answer.isError)
+                XCTAssertEqual(answer.text, "not_sent: To turn on automation, open Settings › Connection and tap Continue. Nothing was sent.")
+                XCTAssertFalse(model.sessionOn)
+                XCTAssertFalse(model.passcodeHeadsUp, "A repeated tool request must not request another alert")
+            }
+            XCTAssertEqual(model.log.lines.filter { $0.contains("iOS will ask for the passcode") }.count, notices,
+                           "Repeated requests must retain the same pending confirmation without another notice log")
+            _ = try await screenElements()
             try capture(window, named: "fallback-waiting-\(choice)")
             model.setup.loopback = .none
             try await tapScreenElement(choice)
@@ -106,7 +117,7 @@ final class AutomationStartupTests: XCTestCase {
             let after = try await screenElements()
             XCTAssertFalse(after.contains { $0.label == "Continue" || $0.label == "Cancel" }, "An explicit choice must remove the waiting controls")
             if choice == "Continue" {
-                XCTAssertTrue(after.contains { $0.label == "Choose and enable a local connection first (Setup)." }, "Continue must reach the next startup check and show its result on Connection")
+                XCTAssertTrue(after.contains { $0.label == "Choose and enable a local connection in Setup first." }, "Continue must reach the next startup check and show its result on Connection")
             }
             try capture(window, named: "fallback-after-\(choice)")
             print("Passcode fallback \(choice): alert absent, sessionOn=\(model.sessionOn), problem=\(model.problem ?? "none")")
