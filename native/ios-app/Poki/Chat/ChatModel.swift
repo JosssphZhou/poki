@@ -810,7 +810,7 @@ final class ChatModel {
                 hasSplitViewRead = false
                 let side = (args["pane"] as? String) ?? previous
                 return await recoverSplitView(side: side, token: taskToken,
-                                              firstRead: changedLayout ? response.splitView : nil,
+                                              layoutSeen: changedLayout,
                                               action: call.name == "do" ? response : nil)
             }
             if call.name == "look", let read = response.splitView, response.jpeg != nil {
@@ -830,7 +830,7 @@ final class ChatModel {
     }
 
     /// Keep the model call suspended while the owner restores the workspace. Every retry only reads.
-    private func recoverSplitView(side: String, token: Int, firstRead: PokiCore.SplitViewRead?,
+    private func recoverSplitView(side: String, token: Int, layoutSeen: Bool,
                                   action: PokiCore.ToolAnswer?) async -> PokiCore.ToolAnswer {
         waitingForSplitView = true
         app.chatWaitingForSplitView(true)
@@ -843,21 +843,34 @@ final class ChatModel {
         }
         let session = splitViewSession
         let expected = expectedSplitViewApps
-        var pane = side
-        var lastLayout = firstRead?.layout
+        let otherSide = side == "left" ? "right" : "left"
+        var otherRead: PokiCore.SplitViewRead?
+        var wait = layoutSeen ? Duration.milliseconds(350) : .seconds(2)
         while runToken == token, !Task.isCancelled {
-            do { try await Task.sleep(for: lastLayout == nil ? .seconds(2) : .milliseconds(350)) } catch { break }
+            do { try await Task.sleep(for: wait) } catch { break }
             guard runToken == token, !Task.isCancelled else { break }
+            // End on the pane expected by the original call, so the model's next action uses
+            // the same side as the fresh screenshot it receives here.
+            let pane = otherRead == nil ? otherSide : side
             let read = await app.runTool("look", arguments: #"{"pane":"\#(pane)","full":true}"#,
                                          localSession: session, expectedApps: expected)
             guard runToken == token, !Task.isCancelled else { break }
-            guard !read.isError, read.jpeg != nil, let observed = read.splitView else {
-                lastLayout = nil
-                pane = pane == "left" ? "right" : "left"
+            guard !read.isError, read.jpeg != nil, let observed = read.splitView, observed.side == pane else {
+                otherRead = nil
+                wait = .seconds(2)
                 app.chatWaitingForSplitView(true)
                 continue
             }
-            guard lastLayout == observed.layout else { lastLayout = observed.layout; continue }
+            if pane == otherSide {
+                otherRead = observed
+                wait = .milliseconds(350)
+                continue
+            }
+            guard let otherRead, otherRead.layout == observed.layout,
+                  otherRead.app == observed.otherApp, otherRead.otherApp == observed.app else {
+                otherRead = nil
+                continue
+            }
             recordSplitViewRead(observed)
             AppLog.shared.add("chat", "Split View restored; the model received a fresh pane read")
             let previous = action.map { "\nPrevious action result. Check what actually happened before attempting any remaining step.\n\($0.text)\n" } ?? ""

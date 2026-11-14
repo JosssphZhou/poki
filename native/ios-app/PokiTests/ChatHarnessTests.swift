@@ -66,13 +66,23 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(chat.waitingForSplitView)
         XCTAssertEqual(transport.taps, 0)
 
+        transport.change(to: .rightPaneOnly)
+        let partialDeadline = ContinuousClock.now + .seconds(5)
+        while !transport.unreadablePaneWasSeen, ContinuousClock.now < partialDeadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(transport.unreadablePaneWasSeen)
+        XCTAssertTrue(chat.waitingForSplitView)
+        XCTAssertEqual(server.requests.count, 2, "One readable pane is insufficient to resume")
+        XCTAssertEqual(transport.taps, 0)
+
         transport.change(to: .restored)
         for _ in 0..<160 where chat.running { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertFalse(chat.running)
         XCTAssertFalse(chat.waitingForSplitView)
         XCTAssertTrue(chat.entries.contains { if case .poki("Focused the field.") = $0.kind { true } else { false } })
         XCTAssertEqual(transport.taps, 1)
-        XCTAssertGreaterThanOrEqual(transport.restoredReads, 2)
+        XCTAssertEqual(transport.restoredSides, ["left", "right"])
         XCTAssertTrue(server.requests.contains { Self.json($0).contains("Split View was restored") })
     }
 
@@ -89,7 +99,7 @@ final class ChatHarnessTests: XCTestCase {
         let deadline = ContinuousClock.now + .seconds(12)
         while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertFalse(chat.running)
-        XCTAssertEqual(transport.restoredReads, 2)
+        XCTAssertEqual(transport.restoredSides, ["right", "left", "right"])
         XCTAssertEqual(transport.taps, 0)
         XCTAssertTrue(server.requests.contains { Self.json($0).contains("Split View was restored") })
     }
@@ -121,7 +131,7 @@ final class ChatHarnessTests: XCTestCase {
         while chat.running, ContinuousClock.now < resumedBy { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertFalse(chat.running)
         XCTAssertFalse(chat.waitingForSplitView)
-        XCTAssertGreaterThanOrEqual(transport.restoredReads, 2)
+        XCTAssertEqual(transport.restoredSides, ["right", "left", "right", "left"])
         XCTAssertEqual(transport.drags, 1)
         let requests = server.requests.map(Self.json)
         guard requests.count == 7 else { return XCTFail("Expected seven model requests, got \(requests.count)") }
@@ -420,7 +430,7 @@ final class FakeCompletions: @unchecked Sendable {
 
 /// Reports the same pane metadata and call sequence as the device transport, with controlled layout changes.
 private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
-    enum Layout { case original, portrait, otherPair, restored }
+    enum Layout { case original, portrait, otherPair, rightPaneOnly, restored }
     enum RotateAt { case paneRead, quickPaneRead, drop }
     let usesDynamicScreenSize = true
     let supportsPaneSelection = true
@@ -429,8 +439,9 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
     private let rotateAt: RotateAt
     private var layout = Layout.original
     private var side = "left"
-    private var reads = 0
+    private var reads: [String] = []
     private var sawOther = false
+    private var sawUnreadable = false
     private var inputs = 0
     private var drops = 0
 
@@ -444,8 +455,9 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
     }
 
     func change(to layout: Layout) { lock.withLock { self.layout = layout } }
-    var restoredReads: Int { lock.withLock { reads } }
+    var restoredSides: [String] { lock.withLock { reads } }
     var rejectedPairWasSeen: Bool { lock.withLock { sawOther } }
+    var unreadablePaneWasSeen: Bool { lock.withLock { sawUnreadable } }
     var taps: Int { lock.withLock { inputs } }
     var drags: Int { lock.withLock { drops } }
 
@@ -465,7 +477,12 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
             case ("GET", "/wda/locked"): return reply(false)
             case ("GET", "/wda/activeAppInfo"): return reply(["bundleId": .string(app)])
             case ("GET", "/wda/screen"): return reply(["screenSize": ["width": 390, "height": 600]])
-            case ("GET", "/screenshot"): return reply(.string(screenshot))
+            case ("GET", "/screenshot"):
+                if layout == .rightPaneOnly && side == "left" {
+                    sawUnreadable = true
+                    return reply(["error": "unable to capture screen"], status: 500)
+                }
+                return reply(.string(screenshot))
             case ("GET", "/source"):
                 let contents = side == "right"
                     ? #"<XCUIElementTypeStaticText type="XCUIElementTypeStaticText" label="Attachment count: \#(drops)" x="80" y="80" width="210" height="44"/>"#
@@ -487,7 +504,7 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
                 }
                 side = requested
                 if layout == .otherPair { sawOther = true }
-                if layout == .restored { reads += 1 }
+                if layout == .restored { reads.append(requested) }
                 return reply(["identity": .string("\(side)/\(layout)"), "bundleId": .string(app),
                               "otherBundleId": .string(layout == .otherPair ? "local.weather" : other),
                               "x": side == "left" ? 0 : 390, "y": 0])
