@@ -4,6 +4,28 @@ import XCTest
 /// The runner misbehaving in the ways a phone does, and text entry. Every call must answer in time
 /// and say what was sent and what is on screen.
 final class FaultTests: XCTestCase {
+    func testAnUnreadableScreenDoesNotReportThePreviousApp() async {
+        let (core, wda, _) = makeCore()
+        wda.source([("Button", "New note")], app: "Notes")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilenotes", "name": "Notes"]]) }
+        let events = LockedBox<[CoreEvent]>([])
+        let observer = Task { for await event in core.events { events.update { $0.append(event) } } }
+        defer { observer.cancel() }
+        _ = await core.call("look", [:])
+        let first = await eventually { events.value.contains { if case .toolFinished(_, _, let facts) = $0 { return facts.app == "Notes" }; return false } }
+        XCTAssertTrue(first, "The first task read Notes")
+        events.value = []
+        for route in ["GET /source", "GET /screenshot", "GET /wda/activeAppInfo"] {
+            wda.set(route) { _ in (500, ["value": ["error": "unknown error", "message": "read failed"]]) }
+        }
+        let answer = await core.call("look", [:])
+        XCTAssertTrue(answer.isError, answer.text)
+        let finished = await eventually { events.value.contains { if case .toolFinished = $0 { return true }; return false } }
+        XCTAssertTrue(finished)
+        guard case .toolFinished(_, _, let facts)? = events.value.last else { return XCTFail("Missing completion event") }
+        XCTAssertNil(facts.app, "A failed read must not attribute the new task to Notes")
+    }
+
     /// A focused field that keeps what /wda/keys and the paste menu put in it.
     final class Field: @unchecked Sendable {
         let value = LockedBox("")
@@ -634,7 +656,7 @@ final class FaultTests: XCTestCase {
         wda.source([("Button", "Photo"), ("Button", "Delete")], app: "Photos")
         _ = await core.call("look", [:])
         let result = await core.call("do", ["actions": [["tap": 1], ["tap": 2]]])
-        XCTAssertFalse(result.isError, "something was sent and the screen was read: not an error answer")
+        XCTAssertTrue(result.isError, "the requested batch stopped before the approval-gated action")
         XCTAssertTrue(result.text.contains("tap \"Photo\" (sent"), result.text)
         XCTAssertTrue(result.text.contains("not_sent from action 2: approval_required"), result.text)
         XCTAssertTrue(result.text.contains("Actions 1 to 1 were sent"), result.text)
@@ -904,12 +926,12 @@ final class ShopTestTests: XCTestCase {
 /// The owner's rule for the gym (Nov 7 2026): while the runner is up and a screenshot works, every
 /// answer carries the screen and something to go on; no error answer halts the model.
 final class GymTests: XCTestCase {
-    func testAFailedActionWithAReadIsNotAnErrorAnswer() async {
+    func testAFailedActionRetainsItsErrorAndScreenRead() async {
         let (core, wda, _) = makeCore { $0.actionCap = 1 }
         _ = await core.call("look", [:])
         wda.set("POST /wda/tap") { _ in (500, ["value": ["error": "unknown error", "message": "tap failed"]]) }
         let result = await core.call("do", ["actions": [["tap": [100, 120]], ["tap": [100, 160]]]])
-        XCTAssertFalse(result.isError, result.text)
+        XCTAssertTrue(result.isError, result.text)
         XCTAssertTrue(result.text.contains("error: action 1 was not sent"), result.text)
         XCTAssertTrue(result.text.contains("elements"), result.text)
         XCTAssertNotNil(result.jpeg)

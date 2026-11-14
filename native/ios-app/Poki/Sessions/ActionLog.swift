@@ -30,11 +30,11 @@ final class ActionLog {
 
         /// One line of text for a copied log.
         var line: String {
-            let time = at.formatted(date: .omitted, time: .standard)
+            let time = at.formatted(Date.FormatStyle(date: .omitted, time: .standard).locale(AppLocalization.locale))
             let mark = kind == .approval ? (ok ? "approval allowed" : "approval refused") : (ok ? "ok" : "failed")
-            let place = app.map { " in \($0)" } ?? ""
-            let more = [detail, why].compactMap { $0 }.joined(separator: "; ")
-            return "\(time)  [\(mark)] \(text)\(place)\(more.isEmpty ? "" : " (\(more))")"
+            let place = AppName.display(app).map { " in \($0)" } ?? ""
+            let more = [detail, why.map(ActivityWords.reason)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "; ")
+            return "\(time)  [\(mark)] \(ActivityWords.label(text))\(place)\(more.isEmpty ? "" : " (\(more))")"
         }
     }
 
@@ -190,7 +190,7 @@ struct ActionLogView: View {
                     .listRowBackground(Color.clear)
             }
             ForEach(days.prefix(shownDays), id: \.day) { day, runs in
-                Section(day.formatted(date: .complete, time: .omitted)) {
+                Section(day.formatted(Date.FormatStyle(date: .complete, time: .omitted).locale(AppLocalization.locale))) {
                     ForEach(runs) { run in
                         // A filtered log is a plain list; otherwise a run of several steps folds into one row.
                         if filtering || run.entries.count == 1 {
@@ -219,7 +219,7 @@ struct ActionLogView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("Activity Log")
+        .navigationTitle(AppLocalization.text("Activity Log"))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $search, prompt: Text("Search"))
         .toolbar {
@@ -282,9 +282,9 @@ struct ActionLogView: View {
 
     private func header(_ run: ActionLog.Run) -> some View {
         let count = run.entries.count
-        var parts = [String(localized: "\(count) entries")]
-        if run.failed > 0 { parts.append(String(localized: "\(run.failed) failed")) }
-        if run.approvals > 0 { parts.append(String(localized: "\(run.approvals) approvals")) }
+        var parts = [AppLocalization.text(LocalizedStringResource("\(count) entries"))]
+        if run.failed > 0 { parts.append(AppLocalization.text(LocalizedStringResource("\(run.failed) failed"))) }
+        if run.approvals > 0 { parts.append(AppLocalization.text(LocalizedStringResource("\(run.approvals) approvals"))) }
         return HStack(alignment: .center, spacing: 10) {
             badge(run.caller, ok: run.failed == 0, approval: false)
             VStack(alignment: .leading, spacing: 2) {
@@ -306,8 +306,10 @@ struct ActionLogView: View {
                 if let detail = entry.detail {
                     Text(verbatim: detail).font(.footnote).foregroundStyle(entry.ok ? Color(.secondaryLabel) : Color.orange).lineLimit(2)
                 }
-                Text([entry.app, entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: ", "))
-                    .font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
+                let context = [AppName.display(entry.app), entry.session.flatMap { SessionStore.shared.session($0)?.name }].compactMap { $0 }.joined(separator: ", ")
+                if !context.isEmpty {
+                    Text(context).font(.footnote).foregroundStyle(Color(.secondaryLabel)).lineLimit(1)
+                }
             }
             Spacer(minLength: 4)
             Text(entry.at, style: .time).font(.footnote).monospacedDigit().foregroundStyle(Color(.secondaryLabel))

@@ -58,6 +58,8 @@ final class SelfSigner {
         let version: String
         let build: String
         let channel: String
+        let source: String?
+        let source_notice: String?
     }
 
     /// Prepare a fresh build when the installed profile has this many days left or fewer.
@@ -69,6 +71,7 @@ final class SelfSigner {
     private(set) var teams: [Team] = []
     private(set) var ready: [String: Prepared] = [:]
     private(set) var latest: Release?
+    private(set) var updateCheckError: String?
     /// What the signer is doing now, for the Setup page.
     private(set) var working: String?
     private(set) var fraction: Double?
@@ -88,9 +91,34 @@ final class SelfSigner {
     var isIdle: () -> Bool = { false }
     /// Why an install waits, for the message under the button.
     var busyReason: () -> String? = { nil }
-    /// Before an install the owner asked for: Poki winds down (automation session, Live Activity)
-    /// so it exits cleanly when iOS replaces it, and comes back on after.
-    var beforeInstall: () -> Void = {}
+    /// Stops runtime work before the confirmed update saves state and exits.
+    var beforeExit: () async -> Void = {}
+
+    enum InstallFinish: Equatable {
+        case idle, installing, waitingForExit
+        case needsReopen(installed: Bool)
+    }
+    private(set) var installFinish = InstallFinish.idle
+    private var finishTimer: Timer?
+    private var foregroundObserver: NSObjectProtocol?
+
+    var installMessage: String? {
+        guard installFinish != .idle else { return nil }
+        if exitRequest == .unconfirmed && !needsReopen {
+            return AppLocalization.text(LocalizedStringResource("Installing the update. Features are unavailable until you reopen Poki."))
+        }
+        return AppLocalization.text(LocalizedStringResource("If the update has not finished after a few seconds, swipe up on Poki in the app switcher to close it, then open Poki again. Features are unavailable until you reopen Poki."))
+    }
+
+    var needsReopen: Bool {
+        if case .needsReopen = installFinish { return true }
+        return false
+    }
+
+    isolated deinit {
+        finishTimer?.invalidate()
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
+    }
 
     private var started = false
     private var timer: Timer?
@@ -114,7 +142,7 @@ final class SelfSigner {
     /// Why Poki cannot download the update by itself, when it cannot. Nil when it can.
     var updateBlocker: String? {
         guard updateNotReady else { return nil }
-        if !signedIn { return String(localized: "To download updates by itself, Poki needs your Apple Account: sign in under Signing Options. Or update Poki from Poki Setup on your Mac.") }
+        if !signedIn { return AppLocalization.text(LocalizedStringResource("To download updates by itself, Poki needs your Apple Account: sign in under Signing Options. Or update Poki from Poki Setup on your Mac.")) }
         if phone() == nil { return unreachable }
         return nil
     }
@@ -225,7 +253,7 @@ final class SelfSigner {
     /// Prepares what is due, by itself: an update when the channel has a newer Poki, a refresh when
     /// the installed profile is close to expiring. Never installs.
     func maintain() {
-        guard signedIn, working == nil, phone() != nil else { return }
+        guard installFinish == .idle, signedIn, working == nil, phone() != nil else { return }
         Task {
             lastCheck = Date()
             if let rel = try? await SignerBridge.decode(Release.self, ["op": "check_update"]) {
@@ -242,17 +270,20 @@ final class SelfSigner {
         }
     }
 
-    /// Looks up the newest build on the chosen channel without preparing it, for the version rows.
-    /// Works without an Apple Account. False when GitHub could not be read.
+    /// Looks up Beta updates without preparing a signed copy.
     @discardableResult
     func checkLatest() async -> Bool {
-        guard let rel = try? await SignerBridge.decode(Release.self, ["op": "check_update"]) else { return false }
-        latest = rel
-        lastCheck = Date()
-        // Found here first (the Signing page looks without waiting for the 3-hour check): the
-        // download starts now too, as it would from that check.
-        if updateNotReady { maintain() }
-        return true
+        do {
+            latest = try await SignerBridge.decode(Release.self, ["op": "check_update"])
+            lastCheck = Date()
+            updateCheckError = nil
+            if updateNotReady { maintain() }
+            return true
+        } catch {
+            latest = nil
+            updateCheckError = error.localizedDescription
+            return false
+        }
     }
 
     /// Download and Install Update, in one tap: gets the newest build and signs it, then installs it.
@@ -290,18 +321,19 @@ final class SelfSigner {
             }
             self.ready[kind] = p
             self.log.add("signing", "prepared \(kind): \(p.version) (\(p.build)), profile until \(p.expires)")
-            self.notify(title: kind == "update" ? String(localized: "Poki Update Ready") : String(localized: "Poki Refresh Ready"),
-                        body: String(localized: "Open Setup and tap Install when Poki isn't running a task."))
+            self.notify(title: kind == "update" ? AppLocalization.text(LocalizedStringResource("Poki Update Ready")) : AppLocalization.text(LocalizedStringResource("Poki Refresh Ready")),
+                        body: AppLocalization.text(LocalizedStringResource("Open Settings > Connection > Signing & Updates and install the prepared build when Poki isn't running a task.")))
         }
     }
 
     /// Installs the prepared build. iOS ends Poki when it lands; a notification brings it back.
     func install() async {
+        guard installFinish == .idle else { return }
         guard let p = next else { log.add("signing", "install tapped, but no build is ready"); return }
         log.add("signing", "install tapped: \(p.kind) \(p.version) (\(p.build))")
         guard isIdle() else {
             let why = busyReason() ?? ""
-            lastError = String(localized: "Poki is running a task. Install when it has finished.") + (why.isEmpty ? "" : " " + why)
+            lastError = AppLocalization.text(LocalizedStringResource("Poki is running a task. Install when it has finished.")) + (why.isEmpty ? "" : " " + why)
             log.add("signing", "install waits: \(why)")
             return
         }
@@ -314,14 +346,16 @@ final class SelfSigner {
         request["manifest"] = Self.home.appendingPathComponent("ready/\(p.kind)/manifest.json").path
         let reopen = "nz.zheha.poki.signing.reopen"
         scheduleReopenNotice(id: reopen)
-        beforeInstall()
+        installFinish = .installing
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.exitWaitEnded() }
+        }
         steppedAside = false
         installFraction = nil
-        // iOS holds the last part of an upgrade until the app it replaces leaves the screen: Poki
-        // steps aside to the Home Screen by itself once the new copy is almost in (or has stalled
-        // there), keeping a background task so the request can finish; iOS then ends Poki, and the
-        // notice above reopens it.
-        let background = UIApplication.shared.beginBackgroundTask(withName: "Poki update")
+        // Keep the upload alive until installation_proxy has accepted the package.
+        installBackground = UIApplication.shared.beginBackgroundTask(withName: "Poki update")
         let watch = Task { @MainActor [weak self] in
             var last: (fraction: Double, since: Date)?
             while !Task.isCancelled, let self, self.working != nil {
@@ -337,18 +371,33 @@ final class SelfSigner {
             }
         }
         watch.cancel()
-        UIApplication.shared.endBackgroundTask(background)
-        // Still here: iOS did not end Poki (or the install failed).
-        if lastError != nil { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reopen]) }
+        endInstallBackground()
+        if lastError != nil {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [reopen])
+            requireReopen()
+        } else if needsReopen {
+            installFinish = .needsReopen(installed: true)
+            working = installMessage
+        } else {
+            installFinish = .waitingForExit
+            if exitRequest != .closing {
+                finishTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
+                    Task { @MainActor in self?.exitWaitEnded() }
+                }
+            }
+            if !steppedAside { stepAside() }
+            working = installMessage
+            exitIfReady()
+        }
     }
 
     // MARK: Helpers
 
     private var unreachable: String {
         switch whyUnreachable() {
-        case .unpaired: String(localized: "Pair this iPhone first (Setup).")
+        case .unpaired: AppLocalization.text(LocalizedStringResource("Pair this iPhone first (Setup)."))
         case .cellular: LoopbackMonitor.needsWiFi
-        case .loopback: String(localized: "Poki can't reach this iPhone. Turn on the loopback, then try again.")
+        case .loopback: AppLocalization.text(LocalizedStringResource("Poki can't reach this iPhone. Turn on the loopback, then try again."))
         }
     }
 
@@ -356,7 +405,7 @@ final class SelfSigner {
         working = title
         fraction = nil
         lastError = nil
-        defer { working = nil; fraction = nil }
+        defer { working = installMessage; fraction = nil }
         do { try await work() } catch {
             let code = (error as? SignerError)?.code ?? ""
             lastError = whyUnreachable() == .cellular && ["loopback", "handshake", "unreachable"].contains(code) ? LoopbackMonitor.needsWiFi : error.localizedDescription
@@ -367,41 +416,87 @@ final class SelfSigner {
     /// The upgrade's progress while it installs, for `install`'s watch.
     private var installFraction: Double?
     private var steppedAside = false
+    private enum ExitRequest { case unconfirmed, stopping, stopped, closing }
+    private var exitRequest = ExitRequest.unconfirmed
+    private var installBackground: UIBackgroundTaskIdentifier = .invalid
 
-    /// Poki to the Home Screen, as the person swiping up would: iOS finishes the upgrade only once the
-    /// app it replaces is no longer in front. Once per install.
+    private func endInstallBackground() {
+        guard installBackground != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(installBackground)
+        installBackground = .invalid
+    }
+
+    /// Ask before ending the process. The install step can announce itself before upload finishes.
     private func stepAside() {
         guard !steppedAside else { return }
         log.add("signing", "the install's last step: telling the owner Poki will close to finish")
         steppedAside = true
-        working = String(localized: "Finishing the update: Poki will close to finish it")
-        // The last step: the owner is told Poki will close (the alert's OK steps aside, and iOS ends
-        // Poki by itself otherwise); the notice says it again in case the alert was missed.
+        working = AppLocalization.text(LocalizedStringResource("Finishing the update: Poki will close to finish it"))
         finishNotice = true
-        notify(title: String(localized: "Poki Will Close to Finish the Update"),
-               body: String(localized: "Poki will close by itself. Open it again once the update is in."))
+        notify(title: AppLocalization.text(LocalizedStringResource("Poki Will Close to Finish the Update")),
+               body: AppLocalization.text(LocalizedStringResource("Poki will close by itself. Open it again once the update is in.")))
     }
     /// The last install step's alert: Poki has to exit for the update to finish.
     var finishNotice = false
-    /// OK on that alert: Poki leaves for the Home Screen.
     func finishNoticeAnswered() {
+        guard finishNotice else { return }
         finishNotice = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        exitRequest = .stopping
+        log.add("signing", "update confirmed: stopping runtime before installation progress")
+        Task { @MainActor in
+            await beforeExit()
+            SessionStore.shared.flush()
+            UserDefaults.standard.synchronize()
+            exitRequest = .stopped
+            guard !needsReopen else { return }
+            log.add("signing", "update runtime stopped and state saved; moving to background")
             UIApplication.shared.perform(NSSelectorFromString("suspend"))
+            exitIfReady()
         }
     }
 
+    private func exitIfReady() {
+        guard exitRequest == .stopped, !needsReopen,
+              installFraction != nil || installFinish == .waitingForExit else { return }
+        exitRequest = .closing
+        finishTimer?.invalidate()
+        finishTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.requireReopen() }
+        }
+        endInstallBackground()
+        log.add("signing", "update accepted: runtime stopped and state saved; exiting normally")
+        exit(0)
+    }
+
+    /// An install result is required before foreground return or the timer can claim success.
+    private func exitWaitEnded() {
+        guard installFinish == .waitingForExit || exitRequest == .closing else { return }
+        requireReopen()
+    }
+
+    private func requireReopen() {
+        guard installFinish != .idle, !needsReopen else { return }
+        installFinish = .needsReopen(installed: installFinish == .waitingForExit)
+        finishTimer?.invalidate()
+        finishNotice = false
+        fraction = nil
+        working = installMessage
+        log.add("signing", "old process still running: showing instructions to reopen Poki")
+    }
+
     private func show(_ progress: [String: Any]) {
+        guard !needsReopen else { return }
         switch progress["kind"] as? String {
         case "step":
             working = progress["title"] as? String ?? working; fraction = nil
-            // The install itself has begun (the build is on the phone): the last step, where Poki
-            // must exit for iOS to finish. The owner is told now rather than at a percentage that a
-            // fast or stalled install may never report.
+            // This step precedes upload. Only part/install comes from the system upgrade callback.
             if progress["id"] as? String == "install" { stepAside() }
         case "part":
             fraction = progress["fraction"] as? Double
-            if progress["id"] as? String == "install" { installFraction = fraction }
+            if progress["id"] as? String == "install" {
+                installFraction = fraction
+                exitIfReady()
+            }
             if let d = progress["detail"] as? String { working = d }
         case "note", "waiting": if let t = progress["text"] as? String { working = t }
         default: break
@@ -418,7 +513,7 @@ final class SelfSigner {
     }
 
     private func scheduleReopenNotice(id: String) {
-        notify(title: String(localized: "Poki Was Updated"), body: String(localized: "Tap to open Poki again."), id: id, after: 20)
+        notify(title: AppLocalization.text(LocalizedStringResource("Poki Was Updated")), body: AppLocalization.text(LocalizedStringResource("Tap to open Poki again.")), id: id, after: 20)
     }
 
     /// Once a day in the last two days: the build is ready (or can't be made) and nothing installed it.
@@ -427,9 +522,9 @@ final class SelfSigner {
         let key = "signing.reminded"
         if let last = UserDefaults.standard.object(forKey: key) as? Date, Date().timeIntervalSince(last) < 20 * 3600 { return }
         UserDefaults.standard.set(Date(), forKey: key)
-        let when = expiry.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? ""
-        notify(title: String(localized: "Poki Expires Soon"),
-               body: next != nil ? String(localized: "A refreshed Poki is ready. Open Setup and tap Install before \(when).") : String(localized: "Open Setup to refresh Poki before \(when)."))
+        let when = expiry.map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLocalization.locale)) } ?? ""
+        notify(title: AppLocalization.text(LocalizedStringResource("Poki Expires Soon")),
+               body: next != nil ? AppLocalization.text(LocalizedStringResource("A refreshed Poki is ready. Open Setup and tap Install before \(when).")) : AppLocalization.text(LocalizedStringResource("Open Setup to refresh Poki before \(when).")))
     }
 
     /// `-pokiSigningDays 1`: a simulator has no profile, so a screenshot gives Poki one that ends then.

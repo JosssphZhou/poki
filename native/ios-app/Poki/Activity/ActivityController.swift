@@ -81,7 +81,7 @@ final class ActivityController {
     /// The device name `start` was last asked with: the activity is wanted, shown or not.
     private var wanted: String?
     /// Wanted but not shown because nothing is happening: not a fault.
-    var waitsForWork: Bool { activity == nil && wanted != nil && state.phase == .idle && hidesWhenIdle() }
+    var waitsForWork: Bool { activity == nil && wanted != nil && state.isQuiet && hidesWhenIdle() }
 
     var isRunning: Bool { activity != nil }
 
@@ -101,7 +101,7 @@ final class ActivityController {
     func start(deviceName: String) {
         wanted = deviceName
         guard activity == nil else { return }
-        if state.phase == .idle, hidesWhenIdle() { lastError = nil; return }
+        if state.isQuiet, hidesWhenIdle() { lastError = nil; return }
         guard enabled else { lastError = "Live Activities are off for Poki (Settings > Poki > Live Activities)."; return }
         // A Live Activity left from an earlier run of the app is replaced.
         for old in Activity<PokiActivityAttributes>.activities { Task { await old.end(nil, dismissalPolicy: .immediate) } }
@@ -121,14 +121,18 @@ final class ActivityController {
                     await MainActor.run { if self?.activity?.id == started.id { self?.activity = nil } }
                 }
             }
-        } catch { lastError = String(localized: "The Live Activity did not start. \(error.localizedDescription)") }
+        } catch { lastError = AppLocalization.text(LocalizedStringResource("The Live Activity did not start. \(error.localizedDescription)")) }
     }
 
     /// Counts a finished step for the step line and the run's summary.
     func record(step text: String, ok: Bool) {
         update { state in
             state.stepCount += 1
-            if !ok { state.failedCount += 1 }
+            if !ok {
+                state.failedCount += 1
+                // Under a plan, the step it went wrong in turns red.
+                if let step = state.plan?.current, !(state.failedSteps ?? []).contains(step) { state.failedSteps = (state.failedSteps ?? []) + [step] }
+            }
             // Only a step that went through is shown ticked under the next one.
             state.previous = ok ? String(text.prefix(80)) : nil
         }
@@ -137,22 +141,24 @@ final class ActivityController {
 
     /// Ends the Live Activity at once, after the updates already on their way, so nothing is left on
     /// the Lock Screen or in the island.
-    func end() {
+    @discardableResult
+    func end(dismissalPolicy: ActivityUIDismissalPolicy? = nil) -> Task<Void, Never>? {
         wanted = nil
         finishTimer?.cancel(); foldTimer?.cancel(); eventTimer?.cancel()
         if Self.runPhases.contains(state.phase) { logRun("cut off by ending the Live Activity") }
         worker?.cancel(); worker = nil; plainWaiting = false
-        guard let activity else { return }
+        guard let activity else { return tail }
         self.activity = nil
         // A finished run or a problem stays on the Lock Screen with its final content for a while (HIG:
         // end at once, keep the outcome readable); anything else goes at once.
         let final: ActivityContent<PokiState>? = state.phase == .done || state.phase == .problem
             ? ActivityContent(state: state, staleDate: nil, relevanceScore: 0) : nil
-        let policy: ActivityUIDismissalPolicy = final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60))
+        let policy = dismissalPolicy ?? (final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60)))
         state.guide = nil; state.pin = nil; state.since = nil; state.event = nil; state.previous = nil
-        state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.decision = nil; state.plan = nil
+        state.stepCount = 0; state.failedCount = 0; state.failedSteps = nil; state.endedAt = nil; state.decision = nil; state.plan = nil
         let previous = tail
         tail = Task { await previous?.value; await activity.end(final, dismissalPolicy: policy) }
+        return tail
     }
 
     /// Takes the activity off the screen but keeps it wanted: the next work brings it back.
@@ -164,15 +170,22 @@ final class ActivityController {
         tail = Task { await previous?.value; await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
+    /// Language is a presentation update, never an activity transition or a new automation session.
+    func languageChanged() {
+        state.uiLanguage = AppLocalization.language
+        send(alert: nil, critical: true)
+    }
+
     func update(_ change: (inout PokiState) -> Void) {
         let old = state
         change(&state)
         ActivityUpdatePolicy.settle(&state, over: old)
         let alert = transition(from: old)
+        if state.phase == .working, let app = state.app { keepIcon(app) }
         // No idle activity where iOS's background task stands in: it comes with the work and goes with it.
-        if activity == nil, let wanted, state.phase != .idle, canStart() {
+        if activity == nil, let wanted, !state.isQuiet, canStart() {
             start(deviceName: wanted)
-        } else if activity != nil, state.phase == .idle, hidesWhenIdle() {
+        } else if activity != nil, state.isQuiet, hidesWhenIdle() {
             hide()
         }
         // Something needs the person and there is no Live Activity to pop up: a banner instead (an
@@ -186,6 +199,17 @@ final class ActivityController {
     }
     /// The hand-off or problem this change pops up for (`update` posts a banner when no activity runs).
     private var attention: (title: String, body: String)?
+
+    /// Puts the icon of the app the run is in where the widget reads it, before the update that shows
+    /// it goes out. An icon only the App Store has is fetched for the next update; none is sent for it.
+    private func keepIcon(_ app: String) {
+        guard let url = AppIconFile.url(app), !FileManager.default.fileExists(atPath: url.path) else { return }
+        if let icon = AppIconStore.shared.icon(app) {
+            AppIconFile.write(icon, for: app)
+        } else {
+            Task { await AppIconStore.shared.load(app) }
+        }
+    }
 
     /// Writes a thumbnail, at most about 160 points wide, to the App Group container for the widget.
     func setThumbnail(_ jpeg: Data?) {
@@ -207,10 +231,14 @@ final class ActivityController {
         // The chat publishes its plan just before its first step, so a plan set since the last run
         // finished is the next run's.
         if state.plan != nil, state.plan != old.plan { planFinished = false }
+        // The red steps belong to their plan.
+        if state.plan?.steps != old.plan?.steps { state.failedSteps = nil }
         // A new run of steps: from anything that is not already a run.
         let runPhases = Self.runPhases
         if state.phase == .working, !runPhases.contains(old.phase) {
-            state.stepCount = 0; state.failedCount = 0; state.endedAt = nil; state.previous = nil
+            state.stepCount = 0; state.failedCount = 0; state.failedSteps = nil; state.endedAt = nil; state.previous = nil
+            // The app belongs to its run: a run that never reads the screen must not finish in the last run's app.
+            if state.app == old.app { state.app = nil }
             tally = Tally()
             if planFinished { state.plan = nil; planFinished = false }
             AppLog.shared.add("activity", "run started from \(old.phase.rawValue)\(activity == nil ? " with no Live Activity" : "")")
@@ -243,7 +271,7 @@ final class ActivityController {
         }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
-            alert = critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence)
+            alert = critical(approval.question, "")
             remindHalfway(approval)
         }
         if state.approval == nil, let was = old.approval {
@@ -292,7 +320,7 @@ final class ActivityController {
             try? await Task.sleep(for: .seconds(half))
             guard !Task.isCancelled, let self, self.state.phase == .approval, self.state.approval?.id == approval.id else { return }
             AppLog.shared.add("activity", "approval \(approval.id) reminded halfway")
-            self.send(alert: self.critical(StatusWord.needsApproval.text, approval.islandLine ?? approval.sentence), critical: true)
+            self.send(alert: self.critical(approval.question, ""), critical: true)
         }
     }
 
@@ -332,7 +360,7 @@ final class ActivityController {
         state.previous = nil
         state.headline = "Finished"
         setEvent(.finished, "Run finished")
-        let summary = state.runSummary
+        let summary = state.runSummary ?? state.doneTitle
         send(alert: alert ? ordinary(StatusWord.done.text, summary) : nil, critical: true)
         armFold()
     }
@@ -358,7 +386,7 @@ final class ActivityController {
             self.update { state in
                 state.phase = .idle
                 state.headline = "Waiting for agent"
-                state.previous = nil; state.stepCount = 0; state.failedCount = 0
+                state.previous = nil; state.stepCount = 0; state.failedCount = 0; state.failedSteps = nil
                 state.since = nil; state.endedAt = nil; state.event = nil; state.plan = nil
             }
         }
@@ -452,7 +480,7 @@ final class ActivityController {
         state.previous = nil
         if let steps = state.plan?.steps { state.plan?.steps = steps.map { String($0.prefix(30)) } }
         if var approval = state.approval {
-            approval.summary = String(approval.summary.prefix(80)); approval.reason = String(approval.reason.prefix(60)); approval.ask = String(approval.ask.prefix(120))
+            approval.summary = String(approval.summary.prefix(80)); approval.reason = String(approval.reason.prefix(60))
             state.approval = approval
         }
     }

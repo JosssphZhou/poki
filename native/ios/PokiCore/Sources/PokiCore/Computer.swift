@@ -119,6 +119,7 @@ final class Computer: @unchecked Sendable {
         var notes = reading.notes
         if let modal = modalOnly(reading.elements) { notes.append(modal) }
         if reading.png == nil && reading.elements.isEmpty {
+            lastForeground = reading.foreground
             // Nothing came back: say what was sent and what the runner is doing, and nothing else.
             let state = host.runnerState()
             let did = did.map { $0.replacingOccurrences(of: "(sent,", with: "(sent, not confirmed: no read after it,") }
@@ -346,10 +347,8 @@ final class Computer: @unchecked Sendable {
         }
         typedInto = nil
         let footer = gone.isEmpty ? [] : ["gone since the last read: " + gone.prefix(20).map { "\($0.ref) \($0.element.type) \"\($0.element.text.prefix(40))\"" }.joined(separator: ", ")]
-        // An answer that carries the screen is not an error, whatever happened to the actions: the
-        // `error:` line says what, and the model goes on from the picture and the elements. Only an
-        // answer with nothing read, or with nothing sent at all, is one.
-        return ToolResult(text: (header + body + footer).joined(separator: "\n"), jpeg: jpeg, isError: error != nil && did.isEmpty && jpeg == nil)
+        // A screenshot helps the caller recover from a failed action without hiding the failure.
+        return ToolResult(text: (header + body + footer).joined(separator: "\n"), jpeg: jpeg, isError: error != nil)
     }
 
     /// An answer with nothing done but the picture (served apart from WDA's queue), so a busy runner
@@ -387,7 +386,7 @@ final class Computer: @unchecked Sendable {
         if let error { lines.append("error: \(error)") }
         lines += extra
         lines.append("poki: Poki is in front, showing the owner's chat with you, so no screen of the task is read yet. Start the task in its app: do {launch: \"bundle id\"}, or do {run: \"name\"} for a saved routine.")
-        return ToolResult(text: lines.joined(separator: "\n"), jpeg: nil, isError: error != nil && did.isEmpty)
+        return ToolResult(text: lines.joined(separator: "\n"), jpeg: nil, isError: error != nil)
     }
 
     /// The `handoff:` line: a step handed to the owner that is waiting, or just done (reported once).
@@ -503,11 +502,11 @@ final class Computer: @unchecked Sendable {
         return min(max(0, until - now()), actions.reduce(0) { $0 + actionCap($1) } + longestPause + config.readTimeout)
     }
 
-    func act(actions: [JSON], full: Bool, finish: Bool = false, purpose: String? = nil, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
-        restartNote(await actNow(actions: actions, full: full, finish: finish, purpose: purpose, session: session, answerBy: answerBy))
+    func act(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
+        restartNote(await actNow(actions: actions, full: full, finish: finish, session: session, answerBy: answerBy))
     }
 
-    func actNow(actions: [JSON], full: Bool, finish: Bool = false, purpose: String? = nil, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
+    func actNow(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
         scrollFound = nil
         typedInto = nil
         var started = now()
@@ -560,7 +559,7 @@ final class Computer: @unchecked Sendable {
             for (at, action) in actions.enumerated() {
                 if scan.moved, let kind = ActionKind(action), presses(kind, action, scan, unread: false).contains(where: \.atPoint) {
                     var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy)
-                    result.text += "\nnot_sent from action \(at + 1): the screen may have changed. Choose the remaining actions from the fresh screen above and send them in a new do call. Do not repeat the actions already sent."
+                    result.text += "\nnot_sent from action \(at + 1): a coordinate action needs a fresh read after an earlier action that could change the screen. This check runs before the final screen comparison. Choose the remaining actions from the screen above and send them in a new do call. Do not repeat actions already sent."
                     return result
                 }
                 if sensitive(action, &scan) != nil { break }
@@ -608,8 +607,7 @@ final class Computer: @unchecked Sendable {
                     }
                 }
                 let approval = approvals.pending.flatMap { $0.fingerprint == fingerprint ? $0 : nil }
-                    ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason,
-                                         kinds: steps.map { ApprovalKind(reason: $0.reason) }, purpose: purpose, fingerprint: fingerprint)
+                    ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, fingerprint: fingerprint)
                 // The time the owner takes is not the actions' time: the clock starts again after it.
                 let asked = now()
                 let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))

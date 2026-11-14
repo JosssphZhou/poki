@@ -21,20 +21,7 @@ import UIKit
 // 3. An icon fetched earlier from the App Store and kept in Caches/AppIcons.
 // 4. The App Store's public lookup by bundle ID (itunes.apple.com/lookup), on a view's `.task`. The
 //    request carries the bundle ID and the store's country only. A miss is remembered for a day.
-// Without any of these the view draws one placeholder: a grey tile in the icon's shape with an app glyph.
-
-/// The language the iPhone names apps in, from its first preferred language: Simplified or Traditional
-/// Chinese, or English for any other. Apps' names (`AppIconStore.name`) and the home page's default
-/// quick actions (`HomeIdea`) follow it.
-enum AppLanguage {
-    case english, simplifiedChinese, traditionalChinese
-
-    static var current: AppLanguage {
-        let language = Locale.preferredLanguages.first ?? "en"
-        if language.hasPrefix("zh-Hant") || language.hasPrefix("zh-TW") || language.hasPrefix("zh-HK") { return .traditionalChinese }
-        return language.hasPrefix("zh") ? .simplifiedChinese : .english
-    }
-}
+// Without any of these the view draws Poki's carried bear icon.
 
 /// Icons of apps, found once and kept for the app's run.
 @MainActor @Observable
@@ -102,8 +89,7 @@ final class AppIconStore {
     /// The bundle ID for an app's name, or `app` itself when it already is one.
     static func bundleID(_ app: String) -> String? {
         let name = app.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let id = KnownApps.byName[name.lowercased()] { return id }
-        if let known = KnownApps.byID[name.lowercased()] { return known.id }
+        if let known = KnownApps.find(name) { return known.id }
         // "com.tencent.xin": a reverse-DNS name with no spaces.
         if !name.contains(" "), name.split(separator: ".").count >= 3 { return name }
         return nil
@@ -112,13 +98,13 @@ final class AppIconStore {
     /// The name an app goes by on this iPhone, in its first language (English, Simplified or
     /// Traditional Chinese), from a bundle ID or any of its names; nil for an app not listed here.
     static func name(_ app: String) -> String? {
-        guard let id = bundleID(app), let known = KnownApps.byID[id.lowercased()] else { return nil }
-        return known.name(in: .current)
+        KnownApps.find(app)?.name(in: .current)
     }
 
     /// The bundle IDs of the apps `text` names, in any of their names: "打开美团外卖点下酒菜" names Meituan
     /// Waimai and not Meituan, as the longest name wins where one starts another. A Latin name counts
-    /// only as a whole word, and one-letter names ("X") never.
+    /// only as a whole word, and one-letter names ("X") never. A name of digits ("12306") counts next to
+    /// Chinese text ("打开12306查询") but not inside a longer run of Latin letters or digits.
     static func bundleIDs(namedIn text: String) -> [String] {
         let text = Array(text.lowercased())
         var found: [String] = []
@@ -128,7 +114,11 @@ final class AppIconStore {
                 let chars = Array(name)
                 guard i + chars.count <= text.count, Array(text[i..<i + chars.count]) == chars else { return false }
                 guard chars.allSatisfy(\.isASCII) else { return true }
-                return (i == 0 || !text[i - 1].isLetter) && (i + chars.count == text.count || !text[i + chars.count].isLetter)
+                // A Latin name stops at any letter; a number only at a Latin letter or a digit, as Chinese
+                // characters are letters too and sit right against it.
+                let numeric = chars.allSatisfy(\.isNumber)
+                let joins: (Character) -> Bool = numeric ? { $0.isASCII && ($0.isLetter || $0.isNumber) } : { $0.isLetter }
+                return (i == 0 || !joins(text[i - 1])) && (i + chars.count == text.count || !joins(text[i + chars.count]))
             }
             guard let hit, let id = KnownApps.byName[hit] else { i += 1; continue }
             if !found.contains(id) { found.append(id) }
@@ -157,31 +147,36 @@ final class AppIconStore {
     /// catalog is generated (scripts/make-assets.sh), and a build from a catalog made before an icon was
     /// added shipped without it (Taobao on 0.3.1 (865)).
     private static func bundled(_ id: String?) -> UIImage? {
-        guard let file = id.flatMap({ KnownApps.byID[$0.lowercased()]?.icon }), let path = Bundle.main.path(forResource: file, ofType: "png"),
-              let image = UIImage(contentsOfFile: path)?.cgImage else { return nil }
+        id.flatMap { KnownApps.byID[$0.lowercased()]?.icon }.flatMap(carried)
+    }
+
+    /// One of the PNGs in Poki/AppIcons by its file name, at the Home Screen's 3x.
+    static func carried(_ file: String) -> UIImage? {
+        guard let path = Bundle.main.path(forResource: file, ofType: "png"), let image = UIImage(contentsOfFile: path)?.cgImage else { return nil }
         return UIImage(cgImage: image, scale: 3, orientation: .up)
     }
 }
 
-/// An app's icon in the Home Screen's shape at `size` points, or the placeholder tile.
+/// An app's icon in the Home Screen's shape at `size` points, or Poki's default icon.
 struct AppIconView: View {
     var app: String
     var size: CGFloat
     /// The icon in its light look whatever the page's: the home page's pills (the owner: their icons
     /// should not change with dark mode).
     var alwaysLight = false
+    /// A bundled PNG keeps the icon available even when its app is not installed.
+    var carried: String?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
-        let image = PerfSwitch.on(.iconsPlaceholder) ? nil : AppIconStore.shared.icon(app, dark: !alwaysLight && scheme == .dark)
+        let image = PerfSwitch.on(.iconsPlaceholder) ? nil
+            : carried.flatMap(AppIconStore.carried) ?? AppIconStore.shared.icon(app, dark: !alwaysLight && scheme == .dark)
         Group {
             if let image {
                 Image(uiImage: image).resizable().interpolation(.high).scaledToFill()
             } else {
-                Image(systemName: "app.dashed").font(.system(size: size * 0.5)).foregroundStyle(Color(.secondaryLabel))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(.tertiarySystemFill))
+                DefaultAppIcon(size: size)
             }
         }
         .frame(width: size, height: size)

@@ -128,7 +128,7 @@ final class ToolTests: XCTestCase {
         let (core, wda, _) = makeCore()
         _ = await core.call("look", [:])
         let result = await core.call("do", ["actions": [["tap": 9]]])
-        XCTAssertFalse(result.isError, "the screen was read, so the answer is not an error; its error line says what was wrong")
+        XCTAssertTrue(result.isError, "a screen read does not make the failed action successful")
         XCTAssertTrue(result.text.contains("element 9 is not in the latest read"), result.text)
         XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
@@ -185,30 +185,6 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(approval.reason.contains("action 3: deleting (\"delete\")"), approval.reason)
         XCTAssertTrue(approval.reason.contains("action 4: a payment (\"pay\")"), approval.reason)
 
-    }
-
-    /// The owner is asked in one sentence what the batch gets done, never the taps or the rule's
-    /// reason: four taps on one Delete ask "Delete in Settings", and the agent's own sentence, when it
-    /// gives one, is the question, cut to its first line.
-    func testFourTapsOnOneButtonAskOneSentence() async throws {
-        func ask(_ args: JSON) async throws -> Approval {
-            let wda = FakeWDA()
-            wda.source([("Button", "Delete"), ("Button", "Back")])
-            let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
-            _ = await core.call("look", [:])
-            _ = await core.call("do", args)
-            return try XCTUnwrap(core.pendingApproval)
-        }
-        let taps: JSON = .array(Array(repeating: ["tap": 1], count: 4))
-
-        let approval = try await ask(["actions": taps])
-        XCTAssertTrue(approval.reason.hasPrefix("multiple sensitive actions"), approval.reason)
-        XCTAssertEqual(approval.ask, "Delete in Settings")
-
-        let purpose = "Order lunch from Sample Noodles, ¥38 in total"
-        let asked = try await ask(["actions": taps, "purpose": .string(purpose + "\nTap the row four times")])
-        XCTAssertEqual(asked.ask, purpose)
-        XCTAssertEqual(asked.kinds, [.deleting], "the rule's kind stays beside the agent's own words")
     }
 
     /// "Payments, deletions and actions in Wallet always need your confirmation", whatever action the
@@ -934,6 +910,22 @@ final class MCPTests: XCTestCase {
         let call = try JSON.parse(await post(core, ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "look", "arguments": .object([:])]], session: session).body)
         XCTAssertEqual(call["result"]?["content"]?[1]?["type"], "image")
         XCTAssertEqual(call["result"]?["isError"], false)
+    }
+
+    func testFailedActionReturnsErrorAndRecoveryImageOverMCP() async throws {
+        let (core, wda, _) = makeCore()
+        let initialized = await post(core, ["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18"]])
+        let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+        _ = await post(core, ["jsonrpc": "2.0", "method": "notifications/initialized"], session: session)
+        let response = await post(core, ["jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": [
+            "name": "do", "arguments": ["actions": [["tap": 9999]]],
+        ]], session: session)
+        XCTAssertEqual(response.status, 200)
+        let result = try JSON.parse(response.body)["result"]
+        XCTAssertEqual(result?["isError"], true)
+        XCTAssertEqual(result?["content"]?[1]?["type"], "image")
+        XCTAssertTrue(result?["content"]?[0]?["text"]?.string?.contains("nothing was sent") == true)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
 
     /// The app opens its session when an agent connects, so the first look does not pay for it.

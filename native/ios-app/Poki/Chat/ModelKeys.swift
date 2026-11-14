@@ -15,7 +15,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "DeepSeek"
         case .gemini: "Gemini"
         case .openrouter: "OpenRouter"
-        case .custom: String(localized: "Custom Endpoint")
+        case .custom: AppLocalization.text(LocalizedStringResource("Custom Endpoint"))
         }
     }
 
@@ -72,7 +72,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .chatgpt: ""
         case .gemini: "AIza…"
         case .openrouter: "sk-or-…"
-        case .custom: String(localized: "API key, if it needs one")
+        case .custom: AppLocalization.text(LocalizedStringResource("API key, if it needs one"))
         }
     }
 
@@ -98,7 +98,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         // reads text only, so it does not see the screenshots.
         case .deepseek: [
             ChatModelChoice(id: "deepseek-flash", name: "DeepSeek V4.1 Flash"),
-            ChatModelChoice(id: "deepseek-v4-pro", name: String(localized: "DeepSeek V4 Pro (no screenshots)")),
+            ChatModelChoice(id: "deepseek-v4-pro", name: AppLocalization.text(LocalizedStringResource("DeepSeek V4 Pro (no screenshots)"))),
         ]
         // pi's google provider (Gemini API), both reading screenshots.
         case .gemini: [
@@ -122,21 +122,22 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     var keyHelp: String {
         switch self {
         // Claude.ai sign-in is for Anthropic's own apps only; Max and Team plans include monthly API credits.
-        case .anthropic: String(localized: "Create a key at console.anthropic.com, then paste it here. On a Claude Max or Team plan, first claim your plan’s monthly API credits in claude.ai › Settings › Billing, so the key uses them.")
-        case .openai: String(localized: "Create a key at platform.openai.com, then paste it here.")
-        case .deepseek: String(localized: "Create a key at platform.deepseek.com, then paste it here.")
-        case .gemini: String(localized: "Create a key at aistudio.google.com, then paste it here.")
-        case .openrouter: String(localized: "Create a key at openrouter.ai/keys, then paste it here.")
-        case .custom: String(localized: "Any server that speaks the OpenAI chat completions API. Poki sends the key, if any, only to this address.")
+        case .anthropic: AppLocalization.text(LocalizedStringResource("Create a key at console.anthropic.com, then paste it here. On a Claude Max or Team plan, first claim your plan’s monthly API credits in claude.ai › Settings › Billing, so the key uses them."))
+        case .openai: AppLocalization.text(LocalizedStringResource("Create a key at platform.openai.com, then paste it here."))
+        case .deepseek: AppLocalization.text(LocalizedStringResource("Create a key at platform.deepseek.com, then paste it here."))
+        case .gemini: AppLocalization.text(LocalizedStringResource("Create a key at aistudio.google.com, then paste it here."))
+        case .openrouter: AppLocalization.text(LocalizedStringResource("Create a key at openrouter.ai/keys, then paste it here."))
+        case .custom: AppLocalization.text(LocalizedStringResource("Any server that speaks the OpenAI chat completions API. Poki sends the key, if any, only to this address."))
         default: ""
         }
     }
 
-    /// pi's model for one of `models`.
-    func piModel(_ id: String) -> Model? {
+    /// pi's model for one of `models`. `customURL` is an address not saved yet (the connection test on the
+    /// key page); without it a custom endpoint uses the saved one.
+    func piModel(_ id: String, customURL: String? = nil) -> Model? {
         guard let piProvider else { return nil }
         if self == .custom {
-            let base = ModelKeys.customURL.trimmingCharacters(in: .whitespaces)
+            let base = (customURL ?? ModelKeys.customURL).trimmingCharacters(in: .whitespaces)
             guard !base.isEmpty, !id.isEmpty else { return nil }
             return Model(id: id, name: id, api: .openAICompletions, provider: piProvider, baseUrl: base, reasoning: false,
                          input: [.text, .image], cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),

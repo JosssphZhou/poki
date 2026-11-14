@@ -90,12 +90,14 @@ struct PokiStatus: Equatable {
         }
         if let sample = sample() { return sample }
         let voice = model.voice
-        if voice.isOn {
-            switch voice.phase {
-            case .speaking: return PokiStatus(.speaking)
+        // During a talk the picture stays the three-dimensional bear, with the talk's word beside it: the
+        // flat listening and speaking faces carry sound waves the model does not have.
+        if voice.isOn, let talk = voice.talkState {
+            switch talk {
+            case .connecting, .failed: break
             case .thinking: return PokiStatus(.thinking)
-            case .listening, .hearing: return PokiStatus(.listening)
-            default: break
+            case .acting: return PokiStatus(.onYourPhone)
+            case .listening, .hearing, .speaking, .interrupted: return PokiStatus(.ready, word: talk.word)
             }
         }
         if !model.approvals.isEmpty { return PokiStatus(.needsYou) }
@@ -134,7 +136,7 @@ struct PokiStatus: Equatable {
     private static func sample() -> PokiStatus? {
         guard let scene = UserDefaults.standard.string(forKey: "pokiChat") else { return nil }
         switch scene {
-        case "empty": return PokiStatus(.ready)
+        case "empty", "rested": return PokiStatus(.ready)
         case "working": return PokiStatus(.onYourPhone)
         case "approval": return PokiStatus(.needsYou)
         case "handoff": return PokiStatus(.yourTurn)

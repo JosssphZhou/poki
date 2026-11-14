@@ -7,7 +7,7 @@ import PokiCore
 /// - Sensitivity Permissive, Balanced or Strict: in Poki's own chat and live call the chat model checks
 ///   the step against what the owner said, and allows it or not (auto-approval). The chat shows the
 ///   decision on a card and the Activity Log keeps it.
-/// - A step the model did not allow, and every step at Ask for Everything, is the owner's: With Message
+/// - A step the model did not allow, and every step at Ask All, is the owner's: With Message
 ///   Reply, the step is refused and the agent asks in words, and the owner's yes in the chat (or in the
 ///   notification's reply field) lets the next try through; With Confirmation, an Allow / Don't Allow
 ///   card, on the Live Activity, in a notification or in the chat.
@@ -148,9 +148,9 @@ enum ApprovalClassifier {
 extension ApprovalMode {
     var title: String {
         switch self {
-        case .reply: String(localized: "With Message Reply")
-        case .confirm: String(localized: "With Confirmation")
-        case .off: String(localized: "Never Ask")
+        case .reply: AppLocalization.text(LocalizedStringResource("With Message Reply"))
+        case .confirm: AppLocalization.text(LocalizedStringResource("With Confirmation"))
+        case .off: AppLocalization.text(LocalizedStringResource("Never Ask"))
         }
     }
 }
@@ -158,10 +158,10 @@ extension ApprovalMode {
 extension ApprovalLevel {
     var title: String {
         switch self {
-        case .strict: String(localized: "Strict")
-        case .balanced: String(localized: "Balanced")
-        case .permissive: String(localized: "Permissive")
-        case .everything: String(localized: "Ask for Everything")
+        case .strict: AppLocalization.text(LocalizedStringResource("Strict"))
+        case .balanced: AppLocalization.text(LocalizedStringResource("Balanced"))
+        case .permissive: AppLocalization.text(LocalizedStringResource("Permissive"))
+        case .everything: AppLocalization.text(LocalizedStringResource("Ask All"))
         }
     }
     /// The saved sensitivity (`ApprovalChoice.resolve`).

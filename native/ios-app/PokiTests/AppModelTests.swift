@@ -46,6 +46,16 @@ final class FakePairing: DevicePairing {
 
 @MainActor
 final class AppModelTests: XCTestCase {
+    private var language = AppLocalization.system
+
+    /// The loopback's words follow Poki's language; these tests read the English ones.
+    override func setUp() async throws {
+        language = AppLocalization.shared.preference
+        AppLocalization.shared.preference = "en"
+    }
+
+    override func tearDown() async throws { AppLocalization.shared.preference = language }
+
     private func model() -> (AppModel, FakeLauncher) {
         let launcher = FakeLauncher()
         let model = AppModel(launcher: launcher, pairer: FakePairing())
@@ -276,8 +286,8 @@ final class ApprovalDefaultTests: XCTestCase {
     }
 
     /// An owner who never chose, then picks how to be asked in Approvals, keeps the sensitivity Approvals shows:
-    /// Ask for Everything. Saving the way of asking must not move the sensitivity to Balanced, where the
-    /// chat model's yes lets a step through, behind a slider that still reads Ask for Everything.
+    /// Ask All. Saving the way of asking must not move the sensitivity to Balanced, where the
+    /// chat model's yes lets a step through, behind a slider that still reads Ask All.
     func testChoosingHowToBeAskedKeepsTheSensitivityRulesShows() {
         UserDefaults.standard.removeObject(forKey: LiveCore.askKey)
         UserDefaults.standard.removeObject(forKey: ApprovalClassifier.onKey)
@@ -712,8 +722,8 @@ final class FrontendSubtractionTests: XCTestCase {
 
     /// 752's home warned in the last two days of signing (ESP-222); the redesigned home only notifies.
     /// The home line says it again, under 752's headline and ahead of an open setup step, and links to
-    /// Updates.
-    func testHomeLineWarnsInTheLastTwoDaysOfSigning() {
+    /// Updates. The drawer's reminder row says the same.
+    func testHomeLineAndDrawerWarnInTheLastTwoDaysOfSigning() {
         defer { UserDefaults.standard.removeObject(forKey: "pokiSigningDays") }
         UserDefaults.standard.set(1.0, forKey: "pokiSigningDays")
         let ending = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
@@ -722,6 +732,7 @@ final class FrontendSubtractionTests: XCTestCase {
         XCTAssertEqual(hint?.target, .updates)
         let warning = ExpiryWarning(expiry: ending.signer.expiry)?.message ?? "no warning"
         XCTAssertEqual(hint?.message, "Poki’s signing ends soon\n" + warning)
+        XCTAssertEqual(SetupIssueHint.home(model: ending), hint, "the drawer's reminder")
 
         UserDefaults.standard.set(3.0, forKey: "pokiSigningDays")
         let later = AppModel(launcher: FakeLauncher(), pairer: FakePairing())

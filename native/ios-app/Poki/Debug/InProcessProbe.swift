@@ -54,6 +54,7 @@ final class InProcessProbe: ObservableObject {
             case "tools": await toolsCycle(model: model, app: defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
             case "gym": await gymScorecard(model: model)
             case "chat": await chatCycle(model: model)
+            case "web": await WebDemo.run()
             case "bench": await benchmark(model: model, rounds: defaults.integer(forKey: "pokiBenchRounds") > 0 ? defaults.integer(forKey: "pokiBenchRounds") : 5)
             default: await prepareOnly()
             }
@@ -299,6 +300,9 @@ final class InProcessProbe: ObservableObject {
         ModelKeys.customURL = defaults.string(forKey: "pokiProbeModelURL") ?? "http://127.0.0.1:8765/v1"
         ModelKeys.customModel = defaults.string(forKey: "pokiProbeModel") ?? "poki-mock"
         ModelKeys.selectedProvider = .custom
+        // ask_poki is off by default (Diagnostics, Testing); this check hands a task over with it, so it
+        // turns it on as the owner would.
+        model.askPokiTool = true
         AskPoki.refresh()
         guard let chat = AskPoki.chat else { note("no chat", ["step": "chat_missing"]); return }
         chat.newConversation()

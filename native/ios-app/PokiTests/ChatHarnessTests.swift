@@ -1,6 +1,8 @@
 import Foundation
 import Network
 import PokiCore
+import SwiftUI
+import UIKit
 import XCTest
 @testable import Poki
 
@@ -41,25 +43,38 @@ final class ChatHarnessTests: XCTestCase {
     }
 
     func testCancellingADelegationStopsItsChat() async throws {
-        let server = try FakeCompletions(replies: [FakeCompletions.text("Late reply.")], replyDelay: 1)
+        let started = expectation(description: "Delegated request reached HTTP transport")
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.text("Late reply."),
+            FakeCompletions.text("Next reply."),
+        ], holdFirstReply: { started.fulfill() })
         let chat = chat(on: server)
         let run = Task { await chat.runDelegated("Wait for a reply") }
-        let deadline = Date().addingTimeInterval(5)
-        while server.requests.isEmpty, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(server.requests.count, 1)
+        await fulfillment(of: [started], timeout: 5)
         XCTAssertTrue(chat.running)
 
         run.cancel()
         let reply = await run.value
-
         XCTAssertFalse(chat.running)
         XCTAssertNil(ChatModel.delegatedBusy)
-        XCTAssertNotEqual(reply.success, true)
+        XCTAssertEqual(reply.success, false)
         XCTAssertTrue(reply.text.contains("Stopped."), reply.text)
-        // The suspended model response must not start another turn or appear after Stop.
-        try await Task.sleep(for: .milliseconds(1200))
-        XCTAssertEqual(server.requests.count, 1)
         XCTAssertFalse(chat.entries.contains { if case .poki("Late reply.") = $0.kind { return true }; return false })
+
+        let next = await chat.runDelegated("Try again")
+        XCTAssertTrue(next.text.contains("Next reply."), next.text)
+        XCTAssertEqual(server.requests.count, 2)
+    }
+
+    func testDelegationPropagatesModelError() async throws {
+        let server = try FakeCompletions(replies: [], responseStatus: "401 Unauthorized")
+        let chat = chat(on: server)
+        let reply = await chat.runDelegated("Report a model error")
+
+        XCTAssertTrue(reply.text.contains("error:"), reply.text)
+        XCTAssertNotEqual(reply.success, true)
+        XCTAssertFalse(chat.running)
+        XCTAssertNil(ChatModel.delegatedBusy)
     }
 
     func testAlreadyCancelledDelegationDoesNotStartAChat() async throws {
@@ -146,6 +161,54 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(plans.allSatisfy { $0.ended != nil })
     }
 
+    /// Each task's browser card sits where that task began browsing: above the answer it led to, in
+    /// every task of the conversation, and in the conversation as it is saved and opened again.
+    func testEachBrowserCardSitsAboveTheAnswerItsTaskGave() async throws {
+        // A closed port: the page fails at once, and the browser has been opened for the task.
+        let open = FakeCompletions.tool("web_open", ["url": "http://127.0.0.1:9/prices"])
+        let done = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]])
+        let server = try FakeCompletions(replies: [open, done, FakeCompletions.text("First answer."),
+                                                   open, done, FakeCompletions.text("Second answer.")])
+        let chat = chat(on: server)
+        defer { PokiBrowser.shared.close() }
+
+        _ = await chat.runDelegated("Look up the prices")
+        _ = await chat.runDelegated("Look up the show times")
+
+        func order(_ entries: [ChatEntry]) -> [String] {
+            entries.compactMap { entry in
+                switch entry.kind {
+                case .request(let text, _): return text
+                case .poki(let text) where text.hasSuffix("answer."): return text
+                default: return String(describing: entry.kind).hasPrefix("browser") ? "browser card" : nil
+                }
+            }
+        }
+        let expected = ["Look up the prices", "browser card", "First answer.", "Look up the show times", "browser card", "Second answer."]
+        XCTAssertEqual(order(chat.entries), expected)
+        let saved = try JSONDecoder().decode([ChatEntry].self, from: JSONEncoder().encode(chat.entries))
+        XCTAssertEqual(order(saved), expected, "the conversation opened again keeps the order")
+        if UserDefaults.standard.bool(forKey: "markdownEvidence") { try await capture(chat, "browser-card-order") }
+    }
+
+    /// The conversation as the chat page draws it, saved as a picture in Documents/MarkdownEvidence.
+    private func capture(_ chat: ChatModel, _ name: String) async throws {
+        let app = try XCTUnwrap(self.app)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.screen.bounds
+        window.rootViewController = UIHostingController(rootView: NavigationStack {
+            ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {}, openThreads: {})
+        }.environment(app).environment(chat))
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        try await Task.sleep(for: .seconds(2))
+        let data = await Task.detached { var code: NSString?; return PKInProcess.shared().screenshot(&code) }.value
+        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("MarkdownEvidence", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try XCTUnwrap(UIImage(data: try XCTUnwrap(data))?.pngData()).write(to: folder.appendingPathComponent("\(name).png"))
+    }
+
     /// Stop ends the phone step under way at its next action, instead of letting the rest of a long
     /// `do` run on the phone (seen on the owner's phone: 16 to 22 s of typing after Stop), and the chat
     /// says Stopping until that step has ended.
@@ -188,14 +251,16 @@ final class FakeCompletions: @unchecked Sendable {
     private let lock = NSLock()
     private var replies: [String]
     private var bodies: [[String: Any]] = []
-    private let replyDelay: TimeInterval
+    private let responseStatus: String
+    private let holdFirstReply: (@Sendable () -> Void)?
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
     var requests: [[String: Any]] { lock.withLock { bodies } }
 
-    init(replies: [String], replyDelay: TimeInterval = 0) throws {
+    init(replies: [String], responseStatus: String = "200 OK", holdFirstReply: (@Sendable () -> Void)? = nil) throws {
         self.replies = replies
-        self.replyDelay = replyDelay
+        self.responseStatus = responseStatus
+        self.holdFirstReply = holdFirstReply
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -238,10 +303,13 @@ final class FakeCompletions: @unchecked Sendable {
             if let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] { bodies.append(json) }
             return replies.isEmpty ? Self.text("No more scripted turns.") : replies.removeFirst()
         }
-        let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
-        queue.asyncAfter(deadline: .now() + replyDelay) {
-            connection.send(content: Data((head + events).utf8), completion: .contentProcessed { _ in connection.cancel() })
+        let head = "HTTP/1.1 \(responseStatus)\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
+        if requests.count == 1, let holdFirstReply {
+            holdFirstReply()
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in connection.cancel() }
+            return
         }
+        connection.send(content: Data((head + events).utf8), completion: .contentProcessed { _ in connection.cancel() })
     }
 
     private static func event(_ delta: [String: Any], finish: String) -> String {
