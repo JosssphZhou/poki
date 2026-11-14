@@ -15,41 +15,72 @@ final class LiveActivityTests: XCTestCase {
     override func tearDown() async throws { AppLocalization.shared.preference = language }
 
     func testAppWiringResumesDeferredActivityOnceInForeground() async throws {
-        let controller = ActivityController()
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation(), activity: controller)
-        let name = "Foreground regression \(UUID())"
-        app.wentToBackground()
-        controller.start(deviceName: name)
-        controller.update { $0.phase = .working; $0.headline = "Working" }
-        XCTAssertFalse(controller.isRunning)
-        XCTAssertNil(controller.lastError)
-        XCTAssertEqual(controller.state.phase, .working)
+        try await withSessionApp { app, activities in
+            app.wentToBackground()
+            app.startSession()
+            XCTAssertTrue(app.sessionOn)
+            XCTAssertTrue(activities().isEmpty, "Starting the session in the background must defer the activity")
+            app.chatTaskBegan()
+            XCTAssertTrue(activities().isEmpty, "Live Activity updates must also wait for the foreground")
 
-        app.becameActive()
-        XCTAssertEqual(UIApplication.shared.applicationState, .active)
-        controller.update { $0.headline = "Resumed" }
-        XCTAssertTrue(controller.isRunning, controller.lastError ?? "Deferred activity did not resume")
-        XCTAssertNil(controller.lastError)
-        let matching = { Activity<PokiActivityAttributes>.activities.filter { $0.attributes.deviceName == name } }
-        let id = try XCTUnwrap(matching().first?.id)
-        for i in 0..<3 { controller.update { $0.headline = "Update \(i)" } }
-        XCTAssertEqual(matching().map(\.id), [id], "Foreground updates must keep the same single activity")
-        await controller.end(dismissalPolicy: .immediate)?.value
+            app.becameActive()
+            XCTAssertEqual(UIApplication.shared.applicationState, .active)
+            let activity = try XCTUnwrap(activities().first, "Returning to Poki must start the deferred activity")
+            XCTAssertEqual(activity.activityState, .active)
+            XCTAssertEqual(activity.content.state.phase, .working)
+            XCTAssertEqual(activity.content.state.headline, "Thinking")
+
+            app.becameActive()
+            app.chatTaskBegan()
+            XCTAssertEqual(activities().map(\.id), [activity.id])
+
+            app.stopSession()
+            XCTAssertFalse(app.sessionOn)
+            for _ in 0..<100 {
+                if activities().isEmpty { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(activities().isEmpty, "Stopping the session must end its activity")
+        }
     }
 
-    func testEndingDeferredRequestPreventsCreationAfterForegroundReturn() async {
-        let controller = ActivityController()
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation(), activity: controller)
-        app.wentToBackground()
-        controller.start(deviceName: "Cancelled deferred request")
-        XCTAssertFalse(controller.isRunning)
-        XCTAssertNil(controller.lastError)
-        await controller.end(dismissalPolicy: .immediate)?.value
-        app.becameActive()
-        controller.update { $0.phase = .working; $0.headline = "Later work" }
-        XCTAssertFalse(controller.isRunning, "Ending must discard the deferred request")
-        XCTAssertNil(controller.lastError)
-        XCTAssertEqual(controller.state.headline, "Later work")
+    func testEndingDeferredRequestPreventsCreationAfterForegroundReturn() async throws {
+        try await withSessionApp { app, activities in
+            app.wentToBackground()
+            app.startSession()
+            XCTAssertTrue(app.sessionOn)
+            XCTAssertTrue(activities().isEmpty, "Starting the session in the background must defer the activity")
+            app.stopSession()
+            XCTAssertFalse(app.sessionOn)
+            app.becameActive()
+            XCTAssertTrue(activities().isEmpty, "Returning to Poki after stopping must not create an activity")
+        }
+    }
+
+    private func withSessionApp(
+        _ test: (AppModel, () -> [Activity<PokiActivityAttributes>]) async throws -> Void
+    ) async throws {
+        let defaults = UserDefaults.standard
+        let keys = ["relayAddress", "relayEnabled", "wantsOn"]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        let setup = SetupState.load()
+        let existingIDs = Set(Activity<PokiActivityAttributes>.activities.map(\.id))
+        let automation = FakeAutomation()
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation)
+        defer {
+            automation.answer(nil)
+            if app.sessionOn { app.stopSession() }
+            for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
+            setup.save()
+        }
+        app.loopback.simulate(.working(ms: 9))
+        app.setup.loopback = .proxy
+        XCTAssertTrue(app.setRelay("https://relay.invalid"))
+        try await test(app) {
+            Activity<PokiActivityAttributes>.activities.filter {
+                !existingIDs.contains($0.id) && ($0.activityState == .active || $0.activityState == .stale)
+            }
+        }
     }
 
     /// The Live Activity counts the chat's plan from the first step on the phone (the chat publishes it
