@@ -77,7 +77,7 @@ final class ChatHarnessTests: XCTestCase {
     }
 
     func testSplitViewResumesWhenRotationReturnsThePairBetweenToolCalls() async throws {
-        let transport = RotatingWorkspace(returnsBeforeNextRead: true)
+        let transport = RotatingWorkspace(rotateAt: .quickPaneRead)
         let server = try FakeCompletions(replies: [
             FakeCompletions.tool("look", ["pane": "left"]),
             FakeCompletions.tool("look", ["pane": "right"]),
@@ -92,6 +92,44 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(transport.restoredReads, 2)
         XCTAssertEqual(transport.taps, 0)
         XCTAssertTrue(server.requests.contains { Self.json($0).contains("Split View was restored") })
+    }
+
+    func testSplitViewChatInspectsTheDestinationAfterRotationDuringAnImageDrop() async throws {
+        let transport = RotatingWorkspace(rotateAt: .drop)
+        let drop = ["actions": [["drag": ["from": [150, 120], "to": [180, 220], "to_pane": "right"]]]]
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("look", ["pane": "right"]),
+            FakeCompletions.tool("look", ["pane": "left"]),
+            FakeCompletions.tool("do", drop),
+            FakeCompletions.tool("look", ["pane": "right"]),
+            FakeCompletions.tool("look", ["pane": "left"]),
+            FakeCompletions.tool("do", drop),
+            FakeCompletions.text("Verified one attachment."),
+        ])
+        let chat = chat(on: server, transport: transport)
+        defer { if chat.running { chat.stop() } }
+        chat.send("Drag the test photo from Safari into Notes and check the attachment count", inSplitView: true)
+
+        let pausedBy = ContinuousClock.now + .seconds(8)
+        while !chat.waitingForSplitView, ContinuousClock.now < pausedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(chat.waitingForSplitView, chat.savedCalls.map(\.answer).joined(separator: "\n"))
+        XCTAssertEqual(transport.drags, 1)
+        XCTAssertEqual(server.requests.count, 3, "The model must wait while the panes are hidden")
+
+        transport.change(to: .restored)
+        let resumedBy = ContinuousClock.now + .seconds(12)
+        while chat.running, ContinuousClock.now < resumedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertFalse(chat.waitingForSplitView)
+        XCTAssertGreaterThanOrEqual(transport.restoredReads, 2)
+        XCTAssertEqual(transport.drags, 1)
+        let requests = server.requests.map(Self.json)
+        guard requests.count == 7 else { return XCTFail("Expected seven model requests, got \(requests.count)") }
+        XCTAssertTrue(requests[3].contains("Split View was restored"))
+        XCTAssertTrue(requests[3].contains("Check what actually happened"))
+        XCTAssertTrue(requests[4].contains("Attachment count: 1"))
+        XCTAssertTrue(requests[4].contains("Do not repeat the drag"))
+        XCTAssertTrue(requests[6].contains("interrupted drags are not replayed"))
     }
 
     /// A note the agent saved during one task reaches the model with the next task of the same
@@ -383,19 +421,21 @@ final class FakeCompletions: @unchecked Sendable {
 /// Reports the same pane metadata and call sequence as the device transport, with controlled layout changes.
 private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
     enum Layout { case original, portrait, otherPair, restored }
+    enum RotateAt { case paneRead, quickPaneRead, drop }
     let usesDynamicScreenSize = true
     let supportsPaneSelection = true
     private let lock = NSLock()
     private let screenshot: String
-    private let returnsBeforeNextRead: Bool
+    private let rotateAt: RotateAt
     private var layout = Layout.original
     private var side = "left"
     private var reads = 0
     private var sawOther = false
     private var inputs = 0
+    private var drops = 0
 
-    @MainActor init(returnsBeforeNextRead: Bool = false) {
-        self.returnsBeforeNextRead = returnsBeforeNextRead
+    @MainActor init(rotateAt: RotateAt = .paneRead) {
+        self.rotateAt = rotateAt
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 390, height: 600))
         screenshot = renderer.pngData { context in
             UIColor.white.setFill()
@@ -407,14 +447,15 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
     var restoredReads: Int { lock.withLock { reads } }
     var rejectedPairWasSeen: Bool { lock.withLock { sawOther } }
     var taps: Int { lock.withLock { inputs } }
+    var drags: Int { lock.withLock { drops } }
 
-    private var app: String { side == "left" ? "local.safari" : "local.notes" }
-    private var other: String { side == "left" ? "local.notes" : "local.safari" }
+    private var app: String { side == "left" ? "com.apple.mobilesafari" : "com.apple.mobilenotes" }
+    private var other: String { side == "left" ? "com.apple.mobilenotes" : "com.apple.mobilesafari" }
 
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
         let raw = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
         let path = raw.isEmpty ? "/session" : raw
-        return lock.withLock {
+        return try lock.withLock {
             func reply(_ value: JSON = .null, status: Int = 200) -> (Int, Data) {
                 (status, (["value": value] as JSON).data())
             }
@@ -426,15 +467,21 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
             case ("GET", "/wda/screen"): return reply(["screenSize": ["width": 390, "height": 600]])
             case ("GET", "/screenshot"): return reply(.string(screenshot))
             case ("GET", "/source"):
+                let contents = side == "right"
+                    ? #"<XCUIElementTypeStaticText type="XCUIElementTypeStaticText" label="Attachment count: \#(drops)" x="80" y="80" width="210" height="44"/>"#
+                    : #"<XCUIElementTypeImage type="XCUIElementTypeImage" label="Test photo" x="90" y="60" width="120" height="140"/>"#
                 return reply(.string("""
                     <XCUIElementTypeApplication type="XCUIElementTypeApplication" x="0" y="0" width="390" height="600">
+                    \(contents)
                     <XCUIElementTypeTextField type="XCUIElementTypeTextField" label="Draft field" x="100" y="180" width="160" height="44"/>
                     </XCUIElementTypeApplication>
                     """))
             case ("POST", "/poki/pane"):
                 let requested = body.flatMap { try? JSON.parse($0)["side"]?.string } ?? "left"
                 if requested == "auto" { return reply() }
-                if layout == .original && requested == "right" { layout = returnsBeforeNextRead ? .restored : .portrait }
+                if layout == .original && requested == "right" && rotateAt != .drop {
+                    layout = rotateAt == .quickPaneRead ? .restored : .portrait
+                }
                 if layout == .portrait {
                     return reply(["error": "invalid argument", "message": "two visible apps could not be confirmed"], status: 400)
                 }
@@ -447,6 +494,10 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
             case ("POST", "/wda/tap"), ("POST", "/actions"):
                 inputs += 1
                 return reply()
+            case ("POST", "/poki/workspace-drag"):
+                drops += 1
+                layout = .portrait
+                throw TransportError.other("sent, no confirmation: split_view_changed_after_dispatch")
             case ("POST", "/appium/settings"), ("DELETE", "/session"): return reply()
             default: return reply(["error": "unknown command", "message": .string(path)], status: 404)
             }
