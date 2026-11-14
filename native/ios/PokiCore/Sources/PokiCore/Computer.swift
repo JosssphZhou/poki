@@ -95,11 +95,23 @@ final class Computer: @unchecked Sendable {
 
     // MARK: Reading and answering
 
-    func screenSize(until: Double) async throws -> ScreenSize {
-        if let size { return size }
+    func screenSize(until: Double, refreshing: Bool = false) async throws -> ScreenSize {
+        if !refreshing, let size { return size }
         let s = try await runner.screenSize(timeout: max(0.5, min(3, until - now())))
         size = s
         return s
+    }
+
+    /// Refresh after the read chooses a pane, before encoding the picture or mapping OCR to points.
+    private func updateReadSize(until: Double) async {
+        guard size == nil || runner.transport.usesDynamicScreenSize else { return }
+        let previous = size
+        size = try? await screenSize(until: until, refreshing: true)
+        if previous != size {
+            // A failed read of the new pane must not leave a picture or hit targets from the old one.
+            lastPNG = nil; lastPNGAt = nil; lastPicture = nil; lastTree = nil
+            refs = [:]; listed = []; lastAll = []; lastTreeAt = nil
+        }
     }
 
     /// The screenshot's width: one pixel per screen point, so a point read off the picture is a point
@@ -114,7 +126,9 @@ final class Computer: @unchecked Sendable {
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
         let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
         let reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat, callEnds: until)
-        if size == nil { _ = try? await screenSize(until: now() + 1.5) }
+        if reading.png != nil || !reading.elements.isEmpty {
+            await updateReadSize(until: now() + 1.5)
+        }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
         var notes = reading.notes
         if let modal = modalOnly(reading.elements) { notes.append(modal) }
@@ -362,8 +376,8 @@ final class Computer: @unchecked Sendable {
             }
             return ToolResult(text: text + "\nscreenshot: none (the runner did not give one either)", jpeg: nil, isError: isErrorWithoutPicture)
         }
+        await updateReadSize(until: now() + 1)
         if remember { lastPNG = png }
-        let size = try? await screenSize(until: now() + 1)
         let jpeg = try? host.jpeg(fromPNG: png, width: Self.pictureWidth(size), quality: 0.6)
         return ToolResult(text: text + (jpeg == nil ? "" : "\nscreenshot: the screen now (nothing was sent)"), jpeg: jpeg, isError: jpeg == nil && isErrorWithoutPicture)
     }

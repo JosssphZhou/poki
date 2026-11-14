@@ -3,7 +3,7 @@
 One app for everything a user does on the phone: setup (Developer Mode, on-device pairing, UI
 Automation, the loopback, the first-session passcode), starting and stopping a session, the Live
 Activity with Approve/Deny for sensitive actions, the MCP address for each client (text, QR, copy),
-and a Debug tab (the former Poki Probe). Native SwiftUI on the iOS 26 SDK with Liquid Glass.
+and a Debug tab (the former Poki Probe). Native SwiftUI with Liquid Glass.
 
 Poki automates the phone in its own process: it opens the XCTest automation session itself
 (`Poki/Native/InProcess.m`, answered to PokiCore by `Poki/Runtime/InProcessWDA.swift`), so Poki is
@@ -52,6 +52,10 @@ native/ios-app/scripts/make-assets.sh
 xcodegen generate --spec native/ios-app/project.yml
 open native/ios-app/Poki.xcodeproj
 ```
+
+Use Xcode 27.1 or later to build and test on iPhone Duo. The iOS 27.1 SDK lets the app extend to the
+edges of the unfolded display. In Split View, Poki sizes its chat and conversations drawer to the
+space assigned by the system. The iOS deployment target remains unchanged.
 
 `native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
 
