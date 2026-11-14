@@ -165,9 +165,11 @@ final class Computer: @unchecked Sendable {
     /// Reads the screen and answers with the facts, whatever part of the read failed. `changes` lists
     /// only what changed since the read before (a `do`); `full` lists every element, as the tree has it.
     func readAndReply(until: Double, full: Bool, changes: Bool = false, did: [String] = [], error: String? = nil, extra: [String] = []) async -> ToolResult {
-        let budget = max(0.8, min(config.readTimeout, until - now() - 0.2))
+        let inWorkspace = selectedPane != nil
+        let readTimeout = inWorkspace ? max(config.readTimeout, 6) : config.readTimeout
+        let budget = max(0.8, min(readTimeout, until - now() - 0.2))
         let reading = await runner.read(timeout: budget, extra: max(0, min(4, until - now() - budget - 3)), format: config.treeFormat,
-                                        callEnds: until, allowHostPicture: selectedPane == nil)
+                                        callEnds: until, allowHostPicture: !inWorkspace, workspace: inWorkspace)
         if let pane = selectedPane {
             confirmedPaneRead = reading.foreground?.bundleID == pane.app && !reading.elements.isEmpty && reading.png != nil
             if !confirmedPaneRead {

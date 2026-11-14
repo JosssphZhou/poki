@@ -111,6 +111,27 @@ final class LookDoTests: XCTestCase {
         XCTAssertTrue(wda.bodies("POST /wda/apps/activate").isEmpty)
     }
 
+    func testSplitViewReadWaitsForPaneIdentityAfterSlowTree() async {
+        let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true)) {
+            $0.readTimeout = 4
+        }
+        wda.set("POST /poki/pane") { _ in
+            (200, ["value": ["identity": "left/restored", "bundleId": "com.apple.Preferences",
+                            "otherBundleId": "com.apple.mobilesafari", "x": 0, "y": 0]])
+        }
+        // In-process activeAppInfo waits behind source, so a valid pane can take over 2 s.
+        wda.delay("GET /source", 3)
+        wda.delay("GET /wda/activeAppInfo", 3)
+        wda.delay("GET /screenshot", 4.8)
+
+        let read = await core.callTool("look", arguments: #"{"pane":"left"}"#, localSession: "chat-task",
+                                       expectedApps: ["com.apple.Preferences", "com.apple.mobilesafari"])
+        XCTAssertFalse(read.isError, read.text)
+        XCTAssertNotNil(read.jpeg, read.text)
+        XCTAssertEqual(read.splitView?.app, "com.apple.Preferences")
+        XCTAssertTrue(read.text.contains("General"), read.text)
+    }
+
     func testSplitViewLocalTaskKeepsExclusiveControlAndFinishesOnlyItsOwnSession() async {
         let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true)) { $0.taskGap = 0 }
         let side = LockedBox("auto")

@@ -183,11 +183,12 @@ extension Runner {
     /// its main thread all the same), so a look never waits on a session open and a session ended
     /// after a slow action does not cost the next read anything. The settings (deadline, detection
     /// point, depth) live in WDA's process, set by the first session of the runner's life.
-    func tree(timeout: Double, format: String = "json") async throws -> (elements: [Element], foreground: Foreground) {
+    func tree(timeout: Double, format: String = "json", workspace: Bool = false) async throws -> (elements: [Element], foreground: Foreground) {
         let xml = format.lowercased() == "xml"
         await ensureSettings(timeout: min(timeout, 3))
         async let source = raw("GET", "/source?format=\(xml ? "xml" : "json")&excluded_attributes=visible,accessible,enabled,index", timeout: timeout)
-        async let app = try? raw("GET", "/wda/activeAppInfo", timeout: min(timeout, 2))
+        // /activeAppInfo queues behind /source, which confirms the selected pane before reading it.
+        async let app = try? raw("GET", "/wda/activeAppInfo", timeout: workspace ? timeout : min(timeout, 2))
         let appValue = await app
         let bundleID = appValue?["bundleId"]?.string.flatMap { $0.isEmpty ? nil : $0 }
         let appName = appValue?["name"]?.string.flatMap { $0.isEmpty ? nil : $0 }
@@ -231,7 +232,7 @@ extension Runner {
     /// `extra`: time past `timeout` that a shallow re-read may take when the full-depth read timed
     /// out (seen in the gym: a 1,500-cell screen timed out twice at 4 s and answered nothing, while
     /// the depth-12 read after came in 0.2 s; a shallow tree now beats 4 s of nothing).
-    func read(timeout: Double, extra: Double = 0, wantPicture: Bool = true, format: String = "json", callEnds: Double? = nil, allowHostPicture: Bool = true) async -> Reading {
+    func read(timeout: Double, extra: Double = 0, wantPicture: Bool = true, format: String = "json", callEnds: Double? = nil, allowHostPicture: Bool = true, workspace: Bool = false) async -> Reading {
         let started = now()
         let pictureAt = LockedBox<Double?>(nil)
         // After a read that timed out, the next asks for half the tree's depth (a huge tree is what
@@ -240,7 +241,7 @@ extension Runner {
         if wanted != limits.value { await useLimits(wanted) }
         let readLimits = limits.value
         async let treePart: Result<(elements: [Element], foreground: Foreground), Error> = {
-            do { return .success(try await self.tree(timeout: timeout, format: format)) } catch { return .failure(error) }
+            do { return .success(try await self.tree(timeout: timeout, format: format, workspace: workspace)) } catch { return .failure(error) }
         }()
         async let picturePart: Result<Data, Error>? = wantPicture ? {
             defer { pictureAt.value = now() }
@@ -268,7 +269,7 @@ extension Runner {
             let left = started + timeout - now()
             if (e as? RunnerError)?.delivery == .notSent, left > 1.2 {
                 await sleep(seconds: 0.3)
-                if let again = try? await self.tree(timeout: left - 0.4, format: format) {
+                if let again = try? await self.tree(timeout: left - 0.4, format: format, workspace: workspace) {
                     reading.elements = again.elements; reading.foreground = again.foreground; treeCame = true
                     reading.notes.append("the element tree came on the second try (the first was refused: \(e))")
                 } else {
@@ -283,7 +284,7 @@ extension Runner {
                 reading.notes.append("no element tree (\(readLimits.isFull ? "full" : readLimits.described)): \(e)")
                 if await waitUntilFree(timeout: min(3, retryUntil - now() - 1.5)) {
                     await useLimits(smaller)
-                    if limits.value == smaller, let again = try? await self.tree(timeout: max(0.5, min(2, retryUntil - now() - 0.2)), format: format) {
+                    if limits.value == smaller, let again = try? await self.tree(timeout: max(0.5, min(2, retryUntil - now() - 0.2)), format: format, workspace: workspace) {
                         reading.elements = again.elements; reading.foreground = again.foreground; treeCame = true
                         reading.notes.removeLast()
                         reading.notes.append("the full tree timed out (\(e)), so it was read again with \(smaller.described) within this call; \(smaller.caveat)")

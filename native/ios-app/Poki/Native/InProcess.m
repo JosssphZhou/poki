@@ -1425,6 +1425,8 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
     @synchronized (self) { _lastFront = nil; _inputs++; }
 }
 
+static const NSTimeInterval PKWorkspaceFrontSeconds = 4.0;
+
 /// The front app's element for a tree read or a screenshot: a search still running, or ended under
 /// 150 ms ago with no input since, is waited for and shared (the two requests come together on two
 /// queues, and each searched on its own: ~220 ms of AX round trips twice per read). A poll a while
@@ -1433,9 +1435,10 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
     PKFrontSearch *search;
     BOOL mine = NO;
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    NSTimeInterval shareSeconds = self.selectedWorkspace ? PKWorkspaceFrontSeconds : 1.5;
     @synchronized (self) {
         PKFrontSearch *last = _search;
-        if (last && last.inputs == _inputs && (last.ended == 0 || now - last.ended < 0.15) && now - last.started < 1.5) {
+        if (last && last.inputs == _inputs && (last.ended == 0 || now - last.ended < 0.15) && now - last.started < shareSeconds) {
             search = last;
         } else {
             search = [PKFrontSearch new];
@@ -1456,7 +1459,7 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
         search.element = element; search.ax = ax; search.info = found; search.code = why;
         search.ended = NSProcessInfo.processInfo.systemUptime;
         dispatch_group_leave(search.done);
-    } else if (dispatch_group_wait(search.done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) {
+    } else if (dispatch_group_wait(search.done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(shareSeconds * NSEC_PER_SEC)))) {
         return [self front:info ax:client code:code];
     }
     if (info) *info = search.info;
@@ -1543,7 +1546,9 @@ static const int PKFrontKey = -1;
     NSString *given = nil;
     PKDisplayGeometry geometry = self.displayGeometry;
     PKWorkspace *selected = self.selectedWorkspace;
-    NSDictionary *found = PKBounded(PKFrontKey, PKFrontSeconds, &given, ^id {
+    // Pane-local accessibility needs the workspace's physical placement as well as the app.
+    // On rotation recovery, hit tests, two snapshots and visual matching can exceed 2 s.
+    NSDictionary *found = PKBounded(PKFrontKey, selected ? PKWorkspaceFrontSeconds : PKFrontSeconds, &given, ^id {
         CGRect pane;
         id chosen;
         if (selected) {
