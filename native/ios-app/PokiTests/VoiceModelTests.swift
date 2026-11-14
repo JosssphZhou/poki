@@ -412,6 +412,24 @@ final class VoiceLanguageTests: XCTestCase {
         XCTAssertNotNil(transcription)
         XCTAssertNil(transcription?["language"], "a fixed transcription language would mishear a user who switches")
     }
+
+    /// ESP-332: live voice is promised to say what it is doing and to ask when it is unsure. It went
+    /// straight to the tools without a word until the task was done, and took an option of its own when
+    /// several fitted. The open-choice rule is the text chat's (ESP-329), in a spoken question.
+    func testTheLiveSessionSaysWhatItIsAboutToDoAndAsksAboutAnOpenChoice() async throws {
+        URLProtocol.registerClass(OpenAIStub.self)
+        defer { URLProtocol.unregisterClass(OpenAIStub.self) }
+        _ = try await VoiceDirect.token(apiKey: "sk-test")
+        let instructions = try XCTUnwrap(OpenAIStub.session?["instructions"] as? String)
+        XCTAssertFalse(instructions.contains("without speaking first"), instructions)
+        for rule in ["For a request that takes several steps, first say in a few words what you are about to do",
+                     "then call the tool in the same reply without waiting",
+                     "ask before choosing", "with no tool call",
+                     "an earlier answer in this conversation already settles it",
+                     "Never take the first option only because it comes first"] {
+            XCTAssertTrue(instructions.contains(rule), "the session says: \(rule)")
+        }
+    }
 }
 
 /// The Live Activity during a talk: it says what the talk is doing in the state's own `voice` field,
