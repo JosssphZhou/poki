@@ -665,6 +665,11 @@ struct ChatTranscript<Footer: View>: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text("^[\(pictures.count) attachment](inflect: true)"))
                 }
+                if let documents = entry.textDocuments {
+                    ForEach(Array(documents.enumerated()), id: \.offset) { _, document in
+                        ChatTextDocumentChip(document: document)
+                    }
+                }
                 if !text.isEmpty { MessageBubble(direction: .outgoing, text: text, tail: last) }
                 if last, delivered {
                     Text("Delivered").font(.caption2.weight(.medium)).foregroundStyle(Color(.secondaryLabel))
@@ -1447,9 +1452,11 @@ struct ComposerInputView: View {
             let item = try read()
             withAnimation(.snappy) { attachments.append(item) }
         } catch AttachmentReader.Failure.tooLarge {
-            problem = AppLocalization.text(LocalizedStringResource("Text files must be 16 KB or smaller."))
+            problem = AppLocalization.text(LocalizedStringResource("Text files must be 100 KB or smaller."))
+        } catch AttachmentReader.Failure.invalidUTF8 {
+            problem = AppLocalization.text(LocalizedStringResource("This text file must use UTF-8 encoding."))
         } catch AttachmentReader.Failure.unsupported {
-            problem = AppLocalization.text(LocalizedStringResource("Only images, PDFs, JSON and Markdown files can be added."))
+            problem = AppLocalization.text(LocalizedStringResource("Only images, PDFs, JSON, Markdown, and plain text files can be added."))
         } catch {
             problem = AppLocalization.text(LocalizedStringResource("Couldn’t read this file."))
         }
