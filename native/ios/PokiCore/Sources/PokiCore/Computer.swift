@@ -54,6 +54,13 @@ final class Computer: @unchecked Sendable {
         workspaceOwner.value = session
         return true
     }
+
+    func clearWorkspacePaneForSetup(session: String) async -> Bool {
+        guard workspaceOwner.value == session, !handoffWaiting, approvals.pending == nil else { return false }
+        guard let selectedPane else { return true }
+        guard selectedPane.session == session else { return false }
+        return await selectPane("auto", session: session, until: now() + 6, keepWorkspace: true) == nil
+    }
     private var confirmedPaneRead = false
     private struct WorkspaceRead {
         let layout, app: String
@@ -557,7 +564,7 @@ final class Computer: @unchecked Sendable {
         ToolResult(text: "another task is using Split View; wait for it to finish", jpeg: nil, isError: true)
     }
 
-    private func selectPane(_ side: String, session: String?, until: Double) async -> ToolResult? {
+    private func selectPane(_ side: String, session: String?, until: Double, keepWorkspace: Bool = false) async -> ToolResult? {
         guard ["left", "right", "auto"].contains(side) else {
             return ToolResult(text: "pane must be left, right, or auto", jpeg: nil, isError: true)
         }
@@ -574,7 +581,7 @@ final class Computer: @unchecked Sendable {
             let oldWorkspace = workspaceOwner.value
             if side == "auto" {
                 selectedPane = nil
-                workspaceOwner.value = nil
+                if !keepWorkspace { workspaceOwner.value = nil }
                 paneOffset = nil
                 workspaceReads.removeAll()
                 workspaceDrop = nil

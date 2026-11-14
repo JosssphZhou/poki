@@ -501,19 +501,6 @@ final class InProcessProbe: ObservableObject {
         model.inProcessReadyForProbe()
         let background = UIApplication.shared.beginBackgroundTask(withName: "Chat probe")
         defer { UIApplication.shared.endBackgroundTask(background) }
-        let originalProvider = ModelKeys.selectedProvider
-        let originalURL = ModelKeys.customURL
-        let originalModel = ModelKeys.customModel
-        let originalAskPoki = model.askPokiTool
-        defer {
-            if !configuredModel {
-                ModelKeys.selectedProvider = originalProvider
-                ModelKeys.customURL = originalURL
-                ModelKeys.customModel = originalModel
-                model.askPokiTool = originalAskPoki
-                AskPoki.refresh()
-            }
-        }
         if !configuredModel {
             ModelKeys.customURL = defaults.string(forKey: "pokiProbeModelURL") ?? "http://127.0.0.1:8765/v1"
             ModelKeys.customModel = defaults.string(forKey: "pokiProbeModel") ?? "poki-mock"

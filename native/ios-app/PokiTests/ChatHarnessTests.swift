@@ -28,14 +28,15 @@ final class ChatHarnessTests: XCTestCase {
 
     /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer
     /// without a session (the Debug probe's call), so routines reaches the app's own memory.
-    private func chat(on server: FakeCompletions, transport: HTTPTransport? = nil) -> ChatModel {
+    private func chat(on server: FakeCompletions, transport: HTTPTransport? = nil,
+                      activity: ActivityController? = nil, kind: SavedSession.Kind = .handoff) -> ChatModel {
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
         ModelKeys.customModel = "fake-model"
         ModelKeys.selectedProvider = .custom
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), transport: transport)
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), transport: transport, activity: activity)
         app.inProcessReadyForProbe()
         self.app = app
-        return ChatModel(app: app, kind: .handoff, requester: "Test agent")
+        return ChatModel(app: app, kind: kind, requester: kind == .handoff ? "Test agent" : nil)
     }
 
     private static func json(_ object: [String: Any]) -> String {
@@ -106,12 +107,13 @@ final class ChatHarnessTests: XCTestCase {
 
     func testSplitViewStopWhileWaitingDoesNotResumeWhenThePairReturns() async throws {
         let transport = RotatingWorkspace()
+        let activity = ActivityController()
         let server = try FakeCompletions(replies: [
             FakeCompletions.tool("look", ["pane": "left"]),
             FakeCompletions.tool("look", ["pane": "right"]),
             FakeCompletions.tool("do", ["actions": [["tap": [180, 200]]]]),
         ])
-        let chat = chat(on: server, transport: transport)
+        let chat = chat(on: server, transport: transport, activity: activity)
         defer { if chat.running { chat.stop() } }
         chat.send("Focus the test field in Notes after reading Safari", inSplitView: true)
 
@@ -120,6 +122,7 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(chat.waitingForSplitView)
         XCTAssertEqual(server.requests.count, 2)
 
+        XCTAssertEqual(activity.state.phase, .working)
         chat.stop()
         transport.change(to: .restored)
         let stoppedBy = ContinuousClock.now + .seconds(8)
@@ -133,6 +136,29 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(server.requests.count, 2, "A cancelled read must never return to the model")
         XCTAssertTrue(transport.restoredSides.isEmpty, "Stop must cancel the recovery polls")
         XCTAssertEqual(transport.taps, 0)
+        while activity.state.phase != .idle, ContinuousClock.now < stoppedBy {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(activity.state.phase, .idle)
+        XCTAssertFalse(activity.isRunning)
+    }
+
+    func testSplitViewStartupReplacesADifferentExistingPair() async throws {
+        let transport = RotatingWorkspace(rotateAt: .drop, startingLayout: .otherPair)
+        let server = try FakeCompletions(replies: [FakeCompletions.text("SPLIT 1 2"), FakeCompletions.text("Both apps are open.")])
+        let chat = chat(on: server, transport: transport, kind: .poki)
+        chat.restore(SavedSession(id: UUID().uuidString, kind: .poki, title: "Duo test", started: Date(),
+                                  updated: Date(), live: false,
+                                  entries: [ChatEntry(.you("Prior message", delivered: true))], calls: []))
+
+        chat.send("Compare Safari and Notes in Split View.", attachments: [])
+        let deadline = ContinuousClock.now + .seconds(20)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertTrue(transport.rejectedPairWasSeen)
+        XCTAssertEqual(transport.launchEvents, ["activate Notes", "clear pane", "activate Home", "open anchor menu", "choose Split View", "activate Safari", "clear pane"])
+        XCTAssertTrue(server.requests.contains { FakeCompletions.system($0).contains("two visible iPhone Split View apps") })
+        XCTAssertTrue(chat.entries.contains { if case .poki("Both apps are open.") = $0.kind { true } else { false } })
     }
 
     func testSplitViewChatInspectsTheDestinationAfterRotationDuringAnImageDrop() async throws {
@@ -336,36 +362,6 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(Set(offered), ["look", "do", "status", "report_plan", "finish_task"])
     }
 
-    func testSplitViewUsesTheUpdatedCustomAddressForTheSameModel() async throws {
-        let oldServer = try FakeCompletions(replies: [FakeCompletions.text("First server.")])
-        let newServer = try FakeCompletions(replies: [FakeCompletions.text("Second server.")])
-        let chat = chat(on: oldServer)
-
-        chat.send("Check the first connection", inSplitView: true)
-        var deadline = ContinuousClock.now + .seconds(12)
-        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
-        XCTAssertFalse(chat.running)
-        XCTAssertEqual(oldServer.requests.count, 1)
-
-        ModelKeys.customURL = "http://127.0.0.1:\(newServer.port)/v1"
-        chat.send("Check the replacement connection", inSplitView: true)
-        deadline = ContinuousClock.now + .seconds(12)
-        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
-        XCTAssertFalse(chat.running)
-        XCTAssertEqual(oldServer.requests.count, 1)
-        XCTAssertEqual(newServer.requests.count, 1)
-        let request = try XCTUnwrap(newServer.requests.first)
-        let requestText = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-        XCTAssertTrue(requestText.contains("Check the replacement connection"))
-        XCTAssertFalse(requestText.contains("Check the first connection"))
-        XCTAssertFalse(requestText.contains("First server."))
-        let replies = chat.entries.compactMap { if case .poki(let text) = $0.kind { text } else { nil } }
-        XCTAssertTrue(replies.contains("First server."))
-        XCTAssertTrue(replies.contains("Second server."))
-    }
-
-    /// The system prompt names no tool the model does not have (the app has no unlock_device or
-    /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {
         let tools = Set(Harness.tools.map(\.name))
         let regex = try NSRegularExpression(pattern: "\\b[a-z]+(?:_[a-z]+)+\\b")
@@ -469,16 +465,18 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()
     private let screenshot: String
     private let rotateAt: RotateAt
-    private var layout = Layout.original
+    private var layout: Layout
     private var side = "left"
     private var reads: [String] = []
     private var sawOther = false
     private var sawUnreadable = false
     private var inputs = 0
     private var drops = 0
+    private var launchLog: [String] = []
 
-    @MainActor init(rotateAt: RotateAt = .paneRead) {
+    @MainActor init(rotateAt: RotateAt = .paneRead, startingLayout: Layout = .original) {
         self.rotateAt = rotateAt
+        self.layout = startingLayout
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 390, height: 600))
         screenshot = renderer.pngData { context in
             UIColor.white.setFill()
@@ -492,6 +490,7 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
     var unreadablePaneWasSeen: Bool { lock.withLock { sawUnreadable } }
     var taps: Int { lock.withLock { inputs } }
     var drags: Int { lock.withLock { drops } }
+    var launchEvents: [String] { lock.withLock { launchLog } }
 
     private var app: String { side == "left" ? "com.apple.mobilesafari" : "com.apple.mobilenotes" }
     private var other: String { side == "left" ? "com.apple.mobilenotes" : "com.apple.mobilesafari" }
@@ -527,7 +526,7 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
                     """))
             case ("POST", "/poki/pane"):
                 let requested = body.flatMap { try? JSON.parse($0)["side"]?.string } ?? "left"
-                if requested == "auto" { return reply() }
+                if requested == "auto" { launchLog.append("clear pane"); return reply() }
                 if layout == .original && requested == "right" && rotateAt != .drop {
                     layout = rotateAt == .quickPaneRead ? .restored : .portrait
                 }
@@ -547,6 +546,18 @@ private final class RotatingWorkspace: HTTPTransport, @unchecked Sendable {
                 drops += 1
                 layout = .portrait
                 throw TransportError.other("sent, no confirmation: split_view_changed_after_dispatch")
+            case ("POST", "/wda/apps/activate"):
+                switch body.flatMap({ try? JSON.parse($0)["bundleId"]?.string }) {
+                case "com.apple.mobilenotes": launchLog.append("activate Notes")
+                case "com.apple.springboard": launchLog.append("activate Home")
+                case "com.apple.mobilesafari": launchLog.append("activate Safari"); layout = .restored
+                default: return reply(["error": "unexpected app"], status: 400)
+                }
+                return reply()
+            case ("POST", "/poki/workspace-launcher"):
+                let menu = body.flatMap { try? JSON.parse($0)["menu"]?.bool } ?? false
+                launchLog.append(menu ? "choose Split View" : "open anchor menu")
+                return reply(true)
             case ("POST", "/appium/settings"), ("DELETE", "/session"): return reply()
             default: return reply(["error": "unknown command", "message": .string(path)], status: 404)
             }

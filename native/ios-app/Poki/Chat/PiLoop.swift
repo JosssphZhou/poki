@@ -20,7 +20,6 @@ final class PiLoop {
     let inSplitView: Bool
     private let agent: Agent
     private let gate = StopGate()
-    private(set) var lastUsage: Usage?
 
     var signature: String { "pi:\(provider.rawValue)/\(model.id)" }
     var messages: [AgentMessage] { agent.state.messages }
@@ -57,19 +56,15 @@ final class PiLoop {
     func run(_ text: String, images: [Data] = [], instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
         use(instructions)
-        lastUsage = nil
-        let usage = TokenUsage()
         let turns = Counter()
         let failure = Box()
         let agent = self.agent
         let gate = self.gate
-        defer { lastUsage = usage.value }
         let unsubscribe = agent.subscribe { event, _ in
             switch event {
             case .turnStart:
                 if turns.increment() > maxTurns { gate.overTurns(); agent.abort() }
             case .messageEnd(.assistant(let reply)):
-                usage.add(reply.usage)
                 if reply.stopReason == .error { failure.set(reply.errorMessage ?? "") }
                 let texts = reply.content.compactMap { block -> String? in
                     guard case .text(let content) = block else { return nil }
@@ -147,25 +142,6 @@ private final class StopGate: @unchecked Sendable {
     func overTurns() { lock.withLock { stop_ = true; over = true } }
     var stopped: Bool { lock.withLock { stop_ } }
     var wasOverTurns: Bool { lock.withLock { over } }
-}
-
-private final class TokenUsage: @unchecked Sendable {
-    private let lock = NSLock()
-    private var total: Usage?
-    var value: Usage? { lock.withLock { total } }
-
-    func add(_ usage: Usage) {
-        guard usage.totalTokens > 0 else { return }
-        lock.withLock {
-            guard var sum = total else { total = usage; return }
-            sum.input += usage.input
-            sum.output += usage.output
-            sum.cacheRead += usage.cacheRead
-            sum.cacheWrite += usage.cacheWrite
-            sum.totalTokens += usage.totalTokens
-            total = sum
-        }
-    }
 }
 
 private final class Counter: @unchecked Sendable {

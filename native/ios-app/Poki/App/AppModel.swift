@@ -202,7 +202,8 @@ final class AppModel {
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
     private let pairingKeepAlive = KeepAlive()
-    private let activity = ActivityController()
+    private let activity: ActivityController
+    private var activitySplitViewSession: String?
 
     /// Presentation-only refresh: no session, runner, approval or conversation is restarted.
     func languageChanged() {
@@ -292,6 +293,10 @@ final class AppModel {
     /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
     var onProbeApproval: ((PendingApproval) -> Void)?
 
+    var canPlanSplitView: Bool {
+        (sessionOn || probeDriven) && automationPath == .inProcess && (probeDriven || PKInProcess.canUseDuoSplitView())
+    }
+
     /// The outside agent driving the phone now: its MCP session's client, or the agent that handed
     /// a task to Poki. nil while Poki's own chat drives it.
     var currentCaller: String? {
@@ -301,8 +306,10 @@ final class AppModel {
     }
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(),
-         automation: InProcessAutomation = PKInProcess.shared(), transport: HTTPTransport? = nil) {
+         automation: InProcessAutomation = PKInProcess.shared(), transport: HTTPTransport? = nil,
+         activity: ActivityController? = nil) {
         ActivityController.endAll()
+        self.activity = activity ?? ActivityController()
         self.automation = automation
         // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
         // setup state did the same in `SetupState.load`), so the owner is not sent through setup again.
@@ -362,7 +369,7 @@ final class AppModel {
         // The same answers from the approval notification's own buttons.
         ApprovalNotice.registerActions()
         listenForApprovals()
-        talkActivity = TalkActivity(voice: voice, activity: activity, deviceName: { UIDevice.current.name },
+        talkActivity = TalkActivity(voice: voice, activity: self.activity, deviceName: { UIDevice.current.name },
                                     keepsActivity: { [weak self] in self?.sessionOn == true })
         // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
         // stream for good, so a pump per session would go silent after the first Turn off (no steps,
@@ -1513,17 +1520,22 @@ final class AppModel {
         Task { [core, log] in if let line = await core.finishTask() { log.add("runner", line) } }
     }
 
-    func finishSplitViewTask(localSession: String, fromChat: Bool = false, pairConfirmed: Bool = true) async {
+    func finishSplitViewTask(localSession: String, pairConfirmed: Bool = true, cancelled: () -> Bool = { false }) async {
         _ = await core.settle(timeout: 30)
         if let line = await core.finishTask(switching: pairConfirmed, localSession: localSession) { log.add("runner", line) }
-        if fromChat {
-            lastAgentActivity = Date()
-            activity.setChatOwnsCompletion(false)
-        }
+        guard activitySplitViewSession == localSession else { return }
+        activitySplitViewSession = nil
+        lastAgentActivity = Date()
+        activity.setChatOwnsCompletion(false)
+        if cancelled() { activity.endStoppedRun() }
     }
 
     func reserveSplitViewWorkspace(session: String) async -> Bool {
         await core.prepareWorkspace(session: session)
+    }
+
+    func clearSplitViewPaneForSetup(session: String) async -> Bool {
+        await core.clearWorkspacePaneForSetup(session: session)
     }
 
     func openSplitViewLauncherItem(labels: [String], menu: Bool, session: String) async throws -> Bool {
@@ -1535,9 +1547,10 @@ final class AppModel {
     // MARK: The chat's task
 
     /// The chat's task began (Poki is in front): the Live Activity is there for it, with no old plan.
-    func chatTaskBegan(inSplitView: Bool = false) {
+    func chatTaskBegan(splitViewSession: String? = nil) {
         lastShot = nil
-        activity.setChatOwnsCompletion(inSplitView)
+        activitySplitViewSession = splitViewSession
+        activity.setChatOwnsCompletion(splitViewSession != nil)
         // The owner sees at once that Poki took the task: the Live Activity (started here, while
         // Poki is in front) and iOS's background line say so before the model's first answer.
         if sessionOn {

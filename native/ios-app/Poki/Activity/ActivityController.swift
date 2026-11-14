@@ -342,6 +342,16 @@ final class ActivityController {
         if ownsCompletion { finishTimer?.cancel() }
     }
 
+    func endStoppedRun() {
+        update { state in
+            state.phase = .idle
+            state.headline = "Waiting for agent"
+            state.plan = nil
+            state.since = nil
+        }
+        end(dismissalPolicy: .immediate)
+    }
+
     /// The chat's task ended: the run is finished now, not after the quiet wait. `alert` false when
     /// the chat tells the owner itself (its reply notification).
     func finishNow(alert: Bool) {

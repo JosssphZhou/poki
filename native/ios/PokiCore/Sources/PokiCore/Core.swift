@@ -571,6 +571,13 @@ public final class PokiCore: @unchecked Sendable {
         return computer.reserveWorkspace(session: session)
     }
 
+    public func clearWorkspacePaneForSetup(session: String) async -> Bool {
+        guard await gate.enter(waiting: config.busyWait) else { return false }
+        defer { gate.leave() }
+        guard !Task.isCancelled else { return false }
+        return await computer.clearWorkspacePaneForSetup(session: session)
+    }
+
     public func workspaceLauncherStep(session: String, request: JSON) async throws -> JSON {
         guard runner.transport.supportsPaneSelection, await gate.enter(waiting: config.busyWait) else { throw CancellationError() }
         defer { gate.leave() }

@@ -53,6 +53,9 @@ final class LiveCore: CoreSession {
     }
     func settle(timeout: Double) async -> Bool { await core.settle(timeout: timeout) }
     func prepareWorkspace(session: String) async -> Bool { await core.prepareWorkspace(session: session) }
+    func clearWorkspacePaneForSetup(session: String) async -> Bool {
+        await core.clearWorkspacePaneForSetup(session: session)
+    }
     func workspaceLauncherStep(session: String, request: JSON) async throws -> JSON {
         try await core.workspaceLauncherStep(session: session, request: request)
     }
