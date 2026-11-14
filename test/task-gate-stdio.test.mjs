@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { fixture } from './fixture.mjs';
+
+test('stdio approval setting blocks device access until accepted and closes after end_task', async t => {
+  const f = await fixture(t, { extraEnv: () => ({ POKI_MCP_TASK_APPROVAL: '1' }) });
+  const before = await f.call('take_screenshot');
+  assert.equal(before.isError, true, 'enabled stdio must refuse device access before approval');
+  assert.match(before.content[0].text, /no approved task/);
+  const unsupported = await f.call('begin_task', { task: 'Inspect the synthetic screen' });
+  assert.equal(unsupported.isError, true);
+  const client = new Client({ name: 'approval-test', version: '1' }, { capabilities: { elicitation: { form: {} } } });
+  let answer = 'decline';
+  client.setRequestHandler('elicitation/create', async () => ({ action: answer }));
+  t.after(() => client.close());
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(f.dir, 'src/stdio.mjs')], env: f.env }));
+  const call = (name, args = {}) => client.callTool({ name, arguments: args });
+  assert.equal((await call('begin_task', { task: 'Inspect the synthetic screen' })).isError, true);
+  assert.equal((await call('take_screenshot')).isError, true);
+  answer = 'accept';
+  assert.notEqual((await call('begin_task', { task: 'Inspect the synthetic screen' })).isError, true);
+  const allowed = await call('take_screenshot');
+  assert.notEqual(allowed.isError, true);
+  assert.ok(allowed.content.some(block => block.type === 'image'));
+  await call('end_task');
+  assert.equal((await call('take_screenshot')).isError, true);
+});
