@@ -21,15 +21,43 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: internal
+        name: Internal build metadata
+        if: github.event_name == 'workflow_dispatch' && inputs.build == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags https://github.com/JosssphZhou/poki.git main
+          main_version="$(git show FETCH_HEAD:native/ios-app/VERSION | tr -d ' \n')"
+          branch_version="$(tr -d ' \n' < native/ios-app/VERSION)"
+          python3 .github/scripts/internal-build.py "$branch_version" "$main_version" \
+            "$(git rev-list --count FETCH_HEAD)" "$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       - id: build
         uses: ./.github/actions/build-ipa
         with:
-          version: ${{ inputs.version }}
-          build: ${{ inputs.build }}
+          version: ${{ steps.internal.outputs.version || inputs.version }}
+          build: ${{ steps.internal.outputs.build || inputs.build }}
           editions: ${{ inputs.editions || 'external' }}
+      - name: Label the internal IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.build == ''
+        env:
+          VERSION: ${{ steps.internal.outputs.version }}
+          BUILD: ${{ steps.internal.outputs.build }}
+        run: |
+          set -euo pipefail
+          mv out/Poki-external-unsigned.ipa "out/Poki-internal-$VERSION-$BUILD.ipa"
+          (cd out && shasum -a 256 *.ipa > SHA256SUMS)
+          {
+            echo "## Internal test build: $VERSION ($BUILD)"
+            echo "Branch: $GITHUB_REF_NAME"
+            echo "Commit: $GITHUB_SHA"
+            echo "Download the Poki-internal artifact and select the IPA in Poki Setup."
+            echo "No Release or channel was updated."
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: Poki-unsigned
+          name: ${{ steps.internal.outputs.build != '' && 'Poki-internal' || 'Poki-unsigned' }}
           path: out/
           if-no-files-found: error
       # Only main's caches reach other branches and tags; a branch's own help its next run.
