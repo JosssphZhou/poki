@@ -4,9 +4,9 @@ import { t } from "../i18n";
 import { Capsule, Card, ErrorBox, Pill, Qr, Steps, useInterval, useSteps } from "../ui";
 
 const STEPS = [
-  { id: "phone", title: "Phone" }, { id: "pair", title: "Pairing" }, { id: "devmode", title: "Developer Mode" },
-  { id: "account", title: "Account" }, { id: "release", title: "Release" }, { id: "sign", title: "Signing" },
-  { id: "install", title: "Install" }, { id: "pairing_file", title: "Pairing file" },
+  { id: "phone", title: "iPhone" }, { id: "pair", title: "Pairing" }, { id: "devmode", title: "Developer Mode" },
+  { id: "account", title: "Apple Account" }, { id: "release", title: "Release" }, { id: "sign", title: "Signing" },
+  { id: "install", title: "Install" }, { id: "pairing_file", title: "Pairing File" },
 ];
 
 export default function Setup({ goAccount }: { goAccount: () => void }) {
@@ -56,19 +56,20 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
     }
   };
 
+  const sep = t(", ");
   return (
     <>
       <div className="hero" style={{ marginBottom: 24 }}>
         <img className="bear" src="/icon.png" alt="" />
         <div>
-          <h1>{t("Set up Poki on this iPhone")}</h1>
-          <p className="page-sub" style={{ margin: 0 }}>{t("Connect the iPhone with a cable to set it up; this works on every iOS version.")}</p>
+          <h1>{t("Set Up Poki on This iPhone")}</h1>
+          <p className="page-sub" style={{ margin: 0 }}>{t("Connect your iPhone with a cable to install and pair Poki. Works on every iOS version.")}</p>
         </div>
       </div>
 
       <Card>
         {listError && listError.kind === "usbmuxd" && <div className="note">{listError.text}</div>}
-        {!phone && !listError && <div className="row"><span className="muted">{rows === null ? t("Looking for an iPhone…") : t("Plug the iPhone in with a cable and unlock it.")}</span></div>}
+        {!phone && !listError && <div className="row"><span className="muted">{rows === null ? t("Looking for an iPhone…") : t("Connect your iPhone with a cable, unlock it, and tap Trust if prompted.")}</span></div>}
         {rows && rows.length > 1 && (
           <div className="seg" style={{ marginBottom: 12 }}>
             {rows.map((r) => <button key={r.phone.udid} className={phone?.phone.udid === r.phone.udid ? "on" : ""} onClick={() => setChosen(r.phone.udid)}>{r.facts?.name ?? r.phone.udid.slice(0, 8)}</button>)}
@@ -77,28 +78,28 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
         {phone && (
           <div className="row between">
             <div className="grow">
-              <h2 style={{ margin: 0 }}>{phone.facts?.name ?? t("Phone")}</h2>
+              <h2 style={{ margin: 0 }}>{phone.facts?.name ?? t("iPhone")}</h2>
               <div className="muted small">
-                {phone.facts ? `${phone.facts.product_type} · iOS ${phone.facts.ios}` : phone.error}
-                {phone.record && <> · {t("Poki is installed.")} {phone.record.version}</>}
+                {phone.facts ? `${phone.facts.product_type}${sep}iOS ${phone.facts.ios}` : phone.error}
+                {phone.record && <>{sep}{t("Poki {v}").replace("{v}", phone.record.version)}</>}
               </div>
             </div>
-            {phone.facts && <Pill tone={phone.facts.paired_with_this_computer ? "ok" : "warn"}>{t(phone.facts.paired_with_this_computer ? "paired" : "not paired")}</Pill>}
-            {phone.facts && <Pill tone={phone.facts.developer_mode ? "ok" : "warn"}>{t("Developer Mode")} {t(phone.facts.developer_mode ? "on" : "off")}</Pill>}
+            {phone.facts && <Pill tone={phone.facts.paired_with_this_computer ? "ok" : "warn"}>{t(phone.facts.paired_with_this_computer ? "Paired" : "Not Paired")}</Pill>}
+            {phone.facts && <Pill tone={phone.facts.developer_mode ? "ok" : "warn"}>{t("Developer Mode")}: {t(phone.facts.developer_mode ? "On" : "Off")}</Pill>}
           </div>
         )}
         <div className="hair" />
         {account && !account.signed_in ? (
           <div className="row between">
-            <span>{t("Sign in with your Apple ID first.")}</span>
-            <Capsule onClick={goAccount}>{t("Sign in")}</Capsule>
+            <span>{t("Sign in with your Apple Account first.")}</span>
+            <Capsule onClick={goAccount}>{t("Sign In")}</Capsule>
           </div>
         ) : (
           <div className="row between">
-            <span className="muted small grow">{account?.name ?? account?.apple_id ?? ""}{account?.team_id ? ` · ${t("Team")} ${account.team_id}` : ""}</span>
-            <span className="muted small">{localIpa ? localIpa.split(/[\\/]/).pop() : t("Latest release")}</span>
-            <Capsule kind="ghost" sm onClick={localIpa ? () => setLocalIpa(null) : pickIpa} disabled={running}>{localIpa ? t("Use the latest release") : t("Use an IPA file…")}</Capsule>
-            <Capsule big={false} onClick={start} disabled={!phone || running || !account?.signed_in}>{running ? t("Setting up…") : t("Set up Poki")}</Capsule>
+            <span className="muted small grow">{account?.name ?? account?.apple_id ?? ""}{account?.team_id ? `${sep}${t("Team")} ${account.team_id}` : ""}</span>
+            <span className="muted small">{localIpa ? localIpa.split(/[\\/]/).pop() : t("Latest Release")}</span>
+            <Capsule kind="ghost" sm onClick={localIpa ? () => setLocalIpa(null) : pickIpa} disabled={running}>{localIpa ? t("Use Latest Release") : t("Choose IPA File…")}</Capsule>
+            <Capsule big={false} onClick={start} disabled={!phone || running || !account?.signed_in}>{running ? t("Installing…") : t("Install Poki")}</Capsule>
           </div>
         )}
       </Card>
@@ -119,13 +120,13 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
       {result && (
         <Card white>
           <h2>{t("Done")}</h2>
-          <p style={{ margin: 0 }}>Poki {result.version} · {result.name}</p>
+          <p style={{ margin: 0 }}>{t("Poki {v} is installed on {name}.").replace("{v}", result.version).replace("{name}", result.name)}</p>
           {result.notes.map((n, i) => <p key={i} className="muted small" style={{ margin: "6px 0 0" }}>{n}</p>)}
           {result.handoff && (
             <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>
               <Qr svg={result.handoff.qr_svg} />
               <div className="grow">
-                <p style={{ marginTop: 0 }}>{t("Scan this with the iPhone's Camera (same Wi-Fi). Poki opens and takes the pairing file.")}</p>
+                <p style={{ marginTop: 0 }}>{t("Scan with your iPhone Camera on the same Wi-Fi network. Poki opens and saves the pairing file.")}</p>
                 <code className="small" style={{ userSelect: "text" }}>{result.handoff.link}</code>
               </div>
             </div>

@@ -75,7 +75,7 @@ export function Steps({ steps }: { steps: Step[] }) {
           <div className="grow">
             <div>{t(s.title)}</div>
             {s.detail && <div className="detail">{s.detail}</div>}
-            {s.notes.map((n, j) => <div className="detail" key={j}>· {n}</div>)}
+            {s.notes.map((n, j) => <div className="detail" key={j}>{n}</div>)}
             {s.fraction !== undefined && s.state === "active" && <div className="bar"><i style={{ width: `${Math.round(s.fraction * 100)}%` }} /></div>}
           </div>
         </li>
