@@ -29,26 +29,24 @@ final class AutomationStartupTests: XCTestCase {
         }, object: nil)
         await fulfillment(of: [settings], timeout: 5)
         let settingsController = try XCTUnwrap(host.presentedViewController)
+        try capture(window, named: "connection-before-prompt")
 
         model.passcodeHeadsUp = true
         let prompt = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             Self.alert(in: host)?.title == "Enter Your Passcode Next"
         }, object: nil)
         let result = await XCTWaiter.fulfillment(of: [prompt], timeout: 3)
-        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AutomationStartupEvidence")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let picture = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        try XCTUnwrap(picture.pngData()).write(to: folder.appendingPathComponent("passcode-settings.png"))
+        try capture(window, named: "passcode-settings")
         XCTAssertEqual(result, .completed, "Connection settings must show the passcode explanation, not leave Automation silently off")
         XCTAssertEqual(Set(Self.alert(in: host)?.actions.compactMap(\.title) ?? []), ["Cancel", "Continue"])
         XCTAssertTrue(host.presentedViewController === settingsController, "The passcode explanation must keep Connection settings open underneath it")
         model.passcodeHeadsUp = false
     }
 
-    func testDownloadedImageIsNotReadyWithoutLoadableDeveloperFrameworks() throws {
+    func testDownloadedImageIsNotReadyWithoutLoadableDeveloperFrameworks() async throws {
+        try XCTSkipUnless(AppModel.onSimulator, "Uses a simulated developer-framework load failure")
+        try XCTSkipUnless(dlopen("/System/Developer/Library/PrivateFrameworks/XCTestSupport.framework/XCTestSupport", RTLD_NOW | RTLD_GLOBAL) == nil,
+                          "Run scripts/automation-startup-tests.sh to simulate unavailable developer frameworks")
         let directory = AppFiles.ddiDirectory
         let manager = FileManager.default
         let backup = directory.appendingPathExtension("startup-test-backup")
@@ -67,7 +65,35 @@ final class AutomationStartupTests: XCTestCase {
         try PropertyListSerialization.data(fromPropertyList: manifest, format: .binary, options: 0)
             .write(to: directory.appendingPathComponent("BuildManifest.plist"))
         let store = DiskImageStore()
+        XCTAssertTrue(store.recheck(), "The downloaded fixture must pass file verification")
         XCTAssertFalse(store.isReady, "Downloaded disk image files must not report Ready when developer frameworks cannot load")
+
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
+        let chat = ChatModel(app: model)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true; model.stopSession() }
+        let language = AppLocalization.shared.preference
+        AppLocalization.shared.preference = "en"
+        defer { AppLocalization.shared.preference = language }
+        for (name, routes) in [("frameworks-unavailable", NavigationPath([DetailsRoute.connection])),
+                               ("disk-image-downloaded", NavigationPath([SetupStep.pairing]))] {
+            window.rootViewController = UIHostingController(rootView:
+                PokiDetailsView(openSetup: {}, path: .constant(routes)).environment(model).environment(chat))
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            try capture(window, named: name)
+        }
+    }
+
+    private func capture(_ window: UIWindow, named name: String) throws {
+        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AutomationStartupEvidence")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let picture = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        try XCTUnwrap(picture.pngData()).write(to: folder.appendingPathComponent("\(name).png"))
     }
 
     private static func alert(in controller: UIViewController) -> UIAlertController? {
