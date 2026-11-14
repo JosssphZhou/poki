@@ -68,6 +68,11 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertEqual(works.words, "連線正常，回應模型：house-model-2026-11")
         XCTAssertEqual(rejected.words, "金鑰無效，請確認金鑰已完整複製。")
 
+        // A gateway that doubles the prefix (issue #344) works as the chat now reads it.
+        let doubled = await check((200, "data:data: \(chunk)\n\ndata:\n\ndata:data: [DONE]\n\n"))
+        XCTAssertTrue(doubled.passed)
+        XCTAssertEqual(doubled.words, "Connection works. Model: house-model-2026-11")
+
         for result in [works, rejected, noModel, late] {
             XCTAssertFalse(result.words.contains(key))
             XCTAssertFalse(result.detail?.contains(key) ?? false)
