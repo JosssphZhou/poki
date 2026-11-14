@@ -32997,6 +32997,22 @@
           }
         }
       }
+    },
+    "Walk Variant" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取方式"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取方式"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
