@@ -1,3 +1,7 @@
 # For signing without Network Extensions: no packet-tunnel entitlement or embedded tunnel.
-include: project-base.yml
+include:
+  - project-base.yml
+  # Opt in to one plain-HTTP Custom Endpoint host. Off unless both variables are set.
+  - path: project-http-endpoint.yml
+    enable: ${POKI_HTTP_ENDPOINT_OPT_IN}
 name: PokiExternal

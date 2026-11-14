@@ -53,6 +53,22 @@ jobs:
         run: |
           cargo test --locked -p poki-setup-core --manifest-path desktop/Cargo.toml apple::gsa::
 
+  ats-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Built ATS plist, real local HTTP and existing HTTPS
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet pyyaml
+          python3 scripts/check-ats-scope.py
+      - name: Installer's explicit HTTP host opt-in
+        run: node --test test/install-http-host.test.mjs
+
   workflows:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
