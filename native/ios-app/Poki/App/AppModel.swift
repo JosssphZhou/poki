@@ -1194,6 +1194,25 @@ final class AppModel {
         standBy(reason: nil, keepingDone: true)
     }
 
+    /// The outside agent whose steps ran on this iPhone since the owner was last told.
+    private var outsideAgentAtWork: String?
+
+    /// An outside agent's task is over (it ended its session, or went quiet for the idle time): the
+    /// owner is told that it used the iPhone, in a notification that breaks through, wherever they
+    /// are. Who, and nothing of what it did: that is in Poki.
+    private func tellOwnerAnAgentWasHere() {
+        guard let agent = outsideAgentAtWork else { return }
+        outsideAgentAtWork = nil
+        log.add("notice", "telling the owner that \(agent) used the iPhone")
+        let content = UNMutableNotificationContent()
+        content.title = "Poki"
+        content.body = AppLocalization.text(LocalizedStringResource("\(agent) used this iPhone through Poki. Open Poki to see what it did."))
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.userInfo = ["poki_link": "poki://chat"]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "poki-agent-done", content: content, trigger: nil))
+    }
+
     private func closeAfterTask(_ why: String) {
         guard automationPath == .inProcess, sessionOn, !runnerPaused, !chatTaskActive, approvals.isEmpty,
               handoffText == nil, activityText == "Idle" else { return }
@@ -1249,6 +1268,7 @@ final class AppModel {
                   self.lastAgentActivity == activityAtIdle,
                   self.automationPath == .inProcess || !self.inFront else { return }
             self.pauseRunner(reason: reason, byOwner: false)
+            self.tellOwnerAnAgentWasHere()
         }
     }
 
@@ -1420,12 +1440,15 @@ final class AppModel {
                     _ = await core.finishTask()
                     self?.endingTasks -= 1
                     self?.closeAfterTask("an agent ended its session")
+                    self?.tellOwnerAnAgentWasHere()
                 }
             }
         case .relay(let status):
             if status != relayStatus { log.add("relay", "\(status)") }
             relayStatus = status
-        case .toolStarted(_, let summary, _):
+        case .toolStarted(_, let summary, let session):
+            // A step of an outside agent's own session (not the chat's): the owner is told when it is through.
+            if let session, let client = SessionStore.shared.session(session)?.client { outsideAgentAtWork = AgentName.pretty(client) }
             if !chatTaskActive { log.add("session-timing", String(format: "phone_step_received uptime=%.6f", ProcessInfo.processInfo.systemUptime)) }
             lastAgentActivity = Date(); lastStepAt = Date()
             stepUnderWay = (summary, Date())

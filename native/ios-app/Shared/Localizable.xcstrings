@@ -32767,6 +32767,29 @@
           }
         }
       }
+    },
+    "%@ used this iPhone through Poki. Open Poki to see what it did." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ used this iPhone through Poki. Open Poki to see what it did."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 通过 Poki 使用了这台 iPhone。打开 Poki 查看它做了什么。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 透過 Poki 使用了這部 iPhone。開啟 Poki 檢視它做了什麼。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
