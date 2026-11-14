@@ -31,6 +31,20 @@ final class TextAttachmentTests: XCTestCase {
         }
     }
 
+    func testFileErrorsUsePokisLanguageInsteadOfTheSystemLanguage() {
+        let saved = AppLocalization.shared.preference
+        defer { AppLocalization.shared.preference = saved }
+        let keys: [LocalizedStringResource] = ["Text files must be 100 KB or smaller.", "This text file must use UTF-8 encoding.", "Only images, PDFs, JSON, Markdown, and plain text files can be added."]
+        for language in ["zh-Hans", "zh-Hant"] {
+            AppLocalization.shared.preference = language
+            for key in keys {
+                let value = AppLocalization.text(key)
+                XCTAssertFalse(value.hasPrefix("Text files") || value.hasPrefix("This text") || value.hasPrefix("Only images"))
+                XCTAssertTrue(value.contains(language == "zh-Hans" ? "文件" : "檔案"))
+            }
+        }
+    }
+
     private func withFile(_ ext: String, _ data: Data, check: (URL) throws -> Void) throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension(ext)
         try data.write(to: url)

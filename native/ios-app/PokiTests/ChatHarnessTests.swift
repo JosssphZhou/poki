@@ -42,6 +42,54 @@ final class ChatHarnessTests: XCTestCase {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
     }
 
+    func testAttachedRequestReachesApprovalAndRouteBoundaries() async throws {
+        let done = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]])
+        let server = try FakeCompletions(replies: [done, FakeCompletions.text("Done.")])
+        let chat = chat(on: server)
+        let document = ChatTextDocument(name: "steps.md", content: "Look up the weather on the web, then write it in Notes. Call Alice only after asking me; do not send a message.")
+        chat.send("Follow the attached steps", attachments: [.init(kind: .text(name: document.name), thumbnail: Data(), images: [], textContent: document.content)])
+        defer { chat.stop() }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertTrue(chat.taskRequest.contains(document.modelText))
+        XCTAssertTrue(ChatModel.allowsRouteSwitch(request: chat.taskRequest, planCount: 2))
+        XCTAssertFalse(ChatModel.allowsRouteSwitch(request: "Read this website", planCount: 2))
+        XCTAssertFalse(ChatModel.allowsRouteSwitch(request: chat.taskRequest, planCount: 1))
+
+        let approval = PendingApproval(id: "attachment-test", app: "Phone", summary: "Call Alice", reason: "a call", expires: .now.addingTimeInterval(60))
+        let attachedPrompt = ApprovalClassifier.requestPrompt(approval, conversation: chat.ownerContext)
+        XCTAssertTrue(attachedPrompt.contains(document.name))
+        XCTAssertTrue(attachedPrompt.contains(document.content))
+        var pasted = ChatEntry(.request(chat.taskRequest, from: "Test agent"))
+        pasted.textDocuments = nil
+        let pastedPrompt = ApprovalClassifier.requestPrompt(approval, conversation: ["Request from Test agent: \(pasted.requestText)"])
+        // Compare the owner evidence; any assistant completion is separate conversation context.
+        XCTAssertTrue(attachedPrompt.contains("Request from Test agent: \(pasted.requestText)"))
+        XCTAssertTrue(pastedPrompt.contains(document.content))
+        let bounded = ApprovalClassifier.requestPrompt(approval, conversation: [String(repeating: "x", count: 5000)])
+        XCTAssertTrue(bounded.hasSuffix(String(repeating: "x", count: 4000)))
+    }
+
+    func testAttachedWebThenAppTaskKeepsTheRouteGuard() async throws {
+        for explicitApp in [true, false] {
+            let server = try FakeCompletions(replies: [
+                FakeCompletions.tool("report_plan", ["steps": ["Read the web", "Write the result"], "currentStep": 1]),
+                FakeCompletions.tool("web_read", [:]),
+                FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]]),
+                FakeCompletions.text("Done.")])
+            let chat = chat(on: server)
+            let content = explicitApp ? "Look up the weather on the web, then write it in Notes." : "Read this website."
+            chat.send("Follow the attached steps", attachments: [.init(kind: .text(name: "steps.md"), thumbnail: Data(), images: [], textContent: content)])
+            let deadline = ContinuousClock.now + .seconds(15)
+            while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+            chat.stop()
+            let refusal = chat.selectRoute(.app)
+            XCTAssertEqual(refusal?.text.contains("Phone controls were not started") ?? false, !explicitApp,
+                           "Only an explicitly requested mixed task may cross routes")
+        }
+    }
+
     /// A note the agent saved during one task reaches the model with the next task of the same
     /// conversation.
     func testEachTaskTellsTheModelWhatMemoryHolds() async throws {

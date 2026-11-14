@@ -38,6 +38,13 @@ struct ChatEntry: Identifiable, Equatable, Codable {
     var textDocuments: [ChatTextDocument]?
     init(_ kind: Kind) { id = UUID(); self.kind = kind }
 
+    /// The same delimited owner request for the model, consent evidence and task routing.
+    var requestText: String {
+        let caption: String
+        switch kind { case .you(let text, _), .request(let text, _): caption = text; default: return "" }
+        return ([caption] + (textDocuments ?? []).map(\.modelText)).filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
     /// Browser visits belong to the request around this card, including after restoring a conversation.
     static func taskUsedBrowser(in entries: [ChatEntry], at index: Int) -> Bool {
         func isRequest(_ entry: ChatEntry) -> Bool {
@@ -140,8 +147,8 @@ final class ChatModel {
     private(set) var taskApp: String?
     /// What the task under way opened and acted in, and what it was asked, for `taskApp`.
     private var taskApps = TaskApps()
-    private var taskRequest = ""
-    private enum ToolRoute { case app, web }
+    private(set) var taskRequest = ""
+    enum ToolRoute { case app, web }
     private var toolRoute: ToolRoute?
     /// The whole plan the model published, for the task card's steps still to come.
     var planSteps: [String]? { modelPlan }
@@ -290,8 +297,8 @@ final class ChatModel {
     var ownerContext: [String] {
         entries.suffix(30).compactMap { entry in
             switch entry.kind {
-            case .you(let text, _): "Owner: \(text)"
-            case .request(let text, let from): "Request from \(from): \(text)"
+            case .you: "Owner: \(entry.requestText)"
+            case .request(_, let from): "Request from \(from): \(entry.requestText)"
             case .poki(let text): "Assistant: \(String(text.prefix(400)))"
             default: nil
             }
@@ -327,7 +334,8 @@ final class ChatModel {
             you = entry
             entries.append(you)
         }
-        lastOwnerText = text
+        let message = you.requestText
+        lastOwnerText = message
         if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
         guard provider.wired, let key = ModelKeys.key(provider) ?? (provider == .custom && ModelKeys.hasUsableKey ? "none" : nil) else {
@@ -340,16 +348,15 @@ final class ChatModel {
         if kind == .poki, !again, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
            let piModel = provider.piModel(model) {
             let id = sessionID
-            Task { if let name = await SessionNamer.name(for: text, provider: provider, model: piModel) { SessionStore.shared.setAutoName(id, name) } }
+            Task { if let name = await SessionNamer.name(for: message, provider: provider, model: piModel) { SessionStore.shared.setAutoName(id, name) } }
         }
         running = true
         awaitingModel = true
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
         taskApp = nil
-        taskApps = TaskApps(); taskRequest = text; toolRoute = nil
-        let instructions = Harness.instructions(for: text)
-        let message = ([text] + documents.map(\.modelText)).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        taskApps = TaskApps(); taskRequest = message; toolRoute = nil
+        let instructions = Harness.instructions(for: message)
         let images = lastImages
         if Self.direct, provider == .anthropic || provider == .openai {
             // Another model starts a new conversation on the model's side; the chat on screen stays.
@@ -614,9 +621,12 @@ final class ChatModel {
         }
     }
 
-    private func selectRoute(_ next: ToolRoute) -> PokiCore.ToolAnswer? {
-        let hasExplicitApp = !AppIconStore.bundleIDs(namedIn: taskRequest).isEmpty
-        let mixed = hasExplicitApp && (modelPlan?.count ?? 0) > 1
+    static func allowsRouteSwitch(request: String, planCount: Int) -> Bool {
+        !AppIconStore.bundleIDs(namedIn: request).isEmpty && planCount > 1
+    }
+
+    func selectRoute(_ next: ToolRoute) -> PokiCore.ToolAnswer? {
+        let mixed = Self.allowsRouteSwitch(request: taskRequest, planCount: modelPlan?.count ?? 0)
         if let toolRoute, toolRoute != next, !mixed {
             let text = toolRoute == .web
                 ? "This task is using the sandbox browser. Phone controls were not started. Continue with web tools, or stop and ask the owner if a separate app task is needed."

@@ -92,6 +92,16 @@ enum ApprovalClassifier {
         return verdict
     }
 
+    /// The exact bounded request sent to the approval model, shared with boundary regressions.
+    static func requestPrompt(_ approval: PendingApproval, conversation said: [String]) -> String {
+        let conversation = said.isEmpty ? "(the owner has said nothing in Poki; the request came from an outside agent)" : said.suffix(20).joined(separator: "\n")
+        return """
+        Step: \(approval.summary) in \(approval.app) (\(approval.reason)).
+        Conversation, oldest first:
+        \(String(conversation.suffix(4000)))
+        """
+    }
+
     private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine]) async -> Verdict {
         let provider = ModelKeys.selectedProvider
         guard provider.wired, ModelKeys.key(provider) != nil || provider == .custom,
@@ -106,17 +116,12 @@ enum ApprovalClassifier {
             default: break
             }
         }
-        let conversation = said.isEmpty ? "(the owner has said nothing in Poki; the request came from an outside agent)" : said.suffix(20).joined(separator: "\n")
         let instructions = """
         You decide, fast, whether an AI agent driving the owner's iPhone may do one sensitive step. \
         \(level.rule) A yes from the owner to a question about this step counts as asking for it. \
         Reply with one line: ALLOW or REFUSE, a colon, and at most ten words why.
         """
-        let prompt = """
-        Step: \(approval.summary) in \(approval.app) (\(approval.reason)).
-        Conversation, oldest first:
-        \(String(conversation.suffix(4000)))
-        """
+        let prompt = requestPrompt(approval, conversation: said)
         let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
             .init(text: "No tools.", jpeg: nil, isError: true)
         }
