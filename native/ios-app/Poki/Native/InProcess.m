@@ -197,6 +197,24 @@ static CGRect PKScreenFrame(id ax, id system) {
 
 static id PKForegroundElementTimed(id ax, NSString *(^bundleForPID)(int));
 
+static BOOL PKPhoneLocked(void) {
+    static int token = -1;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ if (notify_register_check("com.apple.springboard.lockstate", &token) != NOTIFY_STATUS_OK) token = -1; });
+    if (token == -1) return NO;
+    uint64_t state = 0;
+    notify_get_state(token, &state);
+    return state != 0;
+}
+
+/// Processes iOS lists as active that show only over the Lock Screen.
+static NSSet<NSString *> *PKLockScreenOnlyBundles(void) {
+    static NSSet *bundles;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ bundles = [NSSet setWithObjects:@"com.apple.SleepLockScreen", nil]; });
+    return bundles;
+}
+
 static id PKForegroundElement(id ax, NSString *(^bundleForPID)(int)) {
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     id chosen = PKForegroundElementTimed(ax, bundleForPID);
@@ -220,6 +238,16 @@ static id PKForegroundElementTimed(id ax, NSString *(^bundleForPID)(int)) {
         if (pid <= 0) continue;
         BOOL isSpringBoard = springBoardPID > 0 ? pid == springBoardPID : [bundleForPID(pid) isEqualToString:@"com.apple.springboard"];
         if (isSpringBoard) springBoard = element; else [candidates addObject:element];
+    }
+    // iOS keeps its Sleep screen's process among the active apps with the phone unlocked and another
+    // app in front, during a Sleep Focus and after it is turned off (iPhone, iOS 27.3: Poki in front,
+    // two active apps, the Sleep screen taken for the front one, so every read was of it and an app
+    // Poki had just opened was never seen in front). It is in front only on a locked phone.
+    if (candidates.count > 1 && !PKPhoneLocked()) {
+        NSMutableArray *shown = [NSMutableArray array];
+        for (id element in candidates)
+            if (![PKLockScreenOnlyBundles() containsObject:bundleForPID(PKAXPid(element)) ?: @""]) [shown addObject:element];
+        if (shown.count) candidates = shown;
     }
     if (candidates.count == 1) return candidates.firstObject;
     if (!candidates.count) return springBoard ?: system;
