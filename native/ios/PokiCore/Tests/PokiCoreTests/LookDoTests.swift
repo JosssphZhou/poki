@@ -330,6 +330,56 @@ final class LookDoTests: XCTestCase {
         XCTAssertEqual(wda.bodies("POST /poki/workspace-drag").count, 1)
     }
 
+    func testSplitViewDragWithUnknownDeliveryWaitsForFreshReadsAfterQuickRotation() async {
+        let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true))
+        let revision = LockedBox(1)
+        let selected = LockedBox("left")
+        let notes = "com.apple.mobilenotes", safari = "com.apple.mobilesafari"
+        wda.set("POST /poki/pane") { args in
+            let side = args?["side"]?.string ?? "left"
+            selected.value = side
+            return (200, ["value": ["identity": .string("\(side)/\(revision.value)"),
+                "bundleId": .string(side == "left" ? notes : safari),
+                "otherBundleId": .string(side == "left" ? safari : notes),
+                "x": side == "left" ? 0 : 400, "y": 0]])
+        }
+        wda.set("GET /wda/activeAppInfo") { _ in
+            (200, ["value": ["bundleId": .string(selected.value == "left" ? notes : safari)]])
+        }
+        wda.set("POST /poki/workspace-drag") { _ in
+            // The native driver sees a turn during dispatch. By the next read the panes
+            // have returned to their original positions, but the orientation revision advanced.
+            revision.value += 2
+            throw TransportError.other("sent, no confirmation: split_view_changed_after_dispatch")
+        }
+
+        let session = "quick-rotation-during-drag"
+        let original = await core.call("look", ["pane": "left"], session: session, local: true)
+        _ = await core.call("look", ["pane": "right"], session: session, local: true)
+        let drag: JSON = ["actions": [["drag": ["from": [150, 150], "to": [100, 100], "to_pane": "left"]]]]
+        let interrupted = await core.call("do", drag, session: session, local: true)
+        XCTAssertTrue(interrupted.splitViewNeedsRead, interrupted.text)
+        XCTAssertTrue(interrupted.text.contains("split_view_changed_after_dispatch"), interrupted.text)
+
+        let tap: JSON = ["actions": [["tap": [100, 100]]]]
+        let stale = await core.call("do", tap, session: session, local: true)
+        XCTAssertTrue(stale.splitViewNeedsRead, stale.text)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
+
+        let destination = await core.call("look", ["pane": "left"], session: session, local: true)
+        XCTAssertEqual(destination.splitView?.app, notes, destination.text)
+        XCTAssertNotEqual(destination.splitView?.layout, original.splitView?.layout)
+        XCTAssertTrue(destination.text.contains("Do not repeat the drag"), destination.text)
+        _ = await core.call("look", ["pane": "right"], session: session, local: true)
+        let replay = await core.call("do", drag, session: session, local: true)
+        XCTAssertTrue(replay.text.contains("interrupted drags are not replayed"), replay.text)
+        XCTAssertEqual(wda.bodies("POST /poki/workspace-drag").count, 1)
+
+        let fresh = await core.call("do", tap, session: session, local: true)
+        XCTAssertFalse(fresh.isError, fresh.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1)
+    }
+
     func testSplitViewRotationNeverTapsAnOldDraftFieldAndFocusesTheRestoredOne() async {
         let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true))
         let layout = LockedBox("original")
