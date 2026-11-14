@@ -86,24 +86,42 @@ final class AppIconStore {
         return key.isEmpty ? nil : key
     }
 
-    /// The bundle ID for an app's name, or `app` itself when it already is one.
+    /// The bundle ID for an app's name, or `app` itself when it already is one. Past KnownApps, any app
+    /// installed on this iPhone is found by its Home Screen name (DynamicApps, from the phone's list).
     static func bundleID(_ app: String) -> String? {
         let name = app.trimmingCharacters(in: .whitespacesAndNewlines)
         if let known = KnownApps.find(name) { return known.id }
+        if DynamicApps.name(forID: name) != nil { return name }
         // "com.tencent.xin": a reverse-DNS name with no spaces.
         if !name.contains(" "), name.split(separator: ".").count >= 3 { return name }
-        return nil
+        return DynamicApps.id(forName: name)
     }
 
     /// The name an app goes by on this iPhone, in its first language (English, Simplified or
-    /// Traditional Chinese), from a bundle ID or any of its names; nil for an app not listed here.
+    /// Traditional Chinese), from a bundle ID or any of its names; for an app not listed here, its
+    /// Home Screen name when it is installed.
     static func name(_ app: String) -> String? {
-        KnownApps.find(app)?.name(in: .current)
+        KnownApps.find(app)?.name(in: .current) ?? DynamicApps.name(forID: app)
+    }
+
+    /// The phone's app list changed (InstalledApps): names that found no app may find one now, and the
+    /// views that drew a placeholder draw again.
+    func directoryChanged() {
+        unknown.removeAll()
+        arrivals += 1
+    }
+
+    /// Whether iOS has a Home Screen icon for `id`, that is whether the app is installed; nil when the
+    /// iPhone's icons are not read (`-pokiSystemIcons off`). InstalledApps' check without the phone's list.
+    static func installedOnPhone(_ id: String) -> Bool? {
+        guard SystemIcons.enabled else { return nil }
+        return SystemIcons.icon(id, dark: false) != nil
     }
 
     /// The bundle IDs of the apps `text` names, in any of their names: "打开美团外卖点下酒菜" names Meituan
     /// Waimai and not Meituan, as the longest name wins where one starts another. A Latin name counts
-    /// only as a whole word, and one-letter names ("X") never.
+    /// only as a whole word, and one-letter names ("X") never. A name of digits ("12306") counts next to
+    /// Chinese text ("打开12306查询") but not inside a longer run of Latin letters or digits.
     static func bundleIDs(namedIn text: String) -> [String] {
         let text = Array(text.lowercased())
         var found: [String] = []
@@ -113,7 +131,11 @@ final class AppIconStore {
                 let chars = Array(name)
                 guard i + chars.count <= text.count, Array(text[i..<i + chars.count]) == chars else { return false }
                 guard chars.allSatisfy(\.isASCII) else { return true }
-                return (i == 0 || !text[i - 1].isLetter) && (i + chars.count == text.count || !text[i + chars.count].isLetter)
+                // A Latin name stops at any letter; a number only at a Latin letter or a digit, as Chinese
+                // characters are letters too and sit right against it.
+                let numeric = chars.allSatisfy(\.isNumber)
+                let joins: (Character) -> Bool = numeric ? { $0.isASCII && ($0.isLetter || $0.isNumber) } : { $0.isLetter }
+                return (i == 0 || !joins(text[i - 1])) && (i + chars.count == text.count || !joins(text[i + chars.count]))
             }
             guard let hit, let id = KnownApps.byName[hit] else { i += 1; continue }
             if !found.contains(id) { found.append(id) }
