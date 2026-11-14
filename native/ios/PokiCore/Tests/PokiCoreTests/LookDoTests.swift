@@ -249,7 +249,7 @@ final class LookDoTests: XCTestCase {
         XCTAssertEqual(path.filter { $0["type"]?.string == "pointerUp" }.count, 1)
         XCTAssertEqual(path.last(where: { $0["type"]?.string == "pointerMove" })?["x"]?.int, -300)
         let repeatDrop = await core.call("do", drag)
-        XCTAssertTrue(repeatDrop.text.contains("previous drag may already have landed"), repeatDrop.text)
+        XCTAssertTrue(repeatDrop.text.contains("already dragged"), repeatDrop.text)
         XCTAssertEqual(wda.bodies("POST /poki/workspace-drag").count, 1)
         let wrongPane = await core.call("look", ["pane": "right"])
         XCTAssertFalse(wrongPane.text.contains("Split View drop:"), wrongPane.text)
@@ -270,6 +270,16 @@ final class LookDoTests: XCTestCase {
         #endif
         let again = await core.call("look", ["pane": "left"])
         XCTAssertFalse(again.text.contains("Split View drop:"), again.text)
+
+        _ = await core.call("look", ["pane": "right"])
+        let adjustedDrop: JSON = ["actions": [["drag": ["from": [155, 152], "to": [110, 140], "to_pane": "left"]]]]
+        let alreadySent = await core.call("do", adjustedDrop)
+        XCTAssertTrue(alreadySent.text.contains("already dragged"), alreadySent.text)
+        XCTAssertEqual(wda.bodies("POST /poki/workspace-drag").count, 1)
+        let differentItem: JSON = ["actions": [["drag": ["from": [220, 180], "to": [100, 100], "to_pane": "left"]]]]
+        let anotherDrop = await core.call("do", differentItem)
+        XCTAssertTrue(anotherDrop.text.contains("look there to confirm"), anotherDrop.text)
+        XCTAssertEqual(wda.bodies("POST /poki/workspace-drag").count, 2)
     }
 
     func testSplitViewDragCannotBeReplayedAfterLayoutChangesEvenWhenDestinationMoves() async {

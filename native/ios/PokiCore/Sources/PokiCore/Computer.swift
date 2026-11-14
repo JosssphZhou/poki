@@ -65,6 +65,21 @@ final class Computer: @unchecked Sendable {
     private var workspaceReads: [String: WorkspaceRead] = [:]
     private var workspaceDrop: (before: WorkspaceRead, delivery: Delivery)?
     private var interruptedDropApp: String?
+    private struct WorkspaceDrag {
+        let fromApp, toApp, layout: String
+        let image: String?
+        let x, y: Double
+
+        func matches(_ other: Self) -> Bool {
+            guard fromApp == other.fromApp, toApp == other.toApp else { return false }
+            if let image, image == other.image { return true }
+            if image != nil && other.image != nil { return false }
+            return layout == other.layout && hypot(x - other.x, y - other.y) <= 8
+        }
+    }
+    // Keep the sent item after the destination read consumes its one-time drop evidence.
+    private var workspaceDrags: [WorkspaceDrag] = []
+    private static let repeatedDrop = "this item was already dragged to the same app in this task. Inspect the destination before continuing."
     private var paneOffset: (x: Double, y: Double)?
     var size: ScreenSize?
     var lastPNG: Data?
@@ -561,6 +576,7 @@ final class Computer: @unchecked Sendable {
                 workspaceReads.removeAll()
                 workspaceDrop = nil
                 interruptedDropApp = nil
+                workspaceDrags.removeAll()
             } else {
                 guard let identity = reply["identity"]?.string, !identity.isEmpty,
                       let app = reply["bundleId"]?.string, !app.isEmpty,
@@ -573,6 +589,7 @@ final class Computer: @unchecked Sendable {
                 if ownerChanged {
                     workspaceDrop = nil
                     interruptedDropApp = nil
+                    workspaceDrags.removeAll()
                 }
                 selectedPane = (side, identity, app, other, session)
                 paneOffset = reply["x"]?.double.flatMap { x in reply["y"]?.double.map { (x, $0) } }
@@ -606,6 +623,21 @@ final class Computer: @unchecked Sendable {
         return frames.count
     }
 
+    private func workspaceDrag(from: (x: Double, y: Double)) -> WorkspaceDrag? {
+        guard let pane = selectedPane else { return nil }
+        let images = lastAll.filter { element in
+            element.type == "Image" && !element.fromPicture && !element.text.isEmpty &&
+                element.frame.x <= from.x && from.x <= element.frame.x + element.frame.width &&
+                element.frame.y <= from.y && from.y <= element.frame.y + element.frame.height
+        }
+        // Identical labels on multiple visible images are not a unique item.
+        let image = images.count == 1
+            && lastAll.filter({ $0.type == "Image" && !$0.fromPicture && $0.text == images[0].text }).count == 1
+            ? images[0].text : nil
+        return WorkspaceDrag(fromApp: pane.app, toApp: pane.other, layout: workspaceLayout(pane.identity),
+                             image: image, x: from.x, y: from.y)
+    }
+
     func crossPaneDrag(_ spec: JSON, from: (x: Double, y: Double), until: Double) async throws {
         let side = spec["to_pane"]?.string ?? ""
         if let other = selectedPane?.other, interruptedDropApp == other || workspaceDrop?.before.app == other {
@@ -619,6 +651,10 @@ final class Computer: @unchecked Sendable {
               (0..<target.size.width).contains(to[0]), (0..<target.size.height).contains(to[1]) else {
             throw ActionFailure(message: "read both panes in this task, then select the source again and use current [x, y] points for the drop", delivery: .notSent)
         }
+        let drag = workspaceDrag(from: from)
+        if let drag, workspaceDrags.contains(where: { $0.matches(drag) }) {
+            throw ActionFailure(message: Self.repeatedDrop, delivery: .notSent)
+        }
         let end = (to[0] + target.x - source.x, to[1] + target.y - source.y)
         let travel = min(2, max(0.25, (spec["ms"]?.double ?? 850) / 1000))
         let hold = min(2, max(0.15, (spec["hold_ms"]?.double ?? 360) / 1000))
@@ -629,6 +665,7 @@ final class Computer: @unchecked Sendable {
             _ = try await runner.call("POST", "/poki/workspace-drag", Humanize.actions([finger]),
                                       timeout: min(until - now(), travel + hold + rest + 4), countsAsMiss: false)
             workspaceDrop = (target, .sent)
+            if let drag { workspaceDrags.append(drag) }
         } catch let error as RunnerError where error.delivery == .unknown {
             workspaceDrop = (target, .unknown)
             interruptedDropApp = target.app
@@ -672,6 +709,7 @@ final class Computer: @unchecked Sendable {
         workspaceReads.removeAll()
         workspaceDrop = nil
         interruptedDropApp = nil
+        workspaceDrags.removeAll()
         if selectedPane != nil { clearPaneRead() }
     }
 
@@ -783,6 +821,12 @@ final class Computer: @unchecked Sendable {
         if selectedPane != nil, !harmless, !confirmedPaneRead {
             return ToolResult(text: "Split View: look at the selected pane before sending input; nothing was sent",
                               jpeg: nil, isError: true, splitViewNeedsRead: true)
+        }
+        if let action = actions.first, let drag = action["drag"], drag["to_pane"] != nil,
+           let from = try? point(drag["from"]), let attempted = workspaceDrag(from: from),
+           workspaceDrags.contains(where: { $0.matches(attempted) }) {
+            return ToolResult(text: "not_sent: \(Self.repeatedDrop)",
+                              jpeg: nil, isError: true)
         }
         if !harmless, handoffWaiting, let h = handoff.value {
             return await withPicture("not_sent: a step is handed to the owner (\(h.kind): \"\(h.text.prefix(80))\"), so no input is sent until they tap Done on the phone or you send {handoff: false}. Keep polling with look, or {wait_until: {handoff_done: true, ms: 10000}}.", timeout: until - now() - 0.5, isErrorWithoutPicture: false)
@@ -1068,6 +1112,8 @@ final class Computer: @unchecked Sendable {
                 paneOffset = nil
                 workspaceReads.removeAll()
                 workspaceDrop = nil
+                interruptedDropApp = nil
+                workspaceDrags.removeAll()
                 clearPaneRead()
             }
             return exit.map { "finish: Split View stays open; \($0.text)" } ?? "finish: both apps stay open in Split View"
