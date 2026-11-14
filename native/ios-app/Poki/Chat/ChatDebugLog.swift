@@ -3,9 +3,10 @@ import PokiCore
 
 /// The chat's latest tasks for the maintainers' debug file (Advanced, the run log's share button).
 /// That file held only routines and their runs, so a tester's failed chat tasks left it empty (Nov 13
-/// 2026: "没能打开淘宝" with `"runs": []`). Each task keeps the model, which tools ran, the actions
-/// of each do with launch and run targets, how long each took, and the error lines of a failed call.
-/// No request text, no typed text, no screenshots, as the routines' part.
+/// 2026: "没能打开淘宝" with `"runs": []`). Each task keeps the model, the tools that ran, the kind of
+/// each do action (with a launch's bundle id and a button, key or swipe direction), how long each took,
+/// and what kind of failure a failed call had. Only these structured fields are kept: never a tool's
+/// answer text, a typed or entered value, a routine's name, the request or a screenshot.
 enum ChatDebugLog {
     static let limit = 20
 
@@ -25,11 +26,39 @@ enum ChatDebugLog {
         var actions: [String]
         var ok: Bool
         var ms: Int
+        /// A failed call's kind of failure (`Failure`), never its text.
         var error: String?
     }
 
+    /// What went wrong in a failed call, read from the answer but kept as a category only.
+    enum Failure: String {
+        case notInstalled = "launch_not_installed"
+        case approval = "approval_required"
+        case busy = "runner_busy"
+        case sessionOff = "session_off"
+        case stopped
+        case timeout
+        case invalidArguments = "invalid_arguments"
+        case notSent = "not_sent"
+        case failed
+
+        init(answer: String) {
+            let a = answer.lowercased()
+            if a.contains("no app with that bundle id is installed") { self = .notInstalled }
+            else if a.contains("approval_required") { self = .approval }
+            else if a.contains("busy") { self = .busy }
+            else if a.contains("could not turn on") { self = .sessionOff }
+            else if a.contains("task stopped") { self = .stopped }
+            else if a.contains("timed out") || a.contains("timeout") || a.contains("did not answer in time") { self = .timeout }
+            else if a.contains("not json") || a.contains("must be an array") || a.contains("needs a ") || a.contains("takes ") { self = .invalidArguments }
+            else if a.hasPrefix("not_sent") || a.contains("nothing was sent") { self = .notSent }
+            else { self = .failed }
+        }
+    }
+
     private static let lock = NSLock()
-    private static var file: URL {
+    /// Where the tasks are kept (Application Support/chat-debug.json).
+    static var file: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("chat-debug.json")
     }
@@ -47,8 +76,6 @@ enum ChatDebugLog {
 
     static func entries() -> [Entry] { lock.withLock { readLocked() } }
 
-    static func clear() { lock.withLock { try? FileManager.default.removeItem(at: file) } }
-
     private static func readLocked() -> [Entry] {
         guard let data = try? Data(contentsOf: file) else { return [] }
         return (try? decoder.decode([Entry].self, from: data)) ?? []
@@ -60,41 +87,47 @@ enum ChatDebugLog {
     }
 
     static func call(_ record: CallRecord) -> Call {
-        let actions = record.name == "do" ? Self.actions(record.arguments) : []
-        var error: String?
-        if !record.ok {
-            if actions.contains("type") {
-                error = "(a type action failed; its text is left out)"
-            } else {
-                let lines = record.answer.split(separator: "\n").map(String.init)
-                let picked = lines.filter { $0.hasPrefix("error:") || $0.hasPrefix("not_sent") || $0.hasPrefix("runner:") }
-                error = String((picked.isEmpty ? Array(lines.prefix(1)) : picked).joined(separator: " | ").prefix(400))
-            }
-        }
-        return Call(tool: record.name, actions: actions, ok: record.ok, ms: record.ms, error: error)
+        Call(tool: record.name, actions: record.name == "do" ? actions(record.arguments) : [], ok: record.ok, ms: record.ms,
+             error: record.ok ? nil : Failure(answer: record.answer).rawValue)
     }
 
-    /// Each action's kind, with the target of the ones that name no owner text: launch and run name an
-    /// app or a routine, button, key and swipe a direction. A type keeps only its kind.
+    /// Each do action's kind. Only values that cannot hold the owner's text are added: a launch's bundle
+    /// id when it has a bundle id's shape, and the direction of a button, key or swipe from their fixed
+    /// lists. A run keeps no routine name and a type no text.
     static func actions(_ arguments: String) -> [String] {
         guard let object = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any],
               let actions = object["actions"] as? [[String: Any]] else { return [] }
         return actions.compactMap { action in
             guard let pair = action.first(where: { $0.key != "finish" }) else { return nil }
             let kind = pair.key, value = pair.value
+            let word = (value as? String) ?? ((value as? [String: Any])?["direction"] as? String)
             switch kind {
             case "launch":
-                let bundle = (value as? String) ?? ((value as? [String: Any])?["bundle"] as? String) ?? "?"
-                let fresh = ((value as? [String: Any])?["fresh"] as? Bool) == true
-                return "launch \(bundle)\(fresh ? " (fresh)" : "")"
-            case "run":
-                return "run \((value as? String) ?? ((value as? [String: Any])?["name"] as? String) ?? "?")"
+                let bundle = (value as? String) ?? ((value as? [String: Any])?["bundle"] as? String)
+                return bundle.flatMap { isBundleID($0) ? "launch \($0)" : nil } ?? "launch"
             case "button", "key", "swipe":
-                return (value as? String).map { "\(kind) \($0)" } ?? kind
+                return word.flatMap { directions[kind]?.contains($0) == true ? "\(kind) \($0)" : nil } ?? kind
             default:
-                return kind
+                return knownKinds.contains(kind) ? kind : "other"
             }
         }
+    }
+
+    private static let directions: [String: Set<String>] = [
+        "button": ["home", "lock", "volume_up", "volume_down"],
+        "key": ["return", "delete", "tab", "space", "escape"],
+        "swipe": ["up", "down", "left", "right"],
+    ]
+    private static let knownKinds: Set<String> = ["run", "tap", "type", "back", "handoff", "scroll_to", "long_press", "drag", "pinch", "wait_until", "wait"]
+
+    static func isBundleID(_ text: String) -> Bool {
+        text.count <= 155 && text.split(separator: ".").count >= 2
+            && text.unicodeScalars.allSatisfy { ($0.isASCII && CharacterSet.alphanumerics.contains($0)) || $0 == "." || $0 == "-" }
+    }
+
+    /// The maintainers' debug file: PokiCore's routines and runs, then these tasks as `chat_tasks`.
+    static func exportBundle() -> Data {
+        RoutineStore.shared.debugBundle(extra: ["chat_tasks": json()])
     }
 
     /// The tasks as the debug file's `chat_tasks`.

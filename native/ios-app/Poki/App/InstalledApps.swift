@@ -21,6 +21,13 @@ final class InstalledApps {
 
     /// The signer's way to the phone (AppModel sets it with the signer's): nil while the loopback is down.
     var phone: () -> [String: Any]? = { nil }
+    /// Reads the list over that way: the signer's `apps` request.
+    var fetch: ([String: Any]) async throws -> [App] = { phone in
+        var request = phone
+        request["op"] = "apps"
+        struct Answer: Decodable { let apps: [App] }
+        return try await SignerBridge.decode(Answer.self, request).apps
+    }
     /// Whether iOS has an icon for an id: the check when the phone's list cannot be read.
     var hasIcon: @MainActor (String) -> Bool? = { AppIconStore.installedOnPhone($0) }
     /// The App Store's search (tests answer it themselves).
@@ -34,20 +41,14 @@ final class InstalledApps {
     /// The phone's list, read again after five minutes; nil when it cannot be read.
     func list() async -> [App]? {
         if let apps, let at = fetchedAt, Date().timeIntervalSince(at) < Self.maxAge { return apps }
-        guard var request = phone() else { lastProblem = "the loopback to the phone is not on"; return apps }
-        request["op"] = "apps"
-        struct Answer: Decodable { let apps: [App] }
+        guard let request = phone() else { lastProblem = "the loopback to the phone is not on"; return apps }
         do {
-            let answer = try await SignerBridge.decode(Answer.self, request)
-            apps = answer.apps; fetchedAt = Date(); lastProblem = nil
+            apps = try await fetch(request); fetchedAt = Date(); lastProblem = nil
         } catch {
             lastProblem = error.localizedDescription
         }
         return apps
     }
-
-    /// Takes a list as if the phone had answered (tests, and a list read elsewhere).
-    func use(_ list: [App]) { apps = list; fetchedAt = Date(); lastProblem = nil }
 
     /// Whether `id` is on this phone: from its list, else from iOS's icons; nil when neither can say.
     func installed(_ id: String, in list: [App]?) -> Bool? {
@@ -102,20 +103,31 @@ final class InstalledApps {
         let source = list != nil ? "this iPhone's app list (\(list!.count) apps)" : "the app icons on this iPhone (its app list could not be read: \(lastProblem ?? "no answer"))"
         if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
             var found: [Match] = []
+            // Ids whose installation neither the list nor the icons could settle: a lookup that failed
+            // is no evidence that an app is missing.
+            var unsure: [String] = []
             if let list {
                 found = Self.matches(name, in: list).prefix(5).map { Match(id: $0.id, name: $0.name ?? $0.bundleName ?? $0.id, installed: true) }
-            } else if let known = KnownApps.find(name), let id = known.ids.first(where: { hasIcon($0) == true }) {
-                found = [Match(id: id, name: known.name(in: .current), installed: true)]
+            } else if let known = KnownApps.find(name) {
+                let states = known.ids.map { ($0, hasIcon($0)) }
+                if let id = states.first(where: { $0.1 == true })?.0 {
+                    found = [Match(id: id, name: known.name(in: .current), installed: true)]
+                } else {
+                    unsure += states.filter { $0.1 == nil }.map(\.0)
+                }
             }
             if found.isEmpty {
                 // The App Store's names, kept to the ones on this phone: its own list may name an app
                 // in another language than the owner did.
                 let store = await search(name)
-                let onPhone = store.filter { installed($0.id, in: list) == true }
-                found = onPhone.prefix(3).map { Match(id: $0.id, name: $0.name, installed: true) }
+                let marked = store.prefix(3).map { Match(id: $0.id, name: $0.name, installed: installed($0.id, in: list), url: $0.url) }
+                found = store.filter { installed($0.id, in: list) == true }.prefix(3).map { Match(id: $0.id, name: $0.name, installed: true) }
+                unsure += marked.filter { $0.installed == nil }.map(\.id)
                 if found.isEmpty {
-                    let offers = store.prefix(3).map { Match(id: $0.id, name: $0.name, installed: false, url: $0.url) }
-                    return (Self.answer(missing: name, offers: offers, source: source), false)
+                    // Missing only on the phone's own list, or when the icons said no for every candidate.
+                    let settled = list != nil || (!marked.isEmpty && unsure.isEmpty)
+                    if !settled { return (Self.answer(unknown: name, offers: marked, source: source), false) }
+                    return (Self.answer(missing: name, offers: marked, source: source), false)
                 }
             }
             return ("installed apps named \"\(name)\", from \(source); launch the first unless another fits better:\n" + found.map(Self.line).joined(separator: "\n"), false)
@@ -128,6 +140,13 @@ final class InstalledApps {
             return ("App Store apps for \"\(purpose)\", installed ones first (installed checked with \(source)):\n" + sorted.map(Self.line).joined(separator: "\n"), false)
         }
         return ("find_app takes name (an app's name) or purpose (what the app is for).", true)
+    }
+
+    /// Neither the phone's list nor its icons could say whether the app is there.
+    private static func answer(unknown name: String, offers: [Match], source: String) -> String {
+        var text = "could not tell whether \"\(name)\" is installed: the phone's app list could not be read and the icons could not settle it (checked \(source)). Do not tell the owner it is missing: go home ({button: \"home\"}), swipe down on the Home Screen to search, type its name and tap it."
+        if !offers.isEmpty { text += " The App Store's matches, for their ids:\n" + offers.map(line).joined(separator: "\n") }
+        return text
     }
 
     private static func answer(missing name: String, offers: [Match], source: String) -> String {
