@@ -18,21 +18,20 @@ final class BrowserGuardTests: XCTestCase {
         PokiBrowser.shared.close()
     }
 
+    private struct ConsentSample {
+        let label: String
+        let submit: Bool
+        let question: String?
+        var fields = ""
+        var search = false
+        var action = "/results"
+        var buttonAction = ""
+        var formRole = ""
+        var query = "local fixture"
+    }
+
     func testBrowserActionsWaitForOwnerConsent() async throws {
-        let keys = ["chat.provider", "chat.customURL", "chat.customModel", ApprovalClassifier.modeKey]
-        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
-        defer { for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) } }
-        struct Sample {
-            let label: String
-            let submit: Bool
-            let question: String?
-            var fields = ""
-            var search = false
-            var action = "/results"
-            var buttonAction = ""
-            var formRole = ""
-        }
-        var samples: [Sample] = [
+        var samples: [ConsentSample] = [
             .init(label: "Delete", submit: false, question: "Allow deletion?"),
             .init(label: "Send", submit: false, question: "Allow sending a message?"),
             .init(label: "Transfer", submit: false, question: "Allow payment?"),
@@ -56,7 +55,6 @@ final class BrowserGuardTests: XCTestCase {
         ]
         for submit in [false, true] {
             samples += [
-                .init(label: "Go", submit: submit, question: "Allow payment?", search: true, action: "/orders/place"),
                 .init(label: "Go", submit: submit, question: "Allow payment?", search: true, action: "/wallet/transfer"),
                 .init(label: "Go", submit: submit, question: "Allow sending a message?",
                       fields: "<textarea role=\"searchbox\" aria-label=\"Message\">Hello</textarea>",
@@ -66,8 +64,32 @@ final class BrowserGuardTests: XCTestCase {
                       search: true, formRole: "search"),
             ]
         }
+        try await checkBrowserConsent(samples)
+    }
+
+    func testOrderSearchDoesNotAskForApproval() async throws {
+        let samples = [false, true].flatMap { submit in
+            ["/orders/search", "/transfer/search", "/delete/search", "/send/search", "/results"].map { action in
+                ConsentSample(label: "Search", submit: submit, question: nil, search: true,
+                              action: action, query: "orders transfer delete send")
+            }
+        }
+        try await checkBrowserConsent(samples)
+    }
+
+    func testDisguisedOrderSubmissionStillAsksForApproval() async throws {
+        var samples = [false, true].map { submit in
+            ConsentSample(label: "Go", submit: submit, question: "Allow payment?", search: true, action: "/orders/place")
+        }
         samples.append(.init(label: "Go", submit: false, question: "Allow payment?", search: true,
                              buttonAction: "/orders/place"))
+        try await checkBrowserConsent(samples)
+    }
+
+    private func checkBrowserConsent(_ samples: [ConsentSample]) async throws {
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", ApprovalClassifier.modeKey]
+        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) } }
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
         defer { app.onProbeApproval = nil; app.stopSession() }
         for (index, sample) in samples.enumerated() {
@@ -78,7 +100,7 @@ final class BrowserGuardTests: XCTestCase {
                 let html = sample.search ? """
                 \(head)
                 <form method="get" action="\(sample.action)" role="\(sample.formRole)">
-                <input type="search" name="q" aria-label="Query" value="\(sample.submit ? "" : "local fixture")">
+                <input type="search" name="q" aria-label="Query" value="\(sample.submit ? "" : sample.query)">
                 \(sample.fields)
                 <button type="submit" \(sample.buttonAction.isEmpty ? "" : "formaction=\"\(sample.buttonAction)\"")>\(sample.label)</button>
                 </form></body></html>
@@ -90,16 +112,18 @@ final class BrowserGuardTests: XCTestCase {
                 <button type="\(sample.submit ? "submit" : "button")" onclick="\(sample.submit ? "" : act)">\(sample.label)</button>
                 </form></body></html>
                 """
-                let results = "\(head)<script>if (new URLSearchParams(location.search).get('q') === 'local fixture') \(act)</script></body></html>"
+                let results = "\(head)<script>if (new URLSearchParams(location.search).get('q') === \(Self.json([sample.query]))[0]) \(act)</script></body></html>"
                 let name = "\(sample.label), action=\(sample.action), buttonAction=\(sample.buttonAction), submit=\(sample.submit)\(sample.fields.isEmpty ? "" : ", form with \(sample.fields)")"
                 print("Browser consent fixture: \(name), allow=\(allowed)")
                 let pages = try PageServer(pages: ["/": html, "/results": results, "/orders/place": results,
-                                                   "/wallet/transfer": results, "/messages/send": results])
+                                                   "/wallet/transfer": results, "/messages/send": results,
+                                                   "/orders/search": results, "/transfer/search": results,
+                                                   "/delete/search": results, "/send/search": results])
                 let opened = await WebTools.perform("web_open", arguments: Self.json(["url": "http://127.0.0.1:\(pages.port)/"]))
                 XCTAssertFalse(opened.isError, opened.text)
                 let ref = try Self.ref(sample.submit ? "Query" : sample.label, in: opened.text)
                 let tool = sample.submit ? "web_type" : "web_click"
-                let arguments: [String: Any] = sample.submit ? ["ref": ref, "text": "local fixture", "submit": true] : ["ref": ref]
+                let arguments: [String: Any] = sample.submit ? ["ref": ref, "text": sample.query, "submit": true] : ["ref": ref]
                 let server = try FakeCompletions(replies: [FakeCompletions.tool(tool, arguments), FakeCompletions.text("Finished fixture")])
                 ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
                 ModelKeys.customModel = "fake-model"
