@@ -78,6 +78,15 @@ pub struct Pending {
     pub via: Factor,
     /// The trusted phone number Apple texted (its id in Apple's list), for an SMS sign-in.
     phone_id: u64,
+    /// Keep the password once the code is in, so the keeper can sign in again by itself. Carried
+    /// here so a sign-in finished in a second run (`poki-setup login --code`) still keeps it.
+    #[serde(default)]
+    pub keep_password: bool,
+}
+
+impl Pending {
+    /// The password to keep after the code, when the sign-in asked to keep it.
+    pub fn kept_password(&self) -> Option<String> { self.keep_password.then(|| self.password.clone()) }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,7 +235,7 @@ impl Client {
             return Err(Error::msg("Apple's sign-in answer had no account token."));
         }
         tracing::info!("sign-in answered hsc {} au {:?}", st.hsc, st.au);
-        let pending = |via: Factor, phone_id: u64, session: Session| Pending { apple_id: apple_id.into(), password: password.into(), session, via, phone_id };
+        let pending = |via: Factor, phone_id: u64, session: Session| Pending { apple_id: apple_id.into(), password: password.into(), session, via, phone_id, keep_password: false };
         match st.au.as_deref() {
             Some("trustedDeviceSecondaryAuth") => match self.start_trusted_device(&session).await {
                 Ok(()) => Ok(Outcome::NeedsCode(pending(Factor::TrustedDevice, 0, session))),
@@ -539,5 +548,31 @@ mod sms_tests {
         assert_eq!(super::first_phone_id(&v), Some(7));
         assert_eq!(super::first_phone_id(&serde_json::json!({ "trustedPhoneNumbers": [ { "id": 2 } ] })), Some(2));
         assert_eq!(super::first_phone_id(&serde_json::json!({})), None);
+    }
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+
+    fn pending(keep: bool) -> Pending {
+        let session = Session { apple_id: "a@b.c".into(), adsid: "1".into(), gs_idms_token: "t".into(), first_name: String::new(), last_name: String::new(), sk: vec![1], c: vec![2] };
+        Pending { apple_id: "a@b.c".into(), password: "pw".into(), session, via: Factor::Sms, phone_id: 7, keep_password: keep }
+    }
+
+    #[test]
+    fn keep_password_survives_the_second_run() {
+        let saved = serde_json::to_string(&pending(true)).unwrap();
+        let back: Pending = serde_json::from_str(&saved).unwrap();
+        assert_eq!(back.kept_password().as_deref(), Some("pw"));
+        assert_eq!(pending(false).kept_password(), None);
+    }
+
+    #[test]
+    fn a_pending_saved_before_the_flag_reads_as_not_kept() {
+        let mut v = serde_json::to_value(pending(true)).unwrap();
+        v.as_object_mut().unwrap().remove("keep_password");
+        let back: Pending = serde_json::from_value(v).unwrap();
+        assert_eq!(back.kept_password(), None);
     }
 }

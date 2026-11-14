@@ -53,15 +53,20 @@ impl Signer {
                 store::save(&self.account)?;
                 Ok(None)
             }
-            SignInOutcome::NeedsCode(p) => {
+            SignInOutcome::NeedsCode(mut p) => {
                 self.account.password = keep_password.then(|| password.to_string());
+                p.keep_password = keep_password;
                 Ok(Some(p))
             }
         }
     }
 
     pub async fn finish_sign_in(&mut self, pending: Pending, code: &str) -> Result<()> {
+        let kept = pending.kept_password();
         let session = self.client.finish(pending, code).await?;
+        if kept.is_some() {
+            self.account.password = kept;
+        }
         self.remember_anisette();
         self.account.session = Some(session);
         self.account.xcode_token = None;
