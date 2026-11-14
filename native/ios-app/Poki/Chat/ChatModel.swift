@@ -131,7 +131,6 @@ final class ChatModel {
     /// A board's sample conversation, for screenshots.
     let isSample = UserDefaults.standard.string(forKey: "pokiChat") != nil
     private let app: AppModel
-    private let phoneTool: (String, String) async -> PokiCore.ToolAnswer
     /// The model's side of the conversation: pi's loop (ESP-177), or for Anthropic and OpenAI with
     /// `-chatEngine direct`, the provider's own API in its own form.
     private var loop: PiLoop?
@@ -149,7 +148,6 @@ final class ChatModel {
     /// What the task under way opened and acted in, and what it was asked, for `taskApp`.
     private var taskApps = TaskApps()
     private var taskRequest = ""
-    private var explicitlyRequestsAppOperation = false
     private enum ToolRoute { case app, web }
     private var toolRoute: ToolRoute?
     /// The whole plan the model published, for the task card's steps still to come.
@@ -166,10 +164,8 @@ final class ChatModel {
     /// A task stops after this many model turns: a loop that goes nowhere still ends.
     static let maxTurns = 60
 
-    init(app: AppModel, kind: SavedSession.Kind = .poki, requester: String? = nil, sessionID: String? = nil,
-         phoneTool: ((String, String) async -> PokiCore.ToolAnswer)? = nil) {
+    init(app: AppModel, kind: SavedSession.Kind = .poki, requester: String? = nil, sessionID: String? = nil) {
         self.app = app
-        self.phoneTool = phoneTool ?? { await app.runTool($0, arguments: $1) }
         if let sessionID { self.sessionID = sessionID }
         self.kind = kind
         self.requester = requester
@@ -362,8 +358,7 @@ final class ChatModel {
         stopAsked = false
         planID = nil; noteID = nil; modelPlan = nil
         taskApp = nil
-        taskApps = TaskApps(); taskRequest = message; toolRoute = nil
-        explicitlyRequestsAppOperation = Self.requestsAppOperation(caption: text, documents: you.textDocuments ?? [])
+        taskApps = TaskApps(); taskRequest = text; toolRoute = nil
         let instructions = Harness.instructions(for: message)
         let images = lastImages
         if Self.direct, provider == .anthropic || provider == .openai {
@@ -623,63 +618,15 @@ final class ChatModel {
             if let refusal = selectRoute(.app) { return refusal }
             phoneStepUnderWay = true
             defer { phoneStepUnderWay = false }
-            return await phoneTool(call.name, call.arguments)
+            return await app.runTool(call.name, arguments: call.arguments)
         default:
             return await app.runTool(call.name, arguments: call.arguments)
         }
     }
 
-    /// Route changes need an affirmative operation with a named app as its target. For attached
-    /// instructions, the owner must explicitly delegate the steps in the caption.
-    private static func requestsAppOperation(caption: String, documents: [ChatTextDocument]) -> Bool {
-        let directive = caption.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let delegation = directive.trimmingCharacters(in: CharacterSet(charactersIn: ".。!！"))
-        let delegates = ["follow the attached steps", "follow the attached instructions",
-                         "do the attached task", "按附件步骤操作", "按照附件的步骤操作", "依照附件步驟操作"].contains(delegation)
-        let sources = delegates ? documents.map(\.content) : [caption]
-
-        func directLines(_ source: String) -> [String] {
-            var fence: Character?
-            return source.components(separatedBy: .newlines).compactMap { raw in
-                let line = raw.trimmingCharacters(in: .whitespaces)
-                if line.hasPrefix("```") || line.hasPrefix("~~~") {
-                    if fence == nil { fence = line.first }
-                    else if fence == line.first { fence = nil }
-                    return nil
-                }
-                guard fence == nil, !line.hasPrefix(">"), !line.hasPrefix("<"),
-                      !raw.hasPrefix("    "), !raw.hasPrefix("\t") else { return nil }
-                return line
-            }
-        }
-
-        let lines = sources.flatMap(directLines)
-        let restriction = #"(?i)\b(?:do not|don['’]t|never|avoid|without|only if|unless)\b|不要|不准|禁止|切勿"#
-        guard !lines.contains(where: { line in
-            line.range(of: restriction, options: .regularExpression) != nil ||
-                line.contains(where: { "\"'“”‘’`「」『』".contains($0) })
-        }) else { return false }
-
-        // Match narrow imperative forms and resolve the entire target, rather than search for app names
-        // inside descriptive prose, quoted text or names of files.
-        let pattern = #"(?i)^(?:please\s+)?(?:(?:open|launch|switch to)\s+|(?:write|save|record|add|paste|enter)\s+[^"“”`]+?\s+(?:in|into|to)\s+)([^"“”`]+)$"#
-        let chinese = #"^(?:请|請)?(?:打开|打開|启动|啟動|切换到|切換到)\s*(.+)$"#
-        let clauses = lines.flatMap { $0.replacingOccurrences(of: #"(?i)\s*,?\s+then\s+"#, with: "\n", options: .regularExpression)
-            .components(separatedBy: CharacterSet(charactersIn: "\n.;。；")) }
-        return clauses.contains { raw in
-            let clause = raw.replacingOccurrences(of: #"^\s*(?:(?:[-*]|[0-9]+[.)])\s+)?"#, with: "", options: .regularExpression)
-                .trimmingCharacters(in: .whitespaces)
-            return [pattern, chinese].contains { rule in
-                guard let regex = try? NSRegularExpression(pattern: rule),
-                      let match = regex.firstMatch(in: clause, range: NSRange(clause.startIndex..., in: clause)),
-                      let target = Range(match.range(at: 1), in: clause) else { return false }
-                return KnownApps.find(String(clause[target])) != nil
-            }
-        }
-    }
-
     private func selectRoute(_ next: ToolRoute) -> PokiCore.ToolAnswer? {
-        let mixed = explicitlyRequestsAppOperation && (modelPlan?.count ?? 0) > 1
+        let hasExplicitApp = !AppIconStore.bundleIDs(namedIn: taskRequest).isEmpty
+        let mixed = hasExplicitApp && (modelPlan?.count ?? 0) > 1
         if let toolRoute, toolRoute != next, !mixed {
             let text = toolRoute == .web
                 ? "This task is using the sandbox browser. Phone controls were not started. Continue with web tools, or stop and ask the owner if a separate app task is needed."
