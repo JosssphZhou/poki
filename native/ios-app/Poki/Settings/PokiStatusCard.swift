@@ -48,7 +48,11 @@ extension PowerTile {
     }
 }
 
-/// Poki's card under its picture (board 定稿 08): a system-style menu card of two rows. The model that
+/// Poki's card under its picture (board 定稿 08): a floating card of two rows on Liquid Glass (the
+/// system's own effect from iOS 26, the regular material before it; `glassSurface`). It floats over the
+/// page like a menu, so it is of the control layer, and nothing inside it is glass again. Each row puts
+/// its name small above the choice, so the choice, the part the owner reads, gets the card's whole width
+/// and wraps instead of being cut ("ChatGPT GPT-6.1 Terra" was "ChatGPT GPT-..." beside 模型). The model that
 /// answers, which opens in place to the chat models of every account that is set up (07b), or Add
 /// Model with none; and the approval method, which opens in place the same way to the three methods,
 /// the one in use ticked, and the line on what always asks you. The method is `AppModel.approvalMode`,
@@ -56,7 +60,6 @@ extension PowerTile {
 struct PokiStatusCard: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
-    @Environment(\.colorScheme) private var scheme
     /// Settings › Models, for Add Model.
     var openModel: () -> Void
     @State private var open: Row?
@@ -64,16 +67,18 @@ struct PokiStatusCard: View {
     /// Bumped when the chosen model changes (ModelKeys is not observable).
     @State private var modelVersion = 0
 
-    private var dark: Bool { scheme == .dark }
-    private var soft: Color { Color(.secondaryLabel) }
+    /// Hierarchical styles, not fixed label colours: on glass the system makes them vibrant against
+    /// whatever is behind the card, in light and dark.
+    private var soft: HierarchicalShapeStyle { .secondary }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
             // Where Poki stands, which the top bar no longer says in words: its face shows it there.
             Text(verbatim: PokiStatusCopy.word(PokiStatus.current(model: model, chat: chat)))
-                .font(.footnote).foregroundStyle(soft)
-                .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 2)
+                .font(.subheadline.weight(.semibold)).foregroundStyle(soft)
+                .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 4)
+                .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("status.word")
             modelRow
             if open == .model { modelChoices }
@@ -82,12 +87,10 @@ struct PokiStatusCard: View {
             if open == .approvals { approvalChoices }
         }
         .padding(.vertical, 6)
-        .frame(maxWidth: 330, alignment: .leading)
-        .background(.regularMaterial, in: shape)
-        .background(Color(dark ? .secondarySystemBackground : .systemBackground).opacity(0.6), in: shape)
-        .overlay(shape.strokeBorder(Color.white.opacity(dark ? 0.12 : 0.95), lineWidth: 1))
-        .shadow(color: .black.opacity(dark ? 0.4 : 0.16), radius: 24, y: 16)
-        .shadow(color: .black.opacity(0.05), radius: 1.5, y: 1)
+        .frame(maxWidth: 360, alignment: .leading)
+        .clipShape(shape)
+        .contentShape(shape)
+        .glassSurface(in: shape, fallback: .card)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in modelVersion += 1 }
         .animation(.snappy(duration: 0.28), value: open)
         // A container, so each row keeps its own identifier.
@@ -96,7 +99,7 @@ struct PokiStatusCard: View {
     }
 
     private var rule: some View {
-        Rectangle().fill(Color(.separator)).frame(height: 1 / 3).padding(.leading, 20)
+        Divider().padding(.leading, 20)
     }
 
     private var providers: [ModelProvider] {
@@ -118,7 +121,7 @@ struct PokiStatusCard: View {
             Button(action: openModel) {
                 HStack(spacing: 8) {
                     Text("Add Model").foregroundStyle(Tint.blue).frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color(.tertiaryLabel))
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 20).frame(minHeight: 52).contentShape(.rect)
             }
@@ -191,24 +194,33 @@ struct PokiStatusCard: View {
 
     private func toggle(_ row: Row) { open = open == row ? nil : row }
 
-    /// A row of the card: its name, what is chosen, and the arrow that opens the choices under it.
+    /// A row of the card: its name small on top, what is chosen under it in full (it wraps, never cut),
+    /// and the arrow that opens the choices under the row, turning as it opens.
     private func choiceRow(_ title: LocalizedStringKey, value: String, open: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(title).foregroundStyle(Color(.label)).frame(maxWidth: .infinity, alignment: .leading)
-            Text(verbatim: value).foregroundStyle(soft).lineLimit(1)
-            Image(systemName: open ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.bold)).foregroundStyle(Color(.tertiaryLabel))
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.footnote).foregroundStyle(soft)
+                Text(verbatim: value).font(.body).foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.down")
+                .font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(open ? 180 : 0))
         }
-        .padding(.horizontal, 20).frame(minHeight: 52).contentShape(.rect)
+        .padding(.horizontal, 20).padding(.vertical, 10).frame(minHeight: 60).contentShape(.rect)
     }
 
     private func tickRow(_ title: String, ticked: Bool, inset: CGFloat, height: CGFloat = 44) -> some View {
         HStack(spacing: 8) {
-            Text(verbatim: title).foregroundStyle(Color(.label)).frame(maxWidth: .infinity, alignment: .leading)
+            Text(verbatim: title).foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Tint.blue)
                 .opacity(ticked ? 1 : 0).frame(width: 20)
         }
-        .padding(.leading, inset).padding(.trailing, 20).frame(minHeight: height).contentShape(.rect)
+        .padding(.leading, inset).padding(.trailing, 20).padding(.vertical, 6).frame(minHeight: height).contentShape(.rect)
     }
 }
 
@@ -216,7 +228,7 @@ struct PokiStatusCard: View {
 private struct CardRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(Color(.label).opacity(configuration.isPressed ? 0.08 : 0))
+            .background(HierarchicalShapeStyle.primary.opacity(configuration.isPressed ? 0.08 : 0))
     }
 }
 
