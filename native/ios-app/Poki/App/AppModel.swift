@@ -58,9 +58,14 @@ final class AppModel {
     /// runner standing by on its own after the idle time. The bear sleeps and Hands reads off only for
     /// this one: standing by after a quiet minute is still ready. Cleared when the runner starts again.
     private(set) var ownerPaused = false
-    private enum IdleSessionPolicy { case close, pauseAutomation }
-    // Switch to pauseAutomation if device acceptance finds that same-process reads cannot resume.
-    private static let idleSessionPolicy = IdleSessionPolicy.close
+    /// Stop the runner after this long without agent activity; 0 never stops it.
+    /// 60 s by default. An agent can think for about a minute between steps of a long task; after a
+    /// longer pause the runner stops, and the agent's next request starts it again.
+    /// In-process: close the automation session (and iOS's banner) when Poki stands by. Off by
+    /// default until a session reopened in the same launch is shown to answer reads on the phone.
+    var closeSessionWhenIdle: Bool = UserDefaults.standard.bool(forKey: "inProcess.closeWhenIdle") {
+        didSet { UserDefaults.standard.set(closeSessionWhenIdle, forKey: "inProcess.closeWhenIdle"); log.add("runner", "close the session when idle: \(closeSessionWhenIdle ? "on" : "off")") }
+    }
     /// Agents › Approvals: how the owner is asked, or never. The saved choice (`ApprovalClassifier.mode`)
     /// is the one copy: the pages here show it, and PokiCore's rules and each approval's route read it
     /// at every step, so a change counts from the next step.
@@ -180,7 +185,6 @@ final class AppModel {
     private var endCheck = 0
     /// Not set at launch: a fresh launch has run nothing, so Install is available at once.
     private var lastAgentActivity = Date.distantPast
-    private var chatTaskActive = false
     /// The last agent step (a tool call, a hand-off), for Install's wait. Turning on or waking the
     /// runner is not a step: lastAgentActivity counts those for the idle stop, this does not.
     private var lastStepAt = Date.distantPast
@@ -327,11 +331,13 @@ final class AppModel {
         // them while the runner is fine, so the runner is asked first; only a runner that does not
         // answer is started again (each restart costs seconds and flashes the automation banner).
         host.onRestart { [weak self, automationPath] in
-            // Keep an active in-process session through the task; an initial failed open can retry.
+            // In-process there is no runner to ask: the session is closed and opened again.
             guard automationPath == .runner else {
                 Task { @MainActor in
                     guard let self else { return }
-                    self.log.add("runner", "PokiCore asked for a restart: keeping the in-process session through this task")
+                    // A reopened session reads nothing in this launch, so the one open is kept: its
+                    // requests have deadlines of their own, and a busy app answers again by itself.
+                    self.log.add("runner", "PokiCore asked for a restart: the in-process session is kept (a reopened one cannot read the screen in the same launch)")
                     self.warmInProcess("PokiCore's restart")
                 }
                 return
@@ -343,15 +349,9 @@ final class AppModel {
             }
         }
         host.onWake { [weak self] in Task { @MainActor in self?.wakeRunner() } }
-        host.onWarmUp { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.automationPath == .runner { _ = self.host.runnerState() }
-                else { self.prepareForTask() }
-            }
-        }
+        host.onWarmUp { [weak self] in Task { @MainActor in self?.warmInProcess("an agent connected") } }
         if automationPath == .inProcess {
-            host.onRetry { [weak self] in Task { @MainActor in self?.wakeRunner() } }
+            host.onRetry { [weak self] in Task { @MainActor in self?.warmInProcess("an agent's call while the session was not open") } }
         }
         // Allow and Deny on the Live Activity run in this process and come straight here.
         ApprovalIntentBridge.install { [weak self] decision in
@@ -413,17 +413,10 @@ final class AppModel {
     }
 
     /// The in-process session as prepare last answered it in this process (ESP-152).
-    private var inProcessSession = InProcessSession.idle
+    private var inProcessSession = InProcessSession.opening
     /// Automation works through Poki's own session, whether or not the loopback answers (ESP-448).
     var hasOpenInProcessSession: Bool {
         automationPath == .inProcess && sessionOn && inProcessSession == .open
-    }
-    var preparingPhone: Bool {
-        guard automationPath == .inProcess, sessionOn else { return false }
-        switch inProcessSession {
-        case .opening, .closing(reopen: true), .failed("open_under_way", _), .failed("open_poki_first", _): return true
-        default: return false
-        }
     }
     /// Poki's own automation session (ESP-152); a fake in tests.
     private let automation: InProcessAutomation
@@ -448,51 +441,49 @@ final class AppModel {
     /// Poki starts again as a new process for the next one instead.
     private var inProcessUsedUp = false
 
-    private var afterInProcessClose: [@MainActor () -> Void] = []
-
-    func closeInProcess(_ why: String, keepingSession: Bool = false, then: (@MainActor () -> Void)? = nil) {
+    /// Ends the in-process session (Automation Mode and the banner go with it) off the main thread.
+    /// PokiCore's next request finds its session gone and opens a new one through prepare.
+    func closeInProcess(_ why: String, then: (@MainActor () -> Void)? = nil) {
         guard automationPath == .inProcess else { return }
-        if let then { afterInProcessClose.append(then) }
-        if case .closing = inProcessSession { return }
-        inProcessSession = .closing(reopen: false)
+        inProcessSession = .opening
+        // An open that was still under way when this close came answers for a session that is gone:
+        // its answer is not taken (it would show .open, or keep .opening for good).
         inProcessEpoch += 1
         inProcessWarming = false
         inProcessOpensInFlight = 0
         retriedLocalDDIOnLoopback = false
         endPasscodeWait(opened: false)
         DispatchQueue.global(qos: .userInitiated).async { [automation] in
-            let result = keepingSession ? automation.pauseAutomation() : automation.close()
+            let result = automation.close()
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                let reopen: Bool
-                if case .closing(let requested) = self.inProcessSession { reopen = requested } else { reopen = false }
-                self.inProcessSession = .idle
-                if !keepingSession, result["closed"] as? Bool == true, !self.sessionOn { self.inProcessUsedUp = true }
-                self.log.add("runner", keepingSession
-                    ? "Automation Mode pause for \(why): \(result["paused"] as? Bool == true ? "paused" : "unavailable")"
-                    : "in-process session close for \(why): \(result["closed"] as? Bool == true ? "closed" : "already closed")")
-                let callbacks = self.afterInProcessClose
-                self.afterInProcessClose.removeAll()
-                for callback in callbacks { callback() }
-                if reopen, self.sessionOn { self.wakeRunner(asked: "a phone step arrived while closing") }
+                let closed = (result["closed"] as? Bool) == true
+                if closed { self?.inProcessUsedUp = true }
+                self?.log.add("runner", closed ? "in-process session closed for \(why) (generation \(result["generation"] ?? 0)); the banner goes with it" : "in-process session was not open (\(why))")
+                then?()
             }
         }
     }
 
-    /// Mounting developer services does not enable Automation Mode.
-    func prepareForTask() {
-        guard automationPath == .inProcess, setup.loopback != .none else { return }
-        if !sessionOn { startSession() }
-        guard sessionOn, runnerPaused else { return }
-        runnerPaused = false
-        host.setPaused(false)
-        launchRunner()
+    /// Automation Mode off with the session kept (its banner goes; the session's reads stay), off the
+    /// main thread. The log says how, or what the session offers when it found no way.
+    private func pauseAutomationMode() {
+        guard automationPath == .inProcess, !Self.onSimulator else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [automation] in
+            let result = automation.pauseAutomation()
+            Task { @MainActor [weak self] in
+                let paused = (result["paused"] as? Bool) == true
+                self?.log.add("runner", paused ? "Automation Mode turned off while standing by (\(result["how"] ?? "?")): the banner goes until an agent asks"
+                                               : "Automation Mode could not be turned off alone (\(result["how"] ?? "?"); the session offers: \(result["selectors"] ?? "nothing")): the banner stays while Poki is on")
+            }
+        }
     }
 
+    /// Opens (or checks) the in-process session off the main thread before an agent needs it: when
+    /// the launcher has mounted the disk image, when Poki comes to the front, when an agent
+    /// connects, and when an agent's call finds the last try failed. prepare is idempotent: a session
+    /// already open answers "reused" in milliseconds.
     func warmInProcess(_ why: String) {
-        guard automationPath == .inProcess, sessionOn, runner.isRunning,
-              inProcessSession != .idle, inProcessSession != .open else { return }
-        if case .closing = inProcessSession { return }
+        guard automationPath == .inProcess, sessionOn, runner.isRunning else { return }
         if InProcessWDA.automationDeclined { return }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
         // Poki in front, the owner is told just before it (Continue opens; elsewhere the Live
@@ -509,7 +500,6 @@ final class AppModel {
             guard Date().timeIntervalSince(inProcessWarmStarted) > Self.staleOpen else { return }
             log.add("runner", "the in-process open under way has not answered in \(Int(Self.staleOpen)) s: asking again for \(why)")
         }
-        log.add("session-timing", String(format: "session_requested uptime=%.6f", ProcessInfo.processInfo.systemUptime))
         inProcessWarming = true
         inProcessOpensInFlight += 1
         inProcessWarmStarted = Date()
@@ -545,7 +535,6 @@ final class AppModel {
                 self.log.add("runner", ok ? "in-process session ready for \(why) (generation \(result["generation"] ?? 0), \((result["reused"] as? Bool) == true ? "already open" : "opened"), \(seconds) s\(warm))"
                                           : "in-process session not ready for \(why): \(result["code"] ?? "unknown") after \(seconds) s")
                 if ok {
-                    self.log.add("session-timing", String(format: "session_ready uptime=%.6f", ProcessInfo.processInfo.systemUptime))
                     self.automationStarted()
                     // An open session proves both, also when the launcher only found the image mounted.
                     if !self.setup.developerMode || !self.setup.uiAutomation {
@@ -864,7 +853,7 @@ final class AppModel {
         // Poki in front, the owner is told first that it is expected and that Poki cannot see it.
         // Start asks for everything at once: the note now, and on Continue the session's first open
         // (warmInProcess, as soon as the launcher is ready), which brings up iOS's passcode screen.
-        if automationPath == .runner, passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
+        if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
             passcodeHeadsUpReconnect = reconnectLocal
             passcodeHeadsUp = true
             log.add("runner", "no automation since this iPhone restarted: telling the owner iOS will ask for the passcode")
@@ -945,9 +934,18 @@ final class AppModel {
         openWhileInFront("turned on with Poki in front")
     }
 
-    /// The separate Runner path keeps its existing foreground startup behavior.
+    /// Poki on and in front: the automation session opens now, not at an agent's first request, so the
+    /// first step of a task does not wait for it (the owner's call, ESP-464: about 2 s, 4 to 5 s after
+    /// the iPhone restarted), and it does not stand by while Poki stays in front (`checkIdle`). iOS's
+    /// automation banner shows from then on. Where iOS will ask for the passcode first, the owner is
+    /// right here when it does (ESP-451). The session's first open warms up as every open does: a
+    /// shallow read of the app in front and a screenshot (`prepare`), not paid by the first step.
+    /// Not after the owner paused it, nor after they cancelled iOS's passcode screen (no new screen
+    /// until they turn Poki on again), nor once this launch's session was closed (opening Poki again
+    /// starts a new process). `inFront` starts true, so a launch iOS makes in the background (for
+    /// location) is told apart by the app's own state; a launch in front opens on becoming active.
     private func openWhileInFront(_ why: String) {
-        guard automationPath == .runner, sessionOn, runnerPaused, !ownerPaused, inFront, UIApplication.shared.applicationState == .active, !Self.onSimulator,
+        guard sessionOn, runnerPaused, !ownerPaused, inFront, UIApplication.shared.applicationState == .active, !Self.onSimulator,
               !inProcessUsedUp, !InProcessWDA.automationDeclined else { return }
         wakeRunner(asked: why)
     }
@@ -1058,7 +1056,6 @@ final class AppModel {
         background.stop()
         activity.end()
         sessionOn = false
-        chatTaskActive = false
         stepUnderWay = nil
         runner = .idle
         relayStatus = .off
@@ -1108,8 +1105,21 @@ final class AppModel {
         guard approvals.isEmpty || splitChat != nil else { return }
         ownerPaused = byOwner
         if automationPath == .inProcess {
+            // The in-process session is closed, and with it Automation Mode and iOS's banner; the
+            // next agent request opens a new one (a few seconds, no passcode within the same boot).
+            // The session stays open while Poki is on: a session reopened in the same launch answered
+            // no tree reads on the phone (0.2.8 build 144, after a stand-by every look timed out until
+            // Poki was relaunched), so standing by ends the task and leaves the session (and iOS's
+            // banner) as they are. Turning Poki off still closes it.
+            // Without closing it, Automation Mode alone is turned off where iOS offers a way, so the
+            // banner shows only while an agent works; the next request's prepare turns it on again.
+            log.add("runner", closeSessionWhenIdle ? "standing by: \(reason); closing the in-process session, and the banner with it"
+                                                   : "standing by: \(reason); the in-process session stays open, Automation Mode (the banner) is turned off")
+            // The task ends here too, as with the runner (ESP-176): nothing is switched.
             Task { [core] in _ = await core.finishTask(switching: false) }
-            closeInProcess("standing by", keepingSession: Self.idleSessionPolicy == .pauseAutomation)
+            if closeSessionWhenIdle { closeInProcess("standing by") } else { pauseAutomationMode() }
+            // The launcher stays: the disk image is mounted and the next session opens through
+            // testmanagerd on the phone itself, so no loopback (and no Wi-Fi) is needed to wake.
             standBy(reason: reason)
             return
         }
@@ -1181,15 +1191,6 @@ final class AppModel {
     /// Starts a paused runner again (the next agent request, or the owner).
     func wakeRunner(asked: String = "an agent asked") {
         ownerPaused = false
-        guard sessionOn else { return }
-        if automationPath == .inProcess {
-            if case .closing = inProcessSession {
-                inProcessSession = .closing(reopen: true)
-                return
-            }
-            if inProcessSession == .idle { inProcessSession = .opening }
-            if !runnerPaused { warmInProcess(asked); return }
-        }
         guard sessionOn, runnerPaused else { return }
         runnerPaused = false
         host.setPaused(false)
@@ -1212,7 +1213,7 @@ final class AppModel {
         passcodeHint = inProcessPasscode || runner.state == "launching" && launchingSince.map { now.timeIntervalSince($0) > 10 } == true
         guard canStandByWhenIdle, now.timeIntervalSince(lastAgentActivity) >= Double(idleStopSeconds) else { return }
         let activityAtIdle = lastAgentActivity
-        let reason = "Stopped after \(idleStopSeconds) s without agent activity"
+        let reason = "Stopped after \(idleStopSeconds / 60 > 0 ? "\(idleStopSeconds / 60) min" : "\(idleStopSeconds) s") without agent activity"
         Task { [weak self, core] in
             guard let self, self.canStandByWhenIdle, self.lastAgentActivity == activityAtIdle else { return }
             let line = await core.finishTask(ifNoLocalWorkspace: true)
@@ -1223,8 +1224,7 @@ final class AppModel {
     }
 
     private var canStandByWhenIdle: Bool {
-        sessionOn && !runnerPaused && idleStopSeconds > 0 && approvals.isEmpty && activityText == "Idle"
-            && !chatTaskActive && (automationPath == .inProcess || !inFront)
+        sessionOn && !runnerPaused && !inFront && idleStopSeconds > 0 && approvals.isEmpty && activityText == "Idle"
             && !(AskPoki.app === self && AskPoki.chat?.isRunningInSplitView == true)
     }
 
@@ -1353,7 +1353,9 @@ final class AppModel {
         }
         runner = status
         host.update(runner: coreState(of: status))
-        // Readiness can satisfy an outstanding phone step; preparation alone leaves it idle.
+        // On the in-process path the session is opened as soon as the launcher is ready, so the
+        // owner's one-time Automation Mode passcode comes when they turn Poki on, not mid-task, and
+        // the first look finds it open.
         if status.state == "running" { warmInProcess("the launcher is ready") }
         if status.state == "failed" {
             let title = Self.problemText(code: status.code, fix: status.fix ?? status.detail ?? "The runner stopped")
@@ -1392,7 +1394,6 @@ final class AppModel {
             if status != relayStatus { log.add("relay", "\(status)") }
             relayStatus = status
         case .toolStarted(_, let summary, _):
-            if !chatTaskActive { log.add("session-timing", String(format: "phone_step_received uptime=%.6f", ProcessInfo.processInfo.systemUptime)) }
             lastAgentActivity = Date(); lastStepAt = Date()
             if summary == "Look at the screen", AskPoki.chat?.waitingForSplitView == true { return }
             stepUnderWay = (summary, Date())
@@ -1508,8 +1509,6 @@ final class AppModel {
     /// on this call, like for an agent's first request); when it cannot, the answer says why.
     /// The chat's turn ended: the phone goes back to the app the task began in, and the log says how.
     func finishTask() {
-        if chatTaskActive { lastAgentActivity = Date() }
-        chatTaskActive = false
         lastShot = nil
         Task { [core, log] in if let line = await core.finishTask() { log.add("runner", line) } }
     }
@@ -1518,8 +1517,7 @@ final class AppModel {
         _ = await core.settle(timeout: 30)
         if let line = await core.finishTask(switching: pairConfirmed, localSession: localSession) { log.add("runner", line) }
         if fromChat {
-            if chatTaskActive { lastAgentActivity = Date() }
-            chatTaskActive = false
+            lastAgentActivity = Date()
             activity.setChatOwnsCompletion(false)
         }
     }
@@ -1538,9 +1536,6 @@ final class AppModel {
 
     /// The chat's task began (Poki is in front): the Live Activity is there for it, with no old plan.
     func chatTaskBegan(inSplitView: Bool = false) {
-        log.add("session-timing", String(format: "task_submitted uptime=%.6f", ProcessInfo.processInfo.systemUptime))
-        chatTaskActive = automationPath == .inProcess
-        if chatTaskActive { lastAgentActivity = Date() }
         lastShot = nil
         activity.setChatOwnsCompletion(inSplitView)
         // The owner sees at once that Poki took the task: the Live Activity (started here, while
@@ -2031,7 +2026,7 @@ final class AppModel {
         guard sessionOn, runner.isRunning, runner.code == "local_ddi" else { return nil }
         switch inProcessSession {
         // Waiting its turn: Poki not in front, or another open asking for the passcode.
-        case .idle, .closing, .opening, .open, .waitingForPasscode, .failed("open_poki_first", _), .failed("open_under_way", _):
+        case .opening, .open, .waitingForPasscode, .failed("open_poki_first", _), .failed("open_under_way", _):
             return nil
         case .passcodeMissed, .failed("passcode_declined", _):
             return (AppLocalization.text(LocalizedStringResource("iOS asked for the iPhone passcode to allow automation, but it was not entered. Turn Poki off and on, then enter the passcode.")), false)

@@ -579,7 +579,6 @@ final class ChatModel {
 
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String, inSplitView: Bool = false) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
-        app.prepareForTask()
         app.chatTaskBegan(inSplitView: inSplitView)
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
