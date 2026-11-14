@@ -51,6 +51,9 @@
 - (id)registerInvalidationHandler:(void (^)(void))handler;
 - (id)connection;
 - (void)invalidate;
++ (id)sharedSession;
+- (id)applicationMonitor;
+- (id)initWithApplicationProcessTracker:(id)tracker remoteAccessibilityInterface:(id)remote device:(id)device;
 @end
 
 /// XCUIElementType's names, by value (XCUIElementTypes.h).
@@ -426,7 +429,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 @implementation PKInProcess {
     SRNativeSession *_sessions;
     uint64_t _accessibilityGeneration;
-    /// The AX client made for a session reopened after a close (nil while the first session lasts).
+    /// Only where XCTest's local device could not be rebuilt for a reopened session: an AX client
+    /// made for that session. nil while the first session lasts, and whenever the device was rebuilt.
     id _freshAX;
     CGRect _viewport;
     /// Bundle ids by pid, asked of testmanagerd once per process (a round trip each, on every read before).
@@ -489,7 +493,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         } @catch (__unused NSException *e) {}
         warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm)};
+    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm),
+             @"device": [_sessions rebindDetail] ?: @"first"};
 }
 
 - (NSDictionary<NSString *, id> *)close {
@@ -783,15 +788,35 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     @synchronized (self) {
         if (_accessibilityGeneration != 0 && _accessibilityGeneration != generation) {
             // A new session after a close: requests the old one left hanging never return, so the
-            // pids they marked unresponsive (the accessibility server's among them) are asked again,
-            // and the AX client is a new one on the new session rather than XCUIDevice's, which keeps
-            // talking to the session that was closed (0.2.8 build 144: every read after a stand-by
-            // and reopen timed out until Poki was relaunched).
+            // pids they marked unresponsive (the accessibility server's among them) are asked again.
             @synchronized (PKHungLock()) { [PKHungSince() removeAllObjects]; }
-            Class client = NSClassFromString(@"XCAXClient_iOS");
-            id fresh = [client instancesRespondToSelector:@selector(init)] ? [[client alloc] init] : nil;
-            if (fresh) _freshAX = fresh;
-            NSLog(@"PokiInProcess: session generation %llu: hung marks cleared, %@ AX client", generation, fresh ? @"a new" : @"the device's");
+            // The AX client is the one of the local device SRNativeSession rebuilt on the new session
+            // (`ax` above already is). A client made here with plain -init is not one: XCAXClient_iOS
+            // has no -init of its own on iOS 27, so its remoteAccessibilityInterface and queue were
+            // nil, loadAccessibility went to nil and no reply ever came (issue 347: "pid 0 gets no
+            // answer for 4 s" on every reopened session). Where the device cannot be rebuilt, the
+            // client is made with its real initializer on the new session; plain -init is the last
+            // resort for an XCTest that has neither (the CI simulator's read after a reopen with it).
+            _freshAX = nil;
+            if (![_sessions deviceRebuilt]) @try {
+                Class client = NSClassFromString(@"XCAXClient_iOS");
+                SEL designated = NSSelectorFromString(@"initWithApplicationProcessTracker:remoteAccessibilityInterface:device:");
+                id device = [NSClassFromString(@"XCUIDevice") sharedDevice];
+                id session = [NSClassFromString(@"XCTRunnerDaemonSession") sharedSession];
+                id fresh = nil;
+                if (session && [client instancesRespondToSelector:designated] &&
+                    PKMatches([client instanceMethodSignatureForSelector:designated], "@", @[@"@", @"@", @"@"])) {
+                    id tracker = [device respondsToSelector:@selector(applicationMonitor)] ? [device applicationMonitor] : nil;
+                    fresh = [[client alloc] initWithApplicationProcessTracker:tracker remoteAccessibilityInterface:session device:device];
+                } else if ([client instancesRespondToSelector:@selector(init)]) {
+                    fresh = [[client alloc] init];
+                }
+                if (fresh) { _freshAX = fresh; ax = fresh; }
+            } @catch (NSException *e) {
+                NSLog(@"PokiInProcess: no AX client of its own for session generation %llu: %@", generation, e.reason);
+            }
+            NSLog(@"PokiInProcess: session generation %llu: hung marks cleared, AX client of %@", generation,
+                  [_sessions deviceRebuilt] ? @"the rebuilt device" : _freshAX ? @"its own (no device rebuild)" : @"the old device");
         }
         if (_freshAX) ax = _freshAX;
         if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {

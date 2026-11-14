@@ -16,6 +16,8 @@ import UIKit
 /// launches it again and terminates it, noting the front app and its pid after each;
 /// `-pokiInProcess tools -pokiProbeApp BUNDLE` runs PokiCore's look and do as an agent would: open
 /// the app, tap its first field and type, open Settings and swipe, press Home, looking after each;
+/// `-pokiInProcess reopen -pokiProbeRounds 5` closes the session and opens it again that many times in
+/// this one process, reading the screen after each open (issue 347), with every step's seconds;
 /// `-pokiInProcess gym` runs the whole Poki Gym scorecard (native/ios-gym/check) through PokiCore on
 /// this path, answering approvals as the owner would, into Documents/gym-scorecard.txt and
 /// Documents/gym-pictures (the gym workflow's scorecard-inprocess job).
@@ -48,6 +50,7 @@ final class InProcessProbe: ObservableObject {
             case "later": await later()
             case "read": await readOnly()
             case "separate": await separateTrial()
+            case "reopen": await reopenCycle(rounds: defaults.integer(forKey: "pokiProbeRounds") > 0 ? defaults.integer(forKey: "pokiProbeRounds") : 5)
             case "port": await portCheck()
             case "source": await sourceBothPaths(model: model)
             case "apps": await appsCycle(defaults.string(forKey: "pokiProbeApp") ?? "local.pokimcp.fixture")
@@ -231,6 +234,51 @@ final class InProcessProbe: ObservableObject {
         }
         let line = result.keys.sorted().map { "\($0)=\(result[$0].map { "\($0)" } ?? "")" }.joined(separator: " ")
         note("separate session: \(line); watch whether the banner goes now", (["step": "separate_result"] as [String: Any]).merging(result) { a, _ in a })
+    }
+
+    /// Issue 347's check: the session is closed (the banner goes) and opened again in this same
+    /// process, `rounds` times, and after each open the front app, its tree and a picture must all
+    /// read. Each step's seconds are kept, so the same run measures how fast stop and start are. The
+    /// 2 s after a close are for the person watching to see the banner go, not for the session.
+    func reopenCycle(rounds: Int = 5) async {
+        guard begin("close and reopen, \(rounds) rounds") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        await read()
+        var passed = 0
+        for round in 1...max(1, rounds) {
+            let closed = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+                queue.async { c.resume(returning: PKInProcess.shared().close()) }
+            }
+            note(String(format: "round %d close: %@ in %.3f s (%@)", round, (closed["closed"] as? Bool) == true ? "closed" : "nothing open",
+                        (closed["seconds"] as? Double) ?? 0, closed["detail"] as? String ?? ""),
+                 (["step": "reopen_close", "round": round] as [String: Any]).merging(closed) { a, _ in a })
+            try? await Task.sleep(for: .seconds(2))
+            let started = ProcessInfo.processInfo.systemUptime
+            let opened = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+                queue.async { c.resume(returning: PKInProcess.shared().prepare()) }
+            }
+            guard (opened["ok"] as? Bool) == true else {
+                note("round \(round) open: failed: \(opened["code"] ?? "?") \(opened["detail"] ?? "")", (["step": "reopen_open", "round": round] as [String: Any]).merging(opened) { a, _ in a })
+                continue
+            }
+            let readStarted = ProcessInfo.processInfo.systemUptime
+            let screen = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+                queue.async { c.resume(returning: PKInProcess.shared().readProbe()) }
+            }
+            let done = ProcessInfo.processInfo.systemUptime
+            let reads = (screen["front_ok"] as? Bool) == true && (screen["tree_ok"] as? Bool) == true && (screen["picture_ok"] as? Bool) == true
+            if reads { passed += 1 }
+            var fields: [String: Any] = ["step": "reopen_open", "round": round, "reads": reads, "open_seconds": readStarted - started, "read_seconds": done - readStarted]
+            fields.merge(opened) { a, _ in a }
+            fields.merge(screen) { a, _ in a }
+            note(String(format: "round %d open: generation %@, device %@, open %.3f s (session %.3f, first look %.3f), read %.3f s: %@", round,
+                        "\(opened["generation"] ?? "?")", opened["device"] as? String ?? "?", readStarted - started,
+                        (opened["seconds"] as? Double) ?? 0, (opened["warm_seconds"] as? Double) ?? 0, done - readStarted,
+                        reads ? "front app, \(screen["tree_elements"] ?? 0) elements and a picture" : "NOT READ (\(screen["tree_error"] ?? screen["front_error"] ?? screen["picture_error"] ?? screen["error"] ?? "no front app"))"),
+                 fields)
+        }
+        note("reopen: \(passed) of \(rounds) rounds read the screen after reopening", ["step": "reopen_result", "passed": passed, "rounds": rounds])
     }
 
     /// Nothing in Poki may listen on WebDriverAgent's port on the in-process path: a connection to
@@ -421,6 +469,7 @@ struct InProcessSection: View {
                 Button("Separate session") { Task { await probe.separateTrial() } }
             }.disabled(probe.running)
             Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
+            Button("Close and reopen (5 rounds)") { Task { await probe.reopenCycle(rounds: 5) } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
                 Spacer()
