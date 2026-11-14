@@ -1,3 +1,5 @@
+import ActivityKit
+import UIKit
 import XCTest
 @testable import Poki
 
@@ -12,24 +14,42 @@ final class LiveActivityTests: XCTestCase {
 
     override func tearDown() async throws { AppLocalization.shared.preference = language }
 
-    func testBackgroundStartIsDeferredAndKeepsTheActivityWanted() {
+    func testAppWiringResumesDeferredActivityOnceInForeground() async throws {
         let controller = ActivityController()
-        var consulted = 0
-        controller.canStart = { consulted += 1; return false }
-        controller.start(deviceName: "Test iPhone")
-        XCTAssertEqual(consulted, 1, "Direct starts must consult foreground eligibility too")
-        XCTAssertFalse(controller.isRunning)
-        XCTAssertNil(controller.lastError, "Deferral should not produce an ActivityKit visibility error")
-
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation(), activity: controller)
+        let name = "Foreground regression \(UUID())"
+        app.wentToBackground()
+        controller.start(deviceName: name)
         controller.update { $0.phase = .working; $0.headline = "Working" }
-        XCTAssertEqual(consulted, 2, "The deferred start must remain wanted for later work")
         XCTAssertFalse(controller.isRunning)
         XCTAssertNil(controller.lastError)
-        XCTAssertEqual(controller.state.phase, .working, "Background state updates must still be kept")
+        XCTAssertEqual(controller.state.phase, .working)
 
-        controller.end(dismissalPolicy: .immediate)
-        controller.update { $0.headline = "Later work" }
-        XCTAssertEqual(consulted, 2, "Ending clears the deferred activity too")
+        app.becameActive()
+        XCTAssertEqual(UIApplication.shared.applicationState, .active)
+        controller.update { $0.headline = "Resumed" }
+        XCTAssertTrue(controller.isRunning, controller.lastError ?? "Deferred activity did not resume")
+        XCTAssertNil(controller.lastError)
+        let matching = { Activity<PokiActivityAttributes>.activities.filter { $0.attributes.deviceName == name } }
+        let id = try XCTUnwrap(matching().first?.id)
+        for i in 0..<3 { controller.update { $0.headline = "Update \(i)" } }
+        XCTAssertEqual(matching().map(\.id), [id], "Foreground updates must keep the same single activity")
+        await controller.end(dismissalPolicy: .immediate)?.value
+    }
+
+    func testEndingDeferredRequestPreventsCreationAfterForegroundReturn() async {
+        let controller = ActivityController()
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation(), activity: controller)
+        app.wentToBackground()
+        controller.start(deviceName: "Cancelled deferred request")
+        XCTAssertFalse(controller.isRunning)
+        XCTAssertNil(controller.lastError)
+        await controller.end(dismissalPolicy: .immediate)?.value
+        app.becameActive()
+        controller.update { $0.phase = .working; $0.headline = "Later work" }
+        XCTAssertFalse(controller.isRunning, "Ending must discard the deferred request")
+        XCTAssertNil(controller.lastError)
+        XCTAssertEqual(controller.state.headline, "Later work")
     }
 
     /// The Live Activity counts the chat's plan from the first step on the phone (the chat publishes it

@@ -202,7 +202,7 @@ final class AppModel {
     private let launcher: RunnerLauncher
     private let pairer: DevicePairing
     private let pairingKeepAlive = KeepAlive()
-    private let activity = ActivityController()
+    private let activity: ActivityController
 
     /// Presentation-only refresh: no session, runner, approval or conversation is restarted.
     func languageChanged() {
@@ -300,8 +300,9 @@ final class AppModel {
         return ChatModel.delegatedBusy
     }
 
-    init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(), automation: InProcessAutomation = PKInProcess.shared()) {
+    init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(), automation: InProcessAutomation = PKInProcess.shared(), activity: ActivityController? = nil) {
         ActivityController.endAll()
+        self.activity = activity ?? ActivityController()
         self.automation = automation
         // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
         // setup state did the same in `SetupState.load`), so the owner is not sent through setup again.
@@ -323,7 +324,7 @@ final class AppModel {
         self.launcher = launcher
         self.pairer = pairer
         // inFront starts true before the first scene callback, including a background launch.
-        activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
+        self.activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
             await self?.askToConnect(client: client, callback: callback, connector: connector) ?? false
@@ -363,7 +364,7 @@ final class AppModel {
         // The same answers from the approval notification's own buttons.
         ApprovalNotice.registerActions()
         listenForApprovals()
-        talkActivity = TalkActivity(voice: voice, activity: activity, deviceName: { UIDevice.current.name },
+        talkActivity = TalkActivity(voice: voice, activity: self.activity, deviceName: { UIDevice.current.name },
                                     keepsActivity: { [weak self] in self?.sessionOn == true })
         // One pump for the app's whole life. Cancelling a task that reads an AsyncStream ends the
         // stream for good, so a pump per session would go silent after the first Turn off (no steps,
