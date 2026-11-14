@@ -29,6 +29,8 @@ extension PKInProcess: InProcessAutomation, @unchecked Sendable {}
 
 /// Poki's own automation session, once the launcher has mounted the disk image (ESP-152).
 enum InProcessSession: Equatable {
+    case idle
+    case closing(reopen: Bool)
     case opening
     case open
     /// prepare answered no: its code and detail.
@@ -41,6 +43,8 @@ enum InProcessSession: Equatable {
     /// What PokiCore reads while the launcher runs. A failure is answered at once, with its fix.
     var agentState: RunnerState {
         switch self {
+        case .idle: return .starting("ready for a phone task; the automation session is not open")
+        case .closing: return .starting("finishing the previous automation session")
         case .open: return .running
         case .opening: return .starting("opening the in-process session; it takes a few seconds the first time")
         case .waitingForPasscode:
@@ -145,6 +149,8 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "GET /source": { [unowned self] _, _ in
                 var code: NSString?
                 guard let xml = self.native.sourceXML(nil, maxDepth: self.maxDepth, maxChildren: self.maxChildren, code: &code) else { throw Refusal("unknown error", "no element tree: \(code ?? "unknown")") }
+                let readAt = ProcessInfo.processInfo.systemUptime
+                Task { @MainActor in AppLog.shared.add("session-timing", String(format: "screen_read_succeeded uptime=%.6f", readAt)) }
                 return .string(xml)
             },
             "GET /element/active": { [unowned self] _, _ in
@@ -203,6 +209,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             "POST /wda/keys": { [unowned self] body, _ in
                 let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
                 guard !text.isEmpty else { throw Refusal("invalid argument", "no keys given") }
+                try self.refuseInPoki()
                 // `frequency`: characters a second for this burst (PokiCore's Humanize types a word at
                 // a time at an uneven pace); without one, the fixed 120 of before.
                 let speed = UInt(max(1, min(240, body?["frequency"]?.int ?? 120)))
@@ -298,7 +305,17 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         throw Refusal("unknown error", failure)
     }
 
+    /// Nothing is tapped or typed in Poki itself, whoever asks and whatever they could tell of the
+    /// screen: with Poki the app in front (not merely beside the driven app, where the other one is
+    /// the front app), a touch or text is refused here, the last place before it would be sent.
+    /// Opening an app and the Home button stay: they are how a task leaves Poki.
+    private func refuseInPoki() throws {
+        guard let own = Bundle.main.bundleIdentifier, native.frontApp()["bundleId"] as? String == own else { return }
+        throw Refusal("unknown error", "not sent: Poki itself is in front, and nothing is tapped or typed in Poki. Open the task's app first (launch)")
+    }
+
     private func touch(_ fingers: [[(CGPoint, Double)]]) throws -> JSON {
+        try refuseInPoki()
         // Points are in the viewport the agent saw (the driven app's part of the screen): moved back onto the screen.
         let viewport = native.viewport
         let shift = viewport.isNull ? CGPoint.zero : viewport.origin

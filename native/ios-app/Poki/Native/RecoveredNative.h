@@ -24,6 +24,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// What the last close found: the connection class, whether it could be invalidated, and whether
 /// the session's invalidation handler fired (testmanagerd saw it go).
 - (nullable NSString *)closeDetail;
+/// How the last session of this process's own got XCTest's local device: "rebuilt" (a new XCUIDevice
+/// on the new session, so reads, pictures and buttons go to it), "unavailable" or "abi_mismatch"
+/// (this XCTest offers no way), or the exception. nil while the first session lasts.
+- (nullable NSString *)rebindDetail;
+- (BOOL)deviceRebuilt;
 - (uint64_t)generation;
 - (BOOL)enableWasReused;
 /// Turns Automation Mode (and iOS's banner) off while the session stays open, when this iOS offers a
