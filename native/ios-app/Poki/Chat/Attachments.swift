@@ -7,24 +7,33 @@ import UniformTypeIdentifiers
 /// A photo or a PDF added to a message from the message field's plus menu. The model reads `images`;
 /// the strip over the message field and the sent message show `thumbnail`.
 struct ChatAttachment: Identifiable, Equatable {
-    enum Kind: Equatable { case photo, pdf(name: String) }
+    enum Kind: Equatable { case photo, pdf(name: String), text(name: String) }
     let id = UUID()
     var kind: Kind
     /// JPEG, a small square-ish picture for the field and the bubble.
     var thumbnail: Data
     /// JPEG for the model: the photo, or the PDF's first pages, one picture each.
     var images: [Data]
+    var textContent: String? = nil
+
+    var isPDF: Bool {
+        if case .pdf = kind { return true }
+        return false
+    }
 }
 
 /// Turns what the owner picked into an attachment. Pictures go to the model as JPEG at most 1568
 /// pixels on the longer side (larger ones are scaled down by the providers anyway); a PDF goes as
 /// pictures of its first four pages, so every model that reads screenshots reads it.
 enum AttachmentReader {
-    enum Failure: Error { case unsupported, unreadable }
+    enum Failure: Error { case unsupported, unreadable, tooLarge }
 
     static let modelSide = 1568
     static let thumbnailSide = 240
     static let pdfPages = 4
+    static let maxTextBytes = 16 * 1024
+    static let fileTypes: [UTType] = [.image, .pdf, .json]
+        + ["md", "markdown"].compactMap { UTType(filenameExtension: $0) }
 
     static func photo(_ data: Data) throws -> ChatAttachment {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -38,10 +47,18 @@ enum AttachmentReader {
         return try photo(data)
     }
 
-    /// A file from Files: a picture or a PDF; anything else is not supported yet.
+    /// Reads a picture, PDF, or a bounded UTF-8 document from Files.
     static func file(_ url: URL) throws -> ChatAttachment {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        if ["json", "md", "markdown"].contains(url.pathExtension.lowercased()) {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            let bytes = try handle.read(upToCount: maxTextBytes + 1) ?? Data()
+            guard bytes.count <= maxTextBytes else { throw Failure.tooLarge }
+            guard let text = String(data: bytes, encoding: .utf8) else { throw Failure.unreadable }
+            return ChatAttachment(kind: .text(name: url.lastPathComponent), thumbnail: Data(), images: [], textContent: text)
+        }
         let type = UTType(filenameExtension: url.pathExtension) ?? .data
         if type.conforms(to: .pdf) { return try pdf(url) }
         guard type.conforms(to: .image) else { throw Failure.unsupported }
@@ -108,7 +125,19 @@ struct AttachmentStrip: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(attachments) { item in
-                    AttachmentThumb(data: item.thumbnail, side: 72, pdf: item.kind != .photo)
+                    Group {
+                        if case .text = item.kind {
+                            VStack(spacing: 4) {
+                                Image(systemName: "doc.text")
+                                Text(verbatim: item.label).font(.caption2).lineLimit(2)
+                            }
+                            .padding(4)
+                            .frame(width: 72, height: 72)
+                            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 16))
+                        } else {
+                            AttachmentThumb(data: item.thumbnail, side: 72, pdf: item.isPDF)
+                        }
+                    }
                         .overlay(alignment: .topTrailing) { removeButton(item) }
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel(Text(item.label))
@@ -175,7 +204,7 @@ extension ChatAttachment {
     var label: String {
         switch kind {
         case .photo: AppLocalization.text(LocalizedStringResource("Photo"))
-        case .pdf(let name): name
+        case .pdf(let name), .text(let name): name
         }
     }
 }

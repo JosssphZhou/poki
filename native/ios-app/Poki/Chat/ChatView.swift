@@ -1305,7 +1305,7 @@ struct ComposerInputView: View {
             picked = []
             Task { await addPhotos(items) }
         }
-        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.image, .pdf], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AttachmentReader.fileTypes, allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             for url in urls { add { try AttachmentReader.file(url) } }
         }
@@ -1446,8 +1446,10 @@ struct ComposerInputView: View {
         do {
             let item = try read()
             withAnimation(.snappy) { attachments.append(item) }
+        } catch AttachmentReader.Failure.tooLarge {
+            problem = AppLocalization.text(LocalizedStringResource("Text files must be 16 KB or smaller."))
         } catch AttachmentReader.Failure.unsupported {
-            problem = AppLocalization.text(LocalizedStringResource("Only photos and PDFs can be added."))
+            problem = AppLocalization.text(LocalizedStringResource("Only images, PDFs, JSON and Markdown files can be added."))
         } catch {
             problem = AppLocalization.text(LocalizedStringResource("Couldn’t read this file."))
         }

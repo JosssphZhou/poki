@@ -260,7 +260,15 @@ final class ChatModel {
     /// The words may be left out.
     func send(_ text: String, attachments: [ChatAttachment]) {
         lastImages = attachments.flatMap(\.images)
-        send(text, again: false, thumbnails: attachments.map(\.thumbnail))
+        let documents = attachments.compactMap { attachment -> String? in
+            guard let content = attachment.textContent else { return nil }
+            let longestRun = content.split(whereSeparator: { $0 != "~" }).map(\.count).max() ?? 0
+            let fence = String(repeating: "~", count: max(3, longestRun + 1))
+            let name = attachment.label.components(separatedBy: .newlines).joined(separator: " ")
+            return "\(fence)\n\(name)\n\(content)\n\(fence)"
+        }
+        let message = ([text] + documents).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        send(message, again: false, thumbnails: attachments.filter { !$0.thumbnail.isEmpty }.map(\.thumbnail))
     }
 
     /// The last message again, after a problem (the Retry button under it).
