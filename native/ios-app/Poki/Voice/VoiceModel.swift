@@ -935,9 +935,38 @@ final class VoiceModel {
             let task = live.task(through: pending.offset)
             guard !task.isEmpty else { return }
             live.pending.removeFirst()
-            guard let data = try? JSONSerialization.data(withJSONObject: ["task": task]) else { return }
+            guard let data = try? JSONSerialization.data(withJSONObject: ["task": liveTask(task)]) else { return }
             run(VoiceCall(id: pending.id, name: "ask_poki", arguments: String(decoding: data, as: UTF8.self), session: number))
         }
+    }
+
+    private func liveTask(_ request: String) -> String {
+        guard let transcript else { return request }
+        let conversation = lines.dropFirst(transcript.from).filter { $0.role == .you || $0.role == .poki }
+        let tasks = calls.filter { $0.started >= transcript.started }
+        if tasks.isEmpty, conversation.count == 1, conversation.first?.text == request { return request }
+        let context: [String: Any] = [
+            "conversation": conversation.map { ["role": $0.role == .you ? "user" : "assistant", "text": $0.text] },
+            "tasks": tasks.map { call in
+                let status: String
+                switch call.state {
+                case .running: status = "running"
+                case .done: status = "done"
+                case .failed: status = "failed"
+                }
+                return ["id": call.id, "status": status, "result": call.output]
+            },
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: context, options: [.sortedKeys]) else { return request }
+        return """
+        Carry out only the current request below. Use the voice conversation and task results as context to resolve references and corrections. Do not repeat earlier tasks. A running task has no confirmed result, and a failed task did not confirm success.
+
+        Context (oldest first):
+        \(String(decoding: data, as: UTF8.self))
+
+        Current request:
+        \(request)
+        """
     }
 
     /// Runs a call once. The same call_id again (a repeated event) is ignored.

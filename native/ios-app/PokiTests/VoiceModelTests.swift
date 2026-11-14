@@ -152,7 +152,40 @@ final class VoiceModelTests: XCTestCase {
         h.link.play(["type": "session.delegation.created", "offset_ms": 3000, "delegation": ["id": "d2", "target": "client"]],
                     ["type": "session.input_transcript.delta", "delta": "Now open Notes", "start_ms": 2500, "end_ms": 2900])
         await h.time.settle()
-        XCTAssertEqual(tasks, ["Open Settings", "Now open Notes"])
+        XCTAssertEqual(tasks.count, 2)
+        XCTAssertTrue(tasks.last?.hasSuffix("Now open Notes") == true)
+        h.voice.stop()
+    }
+
+    func testLiveFollowUpIncludesTheConversationAndPreviousTaskResult() async {
+        var tasks: [String] = []
+        let h = Harness(phoneTool: { _, arguments in
+            let object = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any]
+            tasks.append(object?["task"] as? String ?? "")
+            return (tasks.count == 1 ? "321 × 47 = 15087" : "30174", false)
+        })
+        XCTAssertTrue(h.voice.setBridge(BridgeStub.liveAddress))
+        await h.connect()
+        h.link.play(
+            ["type": "session.started"],
+            ["type": "session.input_transcript.delta", "delta": "请让文字助手计算 321 乘 47。", "start_ms": 500, "end_ms": 1100],
+            ["type": "session.delegation.created", "offset_ms": 1200, "delegation": ["id": "calculation", "target": "client"]]
+        )
+        await h.time.settle()
+        h.link.play(
+            ["type": "session.output_transcript.delta", "delta": "计算完成了。", "offset_ms": 1800],
+            ["type": "session.input_transcript.delta", "delta": "请让文字助手把刚才的结果再乘以 2。", "start_ms": 2500, "end_ms": 2900],
+            ["type": "session.delegation.created", "offset_ms": 3000, "delegation": ["id": "follow-up", "target": "client"]]
+        )
+        await h.time.settle()
+        XCTAssertEqual(tasks.count, 2)
+        let followUp = tasks.last ?? ""
+        XCTAssertTrue(followUp.contains("321"), "The fresh backend session needs the original operands.")
+        XCTAssertTrue(followUp.contains("47"))
+        XCTAssertTrue(followUp.contains("15087"), "Keep the actual task result even when it was not spoken.")
+        XCTAssertTrue(followUp.contains("计算完成了。"), "Follow-ups can refer to what the voice assistant said.")
+        XCTAssertTrue(followUp.contains("请让文字助手把刚才的结果再乘以 2。"))
+        XCTAssertEqual(h.link.sent.last { $0["type"] as? String == "session.commentary.append" }?["content"] as? String, "30174")
         h.voice.stop()
     }
 
