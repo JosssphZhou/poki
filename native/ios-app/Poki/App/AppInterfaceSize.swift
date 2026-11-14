@@ -169,14 +169,14 @@ private struct InterfaceSizePreview: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    MessageBubble(direction: .outgoing, text: String(localized: "Help me plan tomorrow."), tail: true)
-                    MessageBubble(direction: .incoming, text: String(localized: "Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder."), tail: true)
-                    TaskCard(title: String(localized: "Reminder created"),
-                             steps: [PlanStep(String(localized: "Tomorrow at 9:00 AM"), state: .done)],
+                    MessageBubble(direction: .outgoing, text: AppLocalization.text(LocalizedStringResource("Help me plan tomorrow.")), tail: true)
+                    MessageBubble(direction: .incoming, text: AppLocalization.text(LocalizedStringResource("Start with your most important task in the morning. Leave time for lunch and a short walk.\n\nI can also help you set a reminder.")), tail: true)
+                    TaskCard(title: AppLocalization.text(LocalizedStringResource("Reminder created")),
+                             steps: [PlanStep(AppLocalization.text(LocalizedStringResource("Tomorrow at 9:00 AM")), state: .done)],
                              state: .done, app: AppIconStore.name("com.apple.reminders") ?? "Reminders", started: started,
                              ended: started.addingTimeInterval(2), plannedTotal: 1)
-                    MessageBubble(direction: .outgoing, text: String(localized: "Show me the full plan."), tail: true)
-                    MessageBubble(direction: .incoming, text: String(localized: "Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress."), tail: true)
+                    MessageBubble(direction: .outgoing, text: AppLocalization.text(LocalizedStringResource("Show me the full plan.")), tail: true)
+                    MessageBubble(direction: .incoming, text: AppLocalization.text(LocalizedStringResource("Tomorrow’s plan  \n9:00 — Start with your most important task.  \n12:00 — Take a lunch break.  \n12:45 — Go for a short walk.  \n14:00 — Catch up on messages.  \n16:30 — Review today’s progress.")), tail: true)
                 }
                 .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
                 .frame(maxWidth: 720)

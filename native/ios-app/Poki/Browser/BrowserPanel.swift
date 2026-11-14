@@ -92,7 +92,7 @@ struct BrowserPanel: View {
 
     private var headerText: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(browser.host.isEmpty ? String(localized: "Poki’s Browser") : browser.host)
+            Text(browser.host.isEmpty ? AppLocalization.text(LocalizedStringResource("Poki’s Browser")) : browser.host)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
             Text(status)
