@@ -376,10 +376,13 @@ enum PageReader {
     const formAction = submitter && el.hasAttribute('formaction') ? el.formAction : form?.action || '';
     const method = (submitter && el.getAttribute('formmethod') || form?.getAttribute('method') || 'get').toLowerCase();
     if (submitting && formAction) {
-      const path = decodeURIComponent(new URL(formAction, document.baseURI).pathname)
-        .replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
-      const words = path.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-      labels.push(...words.map((word) => ['order', 'orders'].includes(word) ? 'place order' : word));
+      const segments = decodeURIComponent(new URL(formAction, document.baseURI).pathname).split('/').filter(Boolean)
+        .map((segment) => segment.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
+          .split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' '));
+      const operation = segments.at(-1) || '';
+      const orderSubmission = segments.slice(0, -1).some((segment) => ['order', 'orders'].includes(segment)) &&
+        ['place', 'create', 'submit', 'confirm', 'complete'].includes(operation);
+      labels.push(orderSubmission ? 'place order' : operation);
     }
     const fields = form ? [...form.elements, ...form.querySelectorAll('[contenteditable]')].filter(typable) : [];
     const searchForm = method === 'get' && fields.length > 0 && fields.every((field) =>
