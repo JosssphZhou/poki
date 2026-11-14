@@ -34,16 +34,15 @@ public struct SensitivityRules: Sendable, Equatable {
         return rules
     }
 
-    static func matches(_ text: String, _ words: [String], actionButton: Bool = false) -> String? {
+    static func matches(_ text: String, _ words: [String], elementType: String = "Other") -> String? {
         let lowered = text.lowercased()
-        // Split punctuation-separated prose, but count numeric pieces inside an amount or dated
-        // filename with their surrounding token, so a short action stays short.
-        let wordCount = lowered.split(whereSeparator: { $0.isWhitespace }).reduce(0) { count, token in
-            let parts = token.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            let words = parts.filter { $0.contains(where: { $0.isLetter }) }
-            return count + (parts.isEmpty ? 0 : max(1, words.count))
-        }
-        let short = wordCount <= 4
+        // Text from OCR and voice taps may be action labels. Keep the original short-label
+        // allowance for those targets, including names and amounts with internal punctuation.
+        // For structured non-button rows, count words in hyphenated prose separately.
+        let tokens = lowered.split(whereSeparator: \.isWhitespace)
+        let mayBeAction = elementType == "Text" || elementType == "Other"
+        let short = mayBeAction ? tokens.count <= 4 :
+            lowered.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).count <= 4
         let boundary: (Character?) -> Bool = { c in c.map { !$0.isLetter && !$0.isNumber } ?? true }
         for word in words {
             let w = word.lowercased()
@@ -55,7 +54,7 @@ public struct SensitivityRules: Sendable, Equatable {
                 let before = range.lowerBound == lowered.startIndex ? nil : lowered[lowered.index(before: range.lowerBound)]
                 let after = range.upperBound == lowered.endIndex ? nil : lowered[range.upperBound]
                 let opens = lowered[..<range.lowerBound].allSatisfy { !$0.isLetter && !$0.isNumber }
-                if boundary(before) && boundary(after) && (actionButton || opens || short) { return word }
+                if boundary(before) && boundary(after) && (elementType == "Button" || opens || short) { return word }
                 // An earlier substring ("buying") must not hide a later whole word ("buy").
                 search = range.upperBound..<lowered.endIndex
             }
@@ -76,7 +75,7 @@ public struct SensitivityRules: Sendable, Equatable {
         }
         let texts = [element.text, element.identifier ?? ""]
         func match(_ words: [String]) -> String? {
-            texts.lazy.compactMap { Self.matches($0, words, actionButton: element.type == "Button") }.first
+            texts.lazy.compactMap { Self.matches($0, words, elementType: element.type) }.first
         }
         if let word = match(payments) { return "a payment (\"\(word)\")" }
         if let word = match(deletions) { return "deleting (\"\(word)\")" }

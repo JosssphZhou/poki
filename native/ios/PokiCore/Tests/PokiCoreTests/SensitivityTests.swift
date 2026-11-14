@@ -2,6 +2,12 @@ import XCTest
 @testable import PokiCore
 
 final class SensitivityTests: XCTestCase {
+    private let punctuatedActions = [
+        "Tap to pay $12.00", "Tap to pay $1,200.00", "Please delete photo-2026-11-14",
+        "Tap to pay 12.00元/次", "Please delete my photo-2026-11-14.jpg", "Please delete 照片-旅遊-備份",
+        "Please delete 照片-旅遊-備份-2026.final.jpg",
+    ]
+
     private func reason(_ label: String, type: String = "Button") -> String? {
         SensitivityRules().reason(
             touching: Element(type: type, label: label, value: nil, identifier: nil,
@@ -41,43 +47,48 @@ final class SensitivityTests: XCTestCase {
     }
 
     func testShortActionsWithAmountsAndDatedNamesRequireApproval() {
-        for label in ["Tap to pay $12.00", "Tap to pay $1,200.00", "Please delete photo-2026-11-14"] {
+        for label in punctuatedActions {
             for type in ["Text", "Other"] {
                 XCTAssertNotNil(reason(label, type: type), label)
             }
         }
     }
 
-    func testNumberedOCRPaymentSendsNothingBeforeApproval() async {
-        let (core, wda, host) = makeCore {
-            $0.readTimeout = 0.5
-            $0.approvalWait = 0
+    func testNumberedOCRActionSendsNothingBeforeApproval() async {
+        for label in punctuatedActions {
+            let (core, wda, host) = makeCore {
+                $0.readTimeout = 0.5
+                $0.approvalWait = 0
+            }
+            _ = await core.call("look", [:])
+            host.texts.value = [RecognizedText(text: label,
+                                              box: Rect(x: 0.25, y: 0.9, width: 0.5, height: 0.05))]
+            wda.set("GET /source") { _ in
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                return (200, ["value": .null])
+            }
+            let look = await core.call("look", [:])
+            XCTAssertTrue(look.text.contains("1 Text"), look.text)
+            XCTAssertTrue(look.text.contains(label), look.text)
+            let tap = await core.call("do", ["actions": [["tap": 1]]])
+            XCTAssertTrue(tap.text.contains("approval_required"), tap.text)
+            XCTAssertNotNil(core.pendingApproval)
+            XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
         }
-        _ = await core.call("look", [:])
-        host.texts.value = [RecognizedText(text: "Tap to pay $1,200.00",
-                                          box: Rect(x: 0.25, y: 0.9, width: 0.5, height: 0.05))]
-        wda.set("GET /source") { _ in
-            try await Task.sleep(nanoseconds: 5_000_000_000)
-            return (200, ["value": .null])
-        }
-        let look = await core.call("look", [:])
-        XCTAssertTrue(look.text.contains("1 Text"), look.text)
-        XCTAssertTrue(look.text.contains("Tap to pay $1,200.00"), look.text)
-        let tap = await core.call("do", ["actions": [["tap": 1]]])
-        XCTAssertTrue(tap.text.contains("approval_required"), tap.text)
-        XCTAssertNotNil(core.pendingApproval)
-        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
 
-    func testVoicePaymentClearanceRequiresApproval() async {
-        let (core, _, _) = makeCore()
-        let clearance = await core.clearTap(on: "Tap to pay $12.00", inApp: "example.shop",
-                                           named: "Shop", waiting: 0.2)
-        guard case .unanswered = clearance else {
-            return XCTFail("Expected a pending approval to time out, got \(clearance)")
+    func testVoiceActionClearanceRequiresApproval() async {
+        for label in punctuatedActions {
+            let (core, _, _) = makeCore()
+            let clearance = await core.clearTap(on: label, inApp: "example.shop",
+                                               named: "Shop", waiting: 0.2)
+            guard case .unanswered = clearance else {
+                XCTFail("Expected a pending approval for \(label), got \(clearance)")
+                continue
+            }
+            XCTAssertFalse(clearance.mayTap)
+            XCTAssertNil(core.pendingApproval)
         }
-        XCTAssertFalse(clearance.mayTap)
-        XCTAssertNil(core.pendingApproval)
     }
 
     func testLongPaymentButtonSendsNothingBeforeApproval() async {
