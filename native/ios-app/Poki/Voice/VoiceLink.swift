@@ -4,16 +4,14 @@ import WebRTC
 
 /// What VoiceModel talks through: a VoiceLink in the app, a recorded conversation in tests.
 protocol VoiceConnection: AnyObject, Sendable {
-    func connect(secret: String, microphone: Bool, direct: Bool) async throws
+    func connect(secret: String, api: VoiceAPI, microphone: Bool, direct: Bool) async throws
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
     func diagnose(_ write: @escaping @MainActor (String) -> Void)
     func close()
 }
 
-/// One WebRTC connection to the OpenAI Realtime API: the microphone as the audio track, the model's
-/// voice on the speaker, and the `oai-events` data channel for events. Opened with a short-lived client
-/// secret; it never sees an API key. Callbacks arrive on the main actor.
+/// WebRTC audio and events. Realtime uses a client secret; Live uses the owner's key only for signaling.
 final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTCDataChannelDelegate, @unchecked Sendable {
     private static let factory: RTCPeerConnectionFactory = {
         // Voice chat: echo cancellation on, so Poki's own voice from the speaker doesn't interrupt it.
@@ -53,6 +51,14 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     private var closing = false
     /// Until the connection is open, a failure is connect's to report (it may try again), not a loss.
     private var opened = false
+    private var meter: Task<Void, Never>?
+    private var lastInput = Date.distantPast
+    private var lastOutput = Date.distantPast
+    private var inputActive = false
+    private var outputActive = false
+    #if DEBUG && targetEnvironment(simulator)
+    private var replay: VoiceReplay?
+    #endif
 
     init(onEvent: @escaping @MainActor ([String: Any]) -> Void, onClosed: @escaping @MainActor (String) -> Void) {
         self.onEvent = onEvent
@@ -62,11 +68,20 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     /// `microphone: false` (test runs) sends no audio track and needs no microphone permission; the
     /// model's voice still comes back.
     /// `direct: true` keeps the connection off VPN interfaces (the retry after a try that never opened).
-    func connect(secret: String, microphone: Bool = true, direct: Bool = false) async throws {
+    func connect(secret: String, api: VoiceAPI, microphone: Bool = true, direct: Bool = false) async throws {
+        let replaying: Bool
+        #if DEBUG && targetEnvironment(simulator)
+        replay = VoiceReplay.fromEnvironment()
+        replaying = replay != nil
+        let factory = replay.map { RTCPeerConnectionFactory(encoderFactory: nil, decoderFactory: nil, audioDevice: $0) }
+            ?? (!microphone ? Self.silentFactory : direct ? Self.directFactory : Self.factory)
+        #else
+        replaying = false
         #if DEBUG
         let factory = !microphone ? Self.silentFactory : direct ? Self.directFactory : Self.factory
         #else
         let factory = direct ? Self.directFactory : Self.factory
+        #endif
         #endif
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let config = RTCConfiguration()
@@ -77,7 +92,7 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         config.continualGatheringPolicy = .gatherContinually
         guard let peer = factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.noWebRTC }
         self.peer = peer
-        if microphone {
+        if microphone && !replaying {
             // Poki's background keep-alive may have left the shared session in .playback, which cannot
             // record; set voice chat explicitly before the microphone track starts.
             let session = RTCAudioSession.sharedInstance()
@@ -95,6 +110,8 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
                 try av.setActive(true)
                 session.audioSessionDidActivate(av)
             }
+        }
+        if microphone {
             let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
             peer.add(mic, streamIds: ["poki-voice"])
         } else {
@@ -114,16 +131,15 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             peer.setLocalDescription(offer) { error in if let error { done.resume(throwing: error) } else { done.resume() } }
         }
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/calls")!, timeoutInterval: 20)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/sdp", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data(offer.sdp.utf8)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let answer = String(decoding: data, as: UTF8.self)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw VoiceError.realtime(http.statusCode, String(answer.prefix(300)))
+        if api == .live {
+            let deadline = Date().addingTimeInterval(5)
+            while peer.iceGatheringState != .complete, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
         }
+        let request = try api.offer(peer.localDescription?.sdp ?? offer.sdp, secret: secret)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let answer = try api.answer(data, status: (response as? HTTPURLResponse)?.statusCode ?? 0)
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             peer.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer)) { error in if let error { done.resume(throwing: error) } else { done.resume() } }
         }
@@ -133,6 +149,35 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
             try await Task.sleep(for: .milliseconds(20))
         }
         lock.withLock { opened = true }
+        if api == .live { observeAudio() }
+    }
+
+    private func observeAudio() {
+        meter = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let peer = self.peer else { return }
+                peer.statistics { [weak self] report in
+                    guard let self else { return }
+                    let now = Date()
+                    let event: [String: Any]? = self.lock.withLock {
+                        guard !self.closing else { return nil }
+                        for stat in report.statistics.values where stat.values["kind"] as? String == "audio" {
+                            guard let level = stat.values["audioLevel"] as? NSNumber, level.doubleValue > 0.01 else { continue }
+                            if stat.type == "media-source" { self.lastInput = now }
+                            if stat.type == "inbound-rtp" { self.lastOutput = now }
+                        }
+                        let input = now.timeIntervalSince(self.lastInput) < 0.5
+                        let output = now.timeIntervalSince(self.lastOutput) < 0.7
+                        guard input != self.inputActive || output != self.outputActive else { return nil }
+                        self.inputActive = input
+                        self.outputActive = output
+                        return ["type": "poki.audio", "input": input, "output": output]
+                    }
+                    if let event { Task { @MainActor in self.onEvent(event) } }
+                }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
+            }
+        }
     }
 
     private static func describe(_ state: RTCIceConnectionState) -> String {
@@ -187,15 +232,19 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
 
     /// 0 mutes Poki's voice (silent test runs); 1 is normal.
     func setRemoteVolume(_ value: Double) {
-        lock.withLock {
+        let track = lock.withLock {
             volume = value
-            remoteAudio?.source.volume = value
-            remoteAudio?.isEnabled = value > 0
+            return remoteAudio
         }
+        // WebRTC can synchronously wait for its signaling thread, whose callbacks also take lock.
+        track?.source.volume = value
+        track?.isEnabled = value > 0
     }
 
     func close() {
         lock.withLock { closing = true }
+        meter?.cancel()
+        meter = nil
         channel?.close()
         peer?.close()
         channel = nil
@@ -227,6 +276,9 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
         guard let event = try? JSONSerialization.jsonObject(with: buffer.data) as? [String: Any] else { return }
+        #if DEBUG && targetEnvironment(simulator)
+        if ["session.started", "session.created"].contains(event["type"] as? String ?? "") { replay?.beginInput() }
+        #endif
         let onEvent = onEvent
         Task { @MainActor in onEvent(event) }
     }
@@ -247,11 +299,12 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCAudioTrack else { return }
-        lock.withLock {
+        let value = lock.withLock {
             remoteAudio = track
-            track.source.volume = volume
-            track.isEnabled = volume > 0
+            return volume
         }
+        track.source.volume = value
+        track.isEnabled = value > 0
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}

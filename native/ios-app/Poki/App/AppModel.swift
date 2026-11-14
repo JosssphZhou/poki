@@ -315,6 +315,10 @@ final class AppModel {
                                #if DEBUG && targetEnvironment(simulator)
                                if TalkRehearsal.asked { return await TalkRehearsal.step() }
                                #endif
+                               if name == "ask_poki" {
+                                   let result = await AskPoki.run(arguments: arguments, session: "poki-voice")
+                                   return (result.text, result.isError)
+                               }
                                let result = await core.tool(name, arguments: arguments)
                                return (result.text, result.isError)
                            },

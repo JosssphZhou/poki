@@ -2,13 +2,28 @@ import PokiCore
 import XCTest
 @testable import Poki
 
+final class RealtimeTokenStub: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "api.openai.com" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        XCTAssertEqual(request.url?.path, "/v1/realtime/client_secrets")
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"value":"test-realtime-secret"}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 /// The voice bridge's token answer, served to URLSession.shared without a Mac.
 final class BridgeStub: URLProtocol {
     static let address = "http://voice-bridge.test/voice/0123456789abcdef"
+    static let liveAddress = "http://voice-bridge.test/voice/live0123456789abcdef"
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host() == "voice-bridge.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#
+        let body = request.url!.path.contains("live0123")
+            ? #"{"value":"ek_test","model":"gpt-live-1","local_tools":["ask_poki"]}"#
+            : #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
@@ -38,7 +53,13 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     var onClosed: (@MainActor (String) -> Void)?
     private(set) var closed = false
     private(set) var sent: [[String: Any]] = []
-    func connect(secret: String, microphone: Bool, direct: Bool) async throws {}
+    var rejectLive = false
+    func connect(secret: String, api: VoiceAPI, microphone: Bool, direct: Bool) async throws {
+        if rejectLive {
+            if api == .live { throw VoiceError.realtime(403, "Model access denied") }
+            await onEvent?(["type": "session.created"])
+        }
+    }
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
@@ -99,6 +120,121 @@ final class VoiceModelTests: XCTestCase {
         UserDefaults.standard.set(savedDirect, forKey: "voice.openai.enabled")
     }
 
+    func testLiveIsSelectableWithoutChangingTheDefault() {
+        XCTAssertTrue(ModelCatalog.voiceAll.contains { $0.id == "gpt-live-1" })
+        XCTAssertEqual(ModelCatalog.voiceDefault, "gpt-realtime-2.1")
+    }
+
+    func testLiveDelegatesTheTranscriptOnceAndReturnsTheResultForSpeech() async {
+        var tasks: [String] = []
+        let h = Harness(phoneTool: { name, arguments in
+            XCTAssertEqual(name, "ask_poki")
+            let object = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any]
+            tasks.append(object?["task"] as? String ?? "")
+            return ("Settings is open.", false)
+        })
+        XCTAssertTrue(h.voice.setBridge(BridgeStub.liveAddress))
+        await h.connect()
+        h.link.play(
+            ["type": "session.started"],
+            ["type": "session.input_transcript.delta", "delta": "Open ", "start_ms": 500, "end_ms": 800],
+            ["type": "session.input_transcript.delta", "delta": "Settings", "start_ms": 900, "end_ms": 1100],
+            ["type": "session.delegation.created", "offset_ms": 1200, "delegation": ["id": "d1", "target": "client"]],
+            ["type": "session.delegation.created", "offset_ms": 1200, "delegation": ["id": "d1", "target": "client"]]
+        )
+        await h.time.settle()
+        XCTAssertEqual(tasks, ["Open Settings"])
+        XCTAssertEqual(h.link.sent.filter { $0["type"] as? String == "session.commentary.append" }.compactMap { $0["content"] as? String }, ["Settings is open."])
+        XCTAssertEqual(h.link.sent.last { $0["type"] as? String == "session.commentary.append" }?["delegation_id"] as? String, "d1")
+        h.link.play(["type": "session.output_transcript.delta", "delta": "Settings is open.", "offset_ms": 1600])
+        XCTAssertEqual(h.voice.lines.last { $0.role == .poki }?.text, "Settings is open.")
+        XCTAssertFalse(h.link.sent.contains { $0["type"] as? String == "response.create" })
+        h.link.play(["type": "session.delegation.created", "offset_ms": 3000, "delegation": ["id": "d2", "target": "client"]],
+                    ["type": "session.input_transcript.delta", "delta": "Now open Notes", "start_ms": 2500, "end_ms": 2900])
+        await h.time.settle()
+        XCTAssertEqual(tasks.count, 2)
+        XCTAssertTrue(tasks.last?.hasSuffix("Now open Notes") == true)
+        h.voice.stop()
+    }
+
+    func testLiveFollowUpIncludesTheConversationAndPreviousTaskResult() async {
+        var tasks: [String] = []
+        let h = Harness(phoneTool: { _, arguments in
+            let object = try? JSONSerialization.jsonObject(with: Data(arguments.utf8)) as? [String: Any]
+            tasks.append(object?["task"] as? String ?? "")
+            return (tasks.count == 1 ? "321 × 47 = 15087" : "30174", false)
+        })
+        XCTAssertTrue(h.voice.setBridge(BridgeStub.liveAddress))
+        await h.connect()
+        h.link.play(
+            ["type": "session.started"],
+            ["type": "session.input_transcript.delta", "delta": "请让文字助手计算 321 乘 47。", "start_ms": 500, "end_ms": 1100],
+            ["type": "session.delegation.created", "offset_ms": 1200, "delegation": ["id": "calculation", "target": "client"]]
+        )
+        await h.time.settle()
+        h.link.play(
+            ["type": "session.output_transcript.delta", "delta": "计算完成了。", "offset_ms": 1800],
+            ["type": "session.input_transcript.delta", "delta": "请让文字助手把刚才的结果再乘以 2。", "start_ms": 2500, "end_ms": 2900],
+            ["type": "session.delegation.created", "offset_ms": 3000, "delegation": ["id": "follow-up", "target": "client"]]
+        )
+        await h.time.settle()
+        XCTAssertEqual(tasks.count, 2)
+        let followUp = tasks.last ?? ""
+        XCTAssertTrue(followUp.contains("321"), "The fresh backend session needs the original operands.")
+        XCTAssertTrue(followUp.contains("47"))
+        XCTAssertTrue(followUp.contains("15087"), "Keep the actual task result even when it was not spoken.")
+        XCTAssertTrue(followUp.contains("计算完成了。"), "Follow-ups can refer to what the voice assistant said.")
+        XCTAssertTrue(followUp.contains("请让文字助手把刚才的结果再乘以 2。"))
+        XCTAssertEqual(h.link.sent.last { $0["type"] as? String == "session.commentary.append" }?["content"] as? String, "30174")
+        h.voice.stop()
+    }
+
+    func testLiveAndRealtimeSignalingUseTheirOwnWireFormats() throws {
+        let offer = "v=0\r\ns=Poki\r\n"
+        let live = try VoiceAPI.live.offer(offer, secret: "test-key")
+        XCTAssertEqual(live.url?.absoluteString, "https://api.openai.com/v1/live/sessions")
+        XCTAssertEqual(live.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(live.httpBody)) as? [String: Any])
+        let session = try XCTUnwrap(body["session"] as? [String: Any])
+        XCTAssertEqual(session["model"] as? String, "gpt-live-1")
+        XCTAssertEqual((session["delegation"] as? [String: Any])?["type"] as? String, "client")
+        XCTAssertNil(session["tools"])
+        XCTAssertEqual((body["transport"] as? [String: Any])?["sdp"] as? String, offer)
+        XCTAssertEqual(try VoiceAPI.live.answer(Data(#"{"transport":{"type":"webrtc","sdp":"answer"}}"#.utf8), status: 201), "answer")
+        XCTAssertTrue(VoiceAPI.live.note("A task is running.")["delegation_id"] is NSNull)
+        let realtime = try VoiceAPI.realtime.offer(offer, secret: "test-secret")
+        XCTAssertEqual(realtime.url?.path, "/v1/realtime/calls")
+        XCTAssertEqual(realtime.value(forHTTPHeaderField: "Content-Type"), "application/sdp")
+        XCTAssertEqual(realtime.httpBody, Data(offer.utf8))
+        XCTAssertThrowsError(try VoiceAPI.live.answer(Data(#"{"error":{"message":"sk-must-not-escape"}}"#.utf8), status: 403)) { error in
+            XCTAssertFalse(error.localizedDescription.contains("sk-must-not-escape"))
+        }
+    }
+
+    func testRejectedLiveConnectsToRealtimeAndTellsTheUser() async throws {
+        let savedKey = ModelKeys.key(.openai)
+        let savedEnabled = UserDefaults.standard.object(forKey: "models.enabled.voice")
+        let savedModel = UserDefaults.standard.object(forKey: "voice.model")
+        URLProtocol.registerClass(RealtimeTokenStub.self)
+        defer {
+            URLProtocol.unregisterClass(RealtimeTokenStub.self)
+            if let savedKey { try? ModelKeys.save(savedKey, for: .openai) } else { ModelKeys.remove(.openai) }
+            UserDefaults.standard.set(savedEnabled, forKey: "models.enabled.voice")
+            UserDefaults.standard.set(savedModel, forKey: "voice.model")
+        }
+        try ModelKeys.save("test-live-key", for: .openai)
+        VoiceDirect.enabled = true
+        ModelCatalog.setVoice("gpt-live-1", on: true)
+        ModelCatalog.voiceModel = "gpt-live-1"
+        let h = Harness(rejectLive: true)
+        await h.connect()
+        XCTAssertEqual(h.voice.phase, .listening)
+        XCTAssertTrue(h.links.first?.closed == true)
+        XCTAssertTrue(h.voice.lines.contains { $0.role == .note && $0.text.contains("GPT Realtime 2.1") })
+        XCTAssertEqual(ModelCatalog.voiceModel, "gpt-live-1")
+        h.voice.stop()
+    }
+
     /// One VoiceModel with its connections (one per conversation), its time, and what Poki was told about
     /// the microphone (true: the voice session holds it).
     private final class Harness {
@@ -108,14 +244,14 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
+        @MainActor init(rejectLive: Bool = false, phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
             let time = FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
-            made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
+            made = { [unowned self] in let link = FakeConnection(); link.rejectLive = rejectLive; self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
             // As in the app: an ended conversation goes into the chat, and its lines leave the voice model.

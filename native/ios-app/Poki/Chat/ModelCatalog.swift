@@ -66,7 +66,7 @@ enum ModelCatalog {
             .map { $0.hasPrefix("models/") ? String($0.dropFirst(7)) : $0 }
             .filter { usable($0, provider) }
         if provider == .openai {
-            let voice = items.compactMap { $0["id"] as? String }.filter { $0.contains("realtime") && !$0.contains("transcribe") }.sorted()
+            let voice = items.compactMap { $0["id"] as? String }.filter { ($0.contains("realtime") || $0 == "gpt-live-1") && !$0.contains("transcribe") }.sorted()
             UserDefaults.standard.set(voice, forKey: "models.listed.voice")
         }
         ids = Array(Set(ids)).sorted { fast($0) == fast($1) ? $0 < $1 : fast($0) }
@@ -78,7 +78,7 @@ enum ModelCatalog {
     /// Chat models only: no embeddings, speech, images or moderation.
     private static func usable(_ id: String, _ provider: ModelProvider) -> Bool {
         let lower = id.lowercased()
-        let skip = ["embed", "audio", "realtime", "transcribe", "tts", "whisper", "image", "dall-e", "moderation", "search", "aqa", "imagen", "veo"]
+        let skip = ["embed", "audio", "realtime", "gpt-live", "transcribe", "tts", "whisper", "image", "dall-e", "moderation", "search", "aqa", "imagen", "veo"]
         if skip.contains(where: lower.contains) { return false }
         switch provider {
         case .openai: return lower.hasPrefix("gpt-") || lower.hasPrefix("o")
@@ -131,8 +131,8 @@ enum ModelCatalog {
     static let voiceDefault = "gpt-realtime-2.1"
 
     static var voiceAll: [ChatModelChoice] {
-        let listed = (UserDefaults.standard.stringArray(forKey: "models.listed.voice") ?? []).filter { $0 != voiceDefault }
-        return [ChatModelChoice(id: voiceDefault, name: "GPT Realtime 2.1")] + listed.map { ChatModelChoice(id: $0, name: $0) }
+        let listed = (UserDefaults.standard.stringArray(forKey: "models.listed.voice") ?? []).filter { $0 != voiceDefault && $0 != "gpt-live-1" }
+        return [ChatModelChoice(id: voiceDefault, name: "GPT Realtime 2.1"), ChatModelChoice(id: "gpt-live-1", name: "GPT Live 1")] + listed.map { ChatModelChoice(id: $0, name: $0) }
     }
 
     static var voiceEnabled: Set<String> {
