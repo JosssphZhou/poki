@@ -28,6 +28,7 @@ final class BrowserGuardTests: XCTestCase {
         var buttonAction = ""
         var formRole = ""
         var query = "local fixture"
+        var method = "get"
     }
 
     func testBrowserActionsWaitForOwnerConsent() async throws {
@@ -69,7 +70,7 @@ final class BrowserGuardTests: XCTestCase {
 
     func testOrderSearchDoesNotAskForApproval() async throws {
         let samples = [false, true].flatMap { submit in
-            ["/orders/search", "/transfer/search", "/delete/search", "/send/search", "/results"].map { action in
+            ["/orders/search", "/results?next=transfer&operation=delete&label=send"].map { action in
                 ConsentSample(label: "Search", submit: submit, question: nil, search: true,
                               action: action, query: "orders transfer delete send")
             }
@@ -86,6 +87,31 @@ final class BrowserGuardTests: XCTestCase {
         try await checkBrowserConsent(samples)
     }
 
+    func testSensitiveFormPathsAskForTheMostSevereApproval() async throws {
+        let routes = [
+            ("/wallet/transfer/confirm", "Allow payment?"),
+            ("/items/delete/42", "Allow deletion?"),
+            ("/messages/send/confirm", "Allow sending a message?"),
+            ("/transfer/search", "Allow payment?"),
+            ("/delete/search", "Allow deletion?"),
+            ("/send/search", "Allow sending a message?"),
+            ("/wallet/transfer/message/confirm", "Allow payment?"),
+            ("/send/delete/transfer/confirm", "Allow payment?"),
+            ("/transfer/delete/send/confirm", "Allow payment?"),
+            ("/delete/send/confirm", "Allow deletion?"),
+            ("/send/delete/confirm", "Allow deletion?"),
+        ]
+        let samples = ["get", "post"].flatMap { method in
+            [false, true].flatMap { submit in
+                routes.map { path, question in
+                    ConsentSample(label: "Go", submit: submit, question: question, search: true,
+                                  action: path, method: method)
+                }
+            }
+        }
+        try await checkBrowserConsent(samples)
+    }
+
     private func checkBrowserConsent(_ samples: [ConsentSample]) async throws {
         let keys = ["chat.provider", "chat.customURL", "chat.customModel", ApprovalClassifier.modeKey]
         let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
@@ -99,7 +125,7 @@ final class BrowserGuardTests: XCTestCase {
                 let head = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Consent fixture</title></head><body style=\"font:17px -apple-system;margin:72px 20px\"><h1>Consent fixture</h1><p id=\"effect\"></p>"
                 let html = sample.search ? """
                 \(head)
-                <form method="get" action="\(sample.action)" role="\(sample.formRole)">
+                <form method="\(sample.method)" action="\(sample.action)" role="\(sample.formRole)">
                 <input type="search" name="q" aria-label="Query" value="\(sample.submit ? "" : sample.query)">
                 \(sample.fields)
                 <button type="submit" \(sample.buttonAction.isEmpty ? "" : "formaction=\"\(sample.buttonAction)\"")>\(sample.label)</button>
@@ -112,13 +138,13 @@ final class BrowserGuardTests: XCTestCase {
                 <button type="\(sample.submit ? "submit" : "button")" onclick="\(sample.submit ? "" : act)">\(sample.label)</button>
                 </form></body></html>
                 """
-                let results = "\(head)<script>if (new URLSearchParams(location.search).get('q') === \(Self.json([sample.query]))[0]) \(act)</script></body></html>"
-                let name = "\(sample.label), action=\(sample.action), buttonAction=\(sample.buttonAction), submit=\(sample.submit)\(sample.fields.isEmpty ? "" : ", form with \(sample.fields)")"
+                let resultCondition = sample.method == "post" ? "true" : "new URLSearchParams(location.search).get('q') === \(Self.json([sample.query]))[0]"
+                let results = "\(head)<script>if (\(resultCondition)) \(act)</script></body></html>"
+                let name = "\(sample.label), method=\(sample.method), action=\(sample.action), buttonAction=\(sample.buttonAction), submit=\(sample.submit)\(sample.fields.isEmpty ? "" : ", form with \(sample.fields)")"
                 print("Browser consent fixture: \(name), allow=\(allowed)")
-                let pages = try PageServer(pages: ["/": html, "/results": results, "/orders/place": results,
-                                                   "/wallet/transfer": results, "/messages/send": results,
-                                                   "/orders/search": results, "/transfer/search": results,
-                                                   "/delete/search": results, "/send/search": results])
+                let destination = sample.buttonAction.isEmpty ? sample.action : sample.buttonAction
+                let path = String(destination.prefix { $0 != "?" })
+                let pages = try PageServer(pages: ["/": html, path: results])
                 let opened = await WebTools.perform("web_open", arguments: Self.json(["url": "http://127.0.0.1:\(pages.port)/"]))
                 XCTAssertFalse(opened.isError, opened.text)
                 let ref = try Self.ref(sample.submit ? "Query" : sample.label, in: opened.text)
@@ -138,6 +164,9 @@ final class BrowserGuardTests: XCTestCase {
                     Task { @MainActor in
                         let effect = try? await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
                         XCTAssertEqual(effect, "", "The page must not act while consent is pending")
+                        if sample.search {
+                            XCTAssertTrue(pages.requests(to: path).isEmpty, "No request may reach the server while consent is pending")
+                        }
                         XCTAssertTrue(app.approvals.contains { $0.id == approval.id }, "The request must reach the owner's card")
                         if let evidence {
                             do {
@@ -153,6 +182,10 @@ final class BrowserGuardTests: XCTestCase {
                 let effect = try await PokiBrowser.shared.webView.evaluateJavaScript("document.getElementById('effect').textContent") as? String
                 XCTAssertEqual(questions, sample.question.map { [$0] } ?? [], name)
                 XCTAssertEqual(effect, sample.question == nil || allowed ? "effect happened" : "", name)
+                if sample.search {
+                    let expected = sample.question == nil || allowed ? [sample.method.uppercased()] : []
+                    XCTAssertEqual(pages.requests(to: path), expected, "Only approved submissions may reach the server: \(name)")
+                }
                 if let evidence {
                     try await captureApprovalView(ChatView(openDetails: { _ in }, openVoice: {}, openSetup: {}, openModel: {})
                         .environment(app).environment(chat), named: evidence + "-declined")
@@ -446,6 +479,12 @@ private final class PageServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "page-server")
     private let pages: [String: String]
+    private let requestLock = NSLock()
+    private var receivedRequests: [(method: String, path: String)] = []
+
+    func requests(to path: String) -> [String] {
+        requestLock.withLock { receivedRequests.filter { $0.path == path }.map(\.method) }
+    }
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
 
@@ -473,8 +512,12 @@ private final class PageServer: @unchecked Sendable {
             guard let self else { return }
             let received = received + (data ?? Data())
             if received.range(of: Data("\r\n\r\n".utf8)) != nil {
-                let path = String(decoding: received.prefix(64), as: UTF8.self).split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-                let page = self.pages[String(path.prefix { $0 != "?" })]
+                let request = String(decoding: received, as: UTF8.self).components(separatedBy: "\r\n")[0].split(separator: " ")
+                let path = request.count > 1 ? String(request[1].prefix { $0 != "?" }) : "/"
+                self.requestLock.withLock {
+                    self.receivedRequests.append((String(request.first ?? ""), path))
+                }
+                let page = self.pages[path]
                 let body = page ?? ""
                 let status = page == nil ? "404 Not Found" : "200 OK"
                 let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
