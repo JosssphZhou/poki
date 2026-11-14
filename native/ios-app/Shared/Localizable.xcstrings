@@ -32934,6 +32934,22 @@
           }
         }
       }
+    },
+    "Check Front App in 10 Seconds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 秒后检查前台 App"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 秒後檢查前景 App"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
