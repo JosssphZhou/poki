@@ -368,7 +368,9 @@ export async function interaction(ctx, name, args) {
   };
   const tap = async (a, op = 'tap') => {
     const p = await point(a);
-    return ctx.input({ op, ...p, duration_ms: op === 'long_press' ? Math.max(1, Math.round((a.duration ?? 1) * 1000)) : 50 });
+    // Only a caller-supplied duration is sent, and it is then used exactly.
+    // Plain taps carry none, so the native layer shapes the press time.
+    return ctx.input({ op, ...p, ...(op === 'long_press' && a.duration != null ? { duration_ms: Math.max(1, Math.round(a.duration * 1000)) } : {}) });
   };
   const read = (a, current = false) => ctx.recognize(a ?? {}, current ? ctx.frame : undefined);
   const readComplete = async () => {
@@ -395,11 +397,11 @@ export async function interaction(ctx, name, args) {
     case 'tap_text': {
       const element = await locate(ctx, elements => matching(elements, args.text, args.exact), { missing: seen => missingText(args.text, seen), many: found => tooMany(args.text, found) }, undefined, args.verify !== false);
       ctx.expectsForeground = opensApp(element, ctx.seen);
-      return ctx.input({ op: 'tap', ...center(element), duration_ms: 50 });
+      return ctx.input({ op: 'tap', ...center(element) });
     }
     case 'swipe': case 'drag': return ctx.input({
       op: 'drag', x1: args.from_x, y1: args.from_y, x2: args.to_x, y2: args.to_y,
-      duration_ms: Math.max(1, Math.round(args.duration_ms ?? (name === 'drag' ? 800 : 300))),
+      ...(args.duration_ms != null ? { duration_ms: Math.max(1, Math.round(args.duration_ms)) } : {}),
       hold_ms: name === 'drag' ? Math.round((args.hold_seconds ?? 0.6) * 1000) : 0,
     });
     case 'scroll': {
@@ -417,7 +419,7 @@ export async function interaction(ctx, name, args) {
         y1: clamp(y - (horizontal ? 0 : direction * half)) * (f.height - 1),
         x2: clamp(x + (horizontal ? direction * half : 0)) * (f.width - 1),
         y2: clamp(y + (horizontal ? 0 : direction * half)) * (f.height - 1),
-        duration_ms: args.pages ? 600 : 350, hold_ms: 0, ...(args.pages ? { end_hold_ms: 250 } : {}),
+        hold_ms: 0, ...(args.pages ? { end_hold_ms: 250 } : {}),
       });
       let result;
       for (let page = 0; page < (args.pages ?? 1); page++) {
@@ -456,7 +458,7 @@ export async function interaction(ctx, name, args) {
       if (!Number.isFinite(scale) || scale <= 0) throw new Error('scale must be greater than zero.');
       const start = Math.min(f.width * 0.35, available / Math.max(1, scale));
       if (start < 2) throw new Error('Pinch center is too close to the screen edge.');
-      return ctx.input({ op: 'pinch', ...p, start_distance: start, end_distance: start * scale, duration_ms: args.duration_ms ?? 500 });
+      return ctx.input({ op: 'pinch', ...p, start_distance: start, end_distance: start * scale, ...(args.duration_ms != null ? { duration_ms: args.duration_ms } : {}) });
     }
     case 'type_text':
       if (!args.text && !args.clear) throw new Error('Provide text, or clear=true to empty the field. To send existing text, use press_key with key="return" instead of type_text.');
@@ -516,7 +518,7 @@ export async function interaction(ctx, name, args) {
         // A device can lose a tap, so the field gets a second one, unless the first gave focus to something else.
         for (let taps = 0; !here && taps < 2; taps++) {
           const before = focused.map(fieldKey).join();
-          await ctx.input({ op: 'tap', ...aim, duration_ms: 50 });
+          await ctx.input({ op: 'tap', ...aim });
           let moved = false;
           for (const started = performance.now(); !here && !moved && performance.now() - started < focusWithinMs; await pause(pollMs)) {
             focused = await focusedElements();
@@ -608,7 +610,7 @@ export async function interaction(ctx, name, args) {
       await ctx.settle();
       const { elements } = await readStructure(ctx, 0);
       const back = elements.filter(e => /^(back|返回|上一页|上一頁)$/i.test(e.label ?? e.text ?? '') && (e.frame?.x ?? e.x) < f.width / 2);
-      if (back.length === 1) return ctx.input({ op: 'tap', ...center(back[0]), duration_ms: 50 });
+      if (back.length === 1) return ctx.input({ op: 'tap', ...center(back[0]) });
       return ctx.input({ op: 'drag', x1: 1, y1: f.height / 2, x2: f.width * .8, y2: f.height / 2, duration_ms: 400, hold_ms: 0 });
     }
     case 'handle_alert': {
@@ -642,7 +644,7 @@ export async function interaction(ctx, name, args) {
         many: found => `More than one alert button matches. Nothing was tapped. ${JSON.stringify(found.map(e => ({ label: e.label ?? e.text, ...center(e) })))}`,
       });
       if (purchase) return purchase;
-      const result = await ctx.input({ op: 'tap', ...center(button), duration_ms: 50 });
+      const result = await ctx.input({ op: 'tap', ...center(button) });
       return { ...result, ...(warning ? { prompt: warning } : {}) };
     }
     case 'wait_for': {
