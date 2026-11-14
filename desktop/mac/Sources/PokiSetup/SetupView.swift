@@ -232,6 +232,8 @@ struct SetupView: View {
                 Text("Poki Setup")
                 Text(setupLine)
             }
+            Text("Installation will close Poki on your iPhone. Your chats and settings will be kept.")
+                .font(.callout).foregroundStyle(.secondary)
             HStack {
                 Menu {
                     Button(ipa == nil ? "Install from an IPA File…" : "Choose Another IPA File…") { choosingIPA = true }
