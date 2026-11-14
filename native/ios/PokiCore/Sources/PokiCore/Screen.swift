@@ -265,7 +265,14 @@ extension Runner {
             // asked for once more within the read's time. A timed-out one is not: the runner is
             // still serving it, and a second request would only queue behind it.
             let left = started + timeout - now()
-            if (e as? RunnerError)?.delivery == .notSent, left > 1.2 {
+            // The app in front is not answering the phone's accessibility requests: the phone serves one
+            // such request at a time, so a second read would only be refused again, and nothing on this
+            // side can change the app in front itself. The owner can end it: the Home button or another
+            // app sends it to the background, where it answers, and the next look goes through.
+            if "\(e)".contains("has not answered") {
+                reading.notes.append("no element tree: \(e)")
+                reading.notes.append("the app in front is not answering its accessibility (its main thread is busy, and the phone serves one such request at a time, so nothing is read or touched until it answers). This step is the owner's: ask them to press the Home button or switch to another app, then look again; {handoff: {kind: \"other\", text: \"…\"}} shows it to them on the phone")
+            } else if (e as? RunnerError)?.delivery == .notSent, left > 1.2 {
                 await sleep(seconds: 0.3)
                 if let again = try? await self.tree(timeout: left - 0.4, format: format) {
                     reading.elements = again.elements; reading.foreground = again.foreground; treeCame = true

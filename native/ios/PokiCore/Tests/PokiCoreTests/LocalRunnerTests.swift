@@ -128,6 +128,27 @@ final class LocalRunnerTests: XCTestCase {
         XCTAssertEqual(phone.touches.value.count, 1, "once it is through, a tap goes through: \(later.text)")
     }
 
+    /// The owner is the only one who can end this: when the app in front does not answer, the read says
+    /// so and asks for the Home button. Nothing on this side can change the app in front (testmanagerd
+    /// serves one request at a time), and a second read would only be refused again; the app answers
+    /// once the owner sends it to the background, and the next look goes through.
+    func testAFailedReadSaysTheOwnerCanEndAnAppThatDoesNotAnswer() async throws {
+        let phone = Phone()
+        let since = LockedBox<Double?>(nil)
+        let (core, _) = makeLocalCore(phone, unanswered: { since.value.map { ("a lookup of the app in front", now() - $0) } })
+        _ = await core.call("look", [:])
+        // An app that does not answer: the read's request is left in testmanagerd (the daemon here),
+        // and the screenshot asked beside it waits behind that request.
+        phone.silentUntil.value = now() + 8
+        _ = await core.call("look", [:])
+        // The phone side still waits on its front-app lookup, and the screenshot before was abandoned.
+        since.value = now() - 11
+        let held = await core.call("look", [:])
+        XCTAssertTrue(held.isError, held.text)
+        XCTAssertTrue(held.text.contains("press the Home button"), held.text)
+        XCTAssertTrue(held.text.contains("handoff"), held.text)
+    }
+
     /// What must not get looser: a request still not through past testmanagerd's own limit (60 s on the
     /// phone, 3 s here) is a wedged queue, and the runner is restarted, also while the agent keeps
     /// calling and each call is refused at once. The new session then lets requests through again.
