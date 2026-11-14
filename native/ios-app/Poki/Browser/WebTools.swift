@@ -149,7 +149,9 @@ enum WebTools {
             }
         }
         if let first = reasons.first {
-            let reason = reasons.count == 1 ? first : "multiple sensitive actions: " + reasons.enumerated().map { "action \($0.offset + 1): \($0.element)" }.joined(separator: "; ")
+            let reason = ["a payment", "deleting", "sending"].lazy.compactMap { prefix in
+                reasons.first { $0.hasPrefix(prefix) }
+            }.first ?? first
             guard let app, await app.requestBrowserApproval(site: browser.host, summary: title, reason: reason) else { return nil }
         }
         guard !Task.isCancelled, browser.isOpen, !browser.ownerHasIt else { return nil }

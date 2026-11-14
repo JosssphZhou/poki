@@ -382,7 +382,8 @@ enum PageReader {
       const operation = segments.at(-1) || '';
       const orderSubmission = segments.slice(0, -1).some((segment) => ['order', 'orders'].includes(segment)) &&
         ['place', 'create', 'submit', 'confirm', 'complete'].includes(operation);
-      labels.push(orderSubmission ? 'place order' : operation);
+      labels.push(...segments);
+      if (orderSubmission) labels.push('place order');
     }
     const fields = form ? [...form.elements, ...form.querySelectorAll('[contenteditable]')].filter(typable) : [];
     const searchForm = method === 'get' && fields.length > 0 && fields.every((field) =>

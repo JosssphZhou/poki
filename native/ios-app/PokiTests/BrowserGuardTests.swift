@@ -155,9 +155,12 @@ final class BrowserGuardTests: XCTestCase {
                 ModelKeys.customModel = "fake-model"
                 ModelKeys.selectedProvider = .custom
                 let chat = ChatModel(app: app, kind: .handoff, requester: "Browser consent regression")
-                // With -approvalEvidence, the waiting card and the declined page of one deletion and one order.
+                // With -approvalEvidence, capture the waiting and declined cards, including a mixed route.
+                let evidenceName = ["Delete": "browser-delete", "提交订单": "browser-order"][sample.label]
+                    ?? (sample.action == "/transfer/delete/send/confirm" && sample.method == "get" && !sample.submit
+                        ? "browser-mixed-transfer" : nil)
                 let evidence = allowed || !ProcessInfo.processInfo.arguments.contains("-approvalEvidence") ? nil
-                    : ["Delete": "browser-delete", "提交订单": "browser-order"][sample.label]
+                    : evidenceName
                 var questions: [String] = []
                 app.onProbeApproval = { approval in
                     questions.append(approval.question)
