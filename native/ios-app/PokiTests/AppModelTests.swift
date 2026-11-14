@@ -583,12 +583,16 @@ final class InProcessPasscodeTests: XCTestCase {
 @MainActor
 final class FrontendSubtractionTests: XCTestCase {
     private var savedSetup: SetupState!
+    private var savedLanguage = AppLocalization.system
 
     override func setUp() {
         savedSetup = SetupState.load()
+        savedLanguage = AppLocalization.shared.preference
+        AppLocalization.shared.preference = "en"
     }
 
     override func tearDown() {
+        AppLocalization.shared.preference = savedLanguage
         savedSetup.save()
     }
 
