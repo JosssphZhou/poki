@@ -181,6 +181,65 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertFalse(said().contains("Stopping…"))
     }
 
+    func testStoppedTaskKeepsItsReceiptWhenCreatingAConversation() async throws {
+        try await checkStoppedTaskReceipt(switchToSavedChat: false)
+    }
+
+    func testStoppedTaskKeepsItsReceiptWhenSwitchingConversations() async throws {
+        try await checkStoppedTaskReceipt(switchToSavedChat: true)
+    }
+
+    private func checkStoppedTaskReceipt(switchToSavedChat: Bool) async throws {
+        let waits = Array(repeating: ["wait": 1000], count: 15)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("do", ["actions": waits]),
+            FakeCompletions.text("New reply."),
+        ])
+        let chat = chat(on: server)
+        var records: [TaskRecord] = []
+        ChatModel.afterTask = { records.append($0) }
+        let store = SessionStore.shared
+        let original = chat.sessionID
+        defer { store.delete(original); store.delete(chat.sessionID) }
+
+        chat.send("Old task")
+        let deadline = ContinuousClock.now + .seconds(15)
+        while chat.awaitingModel, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(chat.awaitingModel)
+        chat.stop()
+        XCTAssertEqual(store.session(original)?.lastLine, "Stopping…")
+
+        if switchToSavedChat {
+            let saved = SavedSession(id: UUID().uuidString, kind: .poki, client: nil, title: "Existing chat",
+                                     started: Date(), updated: Date(), live: false, outcome: nil,
+                                     entries: [ChatEntry(.you("Existing message", delivered: true))], calls: [])
+            chat.restore(saved)
+            XCTAssertEqual(chat.sessionID, saved.id)
+        } else {
+            chat.newConversation()
+        }
+        let destination = chat.sessionID
+        XCTAssertNotEqual(destination, original)
+        chat.send("New task")
+        while ContinuousClock.now < deadline {
+            if records.count == 2, store.session(original)?.lastLine == "Stopped." { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        XCTAssertEqual(records.map(\.session), [original, destination])
+        XCTAssertEqual(records.map(\.task), ["Old task", "New task"])
+        XCTAssertEqual(records.first?.calls.map(\.name), ["do"])
+        XCTAssertEqual(records.last?.calls.count, 0)
+        XCTAssertEqual(store.record(original).map(\.name), ["do"])
+        XCTAssertTrue(store.record(destination).isEmpty)
+        XCTAssertTrue(chat.savedCalls.isEmpty)
+        XCTAssertEqual(store.session(original)?.outcome, .stopped)
+        XCTAssertEqual(store.session(original)?.lastLine, "Stopped.")
+        XCTAssertEqual(store.session(destination)?.outcome, .done)
+    }
+
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
     /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {
