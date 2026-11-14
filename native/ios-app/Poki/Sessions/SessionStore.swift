@@ -105,6 +105,10 @@ final class SessionStore {
     static let agentIdle: TimeInterval = 10 * 60
 
     private(set) var sessions: [SavedSession] = []
+    /// A conversation that just left the list, archived or deleted. The screen that still shows it
+    /// leaves it (`RootView`), so it no longer stays open in the chat and its next line does not save it back.
+    struct Removal: Equatable { let id: String; let serial: Int }
+    private(set) var removed: Removal?
     private let folder: URL
     private let defaults: UserDefaults
     private var pendingWrites: Set<String> = []
@@ -305,6 +309,7 @@ final class SessionStore {
         guard var session = session(id), !session.live, session.archived == nil else { return }
         session.archived = Date()
         put(session)
+        removed = Removal(id: id, serial: (removed?.serial ?? 0) + 1)
     }
 
     /// Back to the conversations list, at its own time and place among the days; for the limit it counts
@@ -319,6 +324,7 @@ final class SessionStore {
     func delete(_ id: String) {
         sessions.removeAll { $0.id == id }
         try? FileManager.default.removeItem(at: file(id))
+        removed = Removal(id: id, serial: (removed?.serial ?? 0) + 1)
     }
 
     // MARK: Outside agents
