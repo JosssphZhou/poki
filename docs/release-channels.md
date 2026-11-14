@@ -32,11 +32,13 @@ Poki Setup orders versions so that `0.3.0-beta.1 < 0.3.0-beta.2 < 0.3.0 < 0.3.0-
 suffix sorts below the plain version, a build number above it.
 
 Until November 2026 app releases were tagged `ios-vX.Y.Z`, `ios-vX.Y.Z-beta.K`, `ios-alpha-X.Y.Z-N` and
-`ios-prealpha-X.Y.Z-N`; Poki Setup reads both schemes. Older Poki Setup builds that do not recognize `app-*` still need the old
-rolling releases `ios-prealpha-latest` and `ios-alpha-latest`, which carry the Poki Setup update too.
-Compatibility depends on the build, not just the 0.2.2 version label: revision `481faf22`, whose main commit count is
-661, already recognizes both schemes. This is a source check, not a check of the shipped binary. Pre-alpha and Alpha continue to publish those compatibility
-copies. New Betas use `app-*`; the independently numbered `ios-beta-*` compatibility records below remain available to installed clients.
+`ios-prealpha-X.Y.Z-N`; Poki Setup reads both schemes. Pre-alpha and Alpha each have one rolling
+release, `app-prealpha-latest` and `app-alpha-latest`; builds are no longer copied into the old
+`ios-prealpha-latest` and `ios-alpha-latest`. Older Poki Setup builds that do not recognize `app-*` read
+only those, so they stay on the last build there. Compatibility depends on the build, not just the 0.2.2
+version label: revision `481faf22`, whose main commit count is 661, already recognizes both schemes. This
+is a source check, not a check of the shipped binary. New Betas use `app-*`; the independently numbered
+`ios-beta-*` compatibility records below remain available to installed clients.
 
 N is the commit count of the built commit on `main`, so it only goes up while `main` is never
 rewritten. New Beta IPA filenames retain the numeric build, which must match `CFBundleVersion` inside the app. Stable filenames still omit it.
