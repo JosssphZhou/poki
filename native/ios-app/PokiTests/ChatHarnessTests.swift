@@ -371,3 +371,33 @@ final class FakeCompletions: @unchecked Sendable {
         }.joined(separator: "\n")
     }
 }
+
+final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
+    private let session: FakeAutomation
+    private let beforeRequest: (@Sendable () async -> Void)?
+    init(session: FakeAutomation, beforeRequest: (@Sendable () async -> Void)? = nil) {
+        self.session = session
+        self.beforeRequest = beforeRequest
+    }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        await beforeRequest?()
+        guard session.isOpen else { throw URLError(.cannotConnectToHost) }
+        let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
+        let value: JSON
+        switch path {
+        case "/session": value = ["sessionId": "fixture-session"]
+        case "/status": value = ["ready": true]
+        case "/wda/locked": value = false
+        case "/wda/screen": value = ["screenSize": ["width": 390, "height": 844]]
+        case "/wda/activeAppInfo":
+            value = ["bundleId": "com.apple.Preferences", "name": "Settings"]
+        case "/screenshot": value = .string("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII=")
+        case "/source":
+            value = .string(#"<AppiumAUT><XCUIElementTypeApplication name="Settings" label="Settings" x="0" y="0" width="390" height="844"><XCUIElementTypeButton name="General" label="General" x="16" y="100" width="358" height="44" /></XCUIElementTypeApplication></AppiumAUT>"#)
+        default: value = .null
+        }
+        let response: JSON = ["value": value]
+        return (200, response.data())
+    }
+}
