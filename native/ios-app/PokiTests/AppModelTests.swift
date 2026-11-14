@@ -842,9 +842,9 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertTrue(session.isOpen, "thinking between phone steps must keep the same session")
         XCTAssertFalse(model.runnerPaused)
 
+        // No idle time is waited for: the end of the task closes the session.
         model.chatTaskEnded(reply: nil, session: "test", acted: true)
-        model.checkIdle(now: Date().addingTimeInterval(61))
-        await waitFor("the completed task closes automation even while Poki is in front") {
+        await waitFor("the completed task closes automation at once, even while Poki is in front") {
             !self.session.isOpen && self.model.runnerPaused
         }
         XCTAssertFalse(model.hasOpenInProcessSession)

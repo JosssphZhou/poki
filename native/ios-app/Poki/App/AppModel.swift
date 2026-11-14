@@ -442,10 +442,11 @@ final class AppModel {
     /// Counts closes, so an open that began before one is not taken as the state after it.
     private var inProcessEpoch = 0
     private var inProcessWarmToken = 0
-    /// A session of this launch was closed. One reopened in the same launch answers no reads (the
-    /// phone, builds 144-149: every look timed out after a stand-by, a restart, or Off then On), so
-    /// Poki starts again as a new process for the next one instead.
-    private var inProcessUsedUp = false
+    /// Was set when a session of this launch was closed, as one reopened in the same launch answered
+    /// no reads (builds 144-149) and Poki had to start over as a new process. A reopened session now
+    /// gets a local device of its own and reads (issue 347; five rounds on the iPhone, iOS 27.3), so
+    /// nothing sets it and Poki neither exits on Turn Off nor asks to be opened again.
+    private let inProcessUsedUp = false
 
     private var afterInProcessClose: [@MainActor () -> Void] = []
 
@@ -466,7 +467,6 @@ final class AppModel {
                 let reopen: Bool
                 if case .closing(let requested) = self.inProcessSession { reopen = requested } else { reopen = false }
                 self.inProcessSession = .idle
-                if !keepingSession, result["closed"] as? Bool == true, !self.sessionOn { self.inProcessUsedUp = true }
                 self.log.add("runner", keepingSession
                     ? "Automation Mode pause for \(why): \(result["paused"] as? Bool == true ? "paused" : "unavailable")"
                     : "in-process session close for \(why): \(result["closed"] as? Bool == true ? "closed" : "already closed")")
@@ -1036,13 +1036,8 @@ final class AppModel {
         }
         if !inFront { loopback.pause() }
         log.add("session", automationPath == .inProcess ? "turned off: closing the in-process session" : "turned off: ending the runner")
-        // In-process, a session closed in this launch cannot be opened again in it: Poki exits once
-        // the session has closed, and a notice says to open it again for the next task.
-        if automationPath == .inProcess {
-            closeInProcess("turned off") { [weak self] in self?.exitAfterStop() }
-            // A close that hangs does not keep Poki from exiting.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.exitAfterStop() }
-        }
+        // The session closes and Poki stays: the next turn-on opens a new one in this same launch.
+        if automationPath == .inProcess { closeInProcess("turned off") }
         core.stop()
         launcher.stop()
         if setup.loopback == .builtIn { tunnel.disconnect() }
@@ -1163,13 +1158,30 @@ final class AppModel {
     }
 
     /// The runner is off and starts on the next agent request.
-    private func standBy(reason: String?) {
+    private func standBy(reason: String?, keepingDone: Bool = false) {
         runnerPaused = true
         runner = RunnerStatus(state: "standby", detail: reason.map { "\($0). It starts again when an agent asks." } ?? "It starts when an agent asks.")
         host.update(runner: .starting(automationPath == .inProcess ? "opening the automation session" : "starting the runner"))
         host.setPaused(true)
         activityText = "Idle"
-        activity.update { $0.runnerPaused = true; $0.phase = .idle; $0.headline = "Runner asleep"; $0.since = nil }
+        activity.update { state in
+            state.runnerPaused = true
+            // A task that just ended keeps its finished Live Activity.
+            if keepingDone, state.phase == .done { return }
+            state.phase = .idle; state.headline = "Runner asleep"; state.since = nil
+        }
+    }
+
+    /// A task ended (the chat's turn, or an agent ended its session): the automation session, and
+    /// with it iOS's banner, closes at once rather than after the idle time. The next phone step
+    /// opens a new one. Not while another task, an approval or a hand-off still needs the session.
+    private func closeAfterTask(_ why: String) {
+        guard automationPath == .inProcess, sessionOn, !runnerPaused, !chatTaskActive, approvals.isEmpty,
+              handoffText == nil, activityText == "Idle" else { return }
+        log.add("runner", "\(why): closing the automation session at once; the banner goes with it")
+        ownerPaused = false
+        closeInProcess("the end of the task")
+        standBy(reason: nil, keepingDone: true)
     }
 
     /// Starts a paused runner again (the next agent request, or the owner).
@@ -1380,7 +1392,15 @@ final class AppModel {
         }
         for observer in shellObservers { observer(event) }
         switch event {
-        case .session: lastShot = nil
+        case .session(let signal):
+            lastShot = nil
+            if case .ended = signal {
+                // The core takes the phone back to where that agent's task began, then the session closes.
+                Task { [weak self, core] in
+                    _ = await core.finishTask()
+                    self?.closeAfterTask("an agent ended its session")
+                }
+            }
         case .relay(let status):
             if status != relayStatus { log.add("relay", "\(status)") }
             relayStatus = status
@@ -1496,7 +1516,11 @@ final class AppModel {
         if chatTaskActive { lastAgentActivity = Date() }
         chatTaskActive = false
         lastShot = nil
-        Task { [core, log] in if let line = await core.finishTask() { log.add("runner", line) } }
+        // The phone goes back to where the task began first: that still needs the session.
+        Task { [weak self, core, log] in
+            if let line = await core.finishTask() { log.add("runner", line) }
+            self?.closeAfterTask("the task ended")
+        }
     }
 
     // MARK: The chat's task
