@@ -388,7 +388,9 @@ async fn run() -> Result<()> {
             let mut signer = setup::Signer::open()?;
             if let Some(code) = code {
                 let saved = poki_setup_core::apple::store::secret_get(PENDING).ok_or_else(|| anyhow!("No sign-in is waiting for a code. Run `poki-setup login <email>` first."))?;
-                let pending: poki_setup_core::apple::gsa::Pending = serde_json::from_str(&saved)?;
+                let mut pending: poki_setup_core::apple::gsa::Pending = serde_json::from_str(&saved)?;
+                // --keep-password on either run keeps it (the first run's choice travels in `pending`).
+                pending.keep_password |= keep_password;
                 signer.finish_sign_in(pending, &code).await?;
                 let _ = poki_setup_core::apple::store::secret_delete(PENDING);
             } else {
