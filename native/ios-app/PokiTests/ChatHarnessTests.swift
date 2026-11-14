@@ -104,6 +104,37 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(server.requests.contains { Self.json($0).contains("Split View was restored") })
     }
 
+    func testSplitViewStopWhileWaitingDoesNotResumeWhenThePairReturns() async throws {
+        let transport = RotatingWorkspace()
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("look", ["pane": "left"]),
+            FakeCompletions.tool("look", ["pane": "right"]),
+            FakeCompletions.tool("do", ["actions": [["tap": [180, 200]]]]),
+        ])
+        let chat = chat(on: server, transport: transport)
+        defer { if chat.running { chat.stop() } }
+        chat.send("Focus the test field in Notes after reading Safari", inSplitView: true)
+
+        let pausedBy = ContinuousClock.now + .seconds(8)
+        while !chat.waitingForSplitView, ContinuousClock.now < pausedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(chat.waitingForSplitView)
+        XCTAssertEqual(server.requests.count, 2)
+
+        chat.stop()
+        transport.change(to: .restored)
+        let stoppedBy = ContinuousClock.now + .seconds(8)
+        while !chat.entries.contains(where: { if case .poki("Stopped.") = $0.kind { true } else { false } }),
+              ContinuousClock.now < stoppedBy {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(chat.entries.contains { if case .poki("Stopped.") = $0.kind { true } else { false } })
+        XCTAssertFalse(chat.running)
+        XCTAssertFalse(chat.waitingForSplitView)
+        XCTAssertEqual(server.requests.count, 2, "A cancelled read must never return to the model")
+        XCTAssertTrue(transport.restoredSides.isEmpty, "Stop must cancel the recovery polls")
+        XCTAssertEqual(transport.taps, 0)
+    }
+
     func testSplitViewChatInspectsTheDestinationAfterRotationDuringAnImageDrop() async throws {
         let transport = RotatingWorkspace(rotateAt: .drop)
         let drop = ["actions": [["drag": ["from": [150, 120], "to": [180, 220], "to_pane": "right"]]]]
