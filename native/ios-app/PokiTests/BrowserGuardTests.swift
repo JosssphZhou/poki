@@ -115,7 +115,7 @@ final class BrowserGuardTests: XCTestCase {
     /// any way an address can be written. (These tests serve from 127.0.0.1, which only a test run allows.)
     func testLocalAddressesAreNotWebsites() async throws {
         for host in ["localhost", "127.0.0.1", "2130706433", "0x7f.1", "10.0.0.1", "172.20.1.1", "192.168.1.1", "169.254.1.1", "100.64.0.1",
-                     "0.0.0.0", "router", "printer.local", "nas.lan", "[::1]", "::ffff:192.168.1.1", "fe80::1", "fd00::1", "example.com."] where host != "example.com." {
+                     "0.0.0.0", "router", "printer.local", "nas.lan", "[::1]", "::ffff:192.168.1.1", "fe80::1", "fd00::1"] {
             XCTAssertTrue(BrowserAddress.isLocal(host), host)
         }
         for host in ["example.com", "example.com.", "www.fandango.com", "8.8.8.8", "172.32.0.1", "100.128.0.1", "2606:4700::1111", "local.example.com"] {
