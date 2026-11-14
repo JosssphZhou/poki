@@ -62,7 +62,7 @@ jobs:
         with: { python-version: '3.12' }
       - name: Built ATS plist, real local HTTP and existing HTTPS
         run: |
-          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet pyyaml || true
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet pyyaml
           python3 scripts/check-ats-scope.py
 
   workflows:

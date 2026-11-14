@@ -153,14 +153,17 @@ def local_http_request():
 
 
 def existing_https_request():
-    print("\n=== Existing HTTPS host ===")
-    url = "https://api.github.com/repos/JosssphZhou/poki"
+    print("\n=== Existing HTTPS request ===")
+    # raw.githubusercontent.com is a host the app really loads: ProxyApps.modulesBase and
+    # DDI.mirror. A failure here fails the check; a skipped request is not a verified request.
+    url = "https://raw.githubusercontent.com/JosssphZhou/poki/main/native/ios-app/VERSION"
     try:
         with urllib.request.urlopen(url, timeout=10, context=ssl.create_default_context()) as response:
-            check(200 <= response.status < 500, "TLS GET " + url, "status=%d" % response.status)
+            body = response.read().decode().strip()
+            check(response.status == 200 and bool(body), "TLS GET " + url,
+                  "status=%d body=%r" % (response.status, body))
     except Exception as error:
-        # A blocked network is an environment limit, not a config failure. Say so.
-        print("SKIP  TLS GET " + url + "  " + repr(error))
+        check(False, "TLS GET " + url, repr(error))
 
 
 def main():
