@@ -31,6 +31,7 @@ export default function Account({ info }: { info: AppInfo | null }) {
     setBusy(false);
   };
   const anisetteIsSystem = acct?.anisette.kind === "system";
+  const sep = t(", ");
 
   return (
     <>
@@ -40,7 +41,7 @@ export default function Account({ info }: { info: AppInfo | null }) {
       {acct?.signed_in ? (
         <Card>
           <div className="row between">
-            <div className="grow"><h2 style={{ margin: 0 }}>{acct.name}</h2><div className="muted small">{acct.apple_id}{acct.password_kept ? ` · ${t("Keep me signed in for weekly renewal")}` : ""}</div></div>
+            <div className="grow"><h2 style={{ margin: 0 }}>{acct.name}</h2><div className="muted small">{acct.apple_id}{acct.password_kept ? `${sep}${t("Keep me signed in for weekly renewal")}` : ""}</div></div>
             <Capsule kind="ghost" onClick={() => api.signOut().then(load)}>{t("Sign out")}</Capsule>
           </div>
           <div className="hair" />
@@ -48,7 +49,7 @@ export default function Account({ info }: { info: AppInfo | null }) {
           {teams.map((tm) => (
             <label key={tm.team_id} className="row" style={{ padding: "6px 0" }}>
               <input type="radio" name="team" checked={acct.team_id === tm.team_id} onChange={() => api.chooseTeam(tm.team_id).then(load)} />
-              <span className="grow">{tm.name} <span className="muted small">{tm.team_id} · {tm.is_free ? t("free, Poki is signed 7 days at a time") : t("paid")}</span></span>
+              <span className="grow">{tm.name} <span className="muted small">{tm.team_id}{sep}{tm.is_free ? t("free, Poki is signed 7 days at a time") : t("paid")}</span></span>
             </label>
           ))}
         </Card>
@@ -57,7 +58,7 @@ export default function Account({ info }: { info: AppInfo | null }) {
           <h2>{t("Enter the code")}</h2>
           <p className="muted">{factor === "sms" ? t("Apple sent a code by text message.") : t("Apple sent a code to your devices.")}</p>
           <form className="row" onSubmit={(e) => { e.preventDefault(); finish(); }}>
-            <input className="input mono" style={{ width: 160, letterSpacing: "0.2em" }} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoFocus placeholder="000000" />
+            <input className="input mono" style={{ width: 160, letterSpacing: "0.2em" }} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoFocus aria-label={t("Verification code")} placeholder="000000" />
             <Capsule type="submit" disabled={busy || code.length !== 6}>{t("Continue")}</Capsule>
             <Capsule kind="ghost" onClick={() => setFactor(null)}>{t("Stop")}</Capsule>
           </form>
@@ -69,7 +70,7 @@ export default function Account({ info }: { info: AppInfo | null }) {
             <Field label={t("Password")}><input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></Field>
             <Toggle on={keep} onChange={setKeep} label={t("Keep me signed in for weekly renewal")} />
             <div><Capsule type="submit" disabled={busy || !appleId || !password}>{busy ? "…" : t("Sign in")}</Capsule></div>
-            <p className="muted small" style={{ margin: 0 }}>Your Apple ID and password go to Apple only, over TLS pinned to Apple's root. {anisetteIsSystem ? "" : "The anisette server sees a machine identity, never your Apple ID or password."}</p>
+            <p className="muted small" style={{ margin: 0 }}>{t("Your Apple ID and password go to Apple only, over TLS pinned to Apple's root.")}{anisetteIsSystem ? "" : ` ${t("The anisette server sees a machine identity, never your Apple ID or password.")}`}</p>
           </form>
         </Card>
       )}

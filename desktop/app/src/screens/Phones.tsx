@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, failureText, onProgress, type Handoff, type Record_ } from "../api";
-import { t } from "../i18n";
+import { t, tError } from "../i18n";
 import { Capsule, Card, ErrorBox, Pill, Qr, Steps, useSteps } from "../ui";
 
 export default function Phones() {
@@ -27,10 +27,11 @@ export default function Phones() {
     try { setQr({ udid, handoff: await api.sharePairing(udid) }); } catch (e) { setError(failureText(e)); }
   };
   const now = Date.now() / 1000;
+  const sep = t(", ");
   return (
     <>
       <h1 className="page-title">{t("Phones")}</h1>
-      <p className="page-sub">{t("free, Poki is signed 7 days at a time")}.</p>
+      <p className="page-sub">{t("free, Poki is signed 7 days at a time")}{t(".")}</p>
       <ErrorBox error={error} />
       {records.length === 0 && <Card><span className="muted">{t("No iPhone set up from this computer yet.")}</span></Card>}
       {records.map((r) => {
@@ -40,8 +41,8 @@ export default function Phones() {
             <div className="row between">
               <div className="grow">
                 <h2 style={{ margin: 0 }}>{r.phone_name}</h2>
-                <div className="muted small">iOS {r.ios} · Poki {r.version} ({r.build}) · {r.team_name}{r.team_is_free ? " · free" : ""} · <span className="mono">{r.bundle_id}</span></div>
-                {r.last_error && <div className="small" style={{ color: "var(--bad)", marginTop: 4 }}>{r.last_error}</div>}
+                <div className="muted small">iOS {r.ios}{sep}Poki {r.version} ({r.build}){sep}{r.team_name}{r.team_is_free ? `${sep}${t("free")}` : ""}{sep}<span className="mono">{r.bundle_id}</span></div>
+                {r.last_error && <div className="small" style={{ color: "var(--bad)", marginTop: 4 }}>{tError(r.last_error)}</div>}
               </div>
               <Pill tone={days < 0 ? "bad" : days <= 2 ? "warn" : "ok"}>{days < 0 ? t("expired") : `${days} ${t("days left")}`}</Pill>
               <Capsule onClick={() => renew(r.udid)} disabled={busy !== null}>{busy === r.udid ? t("Renewing…") : t("Renew")}</Capsule>

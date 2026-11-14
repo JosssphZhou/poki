@@ -83,7 +83,7 @@ impl Signer {
                 return Ok(t.clone());
             }
         }
-        let session = self.account.session.clone().ok_or_else(|| Error::NeedsPerson("Sign in with your Apple ID first.".into()))?;
+        let session = self.account.session.clone().ok_or_else(|| Error::NeedsPerson("Sign in with your Apple Account first.".into()))?;
         let fresh = match self.client.xcode_token(&session).await {
             Ok(t) => t,
             Err(Error::NeedsPerson(_)) | Err(Error::Apple { .. }) if self.account.password.is_some() => {
@@ -332,7 +332,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
             Some(lockdown_record)
         }
     };
-    reporter.done("pair", Some(format!("{} · iOS {}", facts.name, facts.ios)));
+    reporter.done("pair", Some(format!("{}, iOS {}", facts.name, facts.ios)));
 
     reporter.step("devmode", "Developer Mode");
     if facts.developer_mode != Some(true) {
@@ -343,7 +343,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     }
     reporter.done("devmode", Some("on".into()));
 
-    reporter.step("account", "Apple account");
+    reporter.step("account", "Apple Account");
     let team = signer.team().await?;
     reporter.done("account", Some(format!("{} ({})", team.name, if team.is_free { "free, 7-day signing" } else { "paid" })));
 
@@ -447,7 +447,7 @@ pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Resu
         }
         let facts = device::info::read(&phone).await?;
         let teams = signer.teams().await?;
-        let team = teams.into_iter().find(|t| t.team_id == rec.team_id).ok_or_else(|| Error::msg(format!("The Apple ID signed in is not on team {} any more.", rec.team_name)))?;
+        let team = teams.into_iter().find(|t| t.team_id == rec.team_id).ok_or_else(|| Error::msg(format!("The signed-in Apple Account is no longer on team {}.", rec.team_name)))?;
         let rel = release::latest().await?;
         let (ipa, zipp) = release::fetch(&rel, reporter).await?;
         let out = crate::paths::cache_dir()?.join(format!("Poki-{}-{}.ipa", team.team_id, udid));

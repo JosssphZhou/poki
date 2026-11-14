@@ -109,7 +109,7 @@ struct SetupView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title).font(.headline)
                 if let f = row.facts {
-                    Text("iOS \(f.ios) · \(f.productType)").font(.callout).foregroundStyle(.secondary)
+                    Text("iOS \(f.ios), \(f.productType)").font(.callout).foregroundStyle(.secondary)
                 } else if let e = row.error {
                     Text(e).font(.callout).foregroundStyle(.secondary)
                 }
@@ -138,7 +138,7 @@ struct SetupView: View {
             if let s = model.steps["pair"], !s.isEmpty, model.busyJobs.contains("pair") { StepsView(steps: s) }
             if let r = row.record {
                 LabeledContent("Poki") {
-                    statusText("\(r.version) · \(relativeDays(r))", r.daysLeft <= 2 ? .orange : .green)
+                    statusText("\(r.version), \(relativeDays(r))", r.daysLeft <= 2 ? .orange : .green)
                 }
             }
         }

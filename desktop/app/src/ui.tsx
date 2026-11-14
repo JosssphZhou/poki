@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { Progress } from "./api";
-import { t } from "./i18n";
+import { t, tError } from "./i18n";
 
 export function Card({ children, white, className = "" }: { children: ReactNode; white?: boolean; className?: string }) {
   return <section className={`card fade ${white ? "white" : ""} ${className}`}>{children}</section>;
@@ -28,7 +28,7 @@ export function Pill({ children, tone = "" }: { children: ReactNode; tone?: "" |
 }
 
 export function ErrorBox({ error }: { error: string | null }) {
-  return error ? <div className="error">{error}</div> : null;
+  return error ? <div className="error">{tError(error)}</div> : null;
 }
 
 export function Qr({ svg }: { svg: string }) {
@@ -74,8 +74,8 @@ export function Steps({ steps }: { steps: Step[] }) {
           <span className="dot">{s.state === "done" ? "✓" : s.state === "failed" ? "!" : i + 1}</span>
           <div className="grow">
             <div>{t(s.title)}</div>
-            {s.detail && <div className="detail">{s.detail}</div>}
-            {s.notes.map((n, j) => <div className="detail" key={j}>· {n}</div>)}
+            {s.detail && <div className="detail">{s.state === "failed" ? tError(s.detail) : s.detail}</div>}
+            {s.notes.map((n, j) => <div className="detail" key={j}>{n}</div>)}
             {s.fraction !== undefined && s.state === "active" && <div className="bar"><i style={{ width: `${Math.round(s.fraction * 100)}%` }} /></div>}
           </div>
         </li>

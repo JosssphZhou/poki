@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, failureKind, failureText, onProgress, type Account, type Handoff, type PhoneRow } from "../api";
-import { t } from "../i18n";
+import { t, tError } from "../i18n";
 import { Capsule, Card, ErrorBox, Pill, Qr, Steps, useInterval, useSteps } from "../ui";
 
 const STEPS = [
@@ -56,6 +56,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
     }
   };
 
+  const sep = t(", ");
   return (
     <>
       <div className="hero" style={{ marginBottom: 24 }}>
@@ -67,7 +68,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
       </div>
 
       <Card>
-        {listError && listError.kind === "usbmuxd" && <div className="note">{listError.text}</div>}
+        {listError && listError.kind === "usbmuxd" && <div className="note">{tError(listError.text)}</div>}
         {!phone && !listError && <div className="row"><span className="muted">{rows === null ? t("Looking for an iPhone…") : t("Plug the iPhone in with a cable and unlock it.")}</span></div>}
         {rows && rows.length > 1 && (
           <div className="seg" style={{ marginBottom: 12 }}>
@@ -79,8 +80,8 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
             <div className="grow">
               <h2 style={{ margin: 0 }}>{phone.facts?.name ?? t("Phone")}</h2>
               <div className="muted small">
-                {phone.facts ? `${phone.facts.product_type} · iOS ${phone.facts.ios}` : phone.error}
-                {phone.record && <> · {t("Poki is installed.")} {phone.record.version}</>}
+                {phone.facts ? `${phone.facts.product_type}${sep}iOS ${phone.facts.ios}` : (phone.error ? tError(phone.error) : null)}
+                {phone.record && <>{sep}{t("Poki is installed.")} {phone.record.version}</>}
               </div>
             </div>
             {phone.facts && <Pill tone={phone.facts.paired_with_this_computer ? "ok" : "warn"}>{t(phone.facts.paired_with_this_computer ? "paired" : "not paired")}</Pill>}
@@ -95,7 +96,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
           </div>
         ) : (
           <div className="row between">
-            <span className="muted small grow">{account?.name ?? account?.apple_id ?? ""}{account?.team_id ? ` · ${t("Team")} ${account.team_id}` : ""}</span>
+            <span className="muted small grow">{account?.name ?? account?.apple_id ?? ""}{account?.team_id ? `${sep}${t("Team")} ${account.team_id}` : ""}</span>
             <span className="muted small">{localIpa ? localIpa.split(/[\\/]/).pop() : t("Latest release")}</span>
             <Capsule kind="ghost" sm onClick={localIpa ? () => setLocalIpa(null) : pickIpa} disabled={running}>{localIpa ? t("Use the latest release") : t("Use an IPA file…")}</Capsule>
             <Capsule big={false} onClick={start} disabled={!phone || running || !account?.signed_in}>{running ? t("Setting up…") : t("Set up Poki")}</Capsule>
@@ -119,7 +120,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
       {result && (
         <Card white>
           <h2>{t("Done")}</h2>
-          <p style={{ margin: 0 }}>Poki {result.version} · {result.name}</p>
+          <p style={{ margin: 0 }}>Poki {result.version}{sep}{result.name}</p>
           {result.notes.map((n, i) => <p key={i} className="muted small" style={{ margin: "6px 0 0" }}>{n}</p>)}
           {result.handoff && (
             <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>

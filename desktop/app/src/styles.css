@@ -30,6 +30,7 @@
   }
 }
 :root[data-lang="zh-Hans"] { --font: "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }
+:root[data-lang="zh-Hant"] { --font: "Microsoft JhengHei UI", -apple-system, BlinkMacSystemFont, "PingFang TC", "Segoe UI", sans-serif; }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }

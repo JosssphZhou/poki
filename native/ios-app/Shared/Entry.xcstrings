@@ -38,29 +38,35 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 Poki 并开始说话。Poki 正在做任务时，显示这个任务，任务继续进行。"
+            "value" : "打开 Poki 并开始对话。如果 Poki 正在执行任务，会直接显示当前任务并继续运行。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開 Poki 並開始說話。Poki 正在做任務時，顯示這個任務，任務繼續進行。"
+            "value" : "開啟 Poki 並開始對話。如果 Poki 正在執行任務，會直接顯示目前任務並繼續執行。"
           }
         }
       }
     },
     "Poki couldn’t start the task. The chat says why." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki couldn’t start the task. Open the conversation to see why."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 没能开始这个任务，原因在聊天里。"
+            "value" : "Poki 未能启动该任务，请在对话中查看原因。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 沒能開始這個任務，原因在聊天裡。"
+            "value" : "Poki 無法啟動該任務，請在對話中查看原因。"
           }
         }
       }
@@ -70,13 +76,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 还在忙，这个任务没有开始。这里是 Poki 正在做的事。"
+            "value" : "Poki 正在处理其他任务，未启动新任务。以下是当前进度。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 還在忙，這個任務沒有開始。這裡是 Poki 正在做的事。"
+            "value" : "Poki 正在處理其他任務，未啟動新任務。以下是目前進度。"
           }
         }
       }
@@ -86,13 +92,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 已开始这个任务。开启 Poki 后它才能操作手机。"
+            "value" : "Poki 已接收任务。请开启 Poki，以便它操作此 iPhone。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 已開始這個任務。開啟 Poki 後它才能操作手機。"
+            "value" : "Poki 已接收任務。請開啟 Poki，以便它操作此 iPhone。"
           }
         }
       }
@@ -102,13 +108,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在这台 iPhone 上开始做这个任务，做完后告诉你。"
+            "value" : "Poki 会在此 iPhone 上执行任务，并在完成后通知你。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在這台 iPhone 上開始做這個任務，做完後告訴你。"
+            "value" : "Poki 會在此 iPhone 上執行任務，並在完成後通知你。"
           }
         }
       }
@@ -134,13 +140,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住操作按钮，就会打开 Poki 并开始说话。想改成输入任务，就在那里选「快捷指令」，再选「发任务」。控制中心和锁定屏幕也可以放「和 Poki 说话」。"
+            "value" : "按住操作按钮即可打开 Poki 并开始说话。如需改为输入文字任务，请在该处选择“快捷指令”，再选“发任务”。控制中心和锁定屏幕也可添加“和 Poki 说话”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住動作按鈕，就會打開 Poki 並開始說話。想改成輸入任務，就在那裡選「捷徑」，再選「發任務」。控制中心和鎖定畫面也可以放「和 Poki 說話」。"
+            "value" : "按住動作按鈕即可開啟 Poki 並開始說話。如需改為輸入文字任務，請在該處選擇「捷徑」，再選「發任務」。控制中心和鎖定畫面也可加入「和 Poki 說話」。"
           }
         }
       }
