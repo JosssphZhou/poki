@@ -32744,6 +32744,29 @@
           }
         }
       }
+    },
+    "The task has ended. Open Poki to see the result." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The task has ended. Open Poki to see the result."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任务已结束。打开 Poki 查看结果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任務已結束。開啟 Poki 檢視結果。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -620,6 +620,7 @@ final class AppModel {
         diskImage.notice()
         warmInProcess("Poki came to the front")
         openWhileInFront("Poki came to the front")
+        closeBecausePokiOpened()
         loopback.resume()
         // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
         // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
@@ -1166,8 +1167,9 @@ final class AppModel {
         activityText = "Idle"
         activity.update { state in
             state.runnerPaused = true
-            // A task that just ended keeps its finished Live Activity.
-            if keepingDone, state.phase == .done { return }
+            // A task that just ended keeps its finished Live Activity, and one waiting on the owner
+            // keeps what it asks.
+            if keepingDone, state.phase == .done || state.handoff != nil || state.approval != nil { return }
             state.phase = .idle; state.headline = "Runner asleep"; state.since = nil
         }
     }
@@ -1175,6 +1177,23 @@ final class AppModel {
     /// A task ended (the chat's turn, or an agent ended its session): the automation session, and
     /// with it iOS's banner, closes at once rather than after the idle time. The next phone step
     /// opens a new one. Not while another task, an approval or a hand-off still needs the session.
+    /// Poki opened in front of the owner while a session is open (the task came back to ask them
+    /// something, it ended here, or they opened Poki themselves): automation stops at once, as nothing
+    /// is done in Poki. Not during a step (a tap that landed on the Live Activity brings Poki forward,
+    /// and the core takes the agent back), nor while a session is still opening (iOS's own passcode
+    /// screen hands the front back to Poki). The next phone step opens a new session.
+    /// Task endings whose return to the app the task began in is still under way: that return needs
+    /// the session, so Poki coming forward because of it does not close the session under it.
+    private var endingTasks = 0
+
+    private func closeBecausePokiOpened() {
+        guard automationPath == .inProcess, sessionOn, !runnerPaused, inProcessSession == .open, !inProcessWarming,
+              stepUnderWay == nil, approvals.isEmpty, !probeDriven, endingTasks == 0 else { return }
+        log.add("runner", "Poki is in front: closing the automation session at once; the banner goes with it")
+        closeInProcess("Poki in front")
+        standBy(reason: nil, keepingDone: true)
+    }
+
     private func closeAfterTask(_ why: String) {
         guard automationPath == .inProcess, sessionOn, !runnerPaused, !chatTaskActive, approvals.isEmpty,
               handoffText == nil, activityText == "Idle" else { return }
@@ -1396,8 +1415,10 @@ final class AppModel {
             lastShot = nil
             if case .ended = signal {
                 // The core takes the phone back to where that agent's task began, then the session closes.
+                endingTasks += 1
                 Task { [weak self, core] in
                     _ = await core.finishTask()
+                    self?.endingTasks -= 1
                     self?.closeAfterTask("an agent ended its session")
                 }
             }
@@ -1512,14 +1533,17 @@ final class AppModel {
     /// A tool call from the chat's model loop. Poki turns on first when it is off (the runner then starts
     /// on this call, like for an agent's first request); when it cannot, the answer says why.
     /// The chat's turn ended: the phone goes back to the app the task began in, and the log says how.
-    func finishTask() {
+    func finishTask(then: (@MainActor () -> Void)? = nil) {
         if chatTaskActive { lastAgentActivity = Date() }
         chatTaskActive = false
         lastShot = nil
         // The phone goes back to where the task began first: that still needs the session.
+        endingTasks += 1
         Task { [weak self, core, log] in
             if let line = await core.finishTask() { log.add("runner", line) }
+            self?.endingTasks -= 1
             self?.closeAfterTask("the task ended")
+            then?()
         }
     }
 
@@ -1572,17 +1596,31 @@ final class AppModel {
             if !inFront, let reply, session == AskPoki.chat?.sessionID { postReply(reply) }
             return
         }
-        finishTask()
+        finishTask { [weak self] in
+            // A task ends in Poki or with a notice that breaks through: when the phone could not be
+            // brought back to Poki, the owner is told where they are.
+            Task { @MainActor [weak self] in
+                // Coming forward takes a moment after the return is answered.
+                try? await Task.sleep(for: .seconds(1.5))
+                guard let self, UIApplication.shared.applicationState != .active else { return }
+                self.log.add("chat", "the task ended away from Poki: time-sensitive notification sent")
+                self.postReply(reply ?? AppLocalization.text(LocalizedStringResource("The task has ended. Open Poki to see the result.")), timeSensitive: true)
+            }
+        }
         activity.finishNow(alert: true)
     }
 
     /// A reply that touched no phone, while Poki is not in front (Send Task to Poki from a shortcut): the
     /// notification is where the owner reads it. A tap opens Poki.
-    private func postReply(_ reply: String) {
+    private func postReply(_ reply: String, timeSensitive: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = "Poki"
         content.body = reply
         content.sound = .default
+        if timeSensitive {
+            content.interruptionLevel = .timeSensitive
+            content.userInfo = ["poki_link": "poki://chat"]
+        }
         content.threadIdentifier = "chat"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "poki-reply", content: content, trigger: nil))
     }
