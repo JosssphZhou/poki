@@ -557,7 +557,7 @@ static CGRect PKWorkspaceFrame(id root, PKDisplayGeometry display, BOOL right) {
 static id PKAutomationScreen(PKDisplayGeometry geometry) {
     Class type = NSClassFromString(@"XCUIScreen");
     id main = [type mainScreen];
-    if (!geometry.routesDisplay || (CGRectIsNull(geometry.peer) && geometry.bounds.size.width <= geometry.bounds.size.height)) return main;
+    if (!geometry.routesDisplay) return main;
     NSArray *screens = [type respondsToSelector:@selector(screens)] ? [(id)type screens] : nil;
     id matched = nil;
     for (id screen in screens) {
@@ -1177,8 +1177,7 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
         BOOL confirmed;
         @synchronized (self) {
             confirmed = [screen respondsToSelector:@selector(displayID)] && [_capturedDisplay isEqual:@([screen displayID])] &&
-                CGRectEqualToRect(geometry.bounds, _capturedGeometry.bounds) && CGRectEqualToRect(geometry.peer, _capturedGeometry.peer) &&
-                CGAffineTransformEqualToTransform(geometry.toFixed, _capturedGeometry.toFixed) && CGRectEqualToRect(_viewport, _capturedViewport);
+                PKSameDisplay(geometry, _capturedGeometry) && CGRectEqualToRect(_viewport, _capturedViewport);
         }
         if (!confirmed) return [PKOutcome delivery:PKDeliveryNotSent code:@"target_display_unavailable" detail:@"look again to confirm the current display"];
         // The orientation-only initializer encodes display 0, even when XCTest now considers
