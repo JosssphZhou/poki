@@ -293,6 +293,14 @@ extension Runner {
                 reading.notes.append("no element tree: \(e)")
             }
         }
+        // The phone serves one accessibility request at a time: while the app in front does not answer
+        // ("has not answered" in the refusal), nothing is read or touched, and nothing on this side can
+        // change that app. Someone at the phone can end it — the app goes to the background and answers
+        // there — so the failed read says that, after its own retry, instead of sending the model to
+        // retry into the same wall (a remote agent's user can pass it on; nobody may be at the phone).
+        if !treeCame, reading.notes.contains(where: { $0.contains("has not answered") }) {
+            reading.notes.append("the app in front is not answering the phone's accessibility requests (its main thread is busy), and the phone serves one such request at a time until it answers. If someone is with the phone, ask them to press the Home button or switch to another app, then look again; if no one is, the read goes through when that app answers, so wait and retry")
+        }
         let treeAt = now()
         if treeCame {
             let noteSaysLimits = reading.notes.last?.contains("within this call") ?? false
