@@ -19,6 +19,9 @@ final class PiLoop {
     let model: Model
     private let agent: Agent
     private let gate = StopGate()
+    /// A custom address's HTTP client, which repairs a doubled `data:` stream and keeps what the address
+    /// answered for the log.
+    private let endpoint: CustomEndpointClient?
 
     var signature: String { "pi:\(provider.rawValue)/\(model.id)" }
     var messages: [AgentMessage] { agent.state.messages }
@@ -28,6 +31,8 @@ final class PiLoop {
         self.provider = provider
         self.model = model
         let gate = self.gate
+        let endpoint = provider == .custom ? CustomEndpointClient() : nil
+        self.endpoint = endpoint
         let agentTools = tools.map { spec in
             AgentTool(label: spec.name, name: spec.name, description: spec.description, parameters: spec.schema.mapValues { AnyCodable($0) }) { id, params, signal, _ in
                 if gate.stopped { return Self.result(PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)) }
@@ -43,6 +48,13 @@ final class PiLoop {
         // agent/pi-session.mjs: low thinking, one tool call at a time.
         agent = Agent(AgentOptions(
             initialState: AgentState(model: model, thinkingLevel: .low, tools: agentTools, messages: messages),
+            streamFn: endpoint.map { client -> StreamFn in
+                { model, context, options in
+                    var options = options
+                    options.httpClient = client
+                    return try streamSimple(model: model, context: context, options: options)
+                }
+            },
             getApiKey: { _ in await ModelCredential.apiKey(for: provider) },
             toolExecution: .sequential
         ))
@@ -81,6 +93,10 @@ final class PiLoop {
         }
         if gate.stopped { return gate.wasOverTurns ? .overTurns : .stopped }
         if let message = failure.value {
+            if let seen = endpoint?.seen {
+                let key = ModelKeys.key(provider)
+                AppLog.shared.add("model", seen.summary(key: key) + ", failed: " + CustomEndpointClient.redacted(message, key: key))
+            }
             // The owner's message goes again with the next one, as with the direct clients.
             _ = agent.dropTrailingErroredAssistant()
             return .failed(Self.words(message, provider: provider))
