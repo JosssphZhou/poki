@@ -103,7 +103,7 @@ struct InterfaceSizeSettingsView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .navigationTitle("Interface Size")
+        .navigationTitle(AppLocalization.text(LocalizedStringResource("Interface Size")))
         .navigationBarTitleDisplayMode(.inline)
     }
 

@@ -48,18 +48,29 @@ final class InterfaceSizeLocalizationTests: XCTestCase {
                 AppLocalization.shared.preference = preference
                 window.layoutIfNeeded()
                 CATransaction.flush()
-                let expected = preview ? [message, reminder] : [browserTitle]
+                let navigationTitle = ["en": "Interface Size", "zh-Hans": "界面大小",
+                                       "zh-Hant": "介面大小", "system": "Interface Size"][preference]!
+                let expected = preview ? [message, reminder, navigationTitle] : [browserTitle]
                 var source = ""
+                var browserElements = BrowserHeaderElements()
                 let deadline = CACurrentMediaTime() + 10
                 repeat {
                     source = await Task.detached {
                         var code: NSString?
                         return PKInProcess.shared().sourceXML(nil, code: &code) ?? ""
                     }.value
-                    if expected.allSatisfy(source.contains) { break }
+                    browserElements = try BrowserHeaderElements(source)
+                    let matched = preview ? expected.allSatisfy(source.contains)
+                        : browserElements.titles == [browserTitle] && browserElements.closeButtonPresent
+                    if matched { break }
                     try await Task.sleep(for: .milliseconds(50))
                 } while CACurrentMediaTime() < deadline
-                for text in expected { XCTAssertTrue(source.contains(text), "\(preference): missing \(text)") }
+                if preview {
+                    for text in expected { XCTAssertTrue(source.contains(text), "\(preference): missing \(text)") }
+                } else {
+                    XCTAssertTrue(browserElements.closeButtonPresent, "\(preference): the close button must remain present")
+                    XCTAssertEqual(browserElements.titles, [browserTitle], "\(preference): compare only the identified header text")
+                }
                 XCTAssertTrue(window.rootViewController === controller)
                 let name = "\(preview ? "preview" : "browser")-\(preference)"
                 try source.write(to: output.appendingPathComponent("\(name).xml"), atomically: true, encoding: .utf8)
@@ -78,9 +89,37 @@ private struct LocalizationReviewView: View {
 
     var body: some View {
         Group {
-            if preview { InterfaceSizeSettingsView() }
+            if preview { NavigationStack { InterfaceSizeSettingsView() } }
             else { BrowserPanel().padding() }
         }
         .environment(\.locale, AppLocalization.locale)
+    }
+}
+
+/// Read the identified title separately from action labels such as “Close Browser”.
+private final class BrowserHeaderElements: NSObject, XMLParserDelegate {
+    private(set) var titles: [String] = []
+    private(set) var closeButtonPresent = false
+
+    override init() {}
+
+    convenience init(_ source: String) throws {
+        self.init()
+        let parser = XMLParser(data: Data(source.utf8))
+        parser.delegate = self
+        guard parser.parse() else {
+            throw parser.parserError ?? NSError(domain: "InterfaceSizeLocalizationTests", code: 1)
+        }
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+                qualifiedName: String?, attributes: [String: String]) {
+        if elementName == "XCUIElementTypeStaticText", attributes["name"] == "browser.header.title",
+           let label = attributes["label"] {
+            titles.append(label)
+        }
+        if elementName == "XCUIElementTypeButton", attributes["name"] == "browser.close" {
+            closeButtonPresent = true
+        }
     }
 }

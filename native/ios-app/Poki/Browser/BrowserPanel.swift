@@ -93,6 +93,7 @@ struct BrowserPanel: View {
     private var headerText: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(browser.host.isEmpty ? AppLocalization.text(LocalizedStringResource("Poki’s Browser")) : browser.host)
+                .accessibilityIdentifier("browser.header.title")
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
             Text(status)
@@ -129,6 +130,7 @@ struct BrowserPanel: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.circle)
                     .accessibilityLabel(Text("Close Browser"))
+                    .accessibilityIdentifier("browser.close")
                     .accessibilityShowsLargeContentViewer {
                         Label("Close Browser", systemImage: "xmark")
                     }
