@@ -7,19 +7,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is chosen, but nothing answers at 10.7.0.1 right now. Open %@, make sure it is connected with the loopback on, then come back; this page updates by itself."
+            "value" : "%@ is selected, but nothing is answering at 10.7.0.1. Open %@, confirm it is connected with Loopback on, then return here. This page updates automatically."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已选择 %@，但 10.7.0.1 目前没有响应。请打开 %@，确认已连接并开启回环，然后返回；此页面会自动更新。"
+            "value" : "已选择 %@，但 10.7.0.1 目前没有响应。请打开 %@，确认已连接并开启回环，然后返回。此页面会自动更新。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已選擇 %@，但 10.7.0.1 目前沒有回應。請打開 %@，確認已連線並開啟迴路，然後返回；此頁面會自動更新。"
+            "value" : "已選擇 %@，但 10.7.0.1 目前沒有回應。請開啟 %@，確認已連線並開啟迴環，然後返回。此頁面會自動更新。"
           }
         }
       }
@@ -30,19 +30,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · Coming in an update"
+            "value" : "%@, coming in an update"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · 将在后续更新中提供"
+            "value" : "%@（将在后续更新中提供）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · 將在後續更新中提供"
+            "value" : "%@（將在後續更新中提供）"
           }
         }
       }
@@ -53,19 +53,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · Text chat"
+            "value" : "%@, text chat"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · 文字聊天"
+            "value" : "%@（文字对话）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · 文字聊天"
+            "value" : "%@（文字對話）"
           }
         }
       }
@@ -76,19 +76,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · Text chat and live voice"
+            "value" : "%@, text chat and live voice"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · 文字聊天和实时语音"
+            "value" : "%@（文字对话与实时语音）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ · 文字聊天和即時語音"
+            "value" : "%@（文字對話與即時語音）"
           }
         }
       }
@@ -105,13 +105,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "代理操作可正常执行"
+            "value" : "智能体操作可正常执行"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "代理操作可正常執行"
+            "value" : "代理程式操作可正常執行"
           }
         }
       }
@@ -122,7 +122,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "As reported by users of %@; not checked against its documentation. The status on the Loopback page tells whether it works."
+            "value" : "Based on reports from %@ users and not verified against its documentation. Check the status on the Loopback page to confirm it works."
           }
         },
         "zh-Hans" : {
@@ -134,7 +134,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "根據 %@ 使用者回報整理，尚未核對其文件。是否可用請查看「迴路」頁面的狀態。"
+            "value" : "根據 %@ 使用者回報整理，尚未核對其文件。是否可用請查看「迴環」頁面的狀態。"
           }
         }
       }
@@ -168,19 +168,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dictation to %@; Poki reads the answer aloud"
+            "value" : "Dictate to %@, and Poki reads the reply aloud"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "听写发送给 %@；Poki 会朗读回复"
+            "value" : "听写发送给 %@，Poki 朗读回复"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聽寫傳送給 %@；Poki 會朗讀回覆"
+            "value" : "聽寫傳送給 %@，Poki 朗讀回覆"
           }
         }
       }
@@ -243,13 +243,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "记忆保存供所有代理共享的流程和笔记。诊断包含日志、检查、后台保持、地址和实时活动预览。"
+            "value" : "“记忆”保存所有智能体共享的流程与备忘。“诊断”包含日志、检查、后台保持、地址和实时活动预览。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "記憶儲存供所有代理共用的流程與筆記。診斷包含日誌、檢查、背景保持、位址與即時動態預覽。"
+            "value" : "「記憶」儲存所有代理程式共享的流程與備忘。「診斷」包含日誌、檢查、背景保持、位址與即時動態預覽。"
           }
         }
       }
@@ -283,19 +283,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pairing on the phone itself needs iOS 27; this iPhone runs iOS %@. Pair it from a computer instead."
+            "value" : "On-device pairing requires iOS 27, and this iPhone runs iOS %@. Pair from a computer instead."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在手机上配对需要 iOS 27；此 iPhone 运行的是 iOS %@。请改用电脑配对。"
+            "value" : "本机直接配对需要 iOS 27，此 iPhone 当前运行 iOS %@。请改用电脑配对。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在手機上配對需要 iOS 27；此 iPhone 執行的是 iOS %@。請改用電腦配對。"
+            "value" : "本機直接配對需要 iOS 27，此 iPhone 目前執行 iOS %@。請改用電腦配對。"
           }
         }
       }
@@ -322,19 +322,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki keeps this key; chatting with %@ comes in an update."
+            "value" : "Poki saves this key. Conversations with %@ are coming in an update."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 会保存此密钥；与 %@ 聊天的功能将在后续更新中提供。"
+            "value" : "Poki 会保存此密钥，与 %@ 对话的功能将在后续更新中提供。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 會儲存此金鑰；與 %@ 聊天的功能將在後續更新中提供。"
+            "value" : "Poki 會儲存此金鑰，與 %@ 對話的功能將在後續更新中提供。"
           }
         }
       }
@@ -968,7 +968,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重新連線 LocalDevVPN 或代理 App，再到「設定精靈 › 配對」重新配對。10.7.0.1 已連通，但遠端配對服務未回應。"
+            "value" : "請重新連線 LocalDevVPN 或代理 App，再到「初始設定 › 配對」重新配對。10.7.0.1 已連通，但遠端配對服務未回應。"
           }
         },
         "en" : {
@@ -1098,7 +1098,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "網路地址"
+            "value" : "網路位址"
           }
         }
       }
@@ -1114,7 +1114,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體"
+            "value" : "代理程式"
           }
         },
         "en" : {
@@ -1282,7 +1282,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增地址"
+            "value" : "新增位址"
           }
         }
       }
@@ -1423,7 +1423,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在客戶端中將此地址新增為遠端 MCP 伺服器。Poki 執行期間，任何持有此地址的人都能控制此 iPhone。請妥善保管，如有洩露請在此處撤銷。"
+            "value" : "在用戶端中將此位址新增為遠端 MCP 伺服器。Poki 執行期間，任何持有此位址的人都能控制此 iPhone。請妥善保管，如有洩露請在此處撤銷。"
           }
         }
       }
@@ -1477,7 +1477,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增智慧體"
+            "value" : "新增代理程式"
           }
         },
         "en" : {
@@ -1547,7 +1547,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "服務地址"
+            "value" : "服務位址"
           }
         }
       }
@@ -1580,7 +1580,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟迴環，以便 Poki 執行點擊。智慧體已連上此 iPhone。"
+            "value" : "請開啟迴環，以便 Poki 執行點擊。代理程式已連上此 iPhone。"
           }
         },
         "en" : {
@@ -1602,7 +1602,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體無法連線此 iPhone"
+            "value" : "代理程式無法連線此 iPhone"
           }
         },
         "en" : {
@@ -1624,7 +1624,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體 ›"
+            "value" : "代理程式 ›"
           }
         }
       }
@@ -2036,7 +2036,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "相容 OpenAI 的介面地址"
+            "value" : "相容 OpenAI 的介面位址"
           }
         }
       }
@@ -2116,13 +2116,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "审批"
+            "value" : "批准"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "審批"
+            "value" : "批准"
           }
         }
       }
@@ -2491,7 +2491,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "修改地址"
+            "value" : "修改位址"
           }
         }
       }
@@ -2514,16 +2514,22 @@
     },
     "Change the chat model on Poki’s card: tap Poki’s picture at the top of the chat. Dictation in the message field needs no account." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To change the conversation model, tap Poki’s picture at the top of the conversation. Message dictation requires no account."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Poki 的卡片里更换聊天模型：轻点对话顶部 Poki 的头像。输入框听写不需要账户。"
+            "value" : "如需更换对话模型，请轻点对话顶部的 Poki 头像。输入框听写无需账户。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Poki 的卡片裡更換聊天模型：輕點對話頂部 Poki 的頭像。輸入框聽寫不需要帳戶。"
+            "value" : "如需更換對話模型，請輕點對話頂部的 Poki 頭像。輸入框聽寫無需帳號。"
           }
         }
       }
@@ -2550,7 +2556,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在“设置 › 隐私与安全 › 开发者模式”中开启开发者模式，并确认系统为 iOS 17.4 或更高版本。"
+            "value" : "请在“设置 › 隐私与安全性 › 开发者模式”中开启开发者模式，并确认系统为 iOS 17.4 或更高版本。"
           }
         },
         "zh-Hant" : {
@@ -2627,7 +2633,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「設定精靈」中選擇並開啟本機連線。"
+            "value" : "請先在「初始設定」中選擇並開啟本機連線。"
           }
         },
         "en" : {
@@ -2671,7 +2677,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude、Codex 等 MCP 客戶端替你輕點和輸入。每一步都清晰可見，敏感操作須經你批准。"
+            "value" : "Claude、Codex 等 MCP 用戶端替你輕點和輸入。每一步都清晰可見，敏感操作須經你批准。"
           }
         }
       }
@@ -3173,7 +3179,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "複製地址"
+            "value" : "複製位址"
           }
         }
       }
@@ -3302,7 +3308,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自定義地址"
+            "value" : "自訂端點"
           }
         }
       }
@@ -3630,13 +3636,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已關閉 %1$@ 的私隱通知：「%2$@」"
+            "value" : "已關閉 %1$@ 的隱私權提示：「%2$@」"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关掉了 %1$@ 的隐私告知：“%2$@”"
+            "value" : "已关闭 %1$@ 的隐私提示：“%2$@”"
           }
         }
       }
@@ -3723,7 +3729,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請勿手動開啟 Poki Runner。智慧體需要時 Poki 會自動啟動它。"
+            "value" : "請勿手動開啟 Poki Runner。代理程式需要時 Poki 會自動啟動它。"
           }
         },
         "en" : {
@@ -3826,7 +3832,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中開啟本機連線，待檢查通過後重新配對。"
+            "value" : "請在「初始設定」中開啟本機連線，待檢查通過後重新配對。"
           }
         },
         "en" : {
@@ -3897,7 +3903,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iPhone 要求時請輸入鎖屏密碼"
+            "value" : "iPhone 提示時請輸入鎖定畫面密碼"
           }
         }
       }
@@ -3989,13 +3995,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先在“设置 › 智能体 › 服务地址”中填写中转地址。Poki 没有默认中转。"
+            "value" : "请先在“设置 › 智能体 › 服务地址”中填写中继地址。Poki 没有默认中继。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「設定 › 智慧體 › 服務位址」中填寫中轉位址。Poki 沒有預設中轉。"
+            "value" : "請先在「設定 › 代理程式 › 服務位址」中填寫中繼位址。Poki 沒有預設中繼。"
           }
         }
       }
@@ -4006,7 +4012,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先在“设置 › 外部智能体 › 服务地址”中填写中转地址。Poki 没有默认中转。"
+            "value" : "请先在“设置 › 外部智能体 › 服务地址”中填写中继地址。Poki 没有默认中继。"
           }
         },
         "en" : {
@@ -4018,7 +4024,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「設定 › 外部智慧體 › 服務位址」中填寫中轉位址。Poki 沒有預設中轉。"
+            "value" : "請先在「設定 › 外部代理程式 › 服務位址」中填寫中繼位址。Poki 沒有預設中繼。"
           }
         }
       }
@@ -4040,7 +4046,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "所有智慧體在此 iPhone 上執行過的操作，不可刪除。"
+            "value" : "所有代理程式在此 iPhone 上執行過的操作，不可刪除。"
           }
         }
       }
@@ -4222,7 +4228,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "處理下方問題後，智慧體即可使用此 iPhone。"
+            "value" : "處理下方問題後，代理程式即可使用此 iPhone。"
           }
         },
         "en" : {
@@ -4292,7 +4298,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完全訪問讓面板能與本機上的 Poki 通訊。它不聯網，也不使用剪貼簿。"
+            "value" : "「完整取用」讓面板能與本機上的 Poki 通訊。它不連線網路，也不使用剪貼簿。"
           }
         }
       }
@@ -4330,7 +4336,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 App Store 獲取 LocalDevVPN"
+            "value" : "在 App Store 取得 LocalDevVPN"
           }
         }
       }
@@ -4368,7 +4374,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "為 Poki 生成訪問此 iPhone 的專屬金鑰。金鑰僅保留在本機上。"
+            "value" : "為 Poki 產生連線此 iPhone 的專屬金鑰。金鑰僅保留在本機上。"
           }
         }
       }
@@ -4407,7 +4413,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外部智慧體 ›"
+            "value" : "外部代理程式 ›"
           }
         }
       }
@@ -4893,7 +4899,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中開啟本機連線，或選擇外部連線。"
+            "value" : "請在「初始設定」中開啟本機連線，或選擇外部連線。"
           }
         },
         "en" : {
@@ -4915,13 +4921,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In Poki Setup."
+            "value" : "In Setup."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Poki 的「設定精靈」中。"
+            "value" : "在 Poki 的「初始設定」中。"
           }
         }
       }
@@ -5025,7 +5031,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "檢查代理 App，或在「設定精靈」中重新配對。"
+            "value" : "檢查代理 App，或在「初始設定」中重新配對。"
           }
         }
       }
@@ -5055,16 +5061,22 @@
     "Install **Poki Runner** (poki-runner-unsigned.ipa) with the same tool and Apple ID you used for Poki." : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install **Poki Runner** (poki-runner-unsigned.ipa) with the same signing tool and Apple Account you used for Poki."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用与安装 Poki 相同的工具和 Apple ID 安装 **Poki Runner** (poki-runner-unsigned.ipa)。"
+            "value" : "使用安装 Poki 时的同一签名工具和 Apple 账户安装 **Poki Runner**（poki-runner-unsigned.ipa）。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用與安裝 Poki 相同的工具和 Apple ID 安裝 **Poki Runner** (poki-runner-unsigned.ipa)。"
+            "value" : "使用安裝 Poki 時的同一簽名工具和 Apple 帳號安裝 **Poki Runner**（poki-runner-unsigned.ipa）。"
           }
         }
       }
@@ -5120,16 +5132,22 @@
     "Install Poki Runner (poki-runner-unsigned.ipa) with the same signing tool and Apple ID as Poki, then trust its developer in Settings → General → VPN & Device Management." : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install Poki Runner (poki-runner-unsigned.ipa) with the same signing tool and Apple Account as Poki, then trust its developer in Settings › General › VPN & Device Management."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用与 Poki 相同的签名工具和 Apple ID 安装 Poki Runner（poki-runner-unsigned.ipa），然后在“设置 › 通用 › VPN 与设备管理”中信任它的开发者。"
+            "value" : "使用与 Poki 相同的签名工具和 Apple 账户安装 Poki Runner（poki-runner-unsigned.ipa），然后在“设置 › 通用 › VPN 与设备管理”中信任开发者。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用與 Poki 相同的簽名工具和 Apple ID 安裝 Poki Runner（poki-runner-unsigned.ipa），然後在「設定 › 通用 › VPN 與裝置管理」中信任它的開發者。"
+            "value" : "使用與 Poki 相同的簽名工具和 Apple 帳號安裝 Poki Runner（poki-runner-unsigned.ipa），然後在「設定 › 一般 › VPN 與裝置管理」中信任開發者。"
           }
         }
       }
@@ -5282,7 +5300,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請勿在 tun 地址列表中包含 IPv6。"
+            "value" : "請勿在 tun 位址列表中包含 IPv6。"
           }
         }
       }
@@ -5407,7 +5425,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "金鑰僅儲存在本機鑰匙串中，且僅傳送給對應服務商。"
+            "value" : "金鑰僅儲存在本機鑰匙圈中，且僅傳送給對應服務商。"
           }
         }
       }
@@ -5423,7 +5441,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "實時語音已關閉"
+            "value" : "即時語音已關閉"
           }
         }
       }
@@ -5487,7 +5505,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上次響應耗時 %lld 毫秒"
+            "value" : "上次回應耗時 %lld 毫秒"
           }
         }
       }
@@ -5563,7 +5581,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允許智慧體執行待批准的步驟。"
+            "value" : "允許代理程式執行待批准的步驟。"
           }
         },
         "en" : {
@@ -5662,7 +5680,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請為 Poki 開啟即時動態，以檢視智慧體步驟並批准敏感操作。"
+            "value" : "請為 Poki 開啟即時動態，以檢視代理程式步驟並批准敏感操作。"
           }
         },
         "en" : {
@@ -5772,7 +5790,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本機 VPN 已連線。上方的檢查會確認開發者服務能否訪問。"
+            "value" : "本機 VPN 已連線。上方的檢查會確認能否連線開發者服務。"
           }
         }
       }
@@ -5902,13 +5920,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "现在可以先随便看看。开关都打开后，我就能使用这台 iPhone。开关在「设置 › 自动化 › 配置」里。"
+            "value" : "现在可以先随便看看。开关都打开后，我就能使用这台 iPhone。开关在“设置 › 自动化 › 配置”里。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在可以先隨便看看。開關都打開後，我就能使用這支 iPhone。開關在「設定 › 自動化 › 設定精靈」裡。"
+            "value" : "現在可以先隨便看看。開關都開啟後，我就能使用這台 iPhone。開關在「設定 › 自動化 › 初始設定」裡。"
           }
         }
       }
@@ -6103,7 +6121,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資訊"
+            "value" : "訊息"
           }
         }
       }
@@ -6189,19 +6207,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更多设置"
+            "value" : "设置"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "More Settings"
+            "value" : "Settings"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更多設定"
+            "value" : "設定"
           }
         }
       }
@@ -6224,7 +6242,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check Wi-Fi or cellular. Mounting the developer disk image timed out; Poki needs internet once after a restart for Apple’s signature and retries automatically."
+            "value" : "Check Wi-Fi or cellular. Mounting the developer disk image timed out. Poki needs internet once after a restart for Apple’s signature and retries automatically."
           }
         }
       }
@@ -6533,7 +6551,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "10 秒內沒有回應，請檢查地址和網路後重試。"
+            "value" : "10 秒內沒有回應，請檢查位址和網路後重試。"
           }
         }
       }
@@ -6605,7 +6623,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無地址"
+            "value" : "無位址"
           }
         }
       }
@@ -7040,7 +7058,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "或接入你已有的智慧體"
+            "value" : "或接入你已有的代理程式"
           }
         },
         "en" : {
@@ -7148,7 +7166,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "好的，正在開啟「資訊」。"
+            "value" : "好的，正在開啟「訊息」。"
           }
         }
       }
@@ -7251,7 +7269,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟**設定 › 通用 › 鍵盤 › 鍵盤 › 新增新鍵盤**，選擇 **Poki**。"
+            "value" : "開啟「**設定 › 一般 › 鍵盤 › 鍵盤 › 新增鍵盤**」，選擇 **Poki**。"
           }
         }
       }
@@ -7259,16 +7277,22 @@
     "Open **Settings › General › VPN & Device Management**, tap your Apple ID, then tap **Trust**." : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open **Settings › General › VPN & Device Management**, tap your Apple Account, then tap **Trust**."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开“**设置 › 通用 › VPN 与设备管理**”，轻点你的 Apple ID，然后轻点“**信任**”。"
+            "value" : "打开“**设置 › 通用 › VPN 与设备管理**”，轻点你的 Apple 账户，然后轻点“**信任**”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟「**設定 › 通用 › VPN 與裝置管理**」，輕點你的 Apple ID，然後輕點「**信任**」。"
+            "value" : "開啟「**設定 › 一般 › VPN 與裝置管理**」，輕點你的 Apple 帳號，然後輕點「**信任**」。"
           }
         }
       }
@@ -7279,13 +7303,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开“**设置 › 隐私与安全 › 开发者模式**”。"
+            "value" : "打开“**设置 › 隐私与安全性 › 开发者模式**”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟「**設定 › 隱私與安全 › 開發者模式**」。"
+            "value" : "開啟「**設定 › 隱私權與安全性 › 開發者模式**」。"
           }
         }
       }
@@ -7296,13 +7320,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开“**设置 › 隐私与安全 › 开发者模式**”。安装 Poki Runner 后会显示此选项。"
+            "value" : "打开“**设置 › 隐私与安全性 › 开发者模式**”。安装 Poki Runner 后会显示此选项。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟「**設定 › 隱私與安全 › 開發者模式**」。安裝 Poki Runner 後會顯示此選項。"
+            "value" : "開啟「**設定 › 隱私權與安全性 › 開發者模式**」。安裝 Poki Runner 後會顯示此選項。"
           }
         }
       }
@@ -7340,7 +7364,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟「資訊」"
+            "value" : "開啟「訊息」"
           }
         }
       }
@@ -7478,7 +7502,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Poki「設定精靈」中下載最新版本。"
+            "value" : "在 Poki「初始設定」中下載最新版本。"
           }
         }
       }
@@ -7510,7 +7534,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟設定精靈"
+            "value" : "開啟初始設定"
           }
         },
         "en" : {
@@ -7533,7 +7557,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往「設定精靈 › 迴環」檢查迴環，保持開啟再到「設定精靈 › 配對」重新配對。"
+            "value" : "前往「初始設定 › 迴環」檢查迴環，保持開啟再到「初始設定 › 配對」重新配對。"
           }
         },
         "en" : {
@@ -8178,7 +8202,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連不上這個 API 地址，請檢查地址和網路。"
+            "value" : "連不上這個 API 位址，請檢查位址和網路。"
           }
         }
       }
@@ -8329,7 +8353,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對。"
+            "value" : "請在「初始設定」中重新配對。"
           }
         },
         "en" : {
@@ -8384,7 +8408,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「設定精靈」中配對此 iPhone。"
+            "value" : "請先在「初始設定」中配對此 iPhone。"
           }
         },
         "en" : {
@@ -8758,7 +8782,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這臺 iPhone 連上 Mac 時，Poki Setup 會為 Poki 續簽。"
+            "value" : "這台 iPhone 連上 Mac 時，Poki Setup 會為 Poki 續簽。"
           }
         }
       }
@@ -8790,7 +8814,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體付款、刪除、傳訊息、打電話、輸密碼或操作「錢包」前，Poki 會先請求批准（可透過即時動態、通知或 App 內操作）。關閉後不再詢問，下次啟動生效。"
+            "value" : "代理程式付款、刪除、傳訊息、打電話、輸密碼或操作「錢包」前，Poki 會先請求批准（可透過即時動態、通知或 App 內操作）。關閉後不再詢問，下次啟動生效。"
           }
         },
         "en" : {
@@ -8829,13 +8853,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请依次检查：“配置 › 回环”（LocalDevVPN 或代理已连接且配好 10.7.0.1）、“配置 › 配对”（开启回环后重配）、“设置 › 隐私与安全”中的开发者模式。Poki 无法连接此 iPhone。"
+            "value" : "请依次检查：“配置 › 回环”（LocalDevVPN 或代理已连接且配好 10.7.0.1）、“配置 › 配对”（开启回环后重配）、“设置 › 隐私与安全性”中的开发者模式。Poki 无法连接此 iPhone。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請依序檢查：「設定精靈 › 迴環」（LocalDevVPN 或代理已連線且配好 10.7.0.1）、「設定精靈 › 配對」（開啟迴環後重配）、「設定 › 隱私權與安全性」中的開發者模式。Poki 無法連接此 iPhone。"
+            "value" : "請依序檢查：「初始設定 › 迴環」（LocalDevVPN 或代理已連線且配好 10.7.0.1）、「初始設定 › 配對」（開啟迴環後重配）、「設定 › 隱私權與安全性」中的開發者模式。Poki 無法連接此 iPhone。"
           }
         },
         "en" : {
@@ -8851,7 +8875,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请在“设置 › 隐私与安全 › 麦克风”中允许访问麦克风。"
+            "value" : "请在“设置 › 隐私与安全性 › 麦克风”中允许访问麦克风。"
           }
         },
         "zh-Hant" : {
@@ -8873,13 +8897,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请用签名工具重新安装 Poki 后再打开设置。Poki 无法访问钥匙串以生成中转密钥。"
+            "value" : "请用签名工具重新安装 Poki 后再打开设置。Poki 无法访问钥匙串以生成中继密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請用簽名工具重新安裝 Poki 後再開啟設定。Poki 無法取用鑰匙圈以產生中轉金鑰。"
+            "value" : "請用簽名工具重新安裝 Poki 後再開啟設定。Poki 無法取用鑰匙圈以產生中繼金鑰。"
           }
         },
         "en" : {
@@ -8989,7 +9013,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 無法在後臺保持執行"
+            "value" : "Poki 無法在背景保持執行"
           }
         }
       }
@@ -9059,13 +9083,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 无法从钥匙串读取中转密钥（%@）。"
+            "value" : "Poki 无法从钥匙串读取中继密钥（%@）。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 無法從鑰匙圈讀取中轉金鑰（%@）。"
+            "value" : "Poki 無法從鑰匙圈讀取中繼金鑰（%@）。"
           }
         },
         "en" : {
@@ -9103,13 +9127,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 没有默认中转。请用 Poki 仓库中的 deploy/cf-relay/deploy.sh 把中转部署到你自己的 Cloudflare 账户，再输入它输出的地址。截图和轻点只经过这个中转。"
+            "value" : "Poki 没有默认中继。请用 Poki 仓库中的 deploy/cf-relay/deploy.sh 把中继部署到你自己的 Cloudflare 账户，再输入它输出的地址。截图和轻点只经过这个中继。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 沒有預設中轉。請用 Poki 倉庫中的 deploy/cf-relay/deploy.sh 把中轉部署到你自己的 Cloudflare 賬戶，再輸入它輸出的地址。截圖和輕點只經過這個中轉。"
+            "value" : "Poki 沒有預設中繼。請用 Poki 倉庫中的 deploy/cf-relay/deploy.sh 把中繼部署到你自己的 Cloudflare 帳號，再輸入它輸出的位址。截圖和輕點只經過這個中繼。"
           }
         }
       }
@@ -9153,7 +9177,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 已關閉，智慧體無法連線此 iPhone。"
+            "value" : "Poki 已關閉，代理程式無法連線此 iPhone。"
           }
         }
       }
@@ -9306,7 +9330,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體下次請求時，Poki 會自動重啟它。"
+            "value" : "代理程式下次請求時，Poki 會自動重啟它。"
           }
         },
         "en" : {
@@ -9328,7 +9352,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請將此 iPhone 連上 Mac 並讓智慧體續簽。Poki 將在 %@ 後無法開啟。"
+            "value" : "請將此 iPhone 連上 Mac 並讓代理程式續簽。Poki 將在 %@ 後無法開啟。"
           }
         },
         "en" : {
@@ -9398,7 +9422,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 與 Codex 一樣，共享你的 ChatGPT 訂閱額度。登入資訊僅儲存在此 iPhone 的鑰匙串中。"
+            "value" : "Poki 與 Codex 一樣，共享你的 ChatGPT 訂閱額度。登入資訊僅儲存在此 iPhone 的鑰匙圈中。"
           }
         }
       }
@@ -9409,7 +9433,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "即将打开系统“设置”首页。请前往“**隐私与安全 › 开发者模式**”，轻点“**与 Poki 配对**”。"
+            "value" : "即将打开系统“设置”首页。请前往“**隐私与安全性 › 开发者模式**”，轻点“**与 Poki 配对**”。"
           }
         },
         "zh-Hant" : {
@@ -9491,7 +9515,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "10.7.0.1 埠"
+            "value" : "10.7.0.1 連接埠"
           }
         }
       }
@@ -9628,7 +9652,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“隐私与安全”›“开发者模式”›“与 Poki 配对”。"
+            "value" : "“隐私与安全性”›“开发者模式”›“与 Poki 配对”。"
           }
         },
         "en" : {
@@ -9650,7 +9674,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“隐私与安全”›“开发者模式”，然后重启。"
+            "value" : "“隐私与安全性”›“开发者模式”，然后重启。"
           }
         },
         "en" : {
@@ -9672,7 +9696,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“隐私与安全”›“开发者模式”。重启后轻点“打开”。"
+            "value" : "“隐私与安全性”›“开发者模式”。重启后轻点“打开”。"
           }
         },
         "en" : {
@@ -9722,7 +9746,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "地址二維碼"
+            "value" : "位址二維碼"
           }
         }
       }
@@ -9748,13 +9772,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中转地址"
+            "value" : "中继地址"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中轉地址"
+            "value" : "中繼位址"
           }
         }
       }
@@ -9786,7 +9810,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除地址"
+            "value" : "移除位址"
           }
         }
       }
@@ -9802,7 +9826,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要移除 Mac 語音橋接地址嗎？"
+            "value" : "要移除 Mac 語音橋接位址嗎？"
           }
         }
       }
@@ -9872,7 +9896,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待智慧體下一步。"
+            "value" : "等待代理程式下一步。"
           }
         },
         "en" : {
@@ -9956,7 +9980,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "反射任意埠"
+            "value" : "反射任意連接埠"
           }
         }
       }
@@ -10016,13 +10040,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中转"
+            "value" : "中继"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中轉"
+            "value" : "中繼"
           }
         }
       }
@@ -10032,13 +10056,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中转地址"
+            "value" : "中继地址"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中轉地址"
+            "value" : "中繼位址"
           }
         }
       }
@@ -10173,7 +10197,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "撤銷訪問許可權"
+            "value" : "撤銷取用權限"
           }
         }
       }
@@ -10205,7 +10229,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 Mac 上執行 bin/voice-bridge.mjs 並輸入生成的地址。OpenAI 金鑰儲存在 Mac 本地，手機僅獲取有效期 1 分鐘的臨時憑證，不儲存金鑰，音訊將由手機直連傳送至 OpenAI。"
+            "value" : "在 Mac 上執行 bin/voice-bridge.mjs 並輸入生成的位址。OpenAI 金鑰儲存在 Mac 本地，手機僅獲取有效期 1 分鐘的臨時憑證，不儲存金鑰，音訊將由手機直連傳送至 OpenAI。"
           }
         }
       }
@@ -10237,7 +10261,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "記錄 Runner 啟停、智慧體步驟、批准及連線變化。密碼輸入框中的內容絕不記入日誌。"
+            "value" : "記錄 Runner 啟停、代理程式步驟、批准及連線變化。密碼輸入框中的內容絕不記入日誌。"
           }
         },
         "en" : {
@@ -10365,6 +10389,12 @@
     },
     "Speak live; Poki answers and acts" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speak live, and Poki replies and acts"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10466,7 +10496,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儲存地址"
+            "value" : "儲存位址"
           }
         }
       }
@@ -10880,13 +10910,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先设置中转地址。每个智能体的地址均托管在你的中转上。"
+            "value" : "请先设置中继地址。每个智能体的地址均托管在你的中继上。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先設定中轉位址。每個智慧體的位址均託管在你的中轉上。"
+            "value" : "請先設定中繼位址。每個代理程式的位址均託管在你的中繼上。"
           }
         },
         "en" : {
@@ -10946,7 +10976,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定精靈"
+            "value" : "初始設定"
           }
         },
         "en" : {
@@ -11048,7 +11078,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出登入"
+            "value" : "登出"
           }
         }
       }
@@ -11204,7 +11234,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "簽署與更新"
+            "value" : "簽名與更新"
           }
         }
       }
@@ -11471,7 +11501,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "第 3/4 步（「資訊」）"
+            "value" : "第 3/4 步（「訊息」）"
           }
         }
       }
@@ -11487,7 +11517,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體的操作步驟會顯示在此處和鎖定畫面上。"
+            "value" : "代理程式的操作步驟會顯示在此處和鎖定畫面上。"
           }
         },
         "en" : {
@@ -11515,7 +11545,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待你批准的步骤會顯示在這裡。"
+            "value" : "等待你批准的步驟會顯示在這裡。"
           }
         }
       }
@@ -11643,7 +11673,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打斷播報僅停止語音回覆，當前正在執行的操作仍會完成並向你反饋結果。"
+            "value" : "打斷播報僅停止語音回覆，當前正在執行的操作仍會完成並向你回報結果。"
           }
         },
         "en" : {
@@ -11837,7 +11867,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "移除後，和 Poki 對話需要 OpenAI API 金鑰，或者重新輸入這個地址。"
+            "value" : "移除後，和 Poki 對話需要 OpenAI API 金鑰，或者重新輸入這個位址。"
           }
         }
       }
@@ -11847,13 +11877,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "和 Poki 对话用的是 OpenAI 账户的实时语音，请在设置里打开。听写不需要它。"
+            "value" : "和 Poki 语音对话使用你 OpenAI 账户的实时语音功能，请在“设置”中开启。听写无需开启此项。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "和 Poki 對話用的是 OpenAI 帳戶的實時語音，請在設定裡開啟。聽寫不需要它。"
+            "value" : "和 Poki 語音對話使用你 OpenAI 帳號的即時語音功能，請在「設定」中開啟。聽寫無需開啟此項。"
           }
         }
       }
@@ -11923,7 +11953,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輕點鍵盤下方的地球鍵，切到 Poki 一次。看到 Poki 的面板出現就行，不用打字。如果面板提示需要完全訪問，就回設定裡開啟。"
+            "value" : "輕點鍵盤下方的地球鍵，切到 Poki 一次。看到 Poki 的面板出現即可，不用打字。如果面板提示需要「完整取用」，請到「設定」開啟。"
           }
         }
       }
@@ -12027,7 +12057,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "地址可以連上，但沒有找到對話 API，請確認地址以 /v1 結尾。"
+            "value" : "位址可以連上，但沒有找到對話 API，請確認位址以 /v1 結尾。"
           }
         }
       }
@@ -12065,7 +12095,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "模型「%@」不存在，或这个密钥无权使用它。"
+            "value" : "模型“%@”不存在，或此密钥无权使用它。"
           }
         },
         "zh-Hant" : {
@@ -12212,7 +12242,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在列表中輕點 **Poki**，開啟**允許完全訪問**。"
+            "value" : "在列表中輕點 **Poki**，開啟「**允許完整取用**」。"
           }
         }
       }
@@ -12312,7 +12342,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輕點 Poki 讓它幫你在手機上辦事。Claude、Codex 等智慧體連線後也會顯示在這裡。"
+            "value" : "輕點 Poki 讓它幫你在手機上辦事。Claude、Codex 等代理程式連線後也會顯示在這裡。"
           }
         }
       }
@@ -12436,7 +12466,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "替你在這臺 iPhone 上點按和打字"
+            "value" : "替你在這台 iPhone 上點按和打字"
           }
         }
       }
@@ -12608,13 +12638,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请输入 deploy.sh 输出的中转地址，例如 https://poki-relay.you.workers.dev。"
+            "value" : "请输入 deploy.sh 输出的中继地址，例如 https://poki-relay.you.workers.dev。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請輸入 deploy.sh 輸出的中轉位址，例如 https://poki-relay.you.workers.dev。"
+            "value" : "請輸入 deploy.sh 輸出的中繼位址，例如 https://poki-relay.you.workers.dev。"
           }
         },
         "en" : {
@@ -12664,7 +12694,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此畫面需你親自操作，智慧體等待中。"
+            "value" : "此畫面需你親自操作，代理程式等待中。"
           }
         }
       }
@@ -12686,7 +12716,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體不會代付款，等你付完後繼續。"
+            "value" : "代理程式不會代付款，等你付完後繼續。"
           }
         }
       }
@@ -12702,7 +12732,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "實時活動未能啟動。%@"
+            "value" : "即時動態未能啟動。%@"
           }
         }
       }
@@ -12800,7 +12830,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請前往「設定精靈 › 配對」下載一次開發者磁碟映像。"
+            "value" : "請前往「初始設定 › 配對」下載一次開發者磁碟映像。"
           }
         },
         "en" : {
@@ -12822,7 +12852,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iPhone 重新啟動後首次啟動 Poki Runner 時，iOS 會要求輸入鎖屏密碼以允許自動化操作。只需輸入一次，Poki 無法讀取該密碼。"
+            "value" : "iPhone 重新啟動後首次啟動 Poki Runner 時，iOS 會要求輸入鎖定畫面密碼以允許自動化操作。只需輸入一次，Poki 無法讀取該密碼。"
           }
         },
         "en" : {
@@ -12844,7 +12874,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The first time Poki turns on after a restart, iOS asks for your passcode to allow automation. Enter it once; Poki never sees it."
+            "value" : "The first time Poki turns on after a restart, iOS asks for your passcode to allow automation. Enter it once. Poki never sees it."
           }
         },
         "zh-Hant" : {
@@ -12866,13 +12896,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "代智慧體執行點擊和輸入的輔助 App。由 Poki 自動啟動，無需手動開啟。"
+            "value" : "替代理程式執行點擊和輸入的輔助 App。由 Poki 自動啟動，無需手動開啟。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The helper app that taps and types for your agent. Poki starts it automatically; don’t open it yourself."
+            "value" : "The helper app that taps and types for your agent. Poki starts it automatically, so you never need to open it."
           }
         }
       }
@@ -12992,7 +13022,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟 Poki 重新連線，或在「設定精靈」中改用外部連線。本機連線已關閉。"
+            "value" : "請開啟 Poki 重新連線，或在「初始設定」中改用外部連線。本機連線已關閉。"
           }
         },
         "en" : {
@@ -13037,7 +13067,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重連本機連線並檢查 Wi-Fi。若 10.7.0.1 仍無應答，請到「設定精靈 › 配對」重新配對並檢查開發者模式。"
+            "value" : "請重連本機連線並檢查 Wi-Fi。若 10.7.0.1 仍無應答，請到「初始設定 › 配對」重新配對並檢查開發者模式。"
           }
         },
         "en" : {
@@ -13081,7 +13111,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對（約需 1 分鐘）。此 iPhone 已不再接受原配對（%@）。"
+            "value" : "請在「初始設定」中重新配對（約需 1 分鐘）。此 iPhone 已不再接受原配對（%@）。"
           }
         },
         "en" : {
@@ -13103,7 +13133,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對。此 iPhone 已不再接受目前配對。%@"
+            "value" : "請在「初始設定」中重新配對。此 iPhone 已不再接受目前配對。%@"
           }
         },
         "en" : {
@@ -13126,7 +13156,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重試配對。iPhone 拒絕了此次配對。"
+            "value" : "請在「初始設定」中重試配對。iPhone 拒絕了此次配對。"
           }
         },
         "en" : {
@@ -13142,13 +13172,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当 Poki 打开或在后台运行时，中转服务器会将请求转发至此 iPhone。服务器不存储任何数据。设备离线时，客户端会收到明确的错误提示。"
+            "value" : "当 Poki 打开或在后台运行时，中继服务器会将请求转发至此 iPhone。服务器不存储任何数据。设备离线时，客户端会收到明确的错误提示。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "當 Poki 開啟或在後臺執行時，中轉伺服器會將請求轉發至此 iPhone。伺服器不儲存任何資料。裝置離線時，客戶端會收到明確的錯誤提示。"
+            "value" : "當 Poki 開啟或在背景執行時，中繼伺服器會將請求轉發至此 iPhone。伺服器不儲存任何資料。裝置離線時，用戶端會收到明確的錯誤提示。"
           }
         }
       }
@@ -13164,7 +13194,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體請求時，Runner 會自動啟動。"
+            "value" : "代理程式請求時，Runner 會自動啟動。"
           }
         },
         "en" : {
@@ -13208,7 +13238,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體請求時自動喚醒 Runner。"
+            "value" : "代理程式請求時自動喚醒 Runner。"
           }
         }
       }
@@ -13437,7 +13467,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中下載最新開發者磁碟映像，或更新 Poki 以適配目前 iOS。"
+            "value" : "請在「初始設定」中下載最新開發者磁碟映像，或更新 Poki 以適配目前 iOS。"
           }
         },
         "en" : {
@@ -13507,7 +13537,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟本機連線，或在「設定精靈」中選擇外部連線。此 iPhone 暫無應答。"
+            "value" : "請開啟本機連線，或在「初始設定」中選擇外部連線。此 iPhone 暫無應答。"
           }
         },
         "en" : {
@@ -13583,7 +13613,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這是 iPhone 重新啟動後 Poki 首次啟動自動化，因此 iOS 會在下一個螢幕要求輸入鎖屏密碼。該螢幕屬於 iOS。Poki 無法看到或讀取你輸入的內容，並且在下次重新啟動前只會詢問一次。"
+            "value" : "這是 iPhone 重新啟動後 Poki 首次啟動自動化，因此 iOS 會在下一個螢幕要求輸入鎖定畫面密碼。該螢幕屬於 iOS。Poki 無法看到或讀取你輸入的內容，並且在下次重新啟動前只會詢問一次。"
           }
         }
       }
@@ -13670,7 +13700,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "试试「帮我点一杯常喝的咖啡」，打字或说出来都行。"
+            "value" : "试试“帮我点一杯常喝的咖啡”，打字或说出来都行。"
           }
         },
         "zh-Hant" : {
@@ -13917,19 +13947,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开启开发者模式，路径是设置 › 隐私与安全 › 开发者模式，然后重启手机。"
+            "value" : "在“设置 › 隐私与安全性 › 开发者模式”中开启开发者模式，然后重新启动 iPhone。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟開發者模式，路徑是設定 › 隱私與安全 › 開發者模式，然後重啟手機。"
+            "value" : "在「設定 › 隱私權與安全性 › 開發者模式」中開啟開發者模式，然後重新啟動 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Turn on Developer Mode under Settings → Privacy & Security → Developer Mode, then restart the phone."
+            "value" : "Turn on Developer Mode in Settings › Privacy & Security › Developer Mode, then restart this iPhone."
           }
         }
       }
@@ -14028,7 +14058,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟後，智慧體即可使用此 iPhone。"
+            "value" : "開啟後，代理程式即可使用此 iPhone。"
           }
         },
         "en" : {
@@ -14074,7 +14104,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Turn on the loopback in your proxy app. That is the Poki module in Surge or Loon, loopback_address in sing-box, or Shadowrocket's Settings → Other → \"Include route 10.7.0.1/32\". Then connect to Wi-Fi."
+            "value" : "Turn on Loopback in your proxy app: the Poki module in Surge or Loon, loopback_address in sing-box, or Shadowrocket’s Settings › Other › Include route 10.7.0.1/32. Then connect to Wi-Fi."
           }
         }
       }
@@ -14664,13 +14694,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通过中转 ›"
+            "value" : "通过中继 ›"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "透過中轉 ›"
+            "value" : "透過中繼 ›"
           }
         }
       }
@@ -14783,7 +14813,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待智慧體"
+            "value" : "等待代理程式"
           }
         },
         "en" : {
@@ -14866,16 +14896,22 @@
     },
     "With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time. Poki and Poki Runner use 2. For free Apple ID signing, install the external-connection build and use LocalDevVPN or a compatible VPN app." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With a free Apple Account, self-signed apps expire after 7 days and are limited to 3 at a time (Poki and Poki Runner use 2). Install the external-connection build with LocalDevVPN or a compatible VPN app."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用免费 Apple ID 自签名的 App 会在 7 天后过期，且最多同时安装 3 个（Poki 和 Poki Runner 占 2 个）。用免费 Apple ID 签名时，请安装外部连接版，并使用 LocalDevVPN 或兼容的 VPN App。"
+            "value" : "使用免费 Apple 账户自签名的 App 会在 7 天后到期，且最多同时安装 3 个（Poki 和 Poki Runner 占 2 个）。请安装外部连接版，并搭配 LocalDevVPN 或兼容的 VPN App 使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用免費 Apple ID 自簽名的 App 會在 7 天后過期，且最多同時安裝 3 個（Poki 和 Poki Runner 佔 2 個）。用免費 Apple ID 簽名時，請安裝外部連線版，並使用 LocalDevVPN 或相容的 VPN App。"
+            "value" : "使用免費 Apple 帳號自簽名的 App 會在 7 天後到期，且最多同時安裝 3 個（Poki 和 Poki Runner 佔 2 個）。請安裝外部連線版，並搭配 LocalDevVPN 或相容的 VPN App 使用。"
           }
         }
       }
@@ -14885,19 +14921,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用免费 Apple ID 自签名的 App 会在 7 天后过期，且最多同时安装 3 个（Poki 和 Poki Runner 占 2 个）。免费账户也无法签名 VPN，因此需要通过代理 App 或 LocalDevVPN 提供回环。"
+            "value" : "使用免费 Apple 账户自签名的 App 会在 7 天后到期，且最多同时安装 3 个（Poki 和 Poki Runner 占 2 个）。免费账户无法签名 VPN，因此需要通过 LocalDevVPN 或代理 App 提供回环。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用免費 Apple ID 自簽名的 App 會在 7 天后過期，且最多同時安裝 3 個（Poki 和 Poki Runner 佔 2 個）。免費賬戶也無法簽名 VPN，因此需要透過代理 App 或 LocalDevVPN 提供迴環。"
+            "value" : "使用免費 Apple 帳號自簽名的 App 會在 7 天後到期，且最多同時安裝 3 個（Poki 和 Poki Runner 佔 2 個）。免費帳號無法簽名 VPN，因此需要透過 LocalDevVPN 或代理 App 提供迴環。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "With a free Apple ID, self-signed apps expire after 7 days and are limited to 3 at a time. Poki and Poki Runner use 2. Free accounts also can’t sign a VPN, so Loopback requires your proxy app or LocalDevVPN."
+            "value" : "With a free Apple Account, self-signed apps expire after 7 days and are limited to 3 at a time (Poki and Poki Runner use 2). Free accounts can’t sign a VPN, so Loopback requires LocalDevVPN or your proxy app."
           }
         }
       }
@@ -15021,7 +15057,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體可使用此 iPhone。"
+            "value" : "代理程式可使用此 iPhone。"
           }
         },
         "en" : {
@@ -15256,7 +15292,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iOS 要求輸入 iPhone 鎖屏密碼以允許自動化，但未完成輸入。先關閉再開啟 Poki，然後輸入密碼。"
+            "value" : "iOS 要求輸入 iPhone 鎖定畫面密碼以允許自動化，但未完成輸入。先關閉再開啟 Poki，然後輸入密碼。"
           }
         }
       }
@@ -15278,7 +15314,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重啟或滿 8 小時需驗證，智慧體等待中。"
+            "value" : "重啟或滿 8 小時需驗證，代理程式等待中。"
           }
         }
       }
@@ -15300,7 +15336,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重啟後需驗證一次，智慧體等待中。"
+            "value" : "重啟後需驗證一次，代理程式等待中。"
           }
         }
       }
@@ -15316,7 +15352,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki Runner 被強制退出或 iPhone 重新啟動後，iOS 會先要求輸入鎖屏密碼，再允許 UI 自動化。只需輸入一次，Poki 會自動繼續。"
+            "value" : "Poki Runner 被強制退出或 iPhone 重新啟動後，iOS 會先要求輸入鎖定畫面密碼，再允許 UI 自動化。只需輸入一次，Poki 會自動繼續。"
           }
         }
       }
@@ -15348,7 +15384,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iOS 要求 App 宣告特定用途才能在後臺持續執行。Poki 會以最低精度使用定位服務，並在執行期間顯示定位指示器。"
+            "value" : "iOS 要求 App 宣告特定用途才能在背景持續執行。Poki 會以最低精度使用定位服務，並在執行期間顯示定位指示器。"
           }
         }
       }
@@ -15364,7 +15400,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "僅在自動化工作階段開啟時顯示系統橫幅。智慧體請求時自動開啟，閒置時關閉。"
+            "value" : "僅在自動化工作階段開啟時顯示系統橫幅。代理程式請求時自動開啟，閒置時關閉。"
           }
         },
         "en" : {
@@ -15386,7 +15422,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "僅在 Runner 執行時顯示系統橫幅。按需啟動，閒置停止。智慧體工作時請勿關閉 Poki Runner。"
+            "value" : "僅在 Runner 執行時顯示系統橫幅。按需啟動，閒置停止。代理程式工作時請勿關閉 Poki Runner。"
           }
         },
         "en" : {
@@ -15479,7 +15515,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "傳送資訊"
+            "value" : "傳送訊息"
           }
         }
       }
@@ -15553,19 +15589,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "‹ 更多设置"
+            "value" : "‹ 设置"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "‹ More Settings"
+            "value" : "‹ Settings"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "‹ 更多設定"
+            "value" : "‹ 設定"
           }
         }
       }
@@ -15619,7 +15655,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "實時語音"
+            "value" : "即時語音"
           }
         }
       }
@@ -15788,16 +15824,22 @@
     },
     "In the chat, the waveform button starts a live conversation. Poki listens, acts and answers out loud. It ends by itself 8 seconds after an answer if nobody speaks, and when Poki goes to the background (once a running step is done). Tap End to stop sooner. The microphone in the message field only dictates." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In a conversation, tap the waveform button to start Live Voice. Poki listens, acts, and replies aloud. Live Voice ends automatically after 8 seconds of silence or when Poki enters the background after finishing a step. Tap End to stop sooner. The microphone in the message field is for dictation only."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在聊天中轻点波形按钮即可开始实时对话。Poki 会聆听、操作并朗读回答。回答后 8 秒内无人说话，或 Poki 进入后台（当前步骤完成后），对话会自动结束。轻点“结束”可提前停止。信息栏里的麦克风只用于听写。"
+            "value" : "在对话中轻点波形按钮即可开启实时语音，Poki 会聆听、执行操作并朗读回复。回复后 8 秒内无人说话，或当前步骤完成后 Poki 进入后台，实时语音会自动结束；轻点“结束”可提前停止。输入框中的麦克风仅用于听写。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在聊天中輕點波形按鈕即可開始實時對話。Poki 會聆聽、操作並朗讀回答。回答後 8 秒內無人說話，或 Poki 進入後臺（當前步驟完成後），對話會自動結束。輕點「結束」可提前停止。資訊欄裡的麥克風只用於聽寫。"
+            "value" : "在對話中輕點波形按鈕即可開啟即時語音，Poki 會聆聽、執行操作並朗讀回覆。回覆後 8 秒內無人說話，或目前步驟完成後 Poki 進入背景，即時語音會自動結束；輕點「結束」可提前停止。輸入框中的麥克風僅用於聽寫。"
           }
         }
       }
@@ -15835,7 +15877,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "高階"
+            "value" : "進階"
           }
         }
       }
@@ -15899,7 +15941,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改地址"
+            "value" : "更改位址"
           }
         }
       }
@@ -15915,7 +15957,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mac 語音橋接地址"
+            "value" : "Mac 語音橋接位址"
           }
         }
       }
@@ -16403,7 +16445,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從 App Store 更新 Shadowrocket。該開關自 2.2.91 版加入，據反饋 2.2.93 及更高版本可用。"
+            "value" : "從 App Store 更新 Shadowrocket。該開關自 2.2.91 版加入，據回報 2.2.93 及更高版本可用。"
           }
         }
       }
@@ -16731,7 +16773,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保持 Clash Mi 連線。據使用者反饋，此方法在 iOS 26.3 上可用，在 26.4 上失敗。以上方的檢查結果為準。"
+            "value" : "保持 Clash Mi 連線。據使用者回報，此方法在 iOS 26.3 上可用，在 26.4 上失敗。以上方的檢查結果為準。"
           }
         }
       }
@@ -16817,19 +16859,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 未执行任务时，打开“设置 > 连接 > 签名与更新”，安装已准备好的版本。"
+            "value" : "Poki 未执行任务时，打开“设置 › 签名与更新”，安装已准备好的版本。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 未執行任務時，開啟「設定 > 連線 > 簽署與更新」，安裝已準備好的版本。"
+            "value" : "Poki 未執行任務時，開啟「設定 › 簽名與更新」，安裝已準備好的版本。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open Settings > Connection > Signing & Updates and install the prepared build when Poki isn't running a task."
+            "value" : "Open Settings › Signing & Updates and install the prepared build when Poki isn’t running a task."
           }
         }
       }
@@ -17063,7 +17105,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在 %@ 前開啟「設定精靈」並輕點「安裝」。續簽版本已就緒。"
+            "value" : "請在 %@ 前開啟「初始設定」並輕點「安裝」。續簽版本已就緒。"
           }
         },
         "en" : {
@@ -17085,7 +17127,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在 %@ 前開啟「設定精靈」為 Poki 續簽。"
+            "value" : "請在 %@ 前開啟「初始設定」為 Poki 續簽。"
           }
         },
         "en" : {
@@ -17113,7 +17155,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟設定精靈 ›"
+            "value" : "開啟初始設定 ›"
           }
         }
       }
@@ -17189,7 +17231,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在告知智慧體"
+            "value" : "正在告知代理程式"
           }
         }
       }
@@ -17260,16 +17302,22 @@
     },
     "Apple ID" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Account"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple ID"
+            "value" : "Apple 账户"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple ID"
+            "value" : "Apple 帳號"
           }
         }
       }
@@ -17311,19 +17359,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "免费 Apple 账户即可使用。Poki 每次签名有效期 7 天，到期前会自动准备续签。Apple ID 和密码仅发送给 Apple，anisette 服务器无法读取。"
+            "value" : "免费 Apple 账户即可使用。Poki 每次签名有效期为 7 天，到期前会自动准备续签。Apple 账户和密码仅发送给 Apple，anisette 服务器无法读取。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "免費 Apple 帳號即可使用。Poki 每次簽名有效期 7 天，到期前會自動準備續簽。Apple ID 和密碼僅傳送給 Apple，anisette 伺服器無法讀取。"
+            "value" : "免費 Apple 帳號即可使用。Poki 每次簽名有效期為 7 天，到期前會自動準備續簽。Apple 帳號和密碼僅傳送給 Apple，anisette 伺服器無法讀取。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A free Apple Account works. Poki signs itself for 7 days at a time and prepares the next renewal automatically. Your Apple ID and password go only to Apple; the anisette server never sees them."
+            "value" : "A free Apple Account works. Poki signs itself for 7 days at a time and prepares the next renewal automatically. Your Apple Account credentials go only to Apple, and the anisette server never sees them."
           }
         }
       }
@@ -17378,16 +17426,22 @@
     },
     "Installing closes Poki for a moment. Your chats and setup stay." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installing closes Poki briefly. Your conversations and settings stay intact."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "安装时 Poki 会短暂关闭。聊天和设置都会保留。"
+            "value" : "安装期间 Poki 会短暂关闭，你的对话和设置都会保留。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "安裝時 Poki 會短暫關閉。聊天和設定都會保留。"
+            "value" : "安裝期間 Poki 會短暫關閉，你的對話和設定都會保留。"
           }
         }
       }
@@ -17530,16 +17584,22 @@
     },
     "Apple’s sign-in needs device headers that only Apple hardware makes. Poki gets them from this anisette server. It never sees your Apple ID or password." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple sign-in requires device headers generated by Apple hardware. Poki fetches them from this anisette server, which never sees your Apple Account or password."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple 的登录需要只有 Apple 硬件才能生成的设备标头。Poki 从此 anisette 服务器获取这些标头。服务器不会看到你的 Apple ID 或密码。"
+            "value" : "Apple 登录需要由 Apple 硬件生成的设备标头。Poki 会从此 anisette 服务器获取标头，该服务器无法看到你的 Apple 账户或密码。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple 的登入需要只有 Apple 硬體才能生成的裝置標頭。Poki 從此 anisette 伺服器獲取這些標頭。伺服器不會看到你的 Apple ID 或密碼。"
+            "value" : "Apple 登入需要由 Apple 硬體產生的裝置標頭。Poki 會從此 anisette 伺服器取得標頭，該伺服器無法看到你的 Apple 帳號或密碼。"
           }
         }
       }
@@ -17593,7 +17653,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 透過 OpenAI 的「使用 ChatGPT 登入」使用你的 ChatGPT Plus 或 Pro 套餐。登入資訊儲存在此 iPhone 的鑰匙串中。也可以用 OpenAI API 金鑰作為備用，請在 OpenAI 下新增。"
+            "value" : "Poki 透過 OpenAI 的「使用 ChatGPT 登入」使用你的 ChatGPT Plus 或 Pro 方案。登入資訊儲存在此 iPhone 的鑰匙圈中。也可以用 OpenAI API 金鑰作為備用，請在 OpenAI 下新增。"
           }
         }
       }
@@ -17787,7 +17847,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "金鑰和登入資訊儲存在此 iPhone 的鑰匙串中。Poki 只會將它們傳送給各自的提供商。"
+            "value" : "金鑰和登入資訊儲存在此 iPhone 的鑰匙圈中。Poki 只會將它們傳送給各自的提供商。"
           }
         }
       }
@@ -17797,13 +17857,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "文字聊天"
+            "value" : "文字对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "文字聊天"
+            "value" : "文字對話"
           }
         }
       }
@@ -17917,7 +17977,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "相容 OpenAI 的地址"
+            "value" : "相容 OpenAI 的位址"
           }
         }
       }
@@ -18092,16 +18152,22 @@
     },
     "Poki keeps this key. Chatting with %@ comes in an update." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki saves this key. Conversations with %@ are coming in an update."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 会保存此密钥。与 %@ 聊天的功能将在后续更新中提供。"
+            "value" : "Poki 会保存此密钥。与 %@ 对话的功能将在后续更新中提供。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 會儲存此金鑰。與 %@ 聊天的功能將在後續更新中提供。"
+            "value" : "Poki 會儲存此金鑰。與 %@ 對話的功能將在後續更新中提供。"
           }
         }
       }
@@ -18133,19 +18199,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "实时语音使用 OpenAI Realtime，需在“Poki › 大脑”中添加 OpenAI API 密钥。输入框听写支持所有模型。"
+            "value" : "实时语音使用 OpenAI Realtime，需在“设置 › 模型”中添加 OpenAI API 密钥。输入框听写支持所有模型。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Live Voice uses OpenAI Realtime and requires an OpenAI API key in Poki › Brain. Message dictation works with any model."
+            "value" : "Live Voice uses OpenAI Realtime and requires an OpenAI API key in Settings › Models. Message dictation works with any model."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "即時語音使用 OpenAI Realtime，需在「Poki › 大腦」中新增 OpenAI API 金鑰。輸入框聽寫支援所有模型。"
+            "value" : "即時語音使用 OpenAI Realtime，需在「設定 › 模型」中新增 OpenAI API 金鑰。輸入框聽寫支援所有模型。"
           }
         }
       }
@@ -18199,13 +18265,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用于文字聊天"
+            "value" : "用于文字对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用於文字聊天"
+            "value" : "用於文字對話"
           }
         }
       }
@@ -18215,13 +18281,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天模型"
+            "value" : "对话模型"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天模型"
+            "value" : "對話模型"
           }
         }
       }
@@ -18275,13 +18341,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "同一时间仅使用一个账户进行文字聊天。"
+            "value" : "同一时间仅使用一个账户进行文字对话。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "同一時間僅使用一個帳號進行文字聊天。"
+            "value" : "同一時間僅使用一個帳號進行文字對話。"
           }
         },
         "en" : {
@@ -18525,13 +18591,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在“文字聊天”下刷新模型列表，以添加你的密钥可用的其他 Realtime 模型。"
+            "value" : "在“文字对话”下刷新模型列表，以添加此密钥可用的其他 Realtime 模型。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在「文字聊天」下重新整理模型列表，以新增你的金鑰可用的其他 Realtime 模型。"
+            "value" : "在「文字對話」下重新整理模型列表，以新增此金鑰可用的其他 Realtime 模型。"
           }
         }
       }
@@ -18541,13 +18607,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "文字聊天支持所有账户。实时语音需要 OpenAI API 密钥。"
+            "value" : "文字对话支持所有账户，实时语音需要 OpenAI API 密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "文字聊天支援所有帳號。即時語音需要 OpenAI API 金鑰。"
+            "value" : "文字對話支援所有帳號，即時語音需要 OpenAI API 金鑰。"
           }
         },
         "en" : {
@@ -18563,13 +18629,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@，文字聊天与实时语音"
+            "value" : "%@，文字对话与实时语音"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@，文字聊天與即時語音"
+            "value" : "%@，文字對話與即時語音"
           }
         },
         "en" : {
@@ -18585,13 +18651,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@，文字聊天"
+            "value" : "%@，文字对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@，文字聊天"
+            "value" : "%@，文字對話"
           }
         }
       }
@@ -18661,7 +18727,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "地址和模型"
+            "value" : "位址和模型"
           }
         }
       }
@@ -18725,13 +18791,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天模型 %@"
+            "value" : "对话模型 %@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天模型 %@"
+            "value" : "對話模型 %@"
           }
         }
       }
@@ -19139,19 +19205,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用实时语音需添加 OpenAI API 密钥（轻点前往“大脑”）或配置语音桥接。输入框听写支持所有模型。"
+            "value" : "使用实时语音需在“模型”中添加 OpenAI API 密钥，或配置语音桥接。输入框听写支持所有模型。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用即時語音需新增 OpenAI API 金鑰（輕點前往「大腦」）或設定語音橋接。輸入框聽寫支援所有模型。"
+            "value" : "使用即時語音需在「模型」中新增 OpenAI API 金鑰，或設定語音橋接。輸入框聽寫支援所有模型。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add an OpenAI API key (tap for Brain) or set up a voice bridge to use Live Voice. Message dictation works with any model."
+            "value" : "Add an OpenAI API key in Models or set up a voice bridge to use Live Voice. Message dictation works with any model."
           }
         }
       }
@@ -19389,7 +19455,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 console.anthropic.com 建立金鑰，然後貼上到此處。如果使用 Claude Max 或 Team 套餐，請先在 claude.ai › Settings › Billing 中領取套餐每月的 API 額度，金鑰才會使用這些額度。"
+            "value" : "在 console.anthropic.com 建立金鑰，然後貼上到此處。如果使用 Claude Max 或 Team 方案，請先在 claude.ai › Settings › Billing 中領取方案每月的 API 額度，金鑰才會使用這些額度。"
           }
         }
       }
@@ -19421,7 +19487,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 opencode.ai 訂閱 OpenCode Go，然後從 OpenCode Console 複製 API 金鑰。可用的模型和地區取決於你的 Go 套餐和隱私設定。"
+            "value" : "在 opencode.ai 訂閱 OpenCode Go，然後從 OpenCode Console 複製 API 金鑰。可用的模型和地區取決於你的 Go 方案和隱私權設定。"
           }
         }
       }
@@ -19437,7 +19503,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "任何支援 OpenAI chat completions API 的伺服器。如有金鑰，Poki 只會將其傳送到此地址。"
+            "value" : "任何支援 OpenAI chat completions API 的伺服器。如有金鑰，Poki 只會將其傳送到此位址。"
           }
         }
       }
@@ -19491,7 +19557,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "某個智慧體"
+            "value" : "某個代理程式"
           }
         },
         "en" : {
@@ -19539,13 +19605,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智能体与中转"
+            "value" : "智能体与中继"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體與中轉"
+            "value" : "代理程式與中繼"
           }
         },
         "en" : {
@@ -19599,7 +19665,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在此 iPhone 上啟動對應即時動態。鎖屏或回到主畫面即可查看，啟動新項會取代目前項。"
+            "value" : "在此 iPhone 上啟動對應即時動態。鎖定畫面或回到主畫面即可查看，啟動新項會取代目前項目。"
           }
         },
         "en" : {
@@ -19707,7 +19773,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鎖屏密碼"
+            "value" : "鎖定畫面密碼"
           }
         }
       }
@@ -19789,7 +19855,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Runner 已開啟，等待智慧體。"
+            "value" : "Runner 已開啟，等待代理程式。"
           }
         }
       }
@@ -19923,7 +19989,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "地址"
+            "value" : "位址"
           }
         }
       }
@@ -19971,7 +20037,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體"
+            "value" : "代理程式"
           }
         },
         "en" : {
@@ -19987,13 +20053,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "默认关闭。ask_poki 允许外部智能体将重复性任务交给 Poki 内置智能体。下次启动生效。自动判断位于“设置 › 审批”。"
+            "value" : "默认关闭。ask_poki 允许外部智能体将重复性任务交给 Poki 内置智能体。下次启动生效。自动判断位于“设置 › 批准”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "預設關閉。ask_poki 允許外部智慧體將重複性任務交給 Poki 內建智慧體。下次啟動生效。自動判斷位於「設定 › 審批」。"
+            "value" : "預設關閉。ask_poki 允許外部代理程式將重複性任務交給 Poki 內建代理程式。下次啟動生效。自動判斷位於「設定 › 批准」。"
           }
         },
         "en" : {
@@ -20091,7 +20157,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 透過螢幕共享會話傳送觸控和按鍵，而會話開啟期間 iOS 會關閉所有 App 的相機，因此 Poki 只在操作時開啟會話，並在最後一次操作 5 秒後關閉。開啟此項（預設）後，Poki 完全不開啟會話，相機不受任何影響。如果輕點和鍵入失效，請關閉此項。下次開啟 Poki 時生效。"
+            "value" : "Poki 透過螢幕共享工作階段傳送觸控和按鍵，而工作階段開啟期間 iOS 會關閉所有 App 的相機，因此 Poki 只在操作時開啟工作階段，並在最後一次操作 5 秒後關閉。開啟此項（預設）後，Poki 完全不開啟工作階段，相機不受任何影響。如果輕點和鍵入失效，請關閉此項。下次開啟 Poki 時生效。"
           }
         }
       }
@@ -20107,7 +20173,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體可連線此 iPhone"
+            "value" : "代理程式可連線此 iPhone"
           }
         },
         "en" : {
@@ -20190,16 +20256,22 @@
     },
     "Sensitive steps are paying, deleting, sending a message, placing a call, typing a password and anything in Wallet." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensitive steps include paying, deleting, sending messages, placing calls, entering passwords, and using Wallet."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "敏感步骤包括付款、删除、发送信息、拨打电话、键入密码，以及“钱包”中的任何操作。"
+            "value" : "敏感步骤包括付款、删除、发送信息、拨打电话、输入密码，以及“钱包”中的任何操作。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "敏感步驟包括付款、刪除、傳送資訊、撥打電話、鍵入密碼，以及「錢包」中的任何操作。"
+            "value" : "敏感步驟包括付款、刪除、傳送訊息、撥打電話、輸入密碼，以及「錢包」中的任何操作。"
           }
         }
       }
@@ -20215,7 +20287,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇「透過訊息回覆」時，Poki 會在對話中詢問，回覆「允許」即可放行；離開應用程式時也可在通知中操作。外部智慧體無對話介面，會顯示「允許」或「不允許」。"
+            "value" : "選擇「透過訊息回覆」時，Poki 會在對話中詢問，回覆「允許」即可放行；離開應用程式時也可在通知中操作。外部代理程式無對話介面，會顯示「允許」或「不允許」。"
           }
         },
         "en" : {
@@ -20259,7 +20331,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體執行以上操作時不再詢問。"
+            "value" : "代理程式執行以上操作時不再詢問。"
           }
         },
         "en" : {
@@ -20287,7 +20359,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "透過 Poki 控制此 iPhone 的智慧體"
+            "value" : "透過 Poki 控制此 iPhone 的代理程式"
           }
         }
       }
@@ -20367,13 +20439,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "宽松。在 Poki 自己的聊天中，除非某一步明显与你的要求无关或你已拒绝，否则聊天模型会批准。"
+            "value" : "宽松。在 Poki 对话中，除非某一步明显与你的请求无关或已被你拒绝，否则对话模型会自动批准。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "寬鬆。在 Poki 自己的聊天中，除非某一步明顯與你的要求無關或你已拒絕，否則聊天模型會批准。"
+            "value" : "寬鬆。在 Poki 對話中，除非某一步明顯與你的請求無關或已被你拒絕，否則對話模型會自動批准。"
           }
         }
       }
@@ -20383,13 +20455,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "均衡。在 Poki 自己的聊天中，某一步直接服务于你的要求时，聊天模型会批准。其余的会询问你。"
+            "value" : "均衡。在 Poki 对话中，当某一步直接服务于你的请求时，对话模型会自动批准；其余步骤仍会询问你。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "均衡。在 Poki 自己的聊天中，某一步直接服務於你的要求時，聊天模型會批准。其餘的會詢問你。"
+            "value" : "均衡。在 Poki 對話中，當某一步直接服務於你的請求時，對話模型會自動批准；其餘步驟仍會詢問你。"
           }
         }
       }
@@ -20399,13 +20471,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "严格。在 Poki 自己的聊天中，只有你明确要求过该操作时，聊天模型才会批准。其余的会询问你。"
+            "value" : "严格。在 Poki 对话中，仅当你明确要求过该操作时，对话模型才会批准；其余步骤均会询问你。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "嚴格。在 Poki 自己的聊天中，只有你明確要求過該操作時，聊天模型才會批准。其餘的會詢問你。"
+            "value" : "嚴格。在 Poki 對話中，僅當你明確要求過該操作時，對話模型才會批准；其餘步驟均會詢問你。"
           }
         }
       }
@@ -20437,7 +20509,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先設定地址"
+            "value" : "請先設定位址"
           }
         }
       }
@@ -20453,7 +20525,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已關閉，智慧體無法連線此 iPhone"
+            "value" : "已關閉，代理程式無法連線此 iPhone"
           }
         },
         "en" : {
@@ -20475,7 +20547,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟 Poki 後智慧體即可連線"
+            "value" : "開啟 Poki 後代理程式即可連線"
           }
         },
         "en" : {
@@ -20667,7 +20739,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 智慧體"
+            "value" : "Poki 代理程式"
           }
         },
         "en" : {
@@ -20711,7 +20783,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在此 iPhone 上用於對話和語音的模型。「記憶」儲存所有智慧體共享的流程與備忘。"
+            "value" : "Poki 在此 iPhone 上用於對話和語音的模型。「記憶」儲存所有代理程式共享的流程與備忘。"
           }
         },
         "en" : {
@@ -20831,7 +20903,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增智慧體"
+            "value" : "新增代理程式"
           }
         },
         "en" : {
@@ -20853,7 +20925,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "外部智慧體"
+            "value" : "外部代理程式"
           }
         },
         "en" : {
@@ -20869,13 +20941,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MCP 中转"
+            "value" : "MCP 中继"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MCP 中轉"
+            "value" : "MCP 中繼"
           }
         }
       }
@@ -20885,7 +20957,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MCP 中转离线，智能体无法连接此 iPhone。"
+            "value" : "MCP 中继离线，智能体无法连接此 iPhone。"
           }
         },
         "en" : {
@@ -20897,7 +20969,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MCP 中轉離線，智慧體無法連線此 iPhone。"
+            "value" : "MCP 中繼離線，代理程式無法連線此 iPhone。"
           }
         }
       }
@@ -20907,13 +20979,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在前台或后台运行时，中转会将智能体请求转发至此 iPhone，不存储任何数据。"
+            "value" : "Poki 在前台或后台运行时，中继会将智能体请求转发至此 iPhone，不存储任何数据。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在前景或背景執行時，中轉會將智慧體請求轉發至此 iPhone，不儲存任何資料。"
+            "value" : "Poki 在前景或背景執行時，中繼會將代理程式請求轉發至此 iPhone，不儲存任何資料。"
           }
         },
         "en" : {
@@ -20951,7 +21023,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定敏感步驟前的批准方式，並檢視所有智慧體在此 iPhone 上的操作記錄。"
+            "value" : "設定敏感步驟前的批准方式，並檢視所有代理程式在此 iPhone 上的操作記錄。"
           }
         },
         "en" : {
@@ -21015,13 +21087,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天"
+            "value" : "对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天"
+            "value" : "對話"
           }
         }
       }
@@ -21075,7 +21147,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體正在執行步驟：%@。"
+            "value" : "代理程式正在執行步驟：%@。"
           }
         },
         "en" : {
@@ -21097,7 +21169,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體在 %@ 秒前執行過操作。最後一步完成 1 分鐘後即可安裝。"
+            "value" : "代理程式在 %@ 秒前執行過操作。最後一步完成 1 分鐘後即可安裝。"
           }
         },
         "en" : {
@@ -21195,7 +21267,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 未能開啟自身的自動化會話（%@），迴環也拒絕了連線。在配置中檢查迴環，然後再試。"
+            "value" : "Poki 未能開啟自身的自動化工作階段（%@），迴環也拒絕了連線。請在「初始設定」中檢查迴環，然後再試。"
           }
         }
       }
@@ -21211,7 +21283,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 未能開啟自身的自動化會話（%@）。連上 Wi-Fi 後再試。"
+            "value" : "Poki 未能開啟自身的自動化工作階段（%@）。連上 Wi-Fi 後再試。"
           }
         }
       }
@@ -21243,7 +21315,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 已重啟以便智慧體恢復讀取螢幕，開啟後會自動開啟。"
+            "value" : "Poki 已重啟，以便代理程式恢復讀取螢幕；打開後會自動啟用。"
           }
         },
         "en" : {
@@ -21265,7 +21337,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki sends touches and keys over a screen-sharing session, which disables cameras while open, so Poki opens it only during actions. With this on, Poki opens no session at all so cameras stay unaffected; turn it off if taps or typing stop working. Takes effect next time Poki turns on."
+            "value" : "Poki sends touches and keys over a screen-sharing session, which disables cameras while open, so Poki opens it only during actions. With this on, Poki opens no session at all so cameras stay unaffected. Turn it off if taps or typing stop working. Takes effect next time Poki turns on."
           }
         },
         "zh-Hant" : {
@@ -21287,7 +21359,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟 Poki 以恢復智慧體的螢幕畫面（將重啟一次）。"
+            "value" : "請開啟 Poki 以恢復代理程式的螢幕畫面（將重啟一次）。"
           }
         },
         "en" : {
@@ -21325,7 +21397,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟 Poki，以便等待中的智慧體恢復讀取螢幕。"
+            "value" : "請開啟 Poki，以便等待中的代理程式恢復讀取螢幕。"
           }
         },
         "en" : {
@@ -21621,13 +21693,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新聊天"
+            "value" : "新对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新聊天"
+            "value" : "新對話"
           }
         }
       }
@@ -21643,13 +21715,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 正透過 %@ 登入並跳轉至未知智慧體 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%@ 正透過 %@ 登入並跳轉至未知代理程式 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is signing in through %@ and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%@ is signing in through %@ and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -21735,7 +21807,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 會自動關閉以恢復智慧體的螢幕畫面。請從通知或主畫面重新開啟 Poki，開啟後會自動開啟。"
+            "value" : "Poki 會自動關閉以恢復代理程式的螢幕畫面。請從通知或主畫面重新開啟 Poki，打開後會自動啟用。"
           }
         },
         "en" : {
@@ -21757,7 +21829,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "接下來請輸入鎖屏密碼"
+            "value" : "接下來請輸入鎖定畫面密碼"
           }
         }
       }
@@ -21773,7 +21845,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這是 iPhone 重新啟動後 Poki 首次啟動自動化，因此 iOS 會在下一個螢幕要求輸入鎖屏密碼。該螢幕屬於 iOS。Poki 無法看到或讀取你輸入的內容，並且在下次重新啟動前只會詢問一次。"
+            "value" : "這是 iPhone 重新啟動後 Poki 首次啟動自動化，因此 iOS 會在下一個螢幕要求輸入鎖定畫面密碼。該螢幕屬於 iOS。Poki 無法看到或讀取你輸入的內容，並且在下次重新啟動前只會詢問一次。"
           }
         }
       }
@@ -21789,7 +21861,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@。智慧體會等待，在你輕點即時動態上的「完成」前不會傳送任何內容。"
+            "value" : "%@。代理程式會等待，在你輕點即時動態上的「完成」前不會傳送任何內容。"
           }
         },
         "en" : {
@@ -21903,7 +21975,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體停止時結束自動化工作階段並隱藏 iOS 橫幅（實驗性）。若此後智慧體無法讀取螢幕，請關閉此項並重開 Poki。"
+            "value" : "代理程式停止時結束自動化工作階段並隱藏 iOS 橫幅（實驗性）。若此後代理程式無法讀取螢幕，請關閉此項並重開 Poki。"
           }
         },
         "en" : {
@@ -21919,13 +21991,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先在“智能体”中设置中转，以获取此连接器地址。"
+            "value" : "请先在“智能体”中设置中继，以获取此连接器地址。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「智慧體」中設定中轉，以取得此連接器位址。"
+            "value" : "請先在「代理程式」中設定中繼，以取得此連接器位址。"
           }
         },
         "en" : {
@@ -21947,7 +22019,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚無智慧體使用過此連接器。"
+            "value" : "尚無代理程式使用過此連接器。"
           }
         },
         "en" : {
@@ -21975,7 +22047,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "暫無智慧體"
+            "value" : "暫無代理程式"
           }
         }
       }
@@ -22007,7 +22079,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新命名智慧體"
+            "value" : "重新命名代理程式"
           }
         },
         "en" : {
@@ -22029,7 +22101,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體透過此位址連線時，會保留你設定的名稱。"
+            "value" : "代理程式透過此位址連線時，會保留你設定的名稱。"
           }
         },
         "en" : {
@@ -22083,7 +22155,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟 **Poki**，然後開啟**允許完全訪問**。"
+            "value" : "開啟 **Poki**，然後開啟「**允許完整取用**」。"
           }
         }
       }
@@ -22099,7 +22171,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果 Poki 的頁面上沒有「鍵盤」一行，請開啟**設定 › 通用 › 鍵盤 › 鍵盤 › 新增新鍵盤**，選擇 **Poki**，然後在列表中輕點它並開啟**允許完全訪問**。"
+            "value" : "如果 Poki 的頁面上沒有「鍵盤」一列，請開啟「**設定 › 一般 › 鍵盤 › 鍵盤 › 新增鍵盤**」，選擇 **Poki**，然後在列表中輕點它並開啟「**允許完整取用**」。"
           }
         }
       }
@@ -22115,7 +22187,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保留你常用的鍵盤。Poki 鍵入時會切換到自己的鍵盤，完成後切回你的鍵盤。完全訪問讓鍵盤面板能與此 iPhone 上的 Poki 通訊。它沒有網路訪問許可權，也從不使用剪貼簿。"
+            "value" : "保留你常用的鍵盤。Poki 輸入時會切換到自己的鍵盤，完成後切回你的鍵盤。「完整取用」讓鍵盤面板能與此 iPhone 上的 Poki 通訊。它沒有網路權限，也從不使用剪貼簿。"
           }
         }
       }
@@ -22309,7 +22381,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "任務成功後，智慧體會儲存流程以便下次一步重放，遇到畫面變化則自動停下。輕掃可刪除流程。"
+            "value" : "任務成功後，代理程式會儲存流程以便下次一步重放，遇到畫面變化則自動停下。輕掃可刪除流程。"
           }
         },
         "en" : {
@@ -22331,7 +22403,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "例如，媽媽在通訊錄中叫「Mama」"
+            "value" : "例如，媽媽在「聯絡人」中叫「Mama」"
           }
         }
       }
@@ -22363,7 +22435,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每個智慧體在任務開始前都會讀取這些備忘。僅儲存在此 iPhone 上。"
+            "value" : "每個代理程式在任務開始前都會讀取這些備忘。僅儲存在此 iPhone 上。"
           }
         },
         "en" : {
@@ -22705,7 +22777,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "某個智慧體"
+            "value" : "某個代理程式"
           }
         },
         "en" : {
@@ -22721,13 +22793,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "语音聊天"
+            "value" : "语音对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "語音聊天"
+            "value" : "語音對話"
           }
         }
       }
@@ -22759,7 +22831,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "給媽媽發資訊「我在路上了」，發出後告訴我。"
+            "value" : "傳訊息給媽媽「我在路上了」，發出後告訴我。"
           }
         }
       }
@@ -22775,7 +22847,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輕點「資訊」"
+            "value" : "輕點「訊息」"
           }
         }
       }
@@ -22807,7 +22879,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟「通用 › 關於本機」"
+            "value" : "開啟「一般 › 關於本機」"
           }
         }
       }
@@ -22947,7 +23019,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請修復以下專案。每個專案所在的標籤頁上都有一個圓點。"
+            "value" : "請處理以下項目。每個項目所在的分頁上都有圓點標記。"
           }
         }
       }
@@ -22986,16 +23058,22 @@
     },
     "No Sessions Yet" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Conversations Yet"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚无会话"
+            "value" : "暂无对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚無會話"
+            "value" : "尚無對話"
           }
         }
       }
@@ -23005,19 +23083,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与 Poki 开始对话，或在“智能体”中接入 Claude、Codex 等智能体。所有会话都会显示在这里。"
+            "value" : "与 Poki 开始对话，或在“智能体”中接入 Claude、Codex 等智能体。所有对话都会显示在这里。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "與 Poki 開始對話，或在「智慧體」中接入 Claude、Codex 等智慧體。所有工作階段都會顯示在這裡。"
+            "value" : "與 Poki 開始對話，或在「代理程式」中接入 Claude、Codex 等代理程式。所有對話都會顯示在這裡。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start a chat with Poki, or connect an agent like Claude or Codex in Agents. All sessions appear here."
+            "value" : "Start a conversation with Poki, or connect an agent like Claude or Codex in Agents. Every conversation appears here."
           }
         }
       }
@@ -23040,32 +23118,44 @@
     },
     "Search Sessions" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Conversations"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜索会话"
+            "value" : "搜索对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜尋會話"
+            "value" : "搜尋對話"
           }
         }
       }
     },
     "Rename Session" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Conversation"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新命名会话"
+            "value" : "重命名对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新命名會話"
+            "value" : "重新命名對話"
           }
         }
       }
@@ -23097,13 +23187,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与 Poki 新建聊天"
+            "value" : "与 Poki 新建对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "與 Poki 新建聊天"
+            "value" : "與 Poki 新建對話"
           }
         }
       }
@@ -23135,7 +23225,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已關閉。智慧體和對話無法使用此 iPhone。"
+            "value" : "已關閉。代理程式和對話無法使用此 iPhone。"
           }
         },
         "en" : {
@@ -23199,13 +23289,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无聊天账户"
+            "value" : "未配置对话账户"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無聊天帳號"
+            "value" : "未設定對話帳號"
           }
         },
         "en" : {
@@ -23221,13 +23311,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中转离线"
+            "value" : "中继离线"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中轉離線"
+            "value" : "中繼離線"
           }
         }
       }
@@ -23443,13 +23533,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Both off by default. ask_poki lets external agents hand repetitive tasks to Poki’s built-in agent. Auto-Classifier handles approvals silently using your chat model based on your request; replying yes in chat or voice lets a refused step through next time. Without a chat model, all sensitive steps are refused. Takes effect next launch."
+            "value" : "Both off by default. ask_poki lets external agents hand repetitive tasks to Poki’s built-in agent. Auto-Classifier handles approvals silently using your chat model based on your request, and replying yes in chat or voice lets a refused step through next time. Without a chat model, all sensitive steps are refused. Takes effect next launch."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "兩項預設關閉。ask_poki 允許外部智慧體將重複性任務交給 Poki 內建智慧體。自動判斷會在背景透過對話模型判斷目前步驟是否符合你的要求並直接放行或拒絕；在對話或語音中回覆「允許」可在下次放行被拒步驟。未設定對話模型時會拒絕所有敏感步驟。下次啟動生效。"
+            "value" : "兩項預設關閉。ask_poki 允許外部代理程式將重複性任務交給 Poki 內建代理程式。自動判斷會在背景透過對話模型判斷目前步驟是否符合你的要求並直接放行或拒絕；在對話或語音中回覆「允許」可在下次放行被拒步驟。未設定對話模型時會拒絕所有敏感步驟。下次啟動生效。"
           }
         }
       }
@@ -23767,13 +23857,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开聊天"
+            "value" : "打开对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟聊天"
+            "value" : "開啟對話"
           }
         }
       }
@@ -23971,7 +24061,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隧道已開啟，但無響應"
+            "value" : "隧道已開啟，但無回應"
           }
         }
       }
@@ -24003,7 +24093,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "來自 %@ 使用者的反饋，未與其文件核對。「迴環」頁面上的狀態會顯示它是否可用。"
+            "value" : "根據 %@ 使用者回報整理，尚未核對其文件。「迴環」頁面上的狀態會顯示它是否可用。"
           }
         }
       }
@@ -24095,7 +24185,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "如果仍然沒有響應"
+            "value" : "如果仍然沒有回應"
           }
         }
       }
@@ -24111,7 +24201,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "整理自 %@ 和其他迴環工具使用者的反饋。請按順序嘗試。上方狀態每隔幾秒會重新檢查。"
+            "value" : "整理自 %@ 和其他迴環工具使用者的回報。請依序嘗試，上方狀態每隔幾秒會重新檢查。"
           }
         }
       }
@@ -24159,7 +24249,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已配對，但 iPhone 沒有響應檢查。"
+            "value" : "已配對，但 iPhone 沒有回應檢查。"
           }
         }
       }
@@ -24445,13 +24535,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配置"
+            "value" : "配置指南"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定精靈"
+            "value" : "設定指南"
           }
         },
         "en" : {
@@ -24479,7 +24569,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定精靈、更新、記憶、批准、智慧體與診斷。"
+            "value" : "初始設定、更新、記憶、批准、代理程式與診斷。"
           }
         }
       }
@@ -24811,7 +24901,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "某個隧道為此 iPhone 分配了 10.7.0.x 地址，但透過它沒有任何響應。"
+            "value" : "某個隧道為此 iPhone 分配了 10.7.0.x 位址，但透過它沒有任何回應。"
           }
         }
       }
@@ -24827,7 +24917,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "沒有隧道為此 iPhone 分配 10.7.0.x 地址。"
+            "value" : "沒有隧道為此 iPhone 分配 10.7.0.x 位址。"
           }
         }
       }
@@ -24907,7 +24997,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待智慧體"
+            "value" : "等待代理程式"
           }
         },
         "en" : {
@@ -24945,7 +25035,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體正在等待"
+            "value" : "代理程式正在等待"
           }
         },
         "en" : {
@@ -25209,7 +25299,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「診斷」包含連線檢查和本機地址。「測試選項」包含試驗中的開關。"
+            "value" : "「診斷」包含連線檢查和本機位址。「測試選項」包含試驗中的開關。"
           }
         }
       }
@@ -25225,7 +25315,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "原生服務無需 XCTest 工作階段及橫幅即可控制手機。可在「設定精靈 › 設定本機連線」中更改。"
+            "value" : "原生服務無需 XCTest 工作階段及橫幅即可控制手機。可在「初始設定 › 設定本機連線」中更改。"
           }
         },
         "en" : {
@@ -25263,7 +25353,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "XCTest 會話"
+            "value" : "XCTest 工作階段"
           }
         }
       }
@@ -25279,7 +25369,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連線開啟時使用原生服務，否則使用 XCTest 會話。"
+            "value" : "連線開啟時使用原生服務，否則使用 XCTest 工作階段。"
           }
         }
       }
@@ -25343,7 +25433,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拷貝或儲存下方的日誌。"
+            "value" : "複製或儲存下方的日誌。"
           }
         }
       }
@@ -25439,7 +25529,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "編輯地址和金鑰"
+            "value" : "編輯位址和金鑰"
           }
         }
       }
@@ -25699,7 +25789,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟設定精靈"
+            "value" : "開啟初始設定"
           }
         },
         "en" : {
@@ -25715,13 +25805,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先设置中转。每个智能体在中转上都有独立的 MCP 地址。"
+            "value" : "请先设置中继。每个智能体在中继上都有独立的 MCP 地址。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先設定中轉。每個智慧體在中轉上都有獨立的 MCP 位址。"
+            "value" : "請先設定中繼。每個代理程式在中繼上都有獨立的 MCP 位址。"
           }
         },
         "en" : {
@@ -25743,7 +25833,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每個智慧體都有獨立的 MCP 位址，可在 Claude、Codex 等用戶端新增為遠端 MCP 伺服器。首次連線自動同步名稱與圖示（已重新命名除外）。輕掃可撤銷。"
+            "value" : "每個代理程式都有獨立的 MCP 位址，可在 Claude、Codex 等用戶端新增為遠端 MCP 伺服器。首次連線自動同步名稱與圖示（已重新命名除外）。輕掃可撤銷。"
           }
         },
         "en" : {
@@ -25781,7 +25871,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 將密碼儲存在此 iPhone 的鑰匙串中，以便每週為自己重新簽名。"
+            "value" : "Poki 將密碼儲存在此 iPhone 的鑰匙圈中，以便每週為自己重新簽名。"
           }
         }
       }
@@ -26025,7 +26115,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟後即可檢視智慧體步驟並批准敏感操作。"
+            "value" : "開啟後即可檢視代理程式步驟並批准敏感操作。"
           }
         },
         "en" : {
@@ -26063,7 +26153,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "完成全部項目後，智慧體和對話即可使用此 iPhone。可自動檢測的項目會自動勾選。"
+            "value" : "完成全部項目後，代理程式和對話即可使用此 iPhone。可自動檢測的項目會自動勾選。"
           }
         },
         "en" : {
@@ -26107,7 +26197,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "僅在自動化工作階段開啟時顯示系統橫幅，智慧體請求時開啟、閒置時關閉。「記憶」儲存所有智慧體共享的流程與備忘。"
+            "value" : "僅在自動化工作階段開啟時顯示系統橫幅，代理程式請求時開啟、閒置時關閉。「記憶」儲存所有代理程式共享的流程與備忘。"
           }
         },
         "en" : {
@@ -26129,7 +26219,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「記憶」儲存所有智慧體共享的流程與備忘。"
+            "value" : "「記憶」儲存所有代理程式共享的流程與備忘。"
           }
         },
         "en" : {
@@ -26157,7 +26247,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「記憶」儲存所有智慧體共享的流程與備忘。「批准」會在智慧體付款、刪除、傳訊息、打電話、輸密碼或操作「錢包」前先向你確認。"
+            "value" : "「記憶」儲存所有代理程式共享的流程與備忘。「批准」會在代理程式付款、刪除、傳訊息、打電話、輸密碼或操作「錢包」前先向你確認。"
           }
         }
       }
@@ -26255,7 +26345,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先關閉其他 VPN 再輕點「開啟本機連線」，或在「設定精靈」中改用外部連線。"
+            "value" : "請先關閉其他 VPN 再輕點「開啟本機連線」，或在「初始設定」中改用外部連線。"
           }
         },
         "en" : {
@@ -26309,7 +26399,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在退出登入"
+            "value" : "正在登出"
           }
         }
       }
@@ -26559,7 +26649,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reconnect to hear how running steps finished. Connection lost (%@); nothing was resent."
+            "value" : "Reconnect to hear how running steps finished. Connection lost (%@), and nothing was resent."
           }
         }
       }
@@ -26703,7 +26793,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "批准逾時，已跳過該步驟。智慧體可重新發起請求。"
+            "value" : "批准逾時，已跳過該步驟。代理程式可重新發起請求。"
           }
         },
         "en" : {
@@ -26725,7 +26815,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體請求時自動啟動。"
+            "value" : "代理程式請求時自動啟動。"
           }
         },
         "en" : {
@@ -26763,7 +26853,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "等待智慧體指令"
+            "value" : "等待代理程式指令"
           }
         },
         "en" : {
@@ -26861,7 +26951,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "手機要求輸入鎖屏密碼以啟動 Runner"
+            "value" : "iPhone 要求輸入鎖定畫面密碼以啟動 Runner"
           }
         }
       }
@@ -26877,7 +26967,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "手機要求輸入鎖屏密碼以允許自動化"
+            "value" : "iPhone 要求輸入鎖定畫面密碼以允許自動化"
           }
         }
       }
@@ -26893,7 +26983,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "螢幕要求輸入鎖屏密碼"
+            "value" : "畫面要求輸入鎖定畫面密碼"
           }
         }
       }
@@ -26963,7 +27053,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Please complete this step; the agent can’t act on this screen"
+            "value" : "Complete this step on screen. The agent can’t act here."
           }
         }
       }
@@ -27193,7 +27283,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在獲取最新的 Poki"
+            "value" : "正在取得最新的 Poki"
           }
         }
       }
@@ -27625,7 +27715,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對。iPhone 拒絕了配對（%@）。"
+            "value" : "請在「初始設定」中重新配對。iPhone 拒絕了配對（%@）。"
           }
         },
         "en" : {
@@ -27647,13 +27737,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "没有可询问的聊天模型"
+            "value" : "没有可用的对话模型"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "沒有可詢問的聊天模型"
+            "value" : "沒有可用的對話模型"
           }
         }
       }
@@ -28391,19 +28481,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请添加 %lld 密钥：轻点我的头像，再点“大脑”。"
+            "value" : "请在“设置 › 模型”中添加 %lld 密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請新增 %lld 金鑰：輕點我的頭像，再點「大腦」。"
+            "value" : "請在「設定 › 模型」中新增 %lld 金鑰。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add your %lld key. Tap my picture, then Brain."
+            "value" : "Add your %lld key in Settings › Models."
           }
         }
       }
@@ -28569,7 +28659,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上次響應耗時 %@ 毫秒"
+            "value" : "上次回應耗時 %@ 毫秒"
           }
         }
       }
@@ -28767,13 +28857,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请重开 Poki 或用签名工具重装。无法从钥匙串读取中转密钥（%lld）。"
+            "value" : "请重开 Poki 或用签名工具重装。无法从钥匙串读取中继密钥（%lld）。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重開 Poki 或用簽名工具重裝。無法從鑰匙圈讀取中轉金鑰（%lld）。"
+            "value" : "請重開 Poki 或用簽名工具重裝。無法從鑰匙圈讀取中繼金鑰（%lld）。"
           }
         },
         "en" : {
@@ -28811,7 +28901,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請將此 iPhone 連上 Mac 並讓智慧體續簽。Poki 將在 %lld 後無法開啟。"
+            "value" : "請將此 iPhone 連上 Mac 並讓代理程式續簽。Poki 將在 %lld 後無法開啟。"
           }
         },
         "en" : {
@@ -28935,7 +29025,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對（約需 1 分鐘）。此 iPhone 已不再接受原配對（%lld）。"
+            "value" : "請在「初始設定」中重新配對（約需 1 分鐘）。此 iPhone 已不再接受原配對（%lld）。"
           }
         },
         "en" : {
@@ -28957,7 +29047,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對。此 iPhone 已不再接受目前配對。%lld"
+            "value" : "請在「初始設定」中重新配對。此 iPhone 已不再接受目前配對。%lld"
           }
         },
         "en" : {
@@ -29305,7 +29395,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在 %lld 前開啟「設定精靈」並輕點「安裝」。續簽版本已就緒。"
+            "value" : "請在 %lld 前開啟「初始設定」並輕點「安裝」。續簽版本已就緒。"
           }
         },
         "en" : {
@@ -29327,7 +29417,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在 %lld 前開啟「設定精靈」為 Poki 續簽。"
+            "value" : "請在 %lld 前開啟「初始設定」為 Poki 續簽。"
           }
         },
         "en" : {
@@ -29378,16 +29468,22 @@
     },
     "Poki keeps this key. Chatting with %lld comes in an update." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki saves this key. Conversations with %lld are coming in an update."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 会保存此密钥。与 %lld 聊天的功能将在后续更新中提供。"
+            "value" : "Poki 会保存此密钥。与 %lld 对话的功能将在后续更新中提供。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 會儲存此金鑰。與 %lld 聊天的功能將在後續更新中提供。"
+            "value" : "Poki 會儲存此金鑰。與 %lld 對話的功能將在後續更新中提供。"
           }
         }
       }
@@ -29429,13 +29525,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld，文字聊天与实时语音"
+            "value" : "%lld，文字对话与实时语音"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld，文字聊天與即時語音"
+            "value" : "%lld，文字對話與即時語音"
           }
         },
         "en" : {
@@ -29451,13 +29547,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld，文字聊天"
+            "value" : "%lld，文字对话"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld，文字聊天"
+            "value" : "%lld，文字對話"
           }
         }
       }
@@ -29505,13 +29601,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天模型 %lld"
+            "value" : "对话模型 %lld"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "聊天模型 %lld"
+            "value" : "對話模型 %lld"
           }
         }
       }
@@ -29653,7 +29749,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體正在執行步驟：%lld。"
+            "value" : "代理程式正在執行步驟：%lld。"
           }
         },
         "en" : {
@@ -29675,7 +29771,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體在 %lld 秒前執行過操作。最後一步完成 1 分鐘後即可安裝。"
+            "value" : "代理程式在 %lld 秒前執行過操作。最後一步完成 1 分鐘後即可安裝。"
           }
         },
         "en" : {
@@ -29719,13 +29815,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 正透過 %@ 登入並跳轉至未知智慧體 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%@ 正透過 %@ 登入並跳轉至未知代理程式 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is signing in through %@ and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%@ is signing in through %@ and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29741,13 +29837,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 正透過 %lld 登入並跳轉至未知智慧體 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%@ 正透過 %lld 登入並跳轉至未知代理程式 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is signing in through %lld and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%@ is signing in through %lld and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29763,13 +29859,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 正透過 %lld 登入並跳轉至未知智慧體 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%@ 正透過 %lld 登入並跳轉至未知代理程式 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ is signing in through %lld and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%@ is signing in through %lld and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29785,13 +29881,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 正透過 %@ 登入並跳轉至未知智慧體 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%lld 正透過 %@ 登入並跳轉至未知代理程式 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld is signing in through %@ and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%lld is signing in through %@ and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29807,13 +29903,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 正透過 %@ 登入並跳轉至未知智慧體 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%lld 正透過 %@ 登入並跳轉至未知代理程式 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld is signing in through %@ and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%lld is signing in through %@ and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29829,13 +29925,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 正透過 %lld 登入並跳轉至未知智慧體 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%lld 正透過 %lld 登入並跳轉至未知代理程式 %@。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld is signing in through %lld and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%lld is signing in through %lld and redirecting to %@, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29851,13 +29947,13 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 正透過 %lld 登入並跳轉至未知智慧體 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
+            "value" : "%lld 正透過 %lld 登入並跳轉至未知代理程式 %lld。僅在你本人此刻發起連線時才允許；允許後對方可查看螢幕並操作此 iPhone。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld is signing in through %lld and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now; it grants screen view and control of this iPhone."
+            "value" : "%lld is signing in through %lld and redirecting to %lld, which isn’t a known agent. Allow only if you initiated this connection right now. It grants screen view and control of this iPhone."
           }
         }
       }
@@ -29873,7 +29969,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld。智慧體會等待，在你輕點即時動態上的「完成」前不會傳送任何內容。"
+            "value" : "%lld。代理程式會等待，在你輕點即時動態上的「完成」前不會傳送任何內容。"
           }
         },
         "en" : {
@@ -30259,7 +30355,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "來自 %lld 使用者的反饋，未與其文件核對。「迴環」頁面上的狀態會顯示它是否可用。"
+            "value" : "根據 %lld 使用者回報整理，尚未核對其文件。「迴環」頁面上的狀態會顯示它是否可用。"
           }
         }
       }
@@ -30323,7 +30419,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "整理自 %lld 和其他迴環工具使用者的反饋。請按順序嘗試。上方狀態每隔幾秒會重新檢查。"
+            "value" : "整理自 %lld 和其他迴環工具使用者的回報。請依序嘗試，上方狀態每隔幾秒會重新檢查。"
           }
         }
       }
@@ -30517,7 +30613,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reconnect to hear how running steps finished. Connection lost (%lld); nothing was resent."
+            "value" : "Reconnect to hear how running steps finished. Connection lost (%lld), and nothing was resent."
           }
         }
       }
@@ -30587,7 +30683,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對。iPhone 拒絕了配對（%lld）。"
+            "value" : "請在「初始設定」中重新配對。iPhone 拒絕了配對（%lld）。"
           }
         },
         "en" : {
@@ -30775,19 +30871,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先添加模型密钥：轻点我的头像，再点“大脑”。"
+            "value" : "请先添加模型密钥：打开“设置”，再点“模型”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先新增模型金鑰：輕點我的頭像，再點「大腦」。"
+            "value" : "請先新增模型金鑰：開啟「設定」，再點「模型」。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add a model key first. Tap my picture, then Brain."
+            "value" : "Add a model key first. Open Settings, then Models."
           }
         }
       }
@@ -30797,19 +30893,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请添加 %@ 密钥：轻点我的头像，再点“大脑”。"
+            "value" : "请在“设置 › 模型”中添加 %@ 密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請新增 %@ 金鑰：輕點我的頭像，再點「大腦」。"
+            "value" : "請在「設定 › 模型」中新增 %@ 金鑰。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Add your %@ key. Tap my picture, then Brain."
+            "value" : "Add your %@ key in Settings › Models."
           }
         }
       }
@@ -30857,19 +30953,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请前往“Poki › 大脑”检查密钥。Anthropic 拒绝了该密钥。"
+            "value" : "请前往“设置 › 模型”检查密钥。Anthropic 拒绝了该密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請前往「Poki › 大腦」檢查金鑰。Anthropic 拒絕了該金鑰。"
+            "value" : "請前往「設定 › 模型」檢查金鑰。Anthropic 拒絕了該金鑰。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check your Anthropic key in Poki › Brain. Anthropic rejected it."
+            "value" : "Check your Anthropic key in Settings › Models. Anthropic rejected it."
           }
         }
       }
@@ -30934,13 +31030,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先在“设置 › 中转”中输入你的中转地址。Poki 没有默认中转。"
+            "value" : "请先在“设置 › 中继”中输入你的中继地址。Poki 没有默认中继。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「設定 › 中轉」中輸入你的中轉地址。Poki 沒有預設中轉。"
+            "value" : "請先在「設定 › 中繼」中輸入你的中繼位址。Poki 沒有預設中繼。"
           }
         }
       }
@@ -31004,19 +31100,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请前往“Poki › 大脑”检查密钥。OpenAI 拒绝了该密钥。"
+            "value" : "请前往“设置 › 模型”检查密钥。OpenAI 拒绝了该密钥。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請前往「Poki › 大腦」檢查金鑰。OpenAI 拒絕了該金鑰。"
+            "value" : "請前往「設定 › 模型」檢查金鑰。OpenAI 拒絕了該金鑰。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Check your OpenAI key in Poki › Brain. OpenAI rejected it."
+            "value" : "Check your OpenAI key in Settings › Models. OpenAI rejected it."
           }
         }
       }
@@ -31150,6 +31246,12 @@
     },
     "Poki keeps the key now; chatting with %@ comes in an update. Until then, choose Anthropic or OpenAI." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki saves this key now, and conversations with %@ are coming in an update. Until then, choose Anthropic or OpenAI."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31170,7 +31272,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 将打开“设置”。前往“**隐私与安全 › 开发者模式**”并轻点“**与 Poki 配对**”。"
+            "value" : "Poki 将打开“设置”。前往“**隐私与安全性 › 开发者模式**”并轻点“**与 Poki 配对**”。"
           }
         },
         "zh-Hant" : {
@@ -31186,13 +31288,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先设置中转地址。每个智能体的地址均托管在你的中转上。"
+            "value" : "请先设置中继地址。每个智能体的地址均托管在你的中继上。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先設定中轉位址。每個智慧體的位址均託管在你的中轉上。"
+            "value" : "請先設定中繼位址。每個代理程式的位址均託管在你的中繼上。"
           }
         },
         "en" : {
@@ -31208,19 +31310,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请重新登录 ChatGPT：轻点我的头像，再点“大脑”。"
+            "value" : "请在“设置 › 模型”中重新登录 ChatGPT。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重新登入 ChatGPT：輕點我的頭像，再點「大腦」。"
+            "value" : "請在「設定 › 模型」中重新登入 ChatGPT。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to ChatGPT again. Tap my picture, then Brain."
+            "value" : "Sign in to ChatGPT again in Settings › Models."
           }
         }
       }
@@ -31230,19 +31332,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请先登录 ChatGPT：轻点我的头像，再点“大脑”。"
+            "value" : "请先在“设置 › 模型”中登录 ChatGPT。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先登入 ChatGPT：輕點我的頭像，再點「大腦」。"
+            "value" : "請先在「設定 › 模型」中登入 ChatGPT。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sign in to ChatGPT first. Tap my picture, then Brain."
+            "value" : "Sign in to ChatGPT first in Settings › Models."
           }
         }
       }
@@ -31280,7 +31382,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對（約需 1 分鐘）。此 iPhone 已不再接受原配對（%@）。"
+            "value" : "請在「初始設定」中重新配對（約需 1 分鐘）。此 iPhone 已不再接受原配對（%@）。"
           }
         },
         "en" : {
@@ -31302,7 +31404,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「設定精靈」中重新配對。此 iPhone 已不再接受目前配對：%@"
+            "value" : "請在「初始設定」中重新配對。此 iPhone 已不再接受目前配對：%@"
           }
         },
         "en" : {
@@ -31318,25 +31420,31 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在前台或后台运行时，中转会将请求转发至此 iPhone，不存储任何数据。设备离线时客户端会收到错误提示。"
+            "value" : "Poki 在前台或后台运行时，中继会将请求转发至此 iPhone，不存储任何数据。设备离线时客户端会收到错误提示。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在前景或背景執行時，中轉會將請求轉發至此 iPhone，不儲存任何資料。裝置離線時用戶端會收到錯誤提示。"
+            "value" : "Poki 在前景或背景執行時，中繼會將請求轉發至此 iPhone，不儲存任何資料。裝置離線時用戶端會收到錯誤提示。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing; when offline, clients receive an error."
+            "value" : "The relay forwards requests to this iPhone while Poki is open or in the background. It stores nothing, and clients receive an error when offline."
           }
         }
       }
     },
     "This happens after a restore, a reset of Location & Privacy, or when the phone forgot Poki. Pair again; the old key is replaced." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This happens after a restore, a reset of Location & Privacy, or when this iPhone forgets Poki. Pair again to replace the old key."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31375,6 +31483,12 @@
     },
     "iOS asks for the passcode before UI Automation after Poki Runner was force-closed or the iPhone restarted. Enter it once; Poki carries on by itself." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS asks for the passcode before UI Automation after Poki Runner is force-closed or this iPhone restarts. Enter it once, and Poki continues automatically."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31391,6 +31505,12 @@
     },
     "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once; Poki carries on by itself." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS asks for the passcode to allow UI Automation after Poki restarts, or 8 hours after it was last entered. Enter it once, and Poki continues automatically."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -31473,19 +31593,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A free Apple Account works. Poki signs itself for 7 days at a time and prepares the next renewal automatically. Your Apple ID and password go only to Apple; the anisette server never sees them."
+            "value" : "A free Apple Account works. Poki signs itself for 7 days at a time and prepares the next renewal automatically. Your Apple Account credentials go only to Apple, and the anisette server never sees them."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "免费 Apple 账户即可使用。Poki 每次签名有效期 7 天，到期前会自动准备续签。Apple ID 和密码仅发送给 Apple，anisette 服务器无法读取。"
+            "value" : "免费 Apple 账户即可使用。Poki 每次签名有效期为 7 天，到期前会自动准备续签。Apple 账户和密码仅发送给 Apple，anisette 服务器无法读取。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "免費 Apple 帳號即可使用。Poki 每次簽名有效期 7 天，到期前會自動準備續簽。Apple ID 和密碼僅傳送給 Apple，anisette 伺服器無法讀取。"
+            "value" : "免費 Apple 帳號即可使用。Poki 每次簽名有效期為 7 天，到期前會自動準備續簽。Apple 帳號和密碼僅傳送給 Apple，anisette 伺服器無法讀取。"
           }
         }
       }
@@ -31554,7 +31674,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請開啟 Poki 以恢復智慧體的螢幕畫面（將重啟一次）。"
+            "value" : "請開啟 Poki 以恢復代理程式的螢幕畫面（將重啟一次）。"
           }
         }
       }
@@ -31738,7 +31858,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體停止時結束自動化工作階段並隱藏 iOS 橫幅（實驗性）。若此後智慧體無法讀取螢幕，請關閉此項並重開 Poki。"
+            "value" : "代理程式停止時結束自動化工作階段並隱藏 iOS 橫幅（實驗性）。若此後代理程式無法讀取螢幕，請關閉此項並重開 Poki。"
           }
         }
       }
@@ -31761,7 +31881,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "任務成功後，智慧體會儲存流程以便下次一步重放，遇到畫面變化則自動停下。輕掃可刪除流程。"
+            "value" : "任務成功後，代理程式會儲存流程以便下次一步重放，遇到畫面變化則自動停下。輕掃可刪除流程。"
           }
         }
       }
@@ -32025,7 +32145,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Taps and types directly from Poki without Poki Runner. Self test taps the field above and types into it; Later waits, then taps (x, y) and types in the frontmost app."
+            "value" : "Taps and types directly from Poki without Poki Runner. Self test taps the field above and types into it, while Later waits, taps (x, y), and types in the frontmost app."
           }
         },
         "zh-Hans" : {
@@ -32307,7 +32427,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往“设置 › 隐私与安全 › 开发者模式”，开启后重启手机并轻点“打开”。"
+            "value" : "前往“设置 › 隐私与安全性 › 开发者模式”，开启后重启手机并轻点“打开”。"
           }
         },
         "zh-Hant" : {
@@ -32330,7 +32450,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往“设置 › 隐私与安全 › 开发者模式 › 与 Poki 配对”，输入此处显示的配对码。"
+            "value" : "前往“设置 › 隐私与安全性 › 开发者模式 › 与 Poki 配对”，输入此处显示的配对码。"
           }
         },
         "zh-Hant" : {
@@ -32393,7 +32513,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No extra app needed. Poki connects only to this iPhone; your normal traffic and DNS stay on their usual routes. iOS shows it as a VPN, so it may disconnect another VPN app."
+            "value" : "No extra app needed. Poki connects only to this iPhone, keeping your normal traffic and DNS on their usual routes. iOS shows it as a VPN, so it may disconnect another VPN app."
           }
         },
         "zh-Hans" : {
@@ -32416,7 +32536,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair again from Poki Setup on your computer and send the new file here; the old key is replaced. This happens after a restore, a reset of Location & Privacy, or when the phone forgets Poki."
+            "value" : "Pair again from Poki Setup on your computer and send the new file here to replace the old key. This happens after a restore, a reset of Location & Privacy, or when this iPhone forgets Poki."
           }
         },
         "zh-Hans" : {
@@ -32525,13 +32645,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "审批方式"
+            "value" : "批准方式"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "審批方式"
+            "value" : "批准方式"
           }
         }
       }
@@ -32579,7 +32699,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "傳送任務或智慧體請求時，Poki 可在此 iPhone 上點按和輸入。"
+            "value" : "傳送任務或代理程式請求時，Poki 可在此 iPhone 上點按和輸入。"
           }
         }
       }
@@ -32595,7 +32715,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 已暫停，收到新任務或智慧體請求後自動繼續。"
+            "value" : "Poki 已暫停，收到新任務或代理程式請求後自動繼續。"
           }
         }
       }
@@ -32611,7 +32731,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 已關閉，開啟前智慧體無法連線此 iPhone。"
+            "value" : "Poki 已關閉，開啟前代理程式無法連線此 iPhone。"
           }
         }
       }
@@ -32700,16 +32820,22 @@
     "The loopback is on. iOS moved its pairing service to another port, and Poki finds it through the local network. Keep Wi-Fi on and allow Local Network for Poki in Settings → Privacy & Security. If this stays, restart the iPhone." : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loopback is on. iOS moved its pairing service to another port, and Poki locates it over the local network. Keep Wi-Fi on and allow Local Network for Poki in Settings › Privacy & Security. If this persists, restart this iPhone."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "回环已开启。iOS 把配对服务换到了另一个端口，Poki 会通过本地网络找到它。请保持无线局域网开启，并在“设置 › 隐私与安全 › 本地网络”中允许 Poki。如果仍未恢复，请重新启动 iPhone。"
+            "value" : "回环已开启。iOS 将配对服务移到了另一个端口，Poki 会通过本地网络查找它。请保持 Wi-Fi 开启，并在“设置 › 隐私与安全性 › 本地网络”中允许 Poki。如果仍未恢复，请重新启动 iPhone。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "迴環已開啟。iOS 把配對服務換到了另一個連接埠，Poki 會透過區域網路找到它。請保持無線區域網開啟，並在「設定 › 隱私權與安全性 › 區域網路」中允許 Poki。如果仍未恢復，請重新啟動 iPhone。"
+            "value" : "迴環已開啟。iOS 將配對服務移到了另一個連接埠，Poki 會透過區域網路尋找它。請保持 Wi-Fi 開啟，並在「設定 › 隱私權與安全性 › 區域網路」中允許 Poki。如果仍未恢復，請重新啟動 iPhone。"
           }
         }
       }

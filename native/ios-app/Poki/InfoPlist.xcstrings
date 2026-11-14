@@ -38,13 +38,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 使用相机拍摄你在消息里发送的照片，以及扫描电脑上 Poki Setup 显示的配对码。"
+            "value" : "Poki 使用相机拍摄你在对话中发送的照片，以及扫描电脑上 Poki Setup 显示的配对码。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 使用相機拍攝你在訊息裡傳送的照片，以及掃描電腦上 Poki Setup 顯示的配對碼。"
+            "value" : "Poki 使用相機拍攝你在對話中傳送的照片，以及掃描電腦上 Poki Setup 顯示的配對碼。"
           }
         }
       }
@@ -92,7 +92,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 開啟時會在背景保持執行，以便智慧體連線此 iPhone。Poki 不會記錄或傳送你的位置。"
+            "value" : "Poki 開啟時會在背景保持執行，以便代理程式連線此 iPhone。Poki 不會記錄或傳送你的位置。"
           }
         }
       }
@@ -116,7 +116,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 開啟時會在背景保持執行，以便智慧體連線此 iPhone。Poki 不會記錄或傳送你的位置。"
+            "value" : "Poki 開啟時會在背景保持執行，以便代理程式連線此 iPhone。Poki 不會記錄或傳送你的位置。"
           }
         }
       }
