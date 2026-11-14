@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, failureText, onProgress, type Handoff, type Record_ } from "../api";
-import { t } from "../i18n";
+import { t, tError } from "../i18n";
 import { Capsule, Card, ErrorBox, Pill, Qr, Steps, useSteps } from "../ui";
 
 export default function Phones() {
@@ -30,10 +30,10 @@ export default function Phones() {
   const sep = t(", ");
   return (
     <>
-      <h1 className="page-title">{t("iPhones")}</h1>
-      <p className="page-sub">{t("With a free Apple Account, Poki stays signed for 7 days at a time. Poki Setup renews it automatically while this computer is on.")}</p>
+      <h1 className="page-title">{t("Phones")}</h1>
+      <p className="page-sub">{t("free, Poki is signed 7 days at a time")}{t(".")}</p>
       <ErrorBox error={error} />
-      {records.length === 0 && <Card><span className="muted">{t("No iPhones set up on this computer yet.")}</span></Card>}
+      {records.length === 0 && <Card><span className="muted">{t("No iPhone set up from this computer yet.")}</span></Card>}
       {records.map((r) => {
         const days = Math.floor((r.profile_expires_at - now) / 86400);
         return (
@@ -41,12 +41,12 @@ export default function Phones() {
             <div className="row between">
               <div className="grow">
                 <h2 style={{ margin: 0 }}>{r.phone_name}</h2>
-                <div className="muted small">iOS {r.ios}{sep}Poki {r.version} ({r.build}){sep}{r.team_name}{r.team_is_free ? `${sep}${t("Free")}` : ""}{sep}<span className="mono">{r.bundle_id}</span></div>
-                {r.last_error && <div className="small" style={{ color: "var(--bad)", marginTop: 4 }}>{r.last_error}</div>}
+                <div className="muted small">iOS {r.ios}{sep}Poki {r.version} ({r.build}){sep}{r.team_name}{r.team_is_free ? `${sep}${t("free")}` : ""}{sep}<span className="mono">{r.bundle_id}</span></div>
+                {r.last_error && <div className="small" style={{ color: "var(--bad)", marginTop: 4 }}>{tError(r.last_error)}</div>}
               </div>
-              <Pill tone={days < 0 ? "bad" : days <= 2 ? "warn" : "ok"}>{days < 0 ? t("Expired") : t("{d} days left").replace("{d}", String(days))}</Pill>
+              <Pill tone={days < 0 ? "bad" : days <= 2 ? "warn" : "ok"}>{days < 0 ? t("expired") : `${days} ${t("days left")}`}</Pill>
               <Capsule onClick={() => renew(r.udid)} disabled={busy !== null}>{busy === r.udid ? t("Renewing…") : t("Renew")}</Capsule>
-              <Capsule kind="ghost" onClick={() => share(r.udid)}>{t("Show Pairing QR")}</Capsule>
+              <Capsule kind="ghost" onClick={() => share(r.udid)}>{t("Show pairing QR")}</Capsule>
               <Capsule kind="danger" sm onClick={() => api.forgetPhone(r.udid).then(load)}>{t("Forget")}</Capsule>
             </div>
             {busy === r.udid && steps.length > 0 && <><div className="hair" /><Steps steps={steps} /></>}
@@ -54,7 +54,7 @@ export default function Phones() {
               <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>
                 <Qr svg={qr.handoff.qr_svg} />
                 <div className="grow">
-                  <p style={{ marginTop: 0 }}>{t("Scan this QR code in Poki on your iPhone while on the same Wi-Fi network.")}</p>
+                  <p style={{ marginTop: 0 }}>{t("Scan this in Poki on the iPhone (same Wi-Fi).")}</p>
                   <code className="small" style={{ userSelect: "text" }}>{qr.handoff.link}</code>
                   <div style={{ marginTop: 10 }}><Capsule kind="ghost" sm onClick={() => { api.stopSharing(); setQr(null); }}>{t("Stop")}</Capsule></div>
                 </div>

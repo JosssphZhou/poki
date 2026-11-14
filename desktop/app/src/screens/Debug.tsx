@@ -33,8 +33,8 @@ export default function Debug() {
   };
   return (
     <>
-      <h1 className="page-title">{t("Diagnostics")}</h1>
-      <p className="page-sub">{t("Inspect the live iPhone log, mount the Developer Disk Image, or save a support bundle with passwords and tokens removed.")}</p>
+      <h1 className="page-title">{t("Debug")}</h1>
+      <p className="page-sub">{t("For maintainers: the iPhone's live log, the developer disk image, and a support bundle with secrets taken out.")}</p>
       <ErrorBox error={error} />
       <Card>
         <div className="row">
@@ -47,10 +47,10 @@ export default function Debug() {
       </Card>
       <Card>
         <div className="row">
-          <Capsule kind="ghost" onClick={bundle}>{t("Save Support Bundle…")}</Capsule>
-          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); setMsg(null); try { await api.mountDdi(udid); setMsg(t("Developer Disk Image mounted.")); } catch (e) { setError(failureText(e)); } }}>{t("Mount Developer Disk Image")}</Capsule>
+          <Capsule kind="ghost" onClick={bundle}>{t("Save support bundle…")}</Capsule>
+          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); setMsg(null); try { await api.mountDdi(udid); setMsg(t("Developer disk image mounted.")); } catch (e) { setError(failureText(e)); } }}>{t("Mount developer disk image")}</Capsule>
           <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.pair(udid); setMsg(t("Paired.")); } catch (e) { setError(failureText(e)); } }}>{t("Pair")}</Capsule>
-          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.devmode(udid); setMsg(t("Developer Mode is on.")); } catch (e) { setError(failureText(e)); } }}>{t("Turn On Developer Mode")}</Capsule>
+          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.devmode(udid); setMsg(t("Developer Mode is on.")); } catch (e) { setError(failureText(e)); } }}>{t("Developer Mode")}: {t("Turn on")}</Capsule>
         </div>
         {msg && <p className="muted small" style={{ margin: "10px 0 0", userSelect: "text" }}>{msg}</p>}
       </Card>
