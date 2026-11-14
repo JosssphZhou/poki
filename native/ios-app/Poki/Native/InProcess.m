@@ -7,6 +7,37 @@
 #import <unistd.h>
 #import <UIKit/UIKit.h>
 
+NSString * const PKAutomationAuthorizationFailureNotification = @"PKAutomationAuthorizationFailure";
+
+NSDictionary<NSString *, id> *PKAutomationAuthorizationDiagnostic(NSError *error, uint64_t generation) {
+    NSError *current = error;
+    for (NSUInteger i = 0; current && i < 4; i++) {
+        if ([current.localizedDescription rangeOfString:@"Not authorized for performing UI testing actions" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            return @{@"code": @"automation_not_authorized", @"domain": current.domain ?: @"unknown",
+                     @"errorCode": @(current.code), @"generation": @(generation)};
+        }
+        id next = current.userInfo[NSUnderlyingErrorKey];
+        current = [next isKindOfClass:NSError.class] ? next : nil;
+    }
+    return nil;
+}
+
+NSDictionary<NSString *, id> *PKReadinessVerdict(BOOL readOK, NSString *code, uint64_t generation, BOOL reused) {
+    if (readOK) return @{@"ok": @YES, @"generation": @(generation), @"reused": @(reused)};
+    NSString *safe = [@[@"automation_not_authorized", @"native_session_invalidated"] containsObject:code ?: @""] ? code : @"readiness_read_failed";
+    return @{@"ok": @NO, @"code": safe, @"generation": @(generation), @"reused": @(reused)};
+}
+
+static BOOL PKReportAuthorizationErrorAt(NSError *error, uint64_t generation, NSTimeInterval started) {
+    NSDictionary *diagnostic = PKAutomationAuthorizationDiagnostic(error, generation);
+    if (!diagnostic) return NO;
+    NSMutableDictionary *info = [diagnostic mutableCopy];
+    if (started > 0) info[@"operationStarted"] = @(started);
+    [NSNotificationCenter.defaultCenter postNotificationName:PKAutomationAuthorizationFailureNotification object:nil userInfo:info];
+    return YES;
+}
+static BOOL PKReportAuthorizationError(NSError *error, uint64_t generation) { return PKReportAuthorizationErrorAt(error, generation, 0); }
+
 @interface NSObject (PKObservedPrivateAPI)
 - (id)initForTouchAtPoint:(CGPoint)point offset:(double)offset;
 - (void)moveToPoint:(CGPoint)point atOffset:(double)offset;
@@ -167,7 +198,15 @@ static int PKAXPid(id element) {
 
 static NSArray *PKActiveApplications(id ax) {
     if (![ax respondsToSelector:@selector(activeApplications)]) return @[];
-    id active = PKBounded(0, 4, NULL, ^id { return [ax activeApplications]; });
+    uint64_t generation = PKInProcess.shared.generation;
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+    id active = PKBounded(0, 4, NULL, ^id {
+        @try { return [ax activeApplications]; }
+        @catch (NSException *e) {
+            PKReportAuthorizationErrorAt([NSError errorWithDomain:@"NSException" code:0 userInfo:@{NSLocalizedDescriptionKey: e.reason ?: @""}], generation, started);
+            return nil;
+        }
+    });
     return [active isKindOfClass:NSArray.class] ? active : @[];
 }
 
@@ -287,6 +326,8 @@ static id PKRequestSnapshot(id ax, id element, NSInteger maxDepth, NSInteger max
 }
 
 static id PKRequestSnapshotWithin(NSTimeInterval seconds, id ax, id element, NSInteger maxDepth, NSInteger maxNodes, NSString **code) {
+    uint64_t generation = PKInProcess.shared.generation;
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     SEL selector = @selector(requestSnapshotForElement:attributes:parameters:error:);
     if (![ax respondsToSelector:selector] || !PKMatches([ax methodSignatureForSelector:selector], "@", @[@"@", @"@", @"@", @"^@"])) {
         if (code) *code = @"snapshot_api_unavailable";
@@ -313,6 +354,10 @@ static id PKRequestSnapshotWithin(NSTimeInterval seconds, id ax, id element, NSI
         }
     });
     if (!result) {
+        if (!given) {
+            NSError *failure = error ?: (thrown ? [NSError errorWithDomain:@"NSException" code:0 userInfo:@{NSLocalizedDescriptionKey: thrown}] : nil);
+            if (PKReportAuthorizationErrorAt(failure, generation, started)) { if (code) *code = @"automation_not_authorized"; return nil; }
+        }
         if (code) *code = given ?: thrown ?: error.localizedDescription ?: @"no_snapshot";
         return nil;
     }
@@ -336,6 +381,7 @@ static id PKSnapshotTreeBounded(id ax, id element, NSInteger maxDepth, NSInteger
     for (NSNumber *depth in depths) {
         id root = PKRequestSnapshot(ax, element, depth.integerValue, nodes, code);
         if (root) { if (code) *code = nil; return root; }
+        if (code && [*code isEqualToString:@"automation_not_authorized"]) return nil;
     }
     return nil;
 }
@@ -457,39 +503,46 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 - (uint64_t)generation { return _sessions.generation; }
 
 - (NSDictionary<NSString *, id> *)prepare {
-    NSError *error;
+    NSError *error = nil;
     NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     id session = nil;
     @try {
         session = [_sessions prepare:&error];
     } @catch (NSException *exception) {
+        NSError *failure = [NSError errorWithDomain:@"NSException" code:0 userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @""}];
+        NSDictionary *denied = PKAutomationAuthorizationDiagnostic(failure, _sessions.generation);
+        if (denied) { PKReportAuthorizationError(failure, _sessions.generation); NSMutableDictionary *out = [denied mutableCopy]; out[@"ok"] = @NO; return out; }
         return @{@"ok": @NO, @"code": @"exception", @"detail": [NSString stringWithFormat:@"%@: %@", exception.name, exception.reason ?: @""]};
     }
     double seconds = NSProcessInfo.processInfo.systemUptime - started;
     if (!session) {
         const char *loader = dlerror();
+        NSDictionary *denied = PKAutomationAuthorizationDiagnostic(error, _sessions.generation);
+        if (denied) { PKReportAuthorizationError(error, _sessions.generation); NSMutableDictionary *out = [denied mutableCopy]; out[@"ok"] = @NO; out[@"seconds"] = @(seconds); return out; }
         NSString *detail = error.localizedDescription ?: @"no session";
         if (loader) detail = [detail stringByAppendingFormat:@" (%s)", loader];
         NSString *code = [error.domain isEqualToString:@"RecoveredNative"] ? error.localizedDescription : [NSString stringWithFormat:@"%@ %ld", error.domain ?: @"unknown", (long)error.code];
         return @{@"ok": @NO, @"code": code ?: @"unknown", @"detail": detail, @"seconds": @(seconds)};
     }
-    double warm = 0;
-    if (!_sessions.enableWasReused) {
-        // The first use of a new session pays for the accessibility client's first snapshot and
-        // XCUIScreen's first screenshot, seconds each (the gym: the agent's first look after prepare
-        // took 8.1 s and came with no tree and no picture; the next read took 1.6 s). Paid here, with
-        // a shallow snapshot of the front app, so the agent's first read is an ordinary one.
-        NSTimeInterval warmStarted = NSProcessInfo.processInfo.systemUptime;
-        @try {
-            id ax = nil;
-            id app = [self front:NULL ax:&ax];
-            if (app && ax) PKRequestSnapshotWithin(3, ax, app, 3, 30, NULL);
-            NSString *code = nil;
-            [self screenshot:&code];
-        } @catch (__unused NSException *e) {}
-        warm = NSProcessInfo.processInfo.systemUptime - warmStarted;
+    uint64_t generation = _sessions.generation;
+    BOOL reused = _sessions.enableWasReused;
+    NSTimeInterval warmStarted = NSProcessInfo.processInfo.systemUptime;
+    NSString *code = nil;
+    id root = nil;
+    @try {
+        id ax = nil;
+        id app = [self front:NULL ax:&ax code:&code];
+        if (app && ax) root = PKRequestSnapshotWithin(3, ax, app, 3, 30, &code);
+    } @catch (NSException *e) {
+        NSError *failure = [NSError errorWithDomain:@"NSException" code:0 userInfo:@{NSLocalizedDescriptionKey: e.reason ?: @""}];
+        code = PKReportAuthorizationError(failure, generation) ? @"automation_not_authorized" : @"readiness_exception";
     }
-    return @{@"ok": @YES, @"generation": @(_sessions.generation), @"reused": @(_sessions.enableWasReused), @"seconds": @(seconds), @"warm_seconds": @(warm)};
+    if (![_sessions isCurrent:session generation:generation]) { root = nil; code = @"native_session_invalidated"; }
+    NSMutableDictionary *result = [PKReadinessVerdict(root != nil, code, generation, reused) mutableCopy];
+    result[@"seconds"] = @(seconds);
+    result[@"warm_seconds"] = @(NSProcessInfo.processInfo.systemUptime - warmStarted);
+    result[@"verification_started"] = @(warmStarted);
+    return result;
 }
 
 - (NSDictionary<NSString *, id> *)close {
@@ -504,16 +557,14 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 
 /// The prepared session and its generation, or why there is none.
 - (id)current:(uint64_t *)generation outcome:(PKOutcome **)outcome {
-    NSError *error;
     id session = nil;
     @try {
-        session = [_sessions prepare:&error];
+        session = [_sessions enabledSession:generation];
     } @catch (NSException *exception) {
         *outcome = [PKOutcome delivery:PKDeliveryNotSent code:@"exception" detail:exception.reason];
         return nil;
     }
-    *generation = _sessions.generation;
-    if (!session) *outcome = [PKOutcome delivery:PKDeliveryNotSent code:error.localizedDescription ?: @"no_session" detail:nil];
+    if (!session) *outcome = [PKOutcome delivery:PKDeliveryNotSent code:@"no_enabled_session" detail:nil];
     return session;
 }
 
@@ -535,6 +586,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
     } else {
         id accepted = context.evidence[@"inputAccepted"];
         BOOL ok = [accepted isKindOfClass:NSNumber.class] && [accepted boolValue];
+        if (!ok) PKReportAuthorizationError(context.replyError, generation);
         outcome = ok ? [PKOutcome delivery:PKDeliverySent code:nil detail:nil]
                      : [PKOutcome delivery:PKDeliveryUnknown code:@"reply_error" detail:@"testmanagerd answered with an error"];
     }
@@ -609,22 +661,26 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 /// The screen as a JPEG from testmanagerd, as WebDriverAgent asks for it, or nil within 1.5 s.
-- (nullable NSData *)daemonJPEG {
+- (nullable NSData *)daemonJPEG:(NSString **)code {
     PKOutcome *refused;
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
+    NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
     id proxy = [session daemonProxy];
     id screen = [NSClassFromString(@"XCUIScreen") mainScreen];
     if (!proxy || ![screen respondsToSelector:@selector(displayID)]) return nil;
     long long display = [screen displayID];
     dispatch_semaphore_t got = dispatch_semaphore_create(0);
     __block NSData *data;
+    __block BOOL denied = NO;
     @try {
         [proxy _XCT_requestScreenshotOfScreenWithID:display withRect:CGRectNull uti:@"public.jpeg" compressionQuality:0.6 withReply:^(NSData *value, NSError *error) {
+            denied = PKReportAuthorizationErrorAt(error, generation, started);
             data = value; dispatch_semaphore_signal(got);
         }];
     } @catch (__unused NSException *e) { return nil; }
     if (dispatch_semaphore_wait(got, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)))) return nil;
+    if (denied && code) *code = @"automation_not_authorized";
     return data.length ? data : nil;
 }
 
@@ -633,6 +689,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
 }
 
 - (nullable NSData *)screenshot:(NSString **)code refreshViewport:(BOOL)refreshViewport {
+    uint64_t generation = self.generation;
+    NSTimeInterval screenshotStarted = NSProcessInfo.processInfo.systemUptime;
     @try {
         NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
         id screen = [NSClassFromString(@"XCUIScreen") mainScreen];
@@ -645,7 +703,9 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         // Three misses in a row and the daemon is not asked again in this process.
         static int daemonMisses = 0;
         if (daemonMisses < 3) {
-            picture = [self daemonJPEG];
+            NSString *daemonCode = nil;
+            picture = [self daemonJPEG:&daemonCode];
+            if ([daemonCode isEqualToString:@"automation_not_authorized"]) { if (code) *code = daemonCode; return nil; }
             if (picture.length) { kind = @"daemon jpeg"; daemonMisses = 0; } else daemonMisses++;
         }
         SEL quality = NSSelectorFromString(@"screenshotDataForQuality:rect:error:");
@@ -653,6 +713,7 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         if (!picture.length && [screen respondsToSelector:quality] && (PKMatches([screen methodSignatureForSelector:quality], "@", @[@"Q", rect, @"^@"]) || PKMatches([screen methodSignatureForSelector:quality], "@", @[@"q", rect, @"^@"]))) {
             NSError *error = nil;
             picture = ((NSData *(*)(id, SEL, NSUInteger, CGRect, NSError **))objc_msgSend)(screen, quality, 1, CGRectNull, &error);
+            if (!picture.length && PKReportAuthorizationErrorAt(error, generation, screenshotStarted)) { if (code) *code = @"automation_not_authorized"; return nil; }
             if (picture.length) kind = @"jpeg";
         }
         if (!picture.length) picture = [[screen screenshot] PNGRepresentation];
@@ -672,6 +733,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         }
         if (code) *code = @"no_picture";
     } @catch (NSException *e) {
+        NSError *failure = [NSError errorWithDomain:@"NSException" code:0 userInfo:@{NSLocalizedDescriptionKey: e.reason ?: @""}];
+        if (PKReportAuthorizationErrorAt(failure, generation, screenshotStarted)) { if (code) *code = @"automation_not_authorized"; return nil; }
         if (code) *code = [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
     }
     return nil;
@@ -796,7 +859,8 @@ static NSData *PKCropped(NSData *png, CGRect viewport) {
         if (_freshAX) ax = _freshAX;
         if (_accessibilityGeneration != generation && [ax respondsToSelector:@selector(loadAccessibility:)]) {
             __block NSString *why = nil;
-            NSNumber *loaded = PKBounded(0, 4, NULL, ^id { NSError *error; BOOL done = [ax loadAccessibility:&error]; why = error.localizedDescription; return @(done); });
+            NSTimeInterval started = NSProcessInfo.processInfo.systemUptime;
+            NSNumber *loaded = PKBounded(0, 4, NULL, ^id { NSError *error = nil; BOOL done = [ax loadAccessibility:&error]; BOOL denied = !done && PKReportAuthorizationErrorAt(error, generation, started); why = denied ? @"automation_not_authorized" : error.localizedDescription; return @(done); });
             if (loaded.boolValue) _accessibilityGeneration = generation;
             // Whether third-party apps can be read at all (kAXErrorServerNotFound without it).
             NSLog(@"PokiInProcess: accessibility for session generation %llu: %@", generation, loaded.boolValue ? @"loaded" : [NSString stringWithFormat:@"not loaded (%@)", why ?: (loaded ? @"refused" : @"no answer in 4 s")]);
@@ -1002,7 +1066,10 @@ static const int PKFrontKey = -1;
         static const uint32_t usages[] = {0, 0x40, 0xE9, 0xEA};
         id event = [NSClassFromString(@"XCDeviceEvent") deviceEventWithPage:0x0C usage:usages[button.intValue] duration:0.1];
         NSError *error = nil;
-        if (!event || ![device performDeviceEvent:event error:&error]) return error.localizedDescription ?: @"button_failed";
+        if (!event || ![device performDeviceEvent:event error:&error]) {
+            if (PKReportAuthorizationError(error, generation)) return @"automation_not_authorized";
+            return error.localizedDescription ?: @"button_failed";
+        }
         return nil;
     } @catch (NSException *e) {
         return [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
@@ -1010,10 +1077,10 @@ static const int PKFrontKey = -1;
 }
 
 /// testmanagerd's answer to one launch or terminate request, or nil within `seconds`.
-static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSError *))) {
+static NSString *PKDaemonReply(NSTimeInterval seconds, uint64_t generation, void (^send)(void (^)(NSError *))) {
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
     __block NSString *code = @"no_reply";
-    send(^(NSError *error) { code = error ? (error.localizedDescription ?: @"failed") : nil; dispatch_semaphore_signal(done); });
+    send(^(NSError *error) { code = PKReportAuthorizationError(error, generation) ? @"automation_not_authorized" : error ? (error.localizedDescription ?: @"failed") : nil; dispatch_semaphore_signal(done); });
     if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)))) return @"no_reply";
     return code;
 }
@@ -1033,7 +1100,7 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
         BOOL launch = [action isEqualToString:@"launch"], activate = [action isEqualToString:@"activate"];
         if (!launch && !activate && ![action isEqualToString:@"terminate"]) return @"unknown_action";
         if (!launch && !activate) {
-            return PKDaemonReply(15, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; });
+            return PKDaemonReply(15, generation, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; });
         }
         BOOL (^inFront)(NSTimeInterval) = ^BOOL(NSTimeInterval seconds) {
             NSDate *by = [NSDate dateWithTimeIntervalSinceNow:seconds];
@@ -1043,19 +1110,20 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
             } while ([by timeIntervalSinceNow] > 0);
             return NO;
         };
-        if (launch && !PKDaemonReply(15, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; })) {
+        NSString *terminated = launch ? PKDaemonReply(15, generation, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; }) : nil;
+        if ([terminated isEqualToString:@"automation_not_authorized"]) return terminated;
+        if ([terminated isEqualToString:@"no_reply"]) return @"termination_outcome_unknown";
+        if (launch && !terminated) {
             // A launch sent while the old process is still exiting is answered but starts nothing.
             NSDate *by = [NSDate dateWithTimeIntervalSinceNow:5];
             while ([by timeIntervalSinceNow] > 0 && [[self frontApp][@"bundleId"] isEqualToString:bundle]) [NSThread sleepForTimeInterval:0.25];
             [NSThread sleepForTimeInterval:0.5];
         }
-        for (int attempt = 0; attempt < 2; attempt++) {
-            NSString *code = PKDaemonReply(30, ^(void (^reply)(NSError *)) {
-                [proxy _XCT_launchApplicationWithBundleID:bundle arguments:@[] environment:@{} completion:reply];
-            });
-            if (code) return code;
-            if (inFront(attempt ? 10 : 5)) return nil;
-        }
+        NSString *code = PKDaemonReply(30, generation, ^(void (^reply)(NSError *)) {
+            [proxy _XCT_launchApplicationWithBundleID:bundle arguments:@[] environment:@{} completion:reply];
+        });
+        if (code) return code;
+        if (inFront(10)) return nil;
         return @"not_in_front";
     } @catch (NSException *e) {
         return [NSString stringWithFormat:@"%@: %@", e.name, e.reason];
