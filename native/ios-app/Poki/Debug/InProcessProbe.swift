@@ -18,6 +18,8 @@ import UIKit
 /// the app, tap its first field and type, open Settings and swipe, press Home, looking after each;
 /// `-pokiInProcess reopen -pokiProbeRounds 5` closes the session and opens it again that many times in
 /// this one process, reading the screen after each open (issue 347), with every step's seconds;
+/// `-pokiInProcess delivery` reopens the session, then taps and types in Poki and in Settings and
+/// brings Poki back, saying which of those arrived;
 /// `-pokiInProcess gym` runs the whole Poki Gym scorecard (native/ios-gym/check) through PokiCore on
 /// this path, answering approvals as the owner would, into Documents/gym-scorecard.txt and
 /// Documents/gym-pictures (the gym workflow's scorecard-inprocess job).
@@ -50,6 +52,7 @@ final class InProcessProbe: ObservableObject {
             case "later": await later()
             case "read": await readOnly()
             case "separate": await separateTrial()
+            case "delivery": await deliveryCheck()
             case "reopen": await reopenCycle(rounds: defaults.integer(forKey: "pokiProbeRounds") > 0 ? defaults.integer(forKey: "pokiProbeRounds") : 5)
             case "port": await portCheck()
             case "source": await sourceBothPaths(model: model)
@@ -283,6 +286,97 @@ final class InProcessProbe: ObservableObject {
 
     /// Nothing in Poki may listen on WebDriverAgent's port on the in-process path: a connection to
     /// 127.0.0.1:8100 from inside the app has to be refused.
+    /// Whether actions arrive on a session reopened in this process: closes and reopens, then taps and
+    /// types in Poki's own field, opens Settings, taps and types in its search field, and brings Poki
+    /// back, with the app read in front after each and every step's seconds.
+    func deliveryCheck() async {
+        guard begin("delivery after a reopen") else { return }
+        defer { end() }
+        guard await prepare() else { return }
+        let background = UIApplication.shared.beginBackgroundTask(withName: "In-process probe")
+        defer { UIApplication.shared.endBackgroundTask(background) }
+        let own = Bundle.main.bundleIdentifier ?? ""
+        var passed = 0, checks = 0
+        func check(_ name: String, _ ok: Bool, _ detail: String, _ fields: [String: Any] = [:]) {
+            checks += 1
+            if ok { passed += 1 }
+            note("\(ok ? "PASS" : "FAIL") \(name): \(detail)", fields.merging(["step": "delivery_check", "check": name, "ok": ok]) { a, _ in a })
+        }
+        func front() async -> String {
+            await withCheckedContinuation { (c: CheckedContinuation<String, Never>) in
+                queue.async { c.resume(returning: PKInProcess.shared().frontApp()["bundleId"] as? String ?? "") }
+            }
+        }
+        func app(_ action: String, _ bundle: String) async -> (code: String?, seconds: Double) {
+            await withCheckedContinuation { (c: CheckedContinuation<(code: String?, seconds: Double), Never>) in
+                queue.async {
+                    let t = ProcessInfo.processInfo.systemUptime
+                    let code = PKInProcess.shared().app(bundle, action: action)
+                    c.resume(returning: (code, ProcessInfo.processInfo.systemUptime - t))
+                }
+            }
+        }
+        _ = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().close()) }
+        }
+        try? await Task.sleep(for: .seconds(2))
+        let opened = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+            queue.async { c.resume(returning: PKInProcess.shared().prepare()) }
+        }
+        check("reopen", (opened["ok"] as? Bool) == true, "generation \(opened["generation"] ?? "?"), device \(opened["device"] as? String ?? "?")", opened)
+        guard (opened["ok"] as? Bool) == true else { return }
+        let first = await front()
+        check("front app", first == own, "read \(first.isEmpty ? "none" : first), Poki is in front", ["front": first])
+        if let field {
+            field.text = ""
+            field.resignFirstResponder()
+            try? await Task.sleep(for: .seconds(0.4))
+            let frame = field.convert(field.bounds, to: nil)
+            let point = CGPoint(x: frame.midX, y: frame.midY)
+            let tap = await touch([[PKTouchPoint.at(point, offset: 0), PKTouchPoint.at(point, offset: 0.05)]], "tap Poki's field at [\(Int(point.x)), \(Int(point.y))]")
+            try? await Task.sleep(for: .seconds(0.6))
+            check("tap in Poki", field.isFirstResponder, String(format: "field focused %@, answered in %.3f s", field.isFirstResponder ? "yes" : "no", tap.seconds), ["seconds": tap.seconds])
+            if field.isFirstResponder {
+                let typed = await type(Self.sample)
+                try? await Task.sleep(for: .seconds(0.6))
+                let same = field.text == Self.sample
+                check("type in Poki", same, String(format: "read back %@, answered in %.3f s", same ? "same as sent" : "differs", typed.seconds), ["seconds": typed.seconds])
+                field.text = ""
+                field.resignFirstResponder()
+            }
+        }
+        let settings = "com.apple.Preferences"
+        let launch = await app("launch", settings)
+        try? await Task.sleep(for: .seconds(1))
+        let second = await front()
+        check("open Settings", launch.code == nil && second == settings,
+              String(format: "%@ in %.3f s, front %@", launch.code ?? "done", launch.seconds, second.isEmpty ? "none" : second),
+              ["seconds": launch.seconds, "code": launch.code ?? "", "front": second])
+        if second == settings {
+            if let point = await frontField() {
+                let tap = await touch([[PKTouchPoint.at(point, offset: 0), PKTouchPoint.at(point, offset: 0.05)]], "tap Settings' search field at [\(Int(point.x)), \(Int(point.y))]")
+                try? await Task.sleep(for: .seconds(1.0))
+                var typed = tap
+                if tap.delivery == .sent { typed = await type(Self.sample) }
+                try? await Task.sleep(for: .seconds(0.8))
+                let value = await focusedValue()
+                let same = value.map { $0.hasSuffix(Self.sample) } ?? false
+                check("tap and type in Settings", same,
+                      String(format: "%@, tap %.3f s, typing %.3f s", same ? "read back same as sent" : value == nil ? "no focused field after the tap" : "read back differs", tap.seconds, typed.seconds),
+                      ["tap_seconds": tap.seconds, "type_seconds": typed.seconds])
+            } else {
+                check("tap and type in Settings", false, "no search field in Settings' tree")
+            }
+        }
+        let back = await app("activate", own)
+        try? await Task.sleep(for: .seconds(1))
+        let last = await front()
+        check("back to Poki", back.code == nil && last == own,
+              String(format: "%@ in %.3f s, front %@", back.code ?? "done", back.seconds, last.isEmpty ? "none" : last),
+              ["seconds": back.seconds, "code": back.code ?? "", "front": last])
+        note("delivery: \(passed) of \(checks) checks passed", ["step": "delivery_result", "passed": passed, "checks": checks])
+    }
+
     func portCheck() async {
         guard begin("port 8100") else { return }
         defer { end() }
@@ -470,6 +564,7 @@ struct InProcessSection: View {
             }.disabled(probe.running)
             Button("Compare both paths (5 rounds)") { Task { await probe.benchmark(model: model, rounds: 5) } }.disabled(probe.running)
             Button("Close and reopen (5 rounds)") { Task { await probe.reopenCycle(rounds: 5) } }.disabled(probe.running)
+            Button("Reopen, then tap, type and open an app") { Task { await probe.deliveryCheck() } }.disabled(probe.running)
             HStack {
                 Button("Prepare") { Task { await probe.prepareOnly() } }
                 Spacer()
