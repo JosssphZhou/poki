@@ -397,6 +397,8 @@ final class ChatModel {
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
         app.chatTaskBegan()
+        // find_app and the task's icons see the phone's current apps.
+        InstalledApps.shared.refreshSoon()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
 

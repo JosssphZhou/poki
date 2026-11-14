@@ -7,6 +7,10 @@ struct AppCapsule: Hashable, Identifiable {
     let id: String
     let names: [String]
 
+    /// An installed app Poki does not list (DynamicApps): its one name counts only as written, in its own
+    /// case, and a Chinese one only where an app goes, as an everyday word does.
+    var installedOnly = false
+
     /// The name this iPhone shows the app by.
     var name: String { KnownApps.byID[id.lowercased()]?.name(in: .current) ?? names[0] }
 
@@ -15,7 +19,24 @@ struct AppCapsule: Hashable, Identifiable {
         names.first { $0.caseInsensitiveCompare(typed) == .orderedSame } ?? typed
     }
 
-    static let catalog: [AppCapsule] = KnownApps.all.map { AppCapsule(id: $0.id, names: $0.names) }
+    /// Every app Poki knows by name, then the User apps installed on this iPhone that it does not
+    /// (DynamicApps, from the phone's own list), so any installed app turns into a capsule with its icon.
+    static var catalog: [AppCapsule] {
+        let version = DynamicApps.version
+        if let cached = cache, cached.version == version { return cached.apps }
+        let known = Set(KnownApps.byID.keys)
+        var taken = Set(KnownApps.byName.keys)
+        var apps = listed
+        for entry in DynamicApps.userApps where !known.contains(entry.id.lowercased()) {
+            let name = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard name.count >= 2, taken.insert(name.lowercased()).inserted else { continue }
+            apps.append(AppCapsule(id: entry.id, names: [name], installedOnly: true))
+        }
+        cache = (version, apps)
+        return apps
+    }
+    private static let listed: [AppCapsule] = KnownApps.all.map { AppCapsule(id: $0.id, names: $0.names) }
+    nonisolated(unsafe) private static var cache: (version: Int, apps: [AppCapsule])?
 
     /// App names that are also everyday English words. These turn into a capsule only when written
     /// with a capital first letter, as a name; every other Latin name turns into one in any case,
@@ -88,17 +109,25 @@ enum CapsuleText {
 
         static func starting(with unit: unichar) -> [Name] { table[fold(unit)] ?? [] }
 
-        private static let table: [unichar: [Name]] = {
+        /// Built again when the installed apps change (DynamicApps.version).
+        private static var table: [unichar: [Name]] {
+            let version = DynamicApps.version
+            if let built, built.version == version { return built.table }
             var table: [unichar: [Name]] = [:]
             for app in AppCapsule.catalog {
                 for name in app.names {
-                    let options: NSString.CompareOptions = AppCapsule.everydayWords.contains(name) ? .literal : .caseInsensitive
-                    let entry = Name(app: app, text: name as NSString, options: options, onlyAsApp: AppCapsule.everydayChinese.contains(name))
+                    let latin = name.unicodeScalars.allSatisfy(\.isASCII)
+                    let options: NSString.CompareOptions = AppCapsule.everydayWords.contains(name) || app.installedOnly ? .literal : .caseInsensitive
+                    let onlyAsApp = AppCapsule.everydayChinese.contains(name) || (app.installedOnly && !latin)
+                    let entry = Name(app: app, text: name as NSString, options: options, onlyAsApp: onlyAsApp)
                     table[fold((name as NSString).character(at: 0)), default: []].append(entry)
                 }
             }
-            return table.mapValues { $0.sorted { $0.text.length > $1.text.length } }
-        }()
+            let sorted = table.mapValues { $0.sorted { $0.text.length > $1.text.length } }
+            built = (version, sorted)
+            return sorted
+        }
+        nonisolated(unsafe) private static var built: (version: Int, table: [unichar: [Name]])?
 
         private static func fold(_ unit: unichar) -> unichar {
             (0x41...0x5A).contains(unit) ? unit + 0x20 : unit

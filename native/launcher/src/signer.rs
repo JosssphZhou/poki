@@ -224,8 +224,9 @@ async fn udid(device: &mut Device) -> std::result::Result<String, Failure> {
 }
 
 /// Every app on the phone, as installation_proxy lists it (the service Poki Runner's lookup used):
-/// its bundle id, its Home Screen name and its bundle name. The chat's agent launches apps by these
-/// ids instead of ids a model recalls (a tester's 淘宝 and 美团, Nov 2026). Only these three
+/// its bundle id, its Home Screen name, its bundle name and whether it is a User or a System app. The
+/// chat's agent launches apps by these ids instead of ids a model recalls (a tester's 淘宝 and 美团,
+/// Nov 2026), and the app's icons and capsules know every installed app by name. Only these four
 /// attributes are asked for, so the answer stays small.
 async fn installed_apps(device: &mut Device) -> std::result::Result<Vec<Value>, Failure> {
     let mut proxy: InstallationProxyClient = device.connect().await?;
@@ -233,7 +234,7 @@ async fn installed_apps(device: &mut Device) -> std::result::Result<Vec<Value>, 
     options.insert("ApplicationType".into(), plist::Value::String("Any".into()));
     options.insert(
         "ReturnAttributes".into(),
-        plist::Value::Array(["CFBundleIdentifier", "CFBundleDisplayName", "CFBundleName"].iter().map(|k| plist::Value::String((*k).into())).collect()),
+        plist::Value::Array(["CFBundleIdentifier", "CFBundleDisplayName", "CFBundleName", "ApplicationType"].iter().map(|k| plist::Value::String((*k).into())).collect()),
     );
     let list = tokio::time::timeout(Duration::from_secs(20), proxy.browse(Some(plist::Value::Dictionary(options))))
         .await
@@ -241,14 +242,14 @@ async fn installed_apps(device: &mut Device) -> std::result::Result<Vec<Value>, 
     Ok(installed_entries(&list))
 }
 
-/// installation_proxy's entries as {id, name, bundle_name}; entries without a bundle id are left out.
+/// installation_proxy's entries as {id, name, bundle_name, type}; entries without a bundle id are left out.
 fn installed_entries(list: &[plist::Value]) -> Vec<Value> {
     let text = |d: &plist::Dictionary, k: &str| d.get(k).and_then(|v| v.as_string()).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
     list.iter()
         .filter_map(|app| {
             let d = app.as_dictionary()?;
             let id = text(d, "CFBundleIdentifier")?;
-            Some(json!({"id": id, "name": text(d, "CFBundleDisplayName"), "bundle_name": text(d, "CFBundleName")}))
+            Some(json!({"id": id, "name": text(d, "CFBundleDisplayName"), "bundle_name": text(d, "CFBundleName"), "type": text(d, "ApplicationType")}))
         })
         .collect()
 }
@@ -413,13 +414,13 @@ mod installed_tests {
             plist::Value::Dictionary(d)
         };
         let list = vec![
-            app(&[("CFBundleIdentifier", "com.taobao.taobao4iphone"), ("CFBundleDisplayName", "淘宝"), ("CFBundleName", "Taobao4iPhone")]),
+            app(&[("CFBundleIdentifier", "com.taobao.taobao4iphone"), ("CFBundleDisplayName", "淘宝"), ("CFBundleName", "Taobao4iPhone"), ("ApplicationType", "User")]),
             app(&[("CFBundleIdentifier", "com.meituan.imeituan"), ("CFBundleDisplayName", " ")]),
             app(&[("CFBundleDisplayName", "No id")]),
         ];
         let out = installed_entries(&list);
         assert_eq!(out.len(), 2);
-        assert_eq!(out[0], json!({"id": "com.taobao.taobao4iphone", "name": "淘宝", "bundle_name": "Taobao4iPhone"}));
-        assert_eq!(out[1], json!({"id": "com.meituan.imeituan", "name": null, "bundle_name": null}));
+        assert_eq!(out[0], json!({"id": "com.taobao.taobao4iphone", "name": "淘宝", "bundle_name": "Taobao4iPhone", "type": "User"}));
+        assert_eq!(out[1], json!({"id": "com.meituan.imeituan", "name": null, "bundle_name": null, "type": null}));
     }
 }

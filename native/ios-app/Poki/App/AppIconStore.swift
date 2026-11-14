@@ -86,19 +86,29 @@ final class AppIconStore {
         return key.isEmpty ? nil : key
     }
 
-    /// The bundle ID for an app's name, or `app` itself when it already is one.
+    /// The bundle ID for an app's name, or `app` itself when it already is one. Past KnownApps, any app
+    /// installed on this iPhone is found by its Home Screen name (DynamicApps, from the phone's list).
     static func bundleID(_ app: String) -> String? {
         let name = app.trimmingCharacters(in: .whitespacesAndNewlines)
         if let known = KnownApps.find(name) { return known.id }
+        if DynamicApps.name(forID: name) != nil { return name }
         // "com.tencent.xin": a reverse-DNS name with no spaces.
         if !name.contains(" "), name.split(separator: ".").count >= 3 { return name }
-        return nil
+        return DynamicApps.id(forName: name)
     }
 
     /// The name an app goes by on this iPhone, in its first language (English, Simplified or
-    /// Traditional Chinese), from a bundle ID or any of its names; nil for an app not listed here.
+    /// Traditional Chinese), from a bundle ID or any of its names; for an app not listed here, its
+    /// Home Screen name when it is installed.
     static func name(_ app: String) -> String? {
-        KnownApps.find(app)?.name(in: .current)
+        KnownApps.find(app)?.name(in: .current) ?? DynamicApps.name(forID: app)
+    }
+
+    /// The phone's app list changed (InstalledApps): names that found no app may find one now, and the
+    /// views that drew a placeholder draw again.
+    func directoryChanged() {
+        unknown.removeAll()
+        arrivals += 1
     }
 
     /// Whether iOS has a Home Screen icon for `id`, that is whether the app is installed; nil when the

@@ -10,14 +10,47 @@ import Foundation
 /// installed. Without the phone's list, an id counts as installed when iOS has its icon.
 @MainActor
 final class InstalledApps {
-    static let shared = InstalledApps()
+    static let shared = InstalledApps(cache: true)
 
-    struct App: Equatable, Decodable {
+    struct App: Equatable, Codable {
         var id: String
         var name: String?
         var bundleName: String?
-        enum CodingKeys: String, CodingKey { case id, name, bundleName = "bundle_name" }
+        /// installation_proxy's ApplicationType: "User" or "System" (nil from an older answer).
+        var type: String? = nil
+        enum CodingKeys: String, CodingKey { case id, name, bundleName = "bundle_name", type }
     }
+
+    /// The last list read, kept on disk, so the app's icons and capsules know the installed apps from
+    /// launch on, before the loopback is up. It never leaves the phone.
+    static var cacheFile: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("installed-apps.json")
+    }
+
+    init(cache: Bool = false) {
+        guard cache, let data = try? Data(contentsOf: Self.cacheFile), let saved = try? JSONDecoder().decode([App].self, from: data) else { return }
+        publish(saved)
+    }
+
+    /// The list goes to the names, icons and capsules (DynamicApps), and to disk when `save`.
+    private func publish(_ list: [App], save: Bool = false) {
+        DynamicApps.set(list.compactMap { app in
+            (app.name ?? app.bundleName).map { DynamicApps.Entry(id: app.id, name: $0, user: app.type == "User") }
+        })
+        AppIconStore.shared.directoryChanged()
+        guard save, let data = try? JSONEncoder().encode(list) else { return }
+        try? FileManager.default.createDirectory(at: Self.cacheFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: Self.cacheFile, options: .atomic)
+    }
+
+    /// Reads the list again in the background when it is older than five minutes (the loopback just
+    /// came up, a chat task began).
+    func refreshSoon() {
+        guard !refreshing else { return }
+        refreshing = true
+        Task { _ = await list(); refreshing = false }
+    }
+    private var refreshing = false
 
     /// The signer's way to the phone (AppModel sets it with the signer's): nil while the loopback is down.
     var phone: () -> [String: Any]? = { nil }
@@ -43,7 +76,9 @@ final class InstalledApps {
         if let apps, let at = fetchedAt, Date().timeIntervalSince(at) < Self.maxAge { return apps }
         guard let request = phone() else { lastProblem = "the loopback to the phone is not on"; return apps }
         do {
-            apps = try await fetch(request); fetchedAt = Date(); lastProblem = nil
+            let read = try await fetch(request)
+            apps = read; fetchedAt = Date(); lastProblem = nil
+            if self === InstalledApps.shared { publish(read, save: true) }
         } catch {
             lastProblem = error.localizedDescription
         }
