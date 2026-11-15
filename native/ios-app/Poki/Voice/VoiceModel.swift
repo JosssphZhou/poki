@@ -487,11 +487,22 @@ final class VoiceModel {
         phase = .connecting
         session += 1
         let number = session
+        let onDuo = duoWorkspaceAvailable()
+        func freshToken() async throws -> VoiceBridge.Token {
+            if rehearsing { return Self.rehearsalToken }
+            if let key { return try await VoiceDirect.token(apiKey: key, onDuo: onDuo) }
+            guard let bridge else { throw VoiceError.noBridge }
+            return try await bridge.token()
+        }
         do {
             let token: VoiceBridge.Token
-            if rehearsing { token = Self.rehearsalToken }
-            else if let key { token = try await VoiceDirect.token(apiKey: key, onDuo: duoWorkspaceAvailable()) }
-            else { token = try await bridge!.token() }
+            do {
+                token = try await freshToken()
+            } catch let error as URLError where error.code == .networkConnectionLost {
+                guard number == session else { return }
+                log.add("voice", "network interrupted while getting the voice token; trying again")
+                token = try await freshToken()
+            }
             // Ended (End, or the button again) while the key was exchanged.
             guard number == session else { return }
             localTools = Set(token.local_tools)
@@ -502,19 +513,25 @@ final class VoiceModel {
             if microphone { holdingMicrophone = true }
             do {
                 try await link.connect(secret: token.value, microphone: microphone, direct: false)
-            } catch VoiceError.noPath(let ice) {
-                // No path opened (ICE \(ice)): once more, off VPN interfaces (Poki's loopback, a proxy
-                // app) and with a fresh key, before telling the owner.
-                guard number == session else { return }
-                log.add("voice", "no network path opened (ICE \(ice)); trying again off VPN interfaces")
+            } catch {
+                let direct: Bool
+                if case VoiceError.noPath(let ice) = error {
+                    guard number == session else { return }
+                    log.add("voice", "no network path opened (ICE \(ice)); trying again off VPN interfaces")
+                    direct = true
+                } else if (error as? URLError)?.code == .networkConnectionLost {
+                    guard number == session else { return }
+                    log.add("voice", "network interrupted while opening the voice session; trying again")
+                    direct = false
+                } else { throw error }
                 link.close()
-                let retry: VoiceBridge.Token
-                if let key { retry = try await VoiceDirect.token(apiKey: key) } else { retry = try await bridge!.token() }
+                let retry = try await freshToken()
                 guard number == session else { return }
+                localTools = Set(retry.local_tools)
                 link = connection({ [weak self] event in self?.handle(event, session: number) },
                                   { [weak self] reason in self?.closed(reason, session: number) })
                 self.link = link
-                try await link.connect(secret: retry.value, microphone: microphone, direct: true)
+                try await link.connect(secret: retry.value, microphone: microphone, direct: direct)
             }
             guard number == session else { link.close(); return }
             link.setRemoteVolume(muted ? 0 : 1)

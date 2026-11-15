@@ -459,13 +459,16 @@ final class ChatModel {
             }
             let splitSession = self.splitViewSession
             self.began("pi", provider, model, splitViewSession: splitSession)
+            var openingLook: PokiCore.ToolAnswer?
             if let splitSession, pair.count == 2 || self.companionTarget != nil {
                 self.phoneStepUnderWay = true
                 let confirmed: Bool
                 let setupMessage: String
                 if let target = self.companionTarget {
                     if let placement, let launchApp = launchApps[target] {
-                        confirmed = await self.openCompanionApp(launchApp, placement: placement, session: splitSession, token: token)
+                        confirmed = await self.openCompanionApp(launchApp, placement: placement, session: splitSession, token: token) {
+                            openingLook = $0
+                        }
                     } else {
                         confirmed = false
                     }
@@ -494,9 +497,11 @@ final class ChatModel {
                 AppLog.shared.add("chat", "workspace planning confirmed the requested Split View apps")
             }
             let loop = self.modelLoop(provider: provider, model: piModel, inSplitView: splitSession != nil)
+            if let read = openingLook?.splitView { self.recordSplitViewRead(read) }
             let instructions = Harness.instructions(for: message, inSplitView: splitSession != nil,
                                                       alongsidePoki: self.companionTarget != nil, targetApps: hints)
-            let outcome = await loop.run(message.isEmpty ? Self.picturesOnly : message, images: images, instructions: instructions, maxTurns: Self.maxTurns) { [weak self] text in
+            let outcome = await loop.run(message.isEmpty ? Self.picturesOnly : message, images: images, instructions: instructions,
+                                         maxTurns: Self.maxTurns, openingLook: openingLook) { [weak self] text in
                 guard let self, self.runToken == token else { return }
                 self.markDelivered(you.id)
                 self.awaitingModel = false
@@ -522,7 +527,7 @@ final class ChatModel {
     private enum PairCheck { case confirmed, unavailable, differentPair, stopped }
 
     private func openCompanionApp(_ targetApp: KnownApp, placement: String, session: String, token: Int,
-                                  verifyRead: Bool = true) async -> Bool {
+                                  onRead: ((PokiCore.ToolAnswer) -> Void)? = nil) async -> Bool {
         guard await app.reserveSplitViewWorkspace(session: session), runToken == token, !Task.isCancelled else { return false }
         let target = targetApp.id
         let currentTask = task
@@ -544,8 +549,11 @@ final class ChatModel {
         }
         guard runToken == token, !Task.isCancelled, app.duoChatPlacement == dockedPlacement else { return false }
         let targetSide = dockedPlacement == "left" ? "right" : "left"
-        if verifyRead, placement != "full",
-           await confirmCompanionApp(target, side: targetSide, session: session, token: token) { return true }
+        if let onRead, placement != "full",
+           let read = await confirmCompanionApp(target, side: targetSide, session: session, token: token) {
+            onRead(read)
+            return true
+        }
         guard await app.clearSplitViewPaneForSetup(session: session), runToken == token, !Task.isCancelled else { return false }
         do {
             guard try await app.openCompanionLauncherItem(labels: [], side: targetSide, session: session) else { return false }
@@ -573,25 +581,26 @@ final class ChatModel {
                                                                                 dismissSwitcher: true, session: session)
                 }
             } while ContinuousClock.now < deadline
-            if !verifyRead { return opened }
+            if onRead == nil { return opened }
         } catch { return false }
         let deadline = ContinuousClock.now + .seconds(15)
         while runToken == token, !Task.isCancelled, ContinuousClock.now < deadline {
-            if await confirmCompanionApp(target, side: targetSide, session: session, token: token) { return true }
+            if let read = await confirmCompanionApp(target, side: targetSide, session: session, token: token) {
+                onRead?(read)
+                return true
+            }
             try? await Task.sleep(for: .milliseconds(400))
         }
         return false
     }
 
-    private func confirmCompanionApp(_ target: String, side: String, session: String, token: Int) async -> Bool {
-        guard let poki = Bundle.main.bundleIdentifier else { return false }
+    private func confirmCompanionApp(_ target: String, side: String, session: String, token: Int) async -> PokiCore.ToolAnswer? {
+        guard let poki = Bundle.main.bundleIdentifier else { return nil }
         let read = await app.runTool("look", arguments: #"{"pane":"peer"}"#, localSession: session,
                                      expectedApps: [target, poki])
         guard runToken == token, !Task.isCancelled, !read.isError, read.jpeg != nil,
-              let pane = read.splitView, pane.app == target, pane.side == side else { return false }
-        lastSplitViewSide = pane.side
-        lastSplitViewLayout = pane.layout
-        return true
+              let pane = read.splitView, pane.app == target, pane.side == side else { return nil }
+        return read
     }
 
     private func openSplitViewPair(_ pair: [String], launchApps: [String: KnownApp], session: String, token: Int) async -> Bool {
@@ -613,7 +622,7 @@ final class ChatModel {
                     : false
                 if !alreadyInPlace {
                     guard let target = launchApps[anchor],
-                          await openCompanionApp(target, placement: placement, session: session, token: token, verifyRead: false) else { return false }
+                          await openCompanionApp(target, placement: placement, session: session, token: token) else { return false }
                     let releaseDeadline = ContinuousClock.now + .seconds(14)
                     var released = false
                     while runToken == token, !Task.isCancelled, ContinuousClock.now < releaseDeadline {

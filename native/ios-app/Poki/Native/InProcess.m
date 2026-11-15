@@ -1195,7 +1195,9 @@ static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<
         targetPID = pid;
     }
     if (!target) return nil;
-    id root = PKRequestSnapshotWithin(0.6, ax, target, 2, 12, NULL);
+    // A newly opened companion can take over half a second to answer even for its root.
+    // Giving up too early marks its process busy and blocks the first pane read behind it.
+    id root = PKRequestSnapshotWithin(1.4, ax, target, 2, 12, NULL);
     CGRect leftFrame = PKWorkspaceFrame(root, display, NO);
     CGRect rightFrame = PKWorkspaceFrame(root, display, YES);
     if (CGRectIsNull(leftFrame) == CGRectIsNull(rightFrame) || (!targetOnRight && CGRectIsNull(leftFrame))) return nil;

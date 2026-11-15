@@ -43,7 +43,7 @@ enum Harness {
     @MainActor static func instructions(for task: String, inSplitView: Bool = false, alongsidePoki: Bool = false,
                                         targetApps: [KnownApp]? = nil) -> String {
         if alongsidePoki {
-            let instructions = "The owner's requested app is open beside the Poki chat. Read the target with look before acting. Each screenshot and reference belongs only to the target app. Keep the app beside the chat. After a layout change, use only the fresh read. Publish a short plan with report_plan and conclude with finish_task. Reply in the owner's language."
+            let instructions = "The owner's requested app is open beside the Poki chat. Use the verified look included with this turn as your first read. A do result with a current screenshot and element list also gives you a read. Call look if the screen is unclear, you need more detail, or the layout changes. Each screenshot and reference belongs only to the target app. Keep the app beside the chat. Publish a short plan with report_plan and conclude with finish_task. Reply in the owner's language."
             return ApprovalClassifier.mode == .reply ? instructions + "\n\n" + replyApprovals : instructions
         }
         if inSplitView {

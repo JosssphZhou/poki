@@ -38,7 +38,12 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     var onClosed: (@MainActor (String) -> Void)?
     private(set) var closed = false
     private(set) var sent: [[String: Any]] = []
-    func connect(secret: String, microphone: Bool, direct: Bool) async throws {}
+    var connectError: Error?
+    private(set) var ignoredVPN = false
+    func connect(secret: String, microphone: Bool, direct: Bool) async throws {
+        ignoredVPN = direct
+        if let connectError { throw connectError }
+    }
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
@@ -108,14 +113,20 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
+        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) },
+                        firstConnectError: Error? = nil) {
             let time = FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
-            made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
+            made = { [unowned self] in
+                let link = FakeConnection()
+                if self.links.isEmpty { link.connectError = firstConnectError }
+                self.links.append(link)
+                return link
+            }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
             // As in the app: an ended conversation goes into the chat, and its lines leave the voice model.
@@ -139,6 +150,32 @@ final class VoiceModelTests: XCTestCase {
                       ["type": "response.output_audio_transcript.done", "transcript": answer],
                       ["type": "response.done", "response": ["id": id]], ["type": "output_audio_buffer.stopped"])
         }
+    }
+
+    func testVoiceRetriesOneInterruptedConnectionAndKeepsTheWorkspaceTool() async {
+        let h = Harness(firstConnectError: URLError(.networkConnectionLost))
+        var run = false
+        h.voice.runWorkspaceTask = { _ in run = true; return ("Done.", false) }
+        await h.talk()
+        XCTAssertEqual(h.links.count, 2)
+        XCTAssertTrue(h.links.first?.closed == true)
+        XCTAssertFalse(h.link.ignoredVPN)
+        h.link.play(["type": "input_audio_buffer.speech_stopped"], ["type": "response.output_item.done", "item": [
+            "type": "function_call", "name": VoiceDirect.workspaceToolName, "call_id": "retry",
+            "arguments": #"{"request":"Open WeChat"}"#]])
+        await h.time.settle()
+        XCTAssertTrue(run)
+        h.voice.stop()
+    }
+
+    func testVoiceRetriesWithoutVPNInterfacesWhenNoPathOpens() async {
+        let h = Harness(firstConnectError: VoiceError.noPath("failed"))
+        await h.talk()
+        XCTAssertEqual(h.links.count, 2)
+        XCTAssertTrue(h.links.first?.closed == true)
+        XCTAssertTrue(h.link.ignoredVPN)
+        XCTAssertTrue(h.voice.isOn)
+        h.voice.stop()
     }
 
     func testDuoWorkspaceTaskKeepsTheDraftInstructionAndRunsOncePerTurn() async {

@@ -265,7 +265,8 @@ final class ChatHarnessTests: XCTestCase {
         let automation = FakeAutomation(chatPlacement: "full")
         let transport = CompanionWorkspace(targetSide: "right", automation: automation, targetID: "com.tencent.xin", targetName: "微信")
         let server = try FakeCompletions(replies: [
-            FakeCompletions.text("SINGLE 1"), FakeCompletions.tool("look", [:]),
+            FakeCompletions.text("SINGLE 1"),
+            FakeCompletions.tool("do", ["actions": [["tap": [180, 200]]]]),
             FakeCompletions.text("The draft is ready.")
         ])
         let chat = chat(on: server, transport: transport, automation: automation, launcher: launcher, kind: .poki)
@@ -275,7 +276,32 @@ final class ChatHarnessTests: XCTestCase {
         let result = await chat.runVoiceTask(request)
         XCTAssertTrue(result.text.contains("The draft is ready."), result.text)
         XCTAssertEqual(transport.launchSteps, ["dock chat", "launcher right", "open 微信 right"])
-        XCTAssertTrue(server.requests.contains { Self.json($0).contains(request) })
+        let execution = try XCTUnwrap(server.requests.dropFirst().first)
+        let messages = try XCTUnwrap(execution["messages"] as? [[String: Any]])
+        XCTAssertTrue(messages.contains { $0["role"] as? String == "tool" && Self.json($0).contains("Split View: right is com.tencent.xin") })
+        XCTAssertTrue(Self.json(execution).contains(request))
+        XCTAssertEqual(transport.paneRequests.filter { $0 == "peer" }.count, 1)
+        XCTAssertEqual(transport.base.taps, 1)
+        XCTAssertEqual(chat.savedCalls.map(\.name), ["do"])
+    }
+
+    func testVoiceTaskKeepsAlreadyOpenedCompanionWhenFirstReadIsEmpty() async throws {
+        let automation = FakeAutomation(chatPlacement: "left")
+        let transport = CompanionWorkspace(targetSide: "right", automation: automation, targetID: "com.tencent.xin",
+                                           targetName: "微信", existingCompanionWithEmptyFirstRead: true)
+        let launcher = FakeLauncher()
+        launcher.installedApps = ["com.tencent.xin": "微信"]
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.text("SINGLE 1"), FakeCompletions.tool("look", [:]),
+            FakeCompletions.text("The draft is ready.")
+        ])
+        let chat = chat(on: server, transport: transport, automation: automation, launcher: launcher, kind: .poki)
+        chat.restore(SavedSession(id: UUID().uuidString, kind: .poki, title: "Companion read recovery test", started: Date(),
+                                  updated: Date(), live: false, entries: [ChatEntry(.you("Prior message", delivered: true))], calls: []))
+        let result = await chat.runVoiceTask("打开微信文件传输助手，只输入草稿，不要发送。")
+        XCTAssertTrue(result.text.contains("The draft is ready."), result.text)
+        XCTAssertTrue(transport.sawEmptyRead)
+        XCTAssertEqual(transport.launchSteps, [])
         XCTAssertTrue(chat.savedCalls.contains { $0.name == "look" && $0.answer.contains("Split View: right is com.tencent.xin") })
     }
 
@@ -926,6 +952,7 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
     private let targetSide: String
     private let targetID: String
     private let targetName: String
+    private let existingCompanionWithEmptyFirstRead: Bool
     private let holdReveal: Bool
     private let holdChatRelease: Bool
     private let hasVisibleIcon: Bool
@@ -937,13 +964,18 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
     private var released = false
     private var sourceOpened = false
     private var selectedSide: String?
+    private var targetSelections = 0
+    private var emptyRead = false
 
     @MainActor init(targetSide: String, holdReveal: Bool = false, automation: FakeAutomation? = nil,
                     holdChatRelease: Bool = false, hasVisibleIcon: Bool = true,
-                    targetID: String = "com.apple.Preferences", targetName: String = "Settings") {
+                    targetID: String = "com.apple.Preferences", targetName: String = "Settings",
+                    existingCompanionWithEmptyFirstRead: Bool = false) {
         self.targetSide = targetSide
         self.targetID = targetID
         self.targetName = targetName
+        self.existingCompanionWithEmptyFirstRead = existingCompanionWithEmptyFirstRead
+        opened = existingCompanionWithEmptyFirstRead
         self.holdReveal = holdReveal
         self.automation = automation
         self.holdChatRelease = holdChatRelease
@@ -953,6 +985,7 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
 
     var launchSteps: [String] { lock.withLock { events } }
     var paneRequests: [String] { lock.withLock { panes } }
+    var sawEmptyRead: Bool { lock.withLock { emptyRead } }
 
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
         func reply(_ value: JSON) -> (Int, Data) { (200, (["value": value] as JSON).data()) }
@@ -973,6 +1006,7 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
                 let side = request == "peer" ? targetSide : request
                 selectedSide = side
                 let current = opened && side == targetSide ? target : safari
+                if request == "peer" && current == target { targetSelections += 1 }
                 let other = sourceOpened ? (side == targetSide ? safari : target) : poki
                 let layout = sourceOpened ? "safari-settings" : current
                 return reply(["identity": .string("\(side)/\(layout)"), "side": .string(side),
@@ -1026,6 +1060,14 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
             return lock.withLock {
                 reply(["bundleId": .string(opened && (selectedSide == nil || selectedSide == targetSide) ? target : safari)])
             }
+        case ("GET", "/source") where existingCompanionWithEmptyFirstRead:
+            let shouldSimulate = lock.withLock {
+                guard opened, selectedSide == targetSide, targetSelections == 1 else { return false }
+                emptyRead = true
+                return true
+            }
+            if shouldSimulate { return reply(.string("<XCUIElementTypeApplication/>")) }
+            return try await base.send(method: method, url: url, body: body, timeout: timeout)
         default:
             return try await base.send(method: method, url: url, body: body, timeout: timeout)
         }

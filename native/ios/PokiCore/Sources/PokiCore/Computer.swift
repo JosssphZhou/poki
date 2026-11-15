@@ -519,7 +519,20 @@ final class Computer: @unchecked Sendable {
         let begins = beginsTask() || (pane != nil && origin?.session != session)
         if begins { beginRecording(); typedText = nil }
         async let locked = isLocked()
-        var result = restartNote(await readAndReply(until: until, full: full))
+        var result = await readAndReply(until: until, full: full)
+        // The launcher can finish before the companion's first picture and element tree are
+        // ready. Recheck the identified pair before retrying the read, without reopening it.
+        if pane == "peer", result.splitViewNeedsRead, !Task.isCancelled, until - now() > 7 {
+            await sleep(seconds: 0.4)
+            if let failure = await selectPane("peer", session: session, until: until) { return failure }
+            guard let selectedPane, Set([selectedPane.app, selectedPane.other]) == expectedApps else {
+                invalidateWorkspaceRead()
+                return ToolResult(text: "not_sent: the two visible apps do not match the planned Split View pair.",
+                                  jpeg: nil, isError: true, splitViewNeedsRead: true)
+            }
+            result = await readAndReply(until: until, full: full)
+        }
+        result = restartNote(result)
         if let selectedPane {
             if !result.isError, let size, let paneOffset {
                 result.splitView = .init(side: selectedPane.side, app: selectedPane.app, otherApp: selectedPane.other,
