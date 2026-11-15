@@ -24,10 +24,13 @@ protocol InProcessAutomation: AnyObject, Sendable {
     func pauseAutomation() -> [String: Any]
     /// Seconds iOS has been asked to allow automation in the open under way; 0 while no open is there.
     func authorizationWaitSeconds() -> Double
+    /// The window containing the chat on the unfolded Duo display.
+    func duoChatPlacement() -> String?
 }
 
 extension InProcessAutomation {
     func authorizationWaitSeconds() -> Double { 0 }
+    func duoChatPlacement() -> String? { nil }
 }
 
 /// Thread-safe: its session state is behind locks, and every call blocks on its own.
@@ -141,7 +144,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             },
             "DELETE /session": { _, _ in .null },
             "POST /poki/pane": { [unowned self] body, _ in
-                guard let side = body?["side"]?.string, ["left", "right", "auto"].contains(side) else {
+                guard let side = body?["side"]?.string, ["left", "right", "auto", "peer"].contains(side) else {
                     throw Refusal("invalid argument", "pane must be left, right, or auto")
                 }
                 var reason: NSString?
@@ -151,7 +154,8 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
                 self.readGeometry.withLock { $0 = nil }
                 self.focused = nil
                 if side == "auto" { return .null }
-                return ["bundleId": .string(pane["bundleId"] as? String ?? ""),
+                return ["side": .string(pane["side"] as? String ?? ""),
+                        "bundleId": .string(pane["bundleId"] as? String ?? ""),
                         "otherBundleId": .string(pane["otherBundleId"] as? String ?? ""),
                         "identity": .string(pane["identity"] as? String ?? ""),
                         "x": .number(pane["x"] as? Double ?? 0), "y": .number(pane["y"] as? Double ?? 0)]
@@ -166,6 +170,37 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
             },
             "POST /poki/workspace-launcher": { [unowned self] body, _ in
                 let labels = body?["labels"]?.array?.compactMap(\.string) ?? []
+                if let anchor = body?["releaseChatKeeping"]?.string, !anchor.isEmpty {
+                    let outcome: PKOutcome?
+                    if let source = body?["openInReleasedChatPane"]?.string {
+                        outcome = self.native.openApp(source, inReleasedChatPaneKeepingApp: anchor)
+                    } else {
+                        outcome = self.native.releaseChatPane(keepingApp: anchor)
+                    }
+                    guard let outcome else { return .bool(false) }
+                    _ = try self.answer(outcome)
+                    return .bool(true)
+                }
+                if body?["dockChat"]?.bool == true {
+                    guard let outcome = self.native.dockChatBesideLauncher() else { return .bool(false) }
+                    _ = try self.answer(outcome)
+                    return .bool(true)
+                }
+                if let side = body?["companionSide"]?.string, ["left", "right"].contains(side), !self.native.hasSelectedPane {
+                    let outcome: PKOutcome?
+                    if let bundle = body?["companionBundle"]?.string {
+                        outcome = self.native.openApp(fromCompanionLauncher: bundle, side: side)
+                    } else if body?["dismissSwitcher"]?.bool == true {
+                        outcome = self.native.dismissCompanionSwitcher(onSide: side)
+                    } else if labels.isEmpty {
+                        outcome = self.native.showCompanionLauncher(onSide: side)
+                    } else {
+                        outcome = self.native.openCompanionLauncherItem(labels, side: side)
+                    }
+                    guard let outcome else { return .bool(false) }
+                    _ = try self.answer(outcome)
+                    return .bool(true)
+                }
                 guard !self.native.hasSelectedPane, let menu = body?["menu"]?.bool, !labels.isEmpty else {
                     throw Refusal("invalid argument", "workspace setup requires a system launcher target")
                 }

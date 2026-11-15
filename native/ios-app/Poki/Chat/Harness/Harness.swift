@@ -40,7 +40,11 @@ enum Harness {
     """
 
     /// The instructions for a task: the above, then the saved notes and the routines that fit it.
-    @MainActor static func instructions(for task: String, inSplitView: Bool = false) -> String {
+    @MainActor static func instructions(for task: String, inSplitView: Bool = false, alongsidePoki: Bool = false) -> String {
+        if alongsidePoki {
+            let instructions = "The owner's requested app is open beside the Poki chat. Read the target with look before acting. Each screenshot and reference belongs only to the target app. Keep the app beside the chat. After a layout change, use only the fresh read. Publish a short plan with report_plan and conclude with finish_task. Reply in the owner's language."
+            return ApprovalClassifier.mode == .reply ? instructions + "\n\n" + replyApprovals : instructions
+        }
         if inSplitView {
             if ApprovalClassifier.mode == .reply { return splitViewInstructions + "\n\n" + replyApprovals }
             return splitViewInstructions
@@ -84,6 +88,13 @@ enum Harness {
         ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
                  schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
         ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
+                 schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
+    ] + phoneTools.filter { $0.name == "status" } + [reportPlan, finishTask]
+
+    static let companionTools: [ToolSpec] = [
+        ToolSpec(name: "look", description: "Read the target app beside Poki, including its numbered elements and cropped screenshot.",
+                 schema: object(["full": ["type": "boolean"]], [])),
+        ToolSpec(name: "do", description: "Act within the target app, then read it. Use screenshot-local points or element references. Actions include tap, type, key, swipe, scroll_to, back, wait_until and handoff. The chat and all other apps stay outside this task.",
                  schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
     ] + phoneTools.filter { $0.name == "status" } + [reportPlan, finishTask]
 

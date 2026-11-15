@@ -26,7 +26,15 @@ final class LookDoTests: XCTestCase {
         _ = await core.finishTask(switching: false, localSession: "setup")
         let released = await core.prepareWorkspace(session: "other")
         XCTAssertTrue(released)
+        do {
+            try await core.activateWorkspaceApp("com.apple.springboard", session: "setup")
+            XCTFail("The previous workspace owner must not switch the current workspace")
+        } catch is CancellationError {}
         XCTAssertTrue(wda.bodies("POST /wda/apps/activate").isEmpty)
+        let precedingScreenshots = wda.bodies("GET /screenshot").count
+        try await core.activateWorkspaceApp("com.apple.springboard", session: "other")
+        XCTAssertEqual(wda.bodies("POST /wda/apps/activate").first?["bundleId"]?.string, "com.apple.springboard")
+        XCTAssertEqual(wda.bodies("GET /screenshot").count, precedingScreenshots)
     }
 
     func testSplitViewTypingRetriesOnlyKeysThatWereNotSent() async throws {
@@ -53,6 +61,40 @@ final class LookDoTests: XCTestCase {
             XCTAssertEqual(error.delivery, .unknown)
         }
         XCTAssertEqual(wda.bodies("POST /wda/keys").count, 3)
+    }
+
+    func testCompanionPaneIsPrivateAndReportsTheVerifiedPhysicalSide() async {
+        let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true))
+        let side = LockedBox("right")
+        let target = "local.test-app"
+        let poki = "local.poki"
+        wda.set("POST /poki/pane") { args in
+            guard args?["side"]?.string == "peer" else { return (200, ["value": .null]) }
+            let side = side.value
+            let x = side == "right" ? 400.0 : 0.0
+            return (200, ["value": ["identity": .string("\(side)/opened"), "side": .string(side),
+                                    "bundleId": .string(target), "otherBundleId": .string(poki),
+                                    "x": .number(x), "y": 0]])
+        }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(target)]]) }
+        wda.source([("Button", "Test control")])
+        let request = #"{"pane":"peer"}"#
+        let remote = await core.call("look", ["pane": "peer"], session: "remote")
+        XCTAssertTrue(remote.isError)
+        XCTAssertTrue(wda.bodies("POST /poki/pane").isEmpty)
+        let right = await core.callTool("look", arguments: request, localSession: "chat", expectedApps: [poki, target])
+        XCTAssertEqual(right.splitView?.side, "right", right.text)
+        XCTAssertEqual(right.splitView?.app, target)
+        side.value = "left"
+        let left = await core.callTool("look", arguments: request, localSession: "chat", expectedApps: [poki, target])
+        XCTAssertEqual(left.splitView?.side, "left", left.text)
+        XCTAssertEqual(left.splitView?.otherApp, poki)
+        let wrong = await core.callTool("look", arguments: request, localSession: "chat", expectedApps: [poki, "local.other"])
+        XCTAssertTrue(wrong.isError)
+        XCTAssertNil(wrong.jpeg)
+        let tap = await core.callTool("do", arguments: #"{"actions":[{"tap":[100,100]}]}"#, localSession: "chat")
+        XCTAssertTrue(tap.isError)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty)
     }
 
     func testPlannedSplitViewChecksBothAppIdentitiesBeforeReading() async {

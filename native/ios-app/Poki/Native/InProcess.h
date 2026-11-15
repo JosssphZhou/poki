@@ -46,7 +46,12 @@ FOUNDATION_EXPORT CGRect PKPeerPane(CGRect screen, CGRect window);
 
 /// Returns a launcher touch point only when the visible labels and accessibility frames agree on one target.
 FOUNDATION_EXPORT CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> *candidates,
-                                                    NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels, BOOL menu);
+                                                    NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels,
+                                                    BOOL menu, CGAffineTransform fromFixed);
+/// Corroborates a single app's AX window with a distinctive content label on its visible side.
+FOUNDATION_EXPORT BOOL PKCompanionContentMatches(NSArray<NSSet<NSString *> *> *lines,
+                                                  NSSet<NSString *> *labels, NSString *appLabel, BOOL right);
+FOUNDATION_EXPORT BOOL PKCalculatorKeypadMatches(NSUInteger leftRows, NSUInteger rightRows, BOOL right);
 
 /// UI automation from Poki's own process: the XCTest daemon session (testmanagerd), Automation Mode,
 /// and synthesized touch and text events. No runner app and no port. Every method blocks, so call it
@@ -96,6 +101,21 @@ FOUNDATION_EXPORT CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSAr
 - (NSDictionary<NSString *, id> *)frontApp;
 /// Confirms a named app icon or its Split View menu item from the system tree and a fresh local screenshot.
 - (nullable PKOutcome *)openWorkspaceLauncherItem:(NSArray<NSString *> *)labels menu:(BOOL)menu;
+/// Whether the unfolded Duo chat is full screen or docked to an edge.
+- (nullable NSString *)duoChatPlacement;
+/// Move the full-screen chat to the left side of the unfolded Duo using its system gesture.
+- (nullable PKOutcome *)dockChatBesideLauncher;
+/// Reveal and focus the system launcher on the companion side.
+- (nullable PKOutcome *)showCompanionLauncherOnSide:(NSString *)side;
+/// Replace Poki's own pane while keeping the confirmed companion app in place.
+- (nullable PKOutcome *)releaseChatPaneKeepingApp:(NSString *)bundle NS_SWIFT_NAME(releaseChatPane(keepingApp:));
+- (nullable PKOutcome *)openApp:(NSString *)bundle inReleasedChatPaneKeepingApp:(NSString *)anchor;
+/// Open an exact app identifier after verifying that a native gesture revealed that side's launcher.
+- (nullable PKOutcome *)openAppFromCompanionLauncher:(NSString *)bundle side:(NSString *)side;
+/// When a side-local App Switcher is visible, tap its verified background to show the launcher.
+- (nullable PKOutcome *)dismissCompanionSwitcherOnSide:(NSString *)side;
+/// Open a confirmed icon in the launcher on the specified side, without touching the chat pane.
+- (nullable PKOutcome *)openCompanionLauncherItem:(NSArray<NSString *> *)labels side:(NSString *)side;
 /// Select a side of a two-app inner display, or clear the selection with "auto".
 /// Refuses when both visible apps and their window bounds cannot be confirmed.
 - (nullable NSDictionary<NSString *, id> *)selectPane:(NSString *)side code:(NSString *_Nullable *_Nullable)code;

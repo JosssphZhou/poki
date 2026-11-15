@@ -1671,6 +1671,34 @@ final class AppModel {
         await core.clearWorkspacePaneForSetup(session: session)
     }
 
+    var duoChatPlacement: String? { automation.duoChatPlacement() }
+
+    func activateSplitViewSetupApp(_ bundleID: String, session: String) async throws {
+        lastAgentActivity = Date()
+        try await core.activateWorkspaceApp(bundleID, session: session)
+    }
+
+    func dockChatBesideLauncher(session: String) async throws -> Bool {
+        lastAgentActivity = Date()
+        return try await core.workspaceLauncherStep(session: session, request: ["dockChat": true]).bool == true
+    }
+
+    func replaceChatPane(keeping anchor: String, opening source: String? = nil, session: String) async throws -> Bool {
+        lastAgentActivity = Date()
+        var request: [String: JSON] = ["releaseChatKeeping": .string(anchor)]
+        if let source { request["openInReleasedChatPane"] = .string(source) }
+        return try await core.workspaceLauncherStep(session: session, request: .object(request)).bool == true
+    }
+
+    func openCompanionLauncherItem(labels: [String], side: String, dismissSwitcher: Bool = false,
+                                   bundle: String? = nil, session: String) async throws -> Bool {
+        lastAgentActivity = Date()
+        var request: [String: JSON] = ["labels": .array(labels.map(JSON.string)), "companionSide": .string(side),
+                                       "dismissSwitcher": .bool(dismissSwitcher)]
+        if let bundle { request["companionBundle"] = .string(bundle) }
+        return try await core.workspaceLauncherStep(session: session, request: .object(request)).bool == true
+    }
+
     func openSplitViewLauncherItem(labels: [String], menu: Bool, session: String) async throws -> Bool {
         lastAgentActivity = Date()
         let request: JSON = ["labels": .array(labels.map(JSON.string)), "menu": .bool(menu)]

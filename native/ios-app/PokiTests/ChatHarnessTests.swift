@@ -130,6 +130,12 @@ final class ChatHarnessTests: XCTestCase {
         app.loopback.simulate(.working(ms: 9))
         app.setup.loopback = .proxy
         app.setRelayEnabled(false)
+        let foregroundBy = ContinuousClock.now + .seconds(5)
+        while UIApplication.shared.applicationState != .active, ContinuousClock.now < foregroundBy {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(UIApplication.shared.applicationState, .active, "The test host must be in front to start a Live Activity")
+        app.becameActive()
         app.startSession()
         XCTAssertTrue(app.sessionOn)
         // The in-process probe supplies the test transport, so no external runner needs to wake.
@@ -171,6 +177,116 @@ final class ChatHarnessTests: XCTestCase {
         }
         XCTAssertFalse(Activity<PokiActivityAttributes>.activities.contains { $0.id == activity.id },
                        "Stop must end the Live Activity started by this session")
+    }
+
+    func testSingleAppChatOpensAndControlsOnlyTheSideBesidePoki() async throws {
+        for placement in ["left", "right", "full"] {
+            let targetSide = placement == "right" ? "left" : "right"
+            let automation = FakeAutomation(chatPlacement: placement)
+            let hasVisibleIcon = placement != "full"
+            let transport = CompanionWorkspace(targetSide: targetSide, automation: automation, hasVisibleIcon: hasVisibleIcon)
+            let server = try FakeCompletions(replies: [
+                FakeCompletions.text("SINGLE 1"),
+                FakeCompletions.tool("look", [:]),
+                FakeCompletions.tool("do", ["actions": [["drag": ["from": [100, 100], "to": [180, 180], "to_pane": placement]]]]),
+                FakeCompletions.tool("do", ["actions": [["tap": [180, 200]]]]),
+                FakeCompletions.text("Test control was tapped."),
+            ])
+            let chat = chat(on: server, transport: transport, automation: automation, kind: .poki)
+            defer { if chat.running { chat.stop() } }
+            chat.restore(SavedSession(id: UUID().uuidString, kind: .poki, title: "Companion app test", started: Date(),
+                                      updated: Date(), live: false, entries: [ChatEntry(.you("Prior message", delivered: true))], calls: []))
+            chat.send("Open Settings and tap the test control.", attachments: [])
+            let deadline = ContinuousClock.now + .seconds(15)
+            while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+            XCTAssertFalse(chat.running)
+            let expectedSteps = (placement == "full" ? ["dock chat"] : []) +
+                ["launcher \(targetSide)", "open Settings \(targetSide)"] +
+                (hasVisibleIcon ? [] : ["activate com.apple.Preferences \(targetSide)"])
+            XCTAssertEqual(transport.launchSteps, expectedSteps)
+            XCTAssertTrue(transport.paneRequests.allSatisfy { ["peer", "auto"].contains($0) })
+            XCTAssertEqual(transport.base.taps, 1, chat.savedCalls.map(\.answer).joined(separator: "\n"))
+            XCTAssertEqual(transport.base.drags, 0)
+            XCTAssertEqual(chat.savedCalls.map(\.name), ["look", "do", "do"])
+            XCTAssertTrue(chat.savedCalls.contains { $0.answer.contains("Split View: \(targetSide) is com.apple.Preferences") })
+            XCTAssertTrue(chat.savedCalls.contains { $0.answer.contains("Keep input inside the target app beside the chat") })
+        }
+    }
+
+    func testMentioningAnAppWithoutAskingToOpenItKeepsTheChat() async throws {
+        let transport = CompanionWorkspace(targetSide: "right")
+        let server = try FakeCompletions(replies: [FakeCompletions.text("NORMAL"), FakeCompletions.text("Safari is a web browser.")])
+        let chat = chat(on: server, transport: transport, automation: FakeAutomation(chatPlacement: "full"), kind: .poki)
+        defer { if chat.running { chat.stop() } }
+        chat.send("What is Safari?", attachments: [])
+        let deadline = ContinuousClock.now + .seconds(15)
+        while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(chat.running)
+        XCTAssertTrue(chat.entries.contains { if case .poki("Safari is a web browser.") = $0.kind { true } else { false } })
+        XCTAssertTrue(transport.launchSteps.isEmpty)
+        XCTAssertTrue(transport.paneRequests.isEmpty)
+    }
+
+    func testStoppingAfterRevealingThePeerNeverActivatesAnApp() async throws {
+        let transport = CompanionWorkspace(targetSide: "left", holdReveal: true)
+        let server = try FakeCompletions(replies: [FakeCompletions.text("SINGLE 1")])
+        let chat = chat(on: server, transport: transport, automation: FakeAutomation(chatPlacement: "right"), kind: .poki)
+        defer { if chat.running { chat.stop() } }
+        chat.send("Open Settings beside the chat.", attachments: [])
+        let beforeStop = ContinuousClock.now + .seconds(5)
+        while transport.launchSteps.isEmpty, ContinuousClock.now < beforeStop { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(transport.launchSteps, ["launcher left"])
+        chat.stop()
+        let stoppedBy = ContinuousClock.now + .seconds(8)
+        while !chat.entries.contains(where: { if case .poki("Stopped.") = $0.kind { true } else { false } }),
+              ContinuousClock.now < stoppedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(chat.entries.contains { if case .poki("Stopped.") = $0.kind { true } else { false } })
+        XCTAssertEqual(transport.launchSteps, ["launcher left"])
+        XCTAssertEqual(transport.base.taps, 0)
+    }
+
+    func testTwoAppChatOpensTheSourceInPokisFormerPane() async throws {
+        for placement in ["left", "right"] {
+            let anchorSide = placement == "left" ? "right" : "left"
+            let automation = FakeAutomation(chatPlacement: placement)
+            let transport = CompanionWorkspace(targetSide: anchorSide, automation: automation)
+            let server = try FakeCompletions(replies: [
+                FakeCompletions.text("SPLIT 1 2"),
+                FakeCompletions.tool("look", ["pane": placement]),
+                FakeCompletions.tool("look", ["pane": anchorSide]),
+                FakeCompletions.text("Both apps are open."),
+            ])
+            let chat = chat(on: server, transport: transport, automation: automation, kind: .poki)
+            defer { if chat.running { chat.stop() } }
+            chat.send("Compare Safari and Settings side by side.", attachments: [])
+            let deadline = ContinuousClock.now + .seconds(15)
+            while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+            XCTAssertFalse(chat.running)
+            XCTAssertEqual(transport.launchSteps, ["launcher \(anchorSide)", "open Settings \(anchorSide)",
+                                                   "release chat", "open com.apple.mobilesafari in former chat"])
+            XCTAssertTrue(chat.savedCalls.contains { $0.answer.contains("Split View: \(placement) is com.apple.mobilesafari") })
+            XCTAssertTrue(chat.savedCalls.contains { $0.answer.contains("Split View: \(anchorSide) is com.apple.Preferences") })
+        }
+    }
+
+    func testStoppingDuringTheChatPaneReleaseNeverOpensTheSource() async throws {
+        let automation = FakeAutomation(chatPlacement: "left")
+        let transport = CompanionWorkspace(targetSide: "right", automation: automation, holdChatRelease: true)
+        let server = try FakeCompletions(replies: [FakeCompletions.text("SPLIT 1 2")])
+        let chat = chat(on: server, transport: transport, automation: automation, kind: .poki)
+        defer { if chat.running { chat.stop() } }
+        chat.send("Compare Safari and Settings side by side.", attachments: [])
+        let beforeStop = ContinuousClock.now + .seconds(10)
+        while transport.launchSteps.last != "release chat", ContinuousClock.now < beforeStop {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(transport.launchSteps.last, "release chat")
+        chat.stop()
+        let stoppedBy = ContinuousClock.now + .seconds(8)
+        while !chat.entries.contains(where: { if case .poki("Stopped.") = $0.kind { true } else { false } }),
+              ContinuousClock.now < stoppedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(chat.entries.contains { if case .poki("Stopped.") = $0.kind { true } else { false } })
+        XCTAssertEqual(transport.launchSteps.last, "release chat")
     }
 
     func testSplitViewStartupReplacesADifferentExistingPair() async throws {
@@ -738,6 +854,114 @@ final class FakeCompletions: @unchecked Sendable {
         return messages.filter { ["system", "developer"].contains($0["role"] as? String ?? "") }.map { message in
             (message["content"] as? String) ?? ((message["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n") ?? "")
         }.joined(separator: "\n")
+    }
+}
+
+private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
+    let usesDynamicScreenSize = true
+    let supportsPaneSelection = true
+    let base: RotatingWorkspace
+    private let targetSide: String
+    private let holdReveal: Bool
+    private let holdChatRelease: Bool
+    private let hasVisibleIcon: Bool
+    private let automation: FakeAutomation?
+    private let lock = NSLock()
+    private var events: [String] = []
+    private var panes: [String] = []
+    private var opened = false
+    private var released = false
+    private var sourceOpened = false
+    private var selectedSide: String?
+
+    @MainActor init(targetSide: String, holdReveal: Bool = false, automation: FakeAutomation? = nil,
+                    holdChatRelease: Bool = false, hasVisibleIcon: Bool = true) {
+        self.targetSide = targetSide
+        self.holdReveal = holdReveal
+        self.automation = automation
+        self.holdChatRelease = holdChatRelease
+        self.hasVisibleIcon = hasVisibleIcon
+        base = RotatingWorkspace(rotateAt: .drop)
+    }
+
+    var launchSteps: [String] { lock.withLock { events } }
+    var paneRequests: [String] { lock.withLock { panes } }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        func reply(_ value: JSON) -> (Int, Data) { (200, (["value": value] as JSON).data()) }
+        let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
+        let args = body.flatMap { try? JSON.parse($0) }
+        let poki = Bundle.main.bundleIdentifier ?? ""
+        let target = "com.apple.Preferences"
+        let safari = "com.apple.mobilesafari"
+        switch (method, path) {
+        case ("POST", "/poki/pane"):
+            let request = args?["side"]?.string ?? ""
+            return lock.withLock {
+                panes.append(request)
+                if request == "auto" {
+                    selectedSide = nil
+                    return reply(.null)
+                }
+                let side = request == "peer" ? targetSide : request
+                selectedSide = side
+                let current = opened && side == targetSide ? target : safari
+                let other = sourceOpened ? (side == targetSide ? safari : target) : poki
+                let layout = sourceOpened ? "safari-settings" : current
+                return reply(["identity": .string("\(side)/\(layout)"), "side": .string(side),
+                              "bundleId": .string(current), "otherBundleId": .string(other), "x": 0, "y": 0])
+            }
+        case ("POST", "/poki/workspace-launcher"):
+            if args?["dockChat"]?.bool == true {
+                lock.withLock { events.append("dock chat") }
+                automation?.setChatPlacement("left")
+                return reply(true)
+            }
+            if args?["releaseChatKeeping"]?.string == target {
+                if let source = args?["openInReleasedChatPane"]?.string {
+                    return lock.withLock {
+                        events.append("open \(source) in former chat")
+                        sourceOpened = released && source == safari
+                        return reply(.bool(sourceOpened))
+                    }
+                }
+                let ready = lock.withLock {
+                    released = opened && selectedSide == nil
+                    if released { events.append("release chat") }
+                    return released
+                }
+                if holdChatRelease { try await Task.sleep(for: .seconds(3)) }
+                return reply(.bool(ready))
+            }
+            let side = args?["companionSide"]?.string ?? ""
+            let label = args?["labels"]?.array?.first?.string
+            if holdReveal, label == nil, args?["companionBundle"] == nil, args?["dismissSwitcher"]?.bool != true {
+                lock.withLock { events.append("launcher \(side)") }
+                try await Task.sleep(for: .seconds(3))
+                return reply(.bool(side == targetSide))
+            }
+            return lock.withLock {
+                if let bundle = args?["companionBundle"]?.string {
+                    events.append("activate \(bundle) \(side)")
+                    opened = !hasVisibleIcon && bundle == target && side == targetSide &&
+                        events.dropLast().last == "open Settings \(side)"
+                    return reply(.bool(opened))
+                }
+                if let label {
+                    events.append("open \(label) \(side)")
+                    opened = hasVisibleIcon && label == "Settings" && side == targetSide
+                    return reply(.bool(opened))
+                }
+                events.append("launcher \(side)")
+                return reply(.bool(side == targetSide))
+            }
+        case ("GET", "/wda/activeAppInfo"):
+            return lock.withLock {
+                reply(["bundleId": .string(opened && (selectedSide == nil || selectedSide == targetSide) ? target : safari)])
+            }
+        default:
+            return try await base.send(method: method, url: url, body: body, timeout: timeout)
+        }
     }
 }
 

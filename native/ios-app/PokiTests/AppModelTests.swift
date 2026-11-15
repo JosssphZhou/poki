@@ -17,6 +17,12 @@ final class FakeLauncher: RunnerLauncher, @unchecked Sendable {
 /// the passcode, until `answer(_:)`.
 final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private let lock = NSLock()
+    private var chatPlacement: String?
+
+    init(chatPlacement: String? = nil) { self.chatPlacement = chatPlacement }
+    func duoChatPlacement() -> String? { lock.withLock { chatPlacement } }
+    func setChatPlacement(_ placement: String) { lock.withLock { chatPlacement = placement } }
+
     private var open = false
     var isOpen: Bool { lock.withLock { open } }
     private var gate: DispatchSemaphore?

@@ -34,6 +34,7 @@
 - (void)_XCT_requestScreenshotOfScreenWithID:(long long)screenID withRect:(CGRect)rect uti:(NSString *)uti compressionQuality:(double)quality withReply:(void (^)(NSData *, NSError *))reply;
 - (long long)displayID;
 - (NSArray *)children;
+- (id)parent;
 - (long long)elementType;
 - (CGRect)frame;
 - (NSString *)identifier;
@@ -534,6 +535,7 @@ static BOOL PKSameDisplay(PKDisplayGeometry a, PKDisplayGeometry b) {
 @property (nonatomic) CGRect left, right;
 @property (nonatomic) int leftPID, rightPID;
 @property (nonatomic) BOOL selectRight;
+@property (nonatomic) BOOL alongsidePoki;
 @property (nonatomic) BOOL paneLocal;
 @property (nonatomic) uint64_t generation;
 /// The labels from the resolved trees, used to revalidate with a fresh image alone when still visible.
@@ -544,8 +546,7 @@ static BOOL PKSameDisplay(PKDisplayGeometry a, PKDisplayGeometry b) {
 @implementation PKWorkspace
 @end
 
-static int PKPIDAt(id ax, CGRect pane, PKDisplayGeometry display) {
-    CGPoint upright = CGPointMake(CGRectGetMidX(pane), CGRectGetMinY(pane) + pane.size.height * 0.33);
+static int PKPIDAtPoint(id ax, CGPoint upright, PKDisplayGeometry display) {
     CGPoint fixed = CGPointApplyAffineTransform(upright, display.toFixed);
     for (NSString *name in @[@"elementAtPoint:error:", @"accessibilityElementForElementAtPoint:error:"]) {
         SEL selector = NSSelectorFromString(name);
@@ -560,6 +561,27 @@ static int PKPIDAt(id ax, CGRect pane, PKDisplayGeometry display) {
         }
     }
     return 0;
+}
+
+static int PKPIDAt(id ax, CGRect pane, PKDisplayGeometry display) {
+    CGPoint point = CGPointMake(CGRectGetMidX(pane), CGRectGetMinY(pane) + pane.size.height * 0.33);
+    return PKPIDAtPoint(ax, point, display);
+}
+
+static BOOL PKPaneContainsApplication(id ax, CGRect pane, PKDisplayGeometry display, int expectedPID) {
+    if (expectedPID <= 0) return NO;
+    // An app can have an empty center even though its controls fill the lower pane.
+    // Require positive hits in two places and reject a hit on any other process.
+    const CGPoint samples[] = {{0.34, 0.58}, {0.69, 0.68}, {0.49, 0.81}};
+    int matches = 0;
+    for (NSUInteger i = 0; i < sizeof(samples) / sizeof(samples[0]); i++) {
+        CGPoint point = CGPointMake(CGRectGetMinX(pane) + pane.size.width * samples[i].x,
+                                    CGRectGetMinY(pane) + pane.size.height * samples[i].y);
+        int pid = PKPIDAtPoint(ax, point, display);
+        if (pid > 0 && pid != expectedPID) return NO;
+        if (pid == expectedPID) matches++;
+    }
+    return matches >= 2;
 }
 
 /// Accept upright or fixed-space AX window frames that sit on the requested display edge.
@@ -693,6 +715,26 @@ static NSSet<NSString *> *PKWorkspaceLabels(id ax, NSDictionary *candidate) {
     return labels;
 }
 
+static NSSet<NSString *> *PKHomeIconLabels(id ax, id launcher) {
+    id root = PKRequestSnapshotWithin(0.85, ax, launcher, 22, 480, NULL);
+    if (!root) return nil;
+    NSMutableArray *nodes = [NSMutableArray arrayWithObject:root];
+    NSMutableSet<NSString *> *labels = [NSMutableSet new];
+    while (nodes.count) {
+        id node = nodes.lastObject;
+        [nodes removeLastObject];
+        // SpringBoard also reports App Switcher cards while Home is visible. A card's
+        // contents cannot provide evidence that an icon is on the launcher.
+        if ([PKText([node identifier]) hasPrefix:@"card:"]) continue;
+        if ([PKTypeName([node elementType]) isEqualToString:@"Icon"]) {
+            NSString *label = PKMatchText(PKText([node label]) ?: @"");
+            if (label.length >= 2) [labels addObject:label];
+        }
+        [nodes addObjectsFromArray:[node children] ?: @[]];
+    }
+    return labels;
+}
+
 /// Duo can give both AX windows a pane-local origin. Match visible labels to the picture only when
 /// the result is unambiguous. The screenshot never leaves this process during this check.
 static NSArray<NSSet<NSString *> *> *PKWorkspaceText(UIImage *upright) {
@@ -707,7 +749,7 @@ static NSArray<NSSet<NSString *> *> *PKWorkspaceText(UIImage *upright) {
     NSMutableArray<NSDictionary *> *observed[2] = {[NSMutableArray new], [NSMutableArray new]};
     for (VNRecognizedTextObservation *observation in request.results) {
         CGRect box = observation.boundingBox;
-        if (CGRectGetMaxX(box) > 0.48 && CGRectGetMinX(box) < 0.52) continue;
+        if (CGRectGetMaxX(box) > 0.5 && CGRectGetMinX(box) < 0.5) continue;
         NSString *word = PKMatchText([observation topCandidates:1].firstObject.string ?: @"");
         if (word.length < 2) continue;
         int side = CGRectGetMidX(box) > 0.5;
@@ -729,6 +771,51 @@ static NSArray<NSSet<NSString *> *> *PKWorkspaceText(UIImage *upright) {
         }
     }
     return @[lines[0], lines[1]];
+}
+
+static NSUInteger PKCalculatorOperatorRows(CGImageRef image, BOOL right) {
+    if (!image) return 0;
+    CGFloat w = CGImageGetWidth(image) / 2.0, h = CGImageGetHeight(image);
+    // The built-in Calculator's four operator keys are a column of orange buttons. Read
+    // the bottom of each pane, independently of the value and the user's chat text.
+    CGRect area = CGRectIntegral(CGRectMake((right ? w : 0) + w * 0.80, h * 0.34, w * 0.14, h * 0.61));
+    CGImageRef crop = CGImageCreateWithImageInRect(image, area);
+    if (!crop) return 0;
+    const size_t columns = 16, rows = 96;
+    uint8_t pixels[96][16][4] = {{{0}}};
+    CGColorSpaceRef rgb = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(pixels, columns, rows, 8, columns * 4, rgb,
+                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(rgb);
+    if (context) {
+        CGContextDrawImage(context, CGRectMake(0, 0, columns, rows), crop);
+        CGContextRelease(context);
+    }
+    CGImageRelease(crop);
+    NSUInteger band = 0, count = 0, previousCenter = 0;
+    for (NSUInteger y = 0; y <= rows; y++) {
+        NSUInteger orange = 0;
+        if (y < rows) {
+            for (NSUInteger x = 0; x < columns; x++) {
+                int r = pixels[y][x][0], g = pixels[y][x][1], b = pixels[y][x][2];
+                if (r > 150 && r - g > 24 && g - b > 34 && b < 110) orange++;
+            }
+        }
+        if (orange >= columns * 2 / 3) { band++; continue; }
+        if (band >= 5) {
+            NSUInteger center = y - band / 2;
+            // Four buttons of the standard mode have a regular pitch.
+            if (count && (center - previousCenter < 14 || center - previousCenter > 26)) return 0;
+            previousCenter = center;
+            count++;
+        }
+        band = 0;
+    }
+    return count;
+}
+
+BOOL PKCalculatorKeypadMatches(NSUInteger leftRows, NSUInteger rightRows, BOOL right) {
+    return right ? rightRows == 4 && leftRows <= 1 : leftRows == 4 && rightRows <= 1;
 }
 
 static NSInteger PKWorkspaceOrder(NSArray<NSSet<NSString *> *> *lines, NSSet *first, NSSet *second) {
@@ -783,6 +870,20 @@ static NSInteger PKWorkspaceOrder(NSArray<NSSet<NSString *> *> *lines, NSSet *fi
     return 0;
 }
 
+BOOL PKCompanionContentMatches(NSArray<NSSet<NSString *> *> *lines, NSSet<NSString *> *labels,
+                               NSString *appLabel, BOOL right) {
+    if (lines.count != 2) return NO;
+    BOOL matches = NO;
+    for (NSString *label in labels) {
+        if (label.length < 12 || [label isEqualToString:appLabel]) continue;
+        BOOL here = [lines[right ? 1 : 0] containsObject:label];
+        BOOL there = [lines[right ? 0 : 1] containsObject:label];
+        if (there && !here) return NO;
+        if (here && !there) matches = YES;
+    }
+    return matches;
+}
+
 /// The software keyboard covers both panes. Compare the upper content, clear of the keyboard
 /// and the system status area, so it can still distinguish the two live windows after typing.
 static NSArray<NSData *> *PKWorkspaceAppearance(UIImage *image) {
@@ -816,7 +917,7 @@ static double PKAppearanceDifference(NSData *a, NSData *b) {
     return (double)total / a.length;
 }
 
-static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<NSData *> *prior) {
+static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<NSData *> *prior, BOOL requireBoth) {
     if (current.count != 2 || prior.count != 2) return 0;
     // Similar-looking panes cannot establish order. Neither can a match that is also plausible
     // on the opposite side. A stable, distinct pane is enough when both live windows still exist.
@@ -826,6 +927,7 @@ static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<
         double same = PKAppearanceDifference(prior[side], current[side]);
         double opposite = PKAppearanceDifference(prior[side], current[1 - side]);
         NSInteger vote = same <= 9 && opposite >= 24 ? 1 : opposite <= 9 && same >= 24 ? -1 : 0;
+        if (requireBoth && !vote) return 0;
         if (order && vote && order != vote) return 0;
         if (vote) order = vote;
     }
@@ -854,6 +956,11 @@ static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<
     id _freshAX;
     CGRect _viewport;
     PKDisplayGeometry _capturedGeometry;
+    PKDisplayGeometry _revealedLauncherGeometry;
+    uint64_t _revealedLauncherGeneration;
+    uint64_t _revealedLauncherInputs;
+    NSTimeInterval _revealedLauncherAt;
+    int _releasedChatAnchorPID;
     CGRect _capturedViewport;
     NSNumber *_capturedDisplay;
     PKWorkspace *_workspace;
@@ -924,7 +1031,7 @@ static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<
 
 - (CGRect)otherWorkspacePane {
     PKWorkspace *workspace = self.selectedWorkspace;
-    if (!workspace) return CGRectNull;
+    if (!workspace || workspace.alongsidePoki) return CGRectNull;
     return workspace.selectRight ? workspace.left : workspace.right;
 }
 
@@ -1003,25 +1110,33 @@ static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<
                 leftLabels = first == known.leftPID ? known.leftLabels : known.rightLabels;
                 rightLabels = first == known.leftPID ? known.rightLabels : known.leftLabels;
             }
-            NSArray *visible = PKWorkspaceText(upright);
-            if (!visible) return nil;
-            NSInteger order = PKWorkspaceOrder(visible, leftLabels, rightLabels);
-            if (!order) {
-                leftLabels = PKWorkspaceLabels(ax, left);
-                rightLabels = PKWorkspaceLabels(ax, right);
-                order = PKWorkspaceOrder(visible, leftLabels, rightLabels);
-            }
-            NSInteger visualOrder = samePair ? PKWorkspaceAppearanceOrder(freshAppearance, known.appearance) : 0;
-            if (first == known.rightPID) visualOrder = -visualOrder;
-            if (order && visualOrder && order != visualOrder) return nil;
+            // Two distinct panes that still match in the same layout can reuse their verified
+            // order. Reread labels when either appearance needs revalidation.
+            NSInteger order = samePair ? PKWorkspaceAppearanceOrder(freshAppearance, known.appearance, YES) : 0;
+            if (first == known.rightPID) order = -order;
             if (order) {
-                appearance = freshAppearance;
-            } else if (visualOrder) {
-                // Keep the independently verified reference. Replacing it on every fallback can
-                // let a succession of small changes drift into an unrelated screen.
-                order = visualOrder;
-                appearance = visualOrder == (first == known.leftPID ? 1 : -1)
+                appearance = order == (first == known.leftPID ? 1 : -1)
                     ? known.appearance : @[known.appearance[1], known.appearance[0]];
+            } else {
+                NSArray *visible = PKWorkspaceText(upright);
+                if (!visible) return nil;
+                order = PKWorkspaceOrder(visible, leftLabels, rightLabels);
+                if (!order) {
+                    leftLabels = PKWorkspaceLabels(ax, left);
+                    rightLabels = PKWorkspaceLabels(ax, right);
+                    order = PKWorkspaceOrder(visible, leftLabels, rightLabels);
+                }
+                NSInteger visualOrder = samePair ? PKWorkspaceAppearanceOrder(freshAppearance, known.appearance, NO) : 0;
+                if (first == known.rightPID) visualOrder = -visualOrder;
+                if (order && visualOrder && order != visualOrder) return nil;
+                if (order) {
+                    appearance = freshAppearance;
+                } else if (visualOrder) {
+                    // Keep the verified reference so small changes cannot gradually drift.
+                    order = visualOrder;
+                    appearance = order == (first == known.leftPID ? 1 : -1)
+                        ? known.appearance : @[known.appearance[1], known.appearance[0]];
+                }
             }
             if (!order) return nil;
             if (order < 0) {
@@ -1052,14 +1167,88 @@ static NSInteger PKWorkspaceAppearanceOrder(NSArray<NSData *> *current, NSArray<
     return workspace;
 }
 
+/// Beside our own window, UIKit supplies the pane bounds independently of the target's AX tree.
+/// A launcher or overlay can occupy that pane during setup, but only the other app is selectable.
+- (PKWorkspace *)companionWorkspaceOn:(PKDisplayGeometry)display ax:(id)ax session:(id)session
+                              generation:(uint64_t)generation elements:(NSArray **)elements {
+    if (!PKIsDuo() || !display.panePlacementKnown || CGRectIsNull(display.peer) || self.screenLocked || !self.isPokiSceneVisible) return nil;
+    CGRect own = PKOppositePane(display);
+    BOOL targetOnRight = CGRectGetMidX(display.peer) > CGRectGetMidX(display.bounds);
+    int ownHit = PKPIDAt(ax, own, display);
+    int targetHit = PKPIDAt(ax, display.peer, display);
+    NSArray *overlays = @[@"com.apple.springboard", @"com.apple.SleepLockScreen"];
+    if (ownHit > 0 && ownHit != getpid() && ![overlays containsObject:[self bundleForPID:ownHit session:session] ?: @""]) return nil;
+    if (targetHit == getpid()) return nil;
+    if (targetHit > 0 && [overlays containsObject:[self bundleForPID:targetHit session:session] ?: @""]) targetHit = 0;
+    id target = nil;
+    int targetPID = 0;
+    BOOL launcherActive = NO;
+    for (id element in PKActiveApplications(ax)) {
+        int pid = PKAXPid(element);
+        if (pid <= 0 || pid == getpid()) continue;
+        NSString *bundle = [self bundleForPID:pid session:session];
+        if ([bundle isEqualToString:@"com.apple.springboard"]) launcherActive = YES;
+        if (targetHit > 0 && pid != targetHit) continue;
+        if (!bundle.length || [overlays containsObject:bundle]) continue;
+        if (target && targetPID != pid) return nil;
+        target = element;
+        targetPID = pid;
+    }
+    if (!target) return nil;
+    id root = PKRequestSnapshotWithin(0.6, ax, target, 2, 12, NULL);
+    CGRect leftFrame = PKWorkspaceFrame(root, display, NO);
+    CGRect rightFrame = PKWorkspaceFrame(root, display, YES);
+    if (CGRectIsNull(leftFrame) == CGRectIsNull(rightFrame) || (!targetOnRight && CGRectIsNull(leftFrame))) return nil;
+    BOOL paneLocal = targetOnRight && CGRectIsNull(rightFrame);
+    if (targetHit == 0 && (paneLocal || launcherActive)) {
+        // Without a hit, a pane-local frame or an active launcher leaves the visible placement
+        // ambiguous. Corroborate it in the picture before exposing the app or tapping it.
+        id screen = PKAutomationScreen(display);
+        NSData *picture = screen ? ([self daemonJPEGForScreen:screen] ?: [[screen screenshot] PNGRepresentation]) : nil;
+        // The other pane has a known boundary from our own window. Preserve labels that
+        // start near the hinge, while continuing to discard observations that straddle it.
+        UIImage *upright = PKUprightImage(picture, display);
+        NSArray *visible = PKWorkspaceText(upright);
+        NSSet *labels = PKWorkspaceLabels(ax, @{@"element": target});
+        NSInteger order = PKWorkspaceOrder(visible, labels, nil);
+        if (order != (targetOnRight ? -1 : 1)) {
+            if (order != 0) return nil;
+            if (!PKCompanionContentMatches(visible, labels, PKMatchText(PKText([root label]) ?: @""), targetOnRight) &&
+                !PKPaneContainsApplication(ax, display.peer, display, targetPID)) {
+                if (![[self bundleForPID:targetPID session:session] isEqualToString:@"com.apple.calculator"]) return nil;
+                NSUInteger left = PKCalculatorOperatorRows(upright.CGImage, NO);
+                NSUInteger right = PKCalculatorOperatorRows(upright.CGImage, YES);
+                if (!PKCalculatorKeypadMatches(left, right, targetOnRight)) {
+                    NSLog(@"PokiInProcess: calculator keypad not confirmed (%lu/%lu operator rows)",
+                          (unsigned long)left, (unsigned long)right);
+                    return nil;
+                }
+            }
+        }
+    }
+    PKWorkspace *workspace = [PKWorkspace new];
+    workspace.display = display;
+    workspace.generation = generation;
+    workspace.alongsidePoki = YES;
+    workspace.selectRight = targetOnRight;
+    workspace.left = targetOnRight ? own : display.peer;
+    workspace.right = targetOnRight ? display.peer : own;
+    workspace.leftPID = targetOnRight ? getpid() : targetPID;
+    workspace.rightPID = targetOnRight ? targetPID : getpid();
+    workspace.paneLocal = paneLocal;
+    if (elements) *elements = targetOnRight ? @[NSNull.null, target] : @[target, NSNull.null];
+    return workspace;
+}
+
 static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
     return a && b && a.generation == b.generation && PKSameDisplay(a.display, b.display) &&
-        a.leftPID == b.leftPID && a.rightPID == b.rightPID && a.paneLocal == b.paneLocal &&
+        a.leftPID == b.leftPID && a.rightPID == b.rightPID && a.paneLocal == b.paneLocal && a.alongsidePoki == b.alongsidePoki &&
         CGRectEqualToRect(a.left, b.left) && CGRectEqualToRect(a.right, b.right);
 }
 
 - (NSDictionary<NSString *, id> *)selectPane:(NSString *)side code:(NSString **)code {
     if ([side isEqualToString:@"auto"]) {
+        @synchronized (self) { _revealedLauncherAt = 0; _releasedChatAnchorPID = 0; }
         if (self.selectedWorkspace) [self setWorkspace:nil];
         return @{};
     }
@@ -1067,12 +1256,19 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
     PKDisplayGeometry display = self.displayGeometry;
-    PKWorkspace *workspace = session ? [self workspaceOn:display ax:[self accessibilityFor:generation] session:session generation:generation known:self.selectedWorkspace elements:NULL] : nil;
+    BOOL companion = [side isEqualToString:@"peer"];
+    id ax = session ? [self accessibilityFor:generation] : nil;
+    PKWorkspace *workspace = !session ? nil : companion
+        ? [self companionWorkspaceOn:display ax:ax session:session generation:generation elements:NULL]
+        : [self workspaceOn:display ax:ax session:session generation:generation known:self.selectedWorkspace elements:NULL];
     if (!workspace || !PKSameDisplay(display, self.displayGeometry)) {
-        if (code) *code = @"two visible apps could not be confirmed; open two apps in Split View with Poki in the background";
+        if (code) *code = companion
+            ? @"two visible apps could not be confirmed; the target app must be beside Poki"
+            : @"two visible apps could not be confirmed; open two apps in Split View with Poki in the background";
         return nil;
     }
-    workspace.selectRight = [side isEqualToString:@"right"];
+    if (companion) side = workspace.selectRight ? @"right" : @"left";
+    else workspace.selectRight = [side isEqualToString:@"right"];
     [self setWorkspace:workspace];
     int pid = workspace.selectRight ? workspace.rightPID : workspace.leftPID;
     int otherPID = workspace.selectRight ? workspace.leftPID : workspace.rightPID;
@@ -1081,7 +1277,7 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
                           NSStringFromCGAffineTransform(workspace.display.toFixed), (long)workspace.display.orientation,
                           NSStringFromCGSize(workspace.display.nativeSize),
                           workspace.display.orientationRevision];
-    return @{@"bundleId": [self bundleForPID:pid session:session] ?: @"", @"otherBundleId": [self bundleForPID:otherPID session:session] ?: @"",
+    return @{@"side": side, @"bundleId": [self bundleForPID:pid session:session] ?: @"", @"otherBundleId": companion ? NSBundle.mainBundle.bundleIdentifier : ([self bundleForPID:otherPID session:session] ?: @""),
              @"identity": identity, @"x": @(CGRectGetMinX(workspace.selectRight ? workspace.right : workspace.left)),
              @"y": @(CGRectGetMinY(workspace.selectRight ? workspace.right : workspace.left))};
 }
@@ -1093,7 +1289,10 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
     uint64_t generation = 0;
     id session = [self current:&generation outcome:&refused];
     PKDisplayGeometry display = self.displayGeometry;
-    PKWorkspace *current = session ? [self workspaceOn:display ax:[self accessibilityFor:generation] session:session generation:generation known:selected elements:NULL] : nil;
+    id ax = session ? [self accessibilityFor:generation] : nil;
+    PKWorkspace *current = !session ? nil : selected.alongsidePoki
+        ? [self companionWorkspaceOn:display ax:ax session:session generation:generation elements:NULL]
+        : [self workspaceOn:display ax:ax session:session generation:generation known:selected elements:NULL];
     if (selected != self.selectedWorkspace || !PKSameWorkspace(selected, current) || !PKSameDisplay(display, self.displayGeometry))
         return @"the Split View apps or layout changed; look at the target pane again";
     return nil;
@@ -1689,7 +1888,9 @@ static const int PKFrontKey = -1;
         id chosen;
         if (selected) {
             NSArray *elements = nil;
-            PKWorkspace *current = [weakSelf workspaceOn:geometry ax:ax session:session generation:generation known:selected elements:&elements];
+            PKWorkspace *current = selected.alongsidePoki
+                ? [weakSelf companionWorkspaceOn:geometry ax:ax session:session generation:generation elements:&elements]
+                : [weakSelf workspaceOn:geometry ax:ax session:session generation:generation known:selected elements:&elements];
             if (selected != weakSelf.selectedWorkspace || !PKSameWorkspace(selected, current)) return @{};
             pane = selected.selectRight ? current.right : current.left;
             chosen = elements[selected.selectRight ? 1 : 0];
@@ -1850,10 +2051,12 @@ static const int PKFrontKey = -1;
     } @catch (NSException *e) { return @{}; }
 }
 
-CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> *candidates,
-                                 NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels, BOOL menu) {
+static CGPoint PKLauncherPointInCoordinates(NSDictionary<NSString *, NSArray<NSValue *> *> *candidates,
+                                         NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels,
+                                         BOOL menu, CGAffineTransform transform) {
     CGPoint unavailable = CGPointMake(NAN, NAN);
     CGPoint point = unavailable;
+    BOOL convertsFixedFrames = !CGAffineTransformIsIdentity(transform);
     for (NSString *label in visibleLabels) {
         NSArray<NSValue *> *frames = candidates[label];
         if (!frames.count) continue;
@@ -1864,10 +2067,11 @@ CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> 
             if (!menu) {
                 CGFloat firstRow = INFINITY, lastRow = -INFINITY;
                 for (NSValue *frame in frames) {
-                    CGRect icon = frame.CGRectValue;
+                    CGRect icon = CGRectApplyAffineTransform(frame.CGRectValue, transform);
                     CGFloat middle = CGRectGetMidY(icon);
                     if (CGRectIsEmpty(icon) || CGRectGetHeight(icon) <= 50 ||
                         position.y < middle || position.y > CGRectGetMaxY(icon) + 8) continue;
+                    if (convertsFixedFrames && (position.x < CGRectGetMinX(icon) || position.x > CGRectGetMaxX(icon))) continue;
                     firstRow = fmin(firstRow, middle);
                     lastRow = fmax(lastRow, middle);
                 }
@@ -1882,14 +2086,192 @@ CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> 
     return point;
 }
 
-- (nullable PKOutcome *)openWorkspaceLauncherItem:(NSArray<NSString *> *)labels menu:(BOOL)menu {
+CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> *candidates,
+                                 NSDictionary<NSString *, NSArray<NSValue *> *> *visibleLabels,
+                                 BOOL menu, CGAffineTransform fromFixed) {
+    if (!menu && !CGAffineTransformIsIdentity(fromFixed)) {
+        CGPoint converted = PKLauncherPointInCoordinates(candidates, visibleLabels, NO, fromFixed);
+        if (isfinite(converted.x)) return converted;
+    }
+    return PKLauncherPointInCoordinates(candidates, visibleLabels, menu, CGAffineTransformIdentity);
+}
+
+- (NSString *)duoChatPlacement {
+    if (!PKIsDuo() || !self.isPokiSceneVisible || self.screenLocked) return nil;
+    PKDisplayGeometry display = self.displayGeometry;
+    // The landscape cover is narrower than the unfolded display's short edge in points.
+    if (!display.routesDisplay || CGRectGetHeight(display.bounds) < 600 ||
+        CGRectGetWidth(display.bounds) <= CGRectGetHeight(display.bounds)) return nil;
+    if (CGRectIsNull(display.peer)) return @"full";
+    if (!display.panePlacementKnown) return nil;
+    return CGRectGetMidX(display.peer) > CGRectGetMidX(display.bounds) ? @"left" : @"right";
+}
+
+static BOOL PKIsCompanionSide(PKDisplayGeometry display, NSString *side) {
+    if (!PKIsDuo() || !display.panePlacementKnown || CGRectIsNull(display.peer)) return NO;
+    BOOL right = CGRectGetMidX(display.peer) > CGRectGetMidX(display.bounds);
+    return [side isEqualToString:right ? @"right" : @"left"];
+}
+
+- (BOOL)launcherOwnsPoint:(CGPoint)point display:(PKDisplayGeometry)display ax:(id)ax
+                 system:(id)system session:(id)session companion:(BOOL)companion allowingPID:(int)otherPID {
+    int systemPID = PKAXPid(system);
+    if (systemPID <= 0) return NO;
+    int hit = PKPIDAtPoint(ax, point, display);
+    if (hit > 0) return hit == systemPID;
+    // Some Duo runtimes have no AX point hits. Require a live launcher element and a
+    // corroborating screenshot at the call site, plus no other active app under its pane.
+    NSArray *active = PKActiveApplications(ax);
+    BOOL launcherActive = NO;
+    for (id element in active) {
+        int pid = PKAXPid(element);
+        if (pid == systemPID) { launcherActive = YES; continue; }
+        if ((otherPID > 0 && pid == otherPID) || (companion && pid == getpid())) continue;
+        if (pid <= 0 || ![[self bundleForPID:pid session:session] isEqualToString:@"com.apple.SleepLockScreen"]) return NO;
+    }
+    return launcherActive;
+}
+
+- (PKOutcome *)dockChatBesideLauncher {
+    PKDisplayGeometry display = self.displayGeometry;
+    if (self.selectedWorkspace || ![[self duoChatPlacement] isEqualToString:@"full"] ||
+        ![self screenshot:NULL refreshViewport:YES] || !PKSameDisplay(display, self.displayGeometry) ||
+        ![[self duoChatPlacement] isEqualToString:@"full"]) return nil;
+    CGFloat x = CGRectGetMidX(display.bounds);
+    CGFloat bottom = CGRectGetMaxY(display.bounds);
+    CGFloat middle = CGRectGetMidY(display.bounds);
+    CGFloat left = CGRectGetMinX(display.bounds);
+    // Pause midway so the system picks up the chat window, then move it to the left edge.
+    NSArray *finger = @[[PKTouchPoint at:CGPointMake(x, bottom + 2) offset:0],
+                        [PKTouchPoint at:CGPointMake(x, bottom - 14) offset:0.06],
+                        [PKTouchPoint at:CGPointMake(x, middle) offset:0.30],
+                        [PKTouchPoint at:CGPointMake(x, middle) offset:0.88],
+                        [PKTouchPoint at:CGPointMake(left + display.bounds.size.width / 4, middle) offset:1.30],
+                        [PKTouchPoint at:CGPointMake(left + 48, middle) offset:1.53]];
+    return [self touch:@[finger] timeout:5 geometry:display];
+}
+
+- (PKOutcome *)revealLauncherInPane:(CGRect)pane display:(PKDisplayGeometry)display
+                       generation:(uint64_t)generation keepingPID:(int)anchorPID {
+    CGFloat x = CGRectGetMidX(pane);
+    CGFloat bottom = CGRectGetMaxY(pane);
+    // Starting outside the bottom system edge keeps the swipe out of app content.
+    NSArray *finger = @[[PKTouchPoint at:CGPointMake(x, bottom + 2) offset:0],
+                        [PKTouchPoint at:CGPointMake(x, bottom - 14) offset:0.065],
+                        [PKTouchPoint at:CGPointMake(x, bottom - pane.size.height * 0.34) offset:0.29]];
+    PKOutcome *outcome = [self touch:@[finger] timeout:5 geometry:display];
+    if (outcome.delivery == PKDeliverySent) {
+        @synchronized (self) {
+            _revealedLauncherGeometry = display;
+            _revealedLauncherGeneration = generation;
+            _revealedLauncherInputs = _inputs;
+            _revealedLauncherAt = NSProcessInfo.processInfo.systemUptime;
+            _releasedChatAnchorPID = anchorPID;
+        }
+    }
+    return outcome;
+}
+
+- (PKOutcome *)showCompanionLauncherOnSide:(NSString *)side {
+    @try {
+        @synchronized (self) { _revealedLauncherAt = 0; _releasedChatAnchorPID = 0; }
+        PKDisplayGeometry display = self.displayGeometry;
+        if (self.screenLocked || self.selectedWorkspace || !self.isPokiSceneVisible || !PKIsCompanionSide(display, side)) return nil;
+        uint64_t generation = 0;
+        PKOutcome *refused;
+        id session = [self current:&generation outcome:&refused];
+        if (!session) return refused;
+        if (![self screenshot:NULL refreshViewport:YES] || self.screenLocked || generation != self.generation ||
+            !PKSameDisplay(display, self.displayGeometry)) return nil;
+        return [self revealLauncherInPane:display.peer display:display generation:generation keepingPID:0];
+    } @catch (__unused NSException *e) { return nil; }
+}
+
+- (PKOutcome *)releaseChatPaneKeepingApp:(NSString *)bundle {
+    @try {
+        @synchronized (self) { _revealedLauncherAt = 0; _releasedChatAnchorPID = 0; }
+        PKDisplayGeometry display = self.displayGeometry;
+        if (self.screenLocked || self.selectedWorkspace || !self.isPokiSceneVisible || !display.panePlacementKnown) return nil;
+        uint64_t generation = 0;
+        PKOutcome *refused;
+        id session = [self current:&generation outcome:&refused];
+        if (!session) return refused;
+        id ax = [self accessibilityFor:generation];
+        PKWorkspace *workspace = [self companionWorkspaceOn:display ax:ax session:session generation:generation elements:NULL];
+        if (!workspace) return nil;
+        int pid = workspace.selectRight ? workspace.rightPID : workspace.leftPID;
+        if (![[self bundleForPID:pid session:session] isEqualToString:bundle] ||
+            ![self screenshot:NULL refreshViewport:YES] || self.screenLocked ||
+            generation != self.generation || !PKSameDisplay(display, self.displayGeometry)) return nil;
+        return [self revealLauncherInPane:PKOppositePane(display) display:display generation:generation keepingPID:pid];
+    } @catch (__unused NSException *e) { return nil; }
+}
+
+- (PKOutcome *)dismissSwitcherInPane:(CGRect)pane display:(PKDisplayGeometry)display ax:(id)ax
+                          session:(id)session generation:(uint64_t)generation keepingPID:(int)anchorPID {
+    if (![ax respondsToSelector:@selector(systemApplication)]) return nil;
+    id system = PKBounded(0, 1, NULL, ^id { return [ax systemApplication]; });
+    int launcherPID = PKAXPid(system);
+    id root = launcherPID > 0 ? PKRequestSnapshotWithin(2, ax, system, 14, 180, NULL) : nil;
+    if (!root) return nil;
+    CGPoint point = CGPointMake(CGRectGetMidX(pane), CGRectGetMaxY(pane) - pane.size.height * 0.07);
+    if (![self launcherOwnsPoint:point display:display ax:ax system:system session:session companion:YES allowingPID:anchorPID]) return nil;
+    BOOL foundCard = NO;
+    NSMutableArray *nodes = [NSMutableArray arrayWithObject:root];
+    while (nodes.count) {
+        id node = nodes.lastObject;
+        [nodes removeLastObject];
+        if ([PKText([node identifier]) hasPrefix:@"card:"]) {
+            CGRect reported = [node frame];
+            CGRect upright = CGRectApplyAffineTransform(reported, CGAffineTransformInvert(display.toFixed));
+            CGRect frames[] = {reported, upright,
+                CGRectOffset(reported, CGRectGetMinX(pane), CGRectGetMinY(pane))};
+            for (NSUInteger i = 0; i < 3; i++) {
+                CGRect visible = CGRectIntersection(pane, frames[i]);
+                if (CGRectContainsPoint(CGRectInset(visible, -8, -8), point)) return nil;
+                if (visible.size.width >= pane.size.width * 0.2 && visible.size.height >= pane.size.height * 0.3) foundCard = YES;
+            }
+        }
+        [nodes addObjectsFromArray:[node children] ?: @[]];
+    }
+    if (!foundCard || ![self screenshot:NULL refreshViewport:YES] || self.screenLocked ||
+        generation != self.generation || !PKSameDisplay(display, self.displayGeometry)) return nil;
+    NSArray *finger = @[[PKTouchPoint at:point offset:0], [PKTouchPoint at:point offset:0.08]];
+    return [self touch:@[finger] timeout:5 geometry:display];
+}
+
+- (PKOutcome *)dismissCompanionSwitcherOnSide:(NSString *)side {
     @try {
         PKDisplayGeometry display = self.displayGeometry;
-        if (!PKIsDuo() || self.screenLocked || self.selectedWorkspace || [self isPokiSceneVisible] ||
-            !display.routesDisplay || CGRectGetWidth(display.bounds) <= CGRectGetHeight(display.bounds)) return nil;
+        if (self.screenLocked || self.selectedWorkspace || !self.isPokiSceneVisible || !PKIsCompanionSide(display, side)) return nil;
+        uint64_t generation = 0;
+        PKOutcome *refused;
+        id session = [self current:&generation outcome:&refused];
+        if (!session) return refused;
+        id ax = [self accessibilityFor:generation];
+        return [self dismissSwitcherInPane:display.peer display:display ax:ax
+                                 session:session generation:generation keepingPID:0];
+    } @catch (__unused NSException *e) { return nil; }
+}
+
+- (PKOutcome *)openWorkspaceLauncherItem:(NSArray<NSString *> *)labels menu:(BOOL)menu {
+    return [self openLauncherItem:labels menu:menu companionSide:nil];
+}
+
+- (PKOutcome *)openCompanionLauncherItem:(NSArray<NSString *> *)labels side:(NSString *)side {
+    return [self openLauncherItem:labels menu:NO companionSide:side];
+}
+
+- (nullable PKOutcome *)openLauncherItem:(NSArray<NSString *> *)labels menu:(BOOL)menu companionSide:(NSString *)side {
+    @try {
+        PKDisplayGeometry display = self.displayGeometry;
+        if (!PKIsDuo() || self.screenLocked || self.selectedWorkspace || !display.routesDisplay ||
+            CGRectGetWidth(display.bounds) <= CGRectGetHeight(display.bounds) ||
+            (side ? !PKIsCompanionSide(display, side) : self.isPokiSceneVisible)) return nil;
         PKOutcome *refused;
         uint64_t generation = 0;
-        if (![self current:&generation outcome:&refused]) return nil;
+        id session = [self current:&generation outcome:&refused];
+        if (!session) return nil;
         id ax = [self accessibilityFor:generation];
         if (![ax respondsToSelector:@selector(systemApplication)]) return nil;
         id system = PKBounded(0, 1, NULL, ^id { return [ax systemApplication]; });
@@ -1897,31 +2279,44 @@ CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> 
         if (!root) return nil;
         NSString *targetType = menu ? @"Button" : @"Icon";
         NSMutableDictionary<NSString *, NSMutableArray<NSValue *> *> *candidates = [NSMutableDictionary dictionary];
+        NSMutableSet<NSValue *> *splitActions = [NSMutableSet new];
         NSMutableArray *nodes = [NSMutableArray arrayWithObject:root];
         while (nodes.count) {
             id node = nodes.lastObject;
             [nodes removeLastObject];
+            if (!menu && [PKText([node identifier]) hasPrefix:@"card:"]) continue;
             NSString *label = PKText([node label]);
             if (label && [labels containsObject:label] && [PKTypeName([node elementType]) isEqualToString:targetType]) {
                 if (!candidates[label]) candidates[label] = [NSMutableArray array];
-                [candidates[label] addObject:[NSValue valueWithCGRect:[node frame]]];
+                NSValue *frame = [NSValue valueWithCGRect:[node frame]];
+                [candidates[label] addObject:frame];
+                if (menu && [PKText([node identifier]) isEqualToString:@"com.apple.springboardhome.application-shortcut-item.open-in-split"])
+                    [splitActions addObject:frame];
             }
             NSArray *children = [node children];
             if (children.count) [nodes addObjectsFromArray:children];
         }
         if (!candidates.count) return nil;
-        UIImage *picture = PKUprightImage([self screenshot:NULL refreshViewport:NO], display);
-        if (!picture.CGImage || !CGRectIsNull(self.viewport)) return nil;
+        // Home can replace a docked layout. Recompute the viewport instead of cropping the
+        // launcher to the previous app's half of the screen.
+        NSData *data = [self screenshot:NULL refreshViewport:YES];
+        UIImage *picture = side ? [UIImage imageWithData:data] : PKUprightImage(data, display);
+        if (!picture.CGImage || (side ? !CGRectEqualToRect(self.viewport, display.peer) : !CGRectIsNull(self.viewport))) return nil;
         VNRecognizeTextRequest *request = [VNRecognizeTextRequest new];
         request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
         request.recognitionLanguages = @[@"zh-Hans", @"zh-Hant", @"en-US"];
         request.usesLanguageCorrection = NO;
         VNImageRequestHandler *recognizer = [[VNImageRequestHandler alloc] initWithCGImage:picture.CGImage options:@{}];
         if (![recognizer performRequests:@[request] error:NULL]) return nil;
-        CGRect bounds = display.bounds;
+        CGRect bounds = side ? display.peer : display.bounds;
         NSMutableDictionary<NSString *, NSMutableArray<NSValue *> *> *visibleLabels = [NSMutableDictionary dictionary];
         for (VNRecognizedTextObservation *observation in request.results) {
             NSString *label = [observation topCandidates:1].firstObject.string;
+            if (menu && label && !candidates[label]) {
+                for (NSString *candidate in candidates) {
+                    if ([PKMatchText(label) isEqualToString:PKMatchText(candidate)]) { label = candidate; break; }
+                }
+            }
             if (!label || !candidates[label]) continue;
             CGRect word = observation.boundingBox;
             CGFloat x = CGRectGetMinX(bounds) + CGRectGetMidX(word) * CGRectGetWidth(bounds);
@@ -1929,10 +2324,30 @@ CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> 
             if (!visibleLabels[label]) visibleLabels[label] = [NSMutableArray array];
             [visibleLabels[label] addObject:[NSValue valueWithCGPoint:CGPointMake(x, y)]];
         }
-        CGPoint point = PKWorkspaceLauncherPoint(candidates, visibleLabels, menu);
-        if (!isfinite(point.x) || !CGRectContainsPoint(bounds, point) || self.screenLocked || self.generation != generation ||
-            !PKSameDisplay(display, self.displayGeometry)) return nil;
-        NSArray *finger = @[[PKTouchPoint at:point offset:0], [PKTouchPoint at:point offset:menu ? 0.08 : 0.9]];
+        CGAffineTransform fromFixed = CGAffineTransformInvert(display.toFixed);
+        CGPoint point = PKWorkspaceLauncherPoint(candidates, visibleLabels, menu, fromFixed);
+        if (menu && !isfinite(point.x) && splitActions.count == 1) {
+            // The verified system menu action may be wrapped or truncated in OCR. Its wide row
+            // distinguishes an upright frame from the portrait frame reported in landscape.
+            CGRect frame = splitActions.anyObject.CGRectValue;
+            if (CGRectGetWidth(frame) < CGRectGetHeight(frame)) frame = CGRectApplyAffineTransform(frame, fromFixed);
+            CGPoint center = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
+            if (CGRectGetHeight(frame) > 0 && CGRectGetWidth(frame) > 2 * CGRectGetHeight(frame) &&
+                CGRectContainsRect(bounds, frame) &&
+                [self launcherOwnsPoint:center display:display ax:ax system:system session:session companion:NO allowingPID:0]) point = center;
+        }
+        if (!isfinite(point.x) || !CGRectContainsPoint(bounds, point)) {
+            NSLog(@"PokiInProcess: launcher item position could not be confirmed (%lu AX labels, %lu screenshot labels, %lu matching split actions)",
+                  (unsigned long)candidates.count, (unsigned long)visibleLabels.count, (unsigned long)splitActions.count);
+            return nil;
+        }
+        if (side) {
+            int ownHit = PKPIDAt(ax, PKOppositePane(display), display);
+            if (!self.isPokiSceneVisible || (ownHit > 0 && ownHit != getpid()) ||
+                ![self launcherOwnsPoint:point display:display ax:ax system:system session:session companion:YES allowingPID:0]) return nil;
+        }
+        if (self.screenLocked || self.generation != generation || !PKSameDisplay(display, self.displayGeometry)) return nil;
+        NSArray *finger = @[[PKTouchPoint at:point offset:0], [PKTouchPoint at:point offset:(menu || side) ? 0.08 : 0.9]];
         return [self touch:@[finger] timeout:5 geometry:display];
     } @catch (__unused NSException *e) { return nil; }
 }
@@ -2073,6 +2488,160 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
     return code;
 }
 
+- (PKOutcome *)openAppFromCompanionLauncher:(NSString *)bundle side:(NSString *)side {
+    if (!bundle.length || [bundle isEqualToString:NSBundle.mainBundle.bundleIdentifier] ||
+        [bundle isEqualToString:@"com.apple.springboard"]) return nil;
+    PKDisplayGeometry display = self.displayGeometry;
+    if (!PKIsCompanionSide(display, side) || self.screenLocked || !self.isPokiSceneVisible || self.selectedWorkspace) return nil;
+    uint64_t generation = self.generation;
+    // The system activates an app in the focused pane. Only do this after sending a gesture
+    // that changes focus to the peer's launcher, never from the chat's own focus.
+    uint64_t revealInputs;
+    @synchronized (self) {
+        if (_releasedChatAnchorPID || _revealedLauncherAt == 0 || NSProcessInfo.processInfo.systemUptime - _revealedLauncherAt > 12 ||
+            _revealedLauncherGeneration != generation || _revealedLauncherInputs != _inputs ||
+            !PKSameDisplay(_revealedLauncherGeometry, display)) return nil;
+        revealInputs = _inputs;
+    }
+    PKOutcome *refused;
+    uint64_t currentGeneration = 0;
+    id session = [self current:&currentGeneration outcome:&refused];
+    if (!session || currentGeneration != generation) return nil;
+    id ax = [self accessibilityFor:generation];
+    id system = [ax respondsToSelector:@selector(systemApplication)] ? PKBounded(0, 1, NULL, ^id { return [ax systemApplication]; }) : nil;
+    CGPoint point = CGPointMake(CGRectGetMidX(display.peer), CGRectGetMidY(display.peer));
+    if (!system || ![self launcherOwnsPoint:point display:display ax:ax system:system session:session companion:YES allowingPID:0] ||
+        PKForegroundElement(ax, display, NULL, ^NSString *(int pid) { return [self bundleForPID:pid session:session]; }) ||
+        ![self screenshot:NULL refreshViewport:YES] || !CGRectEqualToRect(self.viewport, display.peer)) return nil;
+    int ownHit = PKPIDAt(ax, PKOppositePane(display), display);
+    if (ownHit > 0 && ownHit != getpid()) return nil;
+    if (PKPIDAtPoint(ax, point, display) != PKAXPid(system)) {
+        // The active-app list can report SpringBoard before it is drawn. Require actual launcher
+        // text in the intended pane before an activation that relies on the system's focus.
+        id screen = PKAutomationScreen(display);
+        NSData *picture = screen ? ([self daemonJPEGForScreen:screen] ?: [[screen screenshot] PNGRepresentation]) : nil;
+        NSArray *lines = PKWorkspaceText(PKUprightImage(picture, display));
+        if (lines.count != 2) return nil;
+        NSUInteger peerIndex = [side isEqualToString:@"right"] ? 1 : 0;
+        NSMutableSet *launcherLabels = [PKHomeIconLabels(ax, system) mutableCopy] ?: [NSMutableSet new];
+        [launcherLabels addObjectsFromArray:@[@"applibrary", @"app资源库", @"app資料庫", @"app資源庫"]];
+        [launcherLabels intersectSet:lines[peerIndex]];
+        [launcherLabels minusSet:lines[1 - peerIndex]];
+        if (!launcherLabels.count) return nil;
+    }
+    if (self.screenLocked || !self.isPokiSceneVisible || generation != self.generation || !PKSameDisplay(display, self.displayGeometry)) return nil;
+    @synchronized (self) {
+        if (_revealedLauncherAt == 0 || revealInputs != _inputs ||
+            NSProcessInfo.processInfo.systemUptime - _revealedLauncherAt > 12) return nil;
+        _revealedLauncherAt = 0;
+    }
+    [self forgetFront];
+    id proxy = [session daemonProxy];
+    NSString *failure = PKDaemonReply(5, ^(void (^reply)(NSError *)) {
+        [proxy _XCT_launchApplicationWithBundleID:bundle arguments:@[] environment:@{} completion:reply];
+    });
+    return failure ? [PKOutcome delivery:PKDeliveryUnknown code:@"companion_activation_unconfirmed" detail:failure]
+                   : [PKOutcome delivery:PKDeliverySent code:nil detail:nil];
+}
+
+- (PKOutcome *)openApp:(NSString *)bundle inReleasedChatPaneKeepingApp:(NSString *)anchor {
+    @try {
+        if (!bundle.length || [bundle isEqualToString:anchor] || [bundle isEqualToString:NSBundle.mainBundle.bundleIdentifier] ||
+            [bundle isEqualToString:@"com.apple.springboard"] || self.screenLocked ||
+            self.selectedWorkspace) return nil;
+        PKDisplayGeometry display = self.displayGeometry;
+        PKDisplayGeometry previous;
+        uint64_t generation = self.generation, inputSequence;
+        int anchorPID;
+        @synchronized (self) {
+            if (!_releasedChatAnchorPID || _revealedLauncherAt == 0 ||
+                NSProcessInfo.processInfo.systemUptime - _revealedLauncherAt > 12 ||
+                _revealedLauncherGeneration != generation || _revealedLauncherInputs != _inputs) return nil;
+            previous = _revealedLauncherGeometry;
+            anchorPID = _releasedChatAnchorPID;
+            inputSequence = _inputs;
+        }
+        CGRect anchorPane = previous.peer;
+        CGRect releasedPane = PKOppositePane(previous);
+        BOOL chatVisible = self.isPokiSceneVisible;
+        if (!chatVisible) previous.peer = CGRectNull;
+        if (!PKSameDisplay(previous, display)) return nil;
+        PKOutcome *refused;
+        uint64_t currentGeneration = 0;
+        id session = [self current:&currentGeneration outcome:&refused];
+        if (!session || currentGeneration != generation) return nil;
+        id ax = [self accessibilityFor:generation], liveAnchor = nil, launcher = nil;
+        if (chatVisible) {
+            // The swipe may leave an App Switcher card over only Poki's former pane.
+            // Dismiss verified switcher chrome as its own step, without activating an app.
+            PKWorkspace *workspace = [self companionWorkspaceOn:display ax:ax session:session generation:generation elements:NULL];
+            int livePID = workspace.selectRight ? workspace.rightPID : workspace.leftPID;
+            if (livePID != anchorPID || ![[self bundleForPID:anchorPID session:session] isEqualToString:anchor]) return nil;
+            PKOutcome *dismissed = [self dismissSwitcherInPane:releasedPane display:display ax:ax
+                                                     session:session generation:generation keepingPID:anchorPID];
+            if (!dismissed || dismissed.delivery != PKDeliverySent) return dismissed;
+            @synchronized (self) {
+                _revealedLauncherAt = NSProcessInfo.processInfo.systemUptime;
+                _revealedLauncherInputs = _inputs;
+            }
+            return nil;
+        }
+        for (id element in PKActiveApplications(ax)) {
+            int pid = PKAXPid(element);
+            if (pid <= 0) continue;
+            NSString *candidate = [self bundleForPID:pid session:session];
+            if (pid == anchorPID && [candidate isEqualToString:anchor]) liveAnchor = element;
+            else if ([candidate isEqualToString:@"com.apple.springboard"]) launcher = element;
+            else if (![candidate isEqualToString:@"com.apple.SleepLockScreen"]) return nil;
+        }
+        if (!liveAnchor || !launcher) return nil;
+        BOOL anchorRight = CGRectGetMidX(anchorPane) > CGRectGetMidX(display.bounds);
+        id root = PKRequestSnapshotWithin(0.6, ax, liveAnchor, 2, 12, NULL);
+        if (CGRectIsNull(PKWorkspaceFrame(root, display, NO)) && CGRectIsNull(PKWorkspaceFrame(root, display, YES))) return nil;
+        int launcherHit = PKPIDAt(ax, releasedPane, display);
+        int anchorHit = PKPIDAt(ax, anchorPane, display);
+        if (launcherHit == anchorPID) return nil;
+        if (launcherHit != PKAXPid(launcher) || anchorHit != anchorPID) {
+            id screen = PKAutomationScreen(display);
+            NSData *picture = screen ? ([self daemonJPEGForScreen:screen] ?: [[screen screenshot] PNGRepresentation]) : nil;
+            NSArray *lines = PKWorkspaceText(PKUprightImage(picture, display));
+            NSSet *anchorLabels = PKWorkspaceLabels(ax, @{@"element": liveAnchor});
+            NSInteger order = PKWorkspaceOrder(lines, anchorLabels, nil);
+            if (order != (anchorRight ? -1 : 1) &&
+                (order != 0 || !PKCompanionContentMatches(lines, anchorLabels, PKMatchText(PKText([root label]) ?: @""), anchorRight))) return nil;
+            NSSet *launcherLabels = PKWorkspaceLabels(ax, @{@"element": launcher});
+            NSInteger launcherOrder = PKWorkspaceOrder(lines, launcherLabels, nil);
+            NSSet *released = lines.count == 2 ? lines[anchorRight ? 0 : 1] : nil;
+            NSSet *libraryLabels = [NSSet setWithArray:@[@"applibrary", @"app资源库", @"app資料庫", @"app資源庫"]];
+            if (launcherOrder != (anchorRight ? 1 : -1) && ![released intersectsSet:libraryLabels]) {
+                if (!released) return nil;
+                // A Home page can show just one labeled icon. The live anchor was already
+                // verified on the other side, so a distinctive system icon is enough here.
+                NSMutableSet *icons = [PKHomeIconLabels(ax, launcher) mutableCopy];
+                [icons intersectSet:released];
+                [icons minusSet:anchorLabels];
+                [icons minusSet:lines[anchorRight ? 1 : 0]];
+                if (!icons.count) return nil;
+            }
+        }
+        if (self.screenLocked || self.isPokiSceneVisible || generation != self.generation ||
+            !PKSameDisplay(display, self.displayGeometry)) return nil;
+        @synchronized (self) {
+            if (!_revealedLauncherAt || _inputs != inputSequence || _releasedChatAnchorPID != anchorPID ||
+                NSProcessInfo.processInfo.systemUptime - _revealedLauncherAt > 12) return nil;
+            _revealedLauncherAt = 0;
+            _releasedChatAnchorPID = 0;
+        }
+        [self forgetFront];
+        id proxy = [session daemonProxy];
+        NSString *failure = PKDaemonReply(5, ^(void (^reply)(NSError *)) {
+            [proxy _XCT_launchApplicationWithBundleID:bundle arguments:@[] environment:@{} completion:reply];
+        });
+        return failure ? [PKOutcome delivery:PKDeliveryUnknown code:@"workspace_activation_unconfirmed" detail:failure]
+                       : [PKOutcome delivery:PKDeliverySent code:nil detail:nil];
+    } @catch (__unused NSException *e) { return nil; }
+}
+
 /// Opens, brings forward or ends an app through testmanagerd, as XCUIApplication does inside a UI
 /// test: launch ends a running copy first and starts it again, activate brings a running copy forward
 /// (or starts it), terminate ends it. XCUIApplication itself refuses to exist outside a UI test bundle.
@@ -2093,7 +2662,8 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
         BOOL (^inFront)(NSTimeInterval) = ^BOOL(NSTimeInterval seconds) {
             NSDate *by = [NSDate dateWithTimeIntervalSinceNow:seconds];
             do {
-                if ([[self frontApp][@"bundleId"] isEqualToString:bundle]) return YES;
+                if (([bundle isEqualToString:NSBundle.mainBundle.bundleIdentifier] && self.isPokiSceneVisible) ||
+                    [[self frontApp][@"bundleId"] isEqualToString:bundle]) return YES;
                 [NSThread sleepForTimeInterval:0.25];
             } while ([by timeIntervalSinceNow] > 0);
             return NO;

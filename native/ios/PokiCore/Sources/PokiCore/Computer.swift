@@ -505,6 +505,9 @@ final class Computer: @unchecked Sendable {
         if let blocked = await waitForRunner(until: until) { return blocked }
         if let selectedPane, selectedPane.session != session, (hasLocalWorkspace || !beginsTask() || pane == nil) { return workspaceInUse() }
         if let pane {
+            if pane == "peer", !local || expectedApps?.count != 2 {
+                return ToolResult(text: "The companion pane is available only to its local Poki chat.", jpeg: nil, isError: true)
+            }
             if let failure = await selectPane(pane, session: session, until: until) { return failure }
             workspaceOwner.value = local && pane != "auto" ? session : nil
         }
@@ -549,7 +552,8 @@ final class Computer: @unchecked Sendable {
             } else {
                 workspaceReads.removeValue(forKey: selectedPane.side)
             }
-            result.text += "\nSplit View: \(selectedPane.side) is \(selectedPane.app); the other pane is \(selectedPane.other). Use look with pane left or right before acting on the other app."
+            result.text += "\nSplit View: \(selectedPane.side) is \(selectedPane.app); the other pane is \(selectedPane.other)."
+            result.text += pane == "peer" ? " Only the requested app is available for input." : " Use look with pane left or right before acting on the other app."
         }
         if begins, let app = lastForeground { origin = (app, session, now()) } else if origin?.session == session { origin?.lastCall = now() }
         if begins, let line = routinesLine() { result.text += "\n" + line }
@@ -566,7 +570,7 @@ final class Computer: @unchecked Sendable {
     }
 
     private func selectPane(_ side: String, session: String?, until: Double, keepWorkspace: Bool = false) async -> ToolResult? {
-        guard ["left", "right", "auto"].contains(side) else {
+        guard ["left", "right", "auto", "peer"].contains(side) else {
             return ToolResult(text: "pane must be left, right, or auto", jpeg: nil, isError: true)
         }
         guard runner.transport.supportsPaneSelection else {
@@ -602,7 +606,13 @@ final class Computer: @unchecked Sendable {
                     interruptedDropApp = nil
                     workspaceDrags.removeAll()
                 }
-                selectedPane = (side, identity, app, other, session)
+                let selectedSide = side == "peer" ? reply["side"]?.string : side
+                guard let selectedSide, selectedSide == "left" || selectedSide == "right" else {
+                    invalidateWorkspaceRead()
+                    return ToolResult(text: "could not confirm the companion pane's side", jpeg: nil, isError: true,
+                                      splitViewNeedsRead: true)
+                }
+                selectedPane = (selectedSide, identity, app, other, session)
                 paneOffset = reply["x"]?.double.flatMap { x in reply["y"]?.double.map { (x, $0) } }
             }
             if oldIdentity != selectedPane?.identity || ownerChanged {

@@ -59,6 +59,9 @@ final class LiveCore: CoreSession {
     func workspaceLauncherStep(session: String, request: JSON) async throws -> JSON {
         try await core.workspaceLauncherStep(session: session, request: request)
     }
+    func activateWorkspaceApp(_ bundleID: String, session: String) async throws {
+        try await core.activateWorkspaceApp(bundleID, session: session)
+    }
     /// Ends the task: the phone goes back to the app it began in (or, `switching: false`, stays). The
     /// line says what happened.
     func finishTask(switching: Bool = true, localSession: String? = nil, ifNoLocalWorkspace: Bool = false) async -> String? {
