@@ -561,7 +561,7 @@ final class ChatModel {
 
     private func chooseSplitView(text: String, apps: [String], provider: ModelProvider, model: Model) async -> WorkspaceChoice {
         let names = apps.enumerated().map { "\($0.offset + 1). \(AppIconStore.name($0.element) ?? $0.element)" }.joined(separator: "\n")
-        let instructions = "Choose whether two candidate iPhone apps should work side by side for the owner's request. A word may describe an item and just happen to match an app name (for example 写一封邮件 can describe a message, or 照片 can mean an image in Safari). Select only the two apps actually requested. For a side-by-side task such as dragging, comparing, or transferring between two apps, output SPLIT followed by their two numbers separated by spaces, source first if there is a source. Otherwise output NORMAL. Output only that line."
+        let instructions = "Choose whether two candidate iPhone apps should work side by side for the owner's request. A word may describe an item and just happen to match an app name (for example 写一封邮件 can describe a message, or 照片 can mean an image in Safari). Select only the two apps actually requested. Use SPLIT only when the request requires both apps visible at once, such as an explicit Split View request or dragging directly between panes. Merely naming two apps, sharing, copying, sending a screenshot, or reading one app and then messaging in another does not require Split View: output NORMAL for these sequential tasks. For SPLIT output their two numbers separated by spaces, source first if there is a source. Otherwise output NORMAL. Output only that line."
         let planner = PiLoop(provider: provider, model: model, tools: []) { _ in
             PokiCore.ToolAnswer(text: "Planning only.", jpeg: nil, isError: true)
         }
@@ -627,7 +627,9 @@ final class ChatModel {
         let record = TaskRecord(session: session, task: text, calls: taskCalls, result: taskResult,
                                 seconds: Date().timeIntervalSince(taskStart))
         Self.afterTask?(record)
-        SessionStore.shared.taskEnded(session, success: taskResult?.success, stopped: stopAsked)
+        var success = taskResult?.success
+        if success == nil, case .failed? = outcome { success = false }
+        SessionStore.shared.taskEnded(session, success: success, stopped: stopAsked)
         if kind == .poki, taskResult?.success == true { Haptics.done() }
     }
 
@@ -674,6 +676,12 @@ final class ChatModel {
     static var delegatedBusy: String?
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
+        if case .failed(let words) = outcome {
+            updatePlan { steps in
+                guard !steps.isEmpty, !steps.contains(where: { $0.state == .failed }) else { return }
+                steps.append(PlanStep(words, state: .failed))
+            }
+        }
         finishPlan()
         // The turn is over: the phone goes back to the app the task began in (Poki's chat, where the
         // reply is), or stays where it is and the reply goes out as a notification that can be answered
@@ -858,6 +866,14 @@ final class ChatModel {
             if let refusal = selectRoute(.web) { return refusal }
             showBrowser(opening: name == "web_open")
             return await WebTools.perform(name, arguments: call.arguments)
+        case "copy_screenshot":
+            if let refusal = selectRoute(.app) { return refusal }
+            phoneStepUnderWay = true
+            defer { phoneStepUnderWay = false }
+            let token = runToken
+            let read = await app.runTool("look", arguments: "{}")
+            guard runToken == token, !Task.isCancelled else { return splitViewRefusal("Task stopped. Screenshot was not copied.") }
+            return ScreenshotClipboard.copy(read)
         case "look", "do":
             if let refusal = selectRoute(.app) { return refusal }
             phoneStepUnderWay = true
