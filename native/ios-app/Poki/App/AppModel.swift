@@ -980,7 +980,7 @@ final class AppModel {
         log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
-        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess, ddi_marker: Self.ddiMarker)
+        launcherConfig = launcherConfiguration(pairing: pairing)
         lastAgentActivity = Date()
         // Away from Poki the runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
@@ -1111,6 +1111,11 @@ final class AppModel {
     #else
     static let onSimulator = false
     #endif
+
+    private func launcherConfiguration(pairing: String) -> LauncherConfig {
+        LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path,
+                       in_process: automationPath == .inProcess, ddi_marker: Self.ddiMarker)
+    }
 
     private func launchRunner() {
         #if targetEnvironment(simulator)
@@ -1672,6 +1677,21 @@ final class AppModel {
     }
 
     var duoChatPlacement: String? { automation.duoChatPlacement() }
+
+    func installedApplicationNames() async -> [String: String]? {
+        // Inventory is read by the paired service even while the UI automation runner is on standby.
+        let config = pairingPath.map { launcherConfiguration(pairing: $0) }
+        return await launcher.installedApplicationNames(config: config)
+    }
+
+    func prepareWorkspacePlanning() async -> Bool {
+        guard automationPath == .inProcess, probeDriven || PKInProcess.canUseDuoSplitView() else { return false }
+        if !sessionOn {
+            prepareForTask()
+            await sessionStartTask?.value
+        }
+        return canPlanSplitView
+    }
 
     func activateSplitViewSetupApp(_ bundleID: String, session: String) async throws {
         lastAgentActivity = Date()

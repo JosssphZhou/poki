@@ -19,6 +19,11 @@ struct HomeShortcut: Identifiable, Equatable {
     /// The icon for a pill with no app, a PNG in Poki/AppIcons (`AppIconView.carried`); nil draws Poki's.
     var icon: String?
     var id: String { key }
+
+    func target(for draft: String) -> KnownApp? {
+        guard !app.isEmpty, draft == prompt || draft.hasPrefix(prompt + "\n") else { return nil }
+        return KnownApp(app, icon: nil, appName)
+    }
 }
 
 /// The app a quick action works in, found from what Poki has: a routine's recorded app, or the name

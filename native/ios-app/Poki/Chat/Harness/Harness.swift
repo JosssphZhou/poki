@@ -40,7 +40,8 @@ enum Harness {
     """
 
     /// The instructions for a task: the above, then the saved notes and the routines that fit it.
-    @MainActor static func instructions(for task: String, inSplitView: Bool = false, alongsidePoki: Bool = false) -> String {
+    @MainActor static func instructions(for task: String, inSplitView: Bool = false, alongsidePoki: Bool = false,
+                                        targetApps: [KnownApp]? = nil) -> String {
         if alongsidePoki {
             let instructions = "The owner's requested app is open beside the Poki chat. Read the target with look before acting. Each screenshot and reference belongs only to the target app. Keep the app beside the chat. After a layout change, use only the fresh read. Publish a short plan with report_plan and conclude with finish_task. Reply in the owner's language."
             return ApprovalClassifier.mode == .reply ? instructions + "\n\n" + replyApprovals : instructions
@@ -63,15 +64,15 @@ enum Harness {
         if ApprovalClassifier.mode == .reply {
             parts.append(replyApprovals)
         }
-        if let apps = appIDs(for: task) { parts.append(apps) }
+        if let apps = appIDs(for: task, targetApps: targetApps) { parts.append(apps) }
         if !brief.isEmpty { parts.append(brief) }
         return parts.joined(separator: "\n\n")
     }
 
     private static let replyApprovals = "Approvals here are decided from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, naming the step, and if they say yes, send the same step again."
 
-    @MainActor private static func appIDs(for task: String) -> String? {
-        let apps = AppIconStore.bundleIDs(namedIn: task).compactMap { KnownApps.byID[$0.lowercased()] }
+    @MainActor private static func appIDs(for task: String, targetApps: [KnownApp]?) -> String? {
+        let apps = targetApps ?? AppIconStore.bundleIDs(namedIn: task).compactMap { KnownApps.byID[$0.lowercased()] }
         guard !apps.isEmpty else { return nil }
         let lines = apps.map { app -> String in
             let names = app.names.joined(separator: " / ")

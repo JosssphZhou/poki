@@ -30,11 +30,12 @@ final class ChatHarnessTests: XCTestCase {
     /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer
     /// without a session (the Debug probe's call), so routines reaches the app's own memory.
     private func chat(on server: FakeCompletions, transport: HTTPTransport? = nil,
-                      automation: InProcessAutomation = PKInProcess.shared(), kind: SavedSession.Kind = .handoff, readyForProbe: Bool = true) -> ChatModel {
+                      automation: InProcessAutomation = PKInProcess.shared(), launcher: FakeLauncher = FakeLauncher(),
+                      kind: SavedSession.Kind = .handoff, readyForProbe: Bool = true) -> ChatModel {
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
         ModelKeys.customModel = "fake-model"
         ModelKeys.selectedProvider = .custom
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation, transport: transport)
+        let app = AppModel(launcher: launcher, pairer: FakePairing(), automation: automation, transport: transport)
         if readyForProbe { app.inProcessReadyForProbe() }
         self.app = app
         return ChatModel(app: app, kind: kind, requester: kind == .handoff ? "Test agent" : nil)
@@ -225,6 +226,47 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(chat.entries.contains { if case .poki("Safari is a web browser.") = $0.kind { true } else { false } })
         XCTAssertTrue(transport.launchSteps.isEmpty)
         XCTAssertTrue(transport.paneRequests.isEmpty)
+    }
+
+    func testHomeRecommendationAndUnlistedInstalledAppOpenInTheCompanionPane() async throws {
+        let star = HomeIdea.star
+        let cases = [(star.prompt, star.target(for: star.prompt), star.app, "GitHub"),
+                     ("打开Research Viewer", nil, "local.test.research-viewer", "Research Viewer")]
+        for (request, suggestion, targetID, targetName) in cases {
+            let automation = FakeAutomation(chatPlacement: "full")
+            let launcher = FakeLauncher()
+            launcher.installedApps = [targetID: targetName, "com.apple.AppStore": "App Store",
+                                      "local.test.unrelated": "Unrelated Test App"]
+            let transport = CompanionWorkspace(targetSide: "right", automation: automation,
+                                               targetID: targetID, targetName: targetName)
+            let server = try FakeCompletions(replies: [FakeCompletions.text("SINGLE 1"),
+                FakeCompletions.tool("look", [:]), FakeCompletions.text("The requested app is open.")])
+            let chat = chat(on: server, transport: transport, automation: automation, launcher: launcher, kind: .poki)
+            defer { if chat.running { chat.stop() } }
+            chat.restore(SavedSession(id: UUID().uuidString, kind: .poki, title: "App lookup test", started: Date(),
+                                      updated: Date(), live: false, entries: [ChatEntry(.you("Prior message", delivered: true))], calls: []))
+            chat.send(request, attachments: [], suggestedApp: suggestion)
+            let deadline = ContinuousClock.now + .seconds(15)
+            while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+            XCTAssertFalse(chat.running)
+            XCTAssertEqual(transport.launchSteps, ["dock chat", "launcher right", "open \(targetName) right"])
+            XCTAssertTrue(chat.savedCalls.contains { $0.answer.contains("Split View: right is \(targetID)") })
+            let planner = try XCTUnwrap(server.requests.first)
+            let wire = String(decoding: try JSONSerialization.data(withJSONObject: planner), as: UTF8.self)
+            XCTAssertTrue(wire.contains("Apps: 1. \(targetName)"))
+            XCTAssertFalse(wire.contains("2. App Store"))
+            XCTAssertFalse(wire.contains("Unrelated Test App"))
+        }
+    }
+
+    func testInstalledAppLookupLeavesAmbiguousNamesAndHonorsRecommendationTarget() {
+        let star = HomeIdea.star
+        let installed = ["local.test.one": "Viewer", "local.test.two": "Viewer", "local.test.x": "X",
+                         "com.apple.AppStore": "App Store"]
+        XCTAssertTrue(AppIconStore.workspaceApps(namedIn: "Open Viewer", installed: installed, suggested: nil).isEmpty)
+        XCTAssertEqual(AppIconStore.workspaceApps(namedIn: "Open local.test.two", installed: installed, suggested: nil).map(\.id), ["local.test.two"])
+        XCTAssertEqual(AppIconStore.workspaceApps(namedIn: "请打开X看看", installed: installed, suggested: nil).map(\.id), ["local.test.x"])
+        XCTAssertEqual(AppIconStore.workspaceApps(namedIn: star.prompt, installed: installed, suggested: star.target(for: star.prompt)).map(\.id), [star.app])
     }
 
     func testStoppingAfterRevealingThePeerNeverActivatesAnApp() async throws {
@@ -862,6 +904,8 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
     let supportsPaneSelection = true
     let base: RotatingWorkspace
     private let targetSide: String
+    private let targetID: String
+    private let targetName: String
     private let holdReveal: Bool
     private let holdChatRelease: Bool
     private let hasVisibleIcon: Bool
@@ -875,8 +919,11 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
     private var selectedSide: String?
 
     @MainActor init(targetSide: String, holdReveal: Bool = false, automation: FakeAutomation? = nil,
-                    holdChatRelease: Bool = false, hasVisibleIcon: Bool = true) {
+                    holdChatRelease: Bool = false, hasVisibleIcon: Bool = true,
+                    targetID: String = "com.apple.Preferences", targetName: String = "Settings") {
         self.targetSide = targetSide
+        self.targetID = targetID
+        self.targetName = targetName
         self.holdReveal = holdReveal
         self.automation = automation
         self.holdChatRelease = holdChatRelease
@@ -892,7 +939,7 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
         let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
         let args = body.flatMap { try? JSON.parse($0) }
         let poki = Bundle.main.bundleIdentifier ?? ""
-        let target = "com.apple.Preferences"
+        let target = targetID
         let safari = "com.apple.mobilesafari"
         switch (method, path) {
         case ("POST", "/poki/pane"):
@@ -944,12 +991,12 @@ private final class CompanionWorkspace: HTTPTransport, @unchecked Sendable {
                 if let bundle = args?["companionBundle"]?.string {
                     events.append("activate \(bundle) \(side)")
                     opened = !hasVisibleIcon && bundle == target && side == targetSide &&
-                        events.dropLast().last == "open Settings \(side)"
+                        events.dropLast().last == "open \(targetName) \(side)"
                     return reply(.bool(opened))
                 }
                 if let label {
                     events.append("open \(label) \(side)")
-                    opened = hasVisibleIcon && label == "Settings" && side == targetSide
+                    opened = hasVisibleIcon && label == targetName && side == targetSide
                     return reply(.bool(opened))
                 }
                 events.append("launcher \(side)")

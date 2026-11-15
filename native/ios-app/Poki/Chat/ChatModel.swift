@@ -278,19 +278,21 @@ final class ChatModel {
 
     /// A message with photos or PDFs from the plus menu: the model reads their pictures with the words.
     /// The words may be left out.
-    func send(_ text: String, attachments: [ChatAttachment]) {
+    func send(_ text: String, attachments: [ChatAttachment], suggestedApp: KnownApp? = nil) {
         lastImages = attachments.flatMap(\.images)
         let documents = attachments.compactMap { attachment in
             attachment.textContent.map { ChatTextDocument(name: attachment.label, content: $0) }
         }
-        send(text, again: false, thumbnails: attachments.filter { !$0.thumbnail.isEmpty }.map(\.thumbnail), documents: documents, chooseWorkspace: true)
+        send(text, again: false, thumbnails: attachments.filter { !$0.thumbnail.isEmpty }.map(\.thumbnail), documents: documents,
+             chooseWorkspace: true, suggestedApp: suggestedApp)
     }
 
     /// The last message again, after a problem (the Retry button under it).
     func retry() {
         guard !running, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), case .you(let text, _) = last.kind else { return }
         while let tail = entries.last, case .note(.problem) = tail.kind { entries.removeLast() }
-        send(text, again: true, documents: last.textDocuments ?? [], inSplitView: usesSplitView && expectedSplitViewApps == nil, chooseWorkspace: true)
+        send(text, again: true, documents: last.textDocuments ?? [], inSplitView: usesSplitView && expectedSplitViewApps == nil,
+             chooseWorkspace: true, suggestedApp: lastSuggestedApp?.text == text ? lastSuggestedApp?.app : nil)
     }
 
     /// The conversation ended on a problem the owner can try again.
@@ -303,6 +305,7 @@ final class ChatModel {
     private static let picturesOnly = "(The owner sent the attached pictures without a message.)"
     /// The pictures of the owner's last message, sent again with it by Try Again.
     private var lastImages: [Data] = []
+    private var lastSuggestedApp: (text: String, app: KnownApp)?
 
     /// Keep captions and file contents separate until the approval context is packed.
     var ownerContext: [ApprovalClassifier.ContextTurn] {
@@ -319,7 +322,8 @@ final class ChatModel {
         }
     }
 
-    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [], inSplitView: Bool = false, chooseWorkspace: Bool = false) {
+    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [], inSplitView: Bool = false,
+                      chooseWorkspace: Bool = false, suggestedApp: KnownApp? = nil) {
         if let message = app.signer.installMessage {
             add(.note(.problem(message)))
             return
@@ -327,6 +331,7 @@ final class ChatModel {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Pictures may go without words, and Try Again sends them again.
         guard !text.isEmpty || !documents.isEmpty || !thumbnails.isEmpty || (again && !lastImages.isEmpty), !running else { return }
+        lastSuggestedApp = suggestedApp.map { (text, $0) }
         if isDemo { playDemo(text); return }
         // Another conversation (an outside agent's hand-off) is working the phone: one task at a time.
         if kind == .poki, let busy = ChatModel.delegatedBusy {
@@ -379,39 +384,6 @@ final class ChatModel {
         taskApp = nil
         taskApps = TaskApps(); taskRequest = text; toolRoute = nil
         let images = lastImages
-        let namedApps = chooseWorkspace && kind == .poki && app.canPlanSplitView
-            ? AppIconStore.bundleIDs(namedIn: text) : []
-        let placement = namedApps.isEmpty || inSplitView ? nil : app.duoChatPlacement
-        let needsWorkspacePlan = !inSplitView && (namedApps.count >= 2 || placement != nil)
-        if !inSplitView, !needsWorkspacePlan, Self.direct, provider == .anthropic || provider == .openai {
-            let instructions = Harness.instructions(for: text)
-            // Another model starts a new conversation on the model's side; the chat on screen stays.
-            if client?.signature != "\(provider.rawValue)/\(model)" {
-                client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
-            }
-            guard let client else { running = false; awaitingModel = false; return }
-            runToken += 1
-            let token = runToken
-            let previous = task
-            task = Task { [weak self] in
-                // A stopped task may still be ending its last step: this one starts after it.
-                await previous?.value
-                guard let self, self.runToken == token else { return }
-                client.say(message)
-                self.began("direct", provider, model)
-                await self.run(client, instructions: instructions, delivered: you.id, token: token)
-                let current = self.runToken == token
-                if !current { self.app.finishTask() }
-                self.logEnd("direct", outcome: nil, session: runSession, text: text, stopped: !current)
-                if current { self.running = false; self.awaitingModel = false }
-            }
-            return
-        }
-        guard let piModel = provider.piModel(model) else {
-            running = false
-            add(.note(.problem(AppLocalization.text(LocalizedStringResource("pi has no model \(model) for \(provider.name).")))))
-            return
-        }
         runToken += 1
         let token = runToken
         let previous = task
@@ -419,6 +391,40 @@ final class ChatModel {
             // A stopped task may still be ending its last step: this one starts after it.
             await previous?.value
             guard let self, self.runToken == token else { return }
+            let userChat = !inSplitView && chooseWorkspace && self.kind == .poki
+            let installed = userChat && suggestedApp == nil ? await self.app.installedApplicationNames() : nil
+            guard self.runToken == token, !Task.isCancelled else { return }
+            let namedApps = AppIconStore.workspaceApps(namedIn: text, installed: installed, suggested: suggestedApp)
+            let canPlan = if userChat, !namedApps.isEmpty { await self.app.prepareWorkspacePlanning() } else { false }
+            guard self.runToken == token, !Task.isCancelled else { return }
+            let placement = canPlan ? self.app.duoChatPlacement : nil
+            if userChat, suggestedApp == nil, self.app.canPlanSplitView {
+                AppLog.shared.add("chat", "installed app inventory: \(installed == nil ? "unavailable" : "available"); matched apps: \(namedApps.count)")
+            }
+            let hints = installed != nil || suggestedApp != nil ? namedApps : nil
+            let needsWorkspacePlan = canPlan && !namedApps.isEmpty && (namedApps.count >= 2 || placement != nil)
+            if !inSplitView, !needsWorkspacePlan, Self.direct, provider == .anthropic || provider == .openai {
+                let instructions = Harness.instructions(for: text, targetApps: hints)
+                if self.client?.signature != "\(provider.rawValue)/\(model)" {
+                    self.client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
+                }
+                guard let client = self.client else { self.running = false; self.awaitingModel = false; return }
+                client.say(message)
+                self.began("direct", provider, model)
+                await self.run(client, instructions: instructions, delivered: you.id, token: token)
+                let current = self.runToken == token
+                if !current { self.app.finishTask() }
+                self.logEnd("direct", outcome: nil, session: runSession, text: text, stopped: !current)
+                if current { self.running = false; self.awaitingModel = false }
+                return
+            }
+            guard let piModel = provider.piModel(model) else {
+                self.running = false
+                self.awaitingModel = false
+                self.add(.note(.problem(AppLocalization.text(LocalizedStringResource("pi has no model \(model) for \(provider.name).")))))
+                return
+            }
+            let launchApps = Dictionary(uniqueKeysWithValues: namedApps.map { ($0.id, $0) })
             var pair: [String] = []
             if needsWorkspacePlan {
                 let plannedAt = ContinuousClock.now
@@ -458,15 +464,15 @@ final class ChatModel {
                 let confirmed: Bool
                 let setupMessage: String
                 if let target = self.companionTarget {
-                    if let placement {
-                        confirmed = await self.openCompanionApp(target, placement: placement, session: splitSession, token: token)
+                    if let placement, let launchApp = launchApps[target] {
+                        confirmed = await self.openCompanionApp(launchApp, placement: placement, session: splitSession, token: token)
                     } else {
                         confirmed = false
                     }
-                    let name = AppName.display(target) ?? target
+                    let name = launchApps[target]?.name(in: .current) ?? target
                     setupMessage = AppLocalization.text(LocalizedStringResource("Poki couldn't open \(name) beside the chat. Keep the iPhone unfolded and try again."))
                 } else {
-                    confirmed = await self.openSplitViewPair(pair, session: splitSession, token: token)
+                    confirmed = await self.openSplitViewPair(pair, launchApps: launchApps, session: splitSession, token: token)
                     setupMessage = Self.splitViewSetupMessage(pair[0], pair[1])
                 }
                 self.phoneStepUnderWay = false
@@ -489,7 +495,7 @@ final class ChatModel {
             }
             let loop = self.modelLoop(provider: provider, model: piModel, inSplitView: splitSession != nil)
             let instructions = Harness.instructions(for: message, inSplitView: splitSession != nil,
-                                                      alongsidePoki: self.companionTarget != nil)
+                                                      alongsidePoki: self.companionTarget != nil, targetApps: hints)
             let outcome = await loop.run(message.isEmpty ? Self.picturesOnly : message, images: images, instructions: instructions, maxTurns: Self.maxTurns) { [weak self] text in
                 guard let self, self.runToken == token else { return }
                 self.markDelivered(you.id)
@@ -515,10 +521,10 @@ final class ChatModel {
 
     private enum PairCheck { case confirmed, unavailable, differentPair, stopped }
 
-    private func openCompanionApp(_ target: String, placement: String, session: String, token: Int,
+    private func openCompanionApp(_ targetApp: KnownApp, placement: String, session: String, token: Int,
                                   verifyRead: Bool = true) async -> Bool {
-        guard await app.reserveSplitViewWorkspace(session: session), runToken == token, !Task.isCancelled,
-              let targetApp = KnownApps.find(target) else { return false }
+        guard await app.reserveSplitViewWorkspace(session: session), runToken == token, !Task.isCancelled else { return false }
+        let target = targetApp.id
         let currentTask = task
         let background = UIApplication.shared.beginBackgroundTask(withName: "Open Poki Companion App") { currentTask?.cancel() }
         defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
@@ -588,7 +594,7 @@ final class ChatModel {
         return true
     }
 
-    private func openSplitViewPair(_ pair: [String], session: String, token: Int) async -> Bool {
+    private func openSplitViewPair(_ pair: [String], launchApps: [String: KnownApp], session: String, token: Int) async -> Bool {
         guard await app.reserveSplitViewWorkspace(session: session), !Task.isCancelled else { return false }
         let currentTask = task
         let background = UIApplication.shared.beginBackgroundTask(withName: "Open Poki Split View") { currentTask?.cancel() }
@@ -606,7 +612,8 @@ final class ChatModel {
                     ? try await app.replaceChatPane(keeping: anchor, session: session)
                     : false
                 if !alreadyInPlace {
-                    guard await openCompanionApp(anchor, placement: placement, session: session, token: token, verifyRead: false) else { return false }
+                    guard let target = launchApps[anchor],
+                          await openCompanionApp(target, placement: placement, session: session, token: token, verifyRead: false) else { return false }
                     let releaseDeadline = ContinuousClock.now + .seconds(14)
                     var released = false
                     while runToken == token, !Task.isCancelled, ContinuousClock.now < releaseDeadline {
@@ -632,7 +639,7 @@ final class ChatModel {
         case .stopped: return false
         case .unavailable, .differentPair: break
         }
-        guard runToken == token, !Task.isCancelled, let target = KnownApps.find(anchor) else { return false }
+        guard runToken == token, !Task.isCancelled, let target = launchApps[anchor] else { return false }
         guard await app.clearSplitViewPaneForSetup(session: session), runToken == token, !Task.isCancelled else { return false }
         AppLog.shared.add("chat", "opening the requested apps through the system Split View menu")
         await activateForSplitView("com.apple.springboard", session: session)
@@ -687,8 +694,8 @@ final class ChatModel {
         return Task.isCancelled || runToken != token ? .stopped : .unavailable
     }
 
-    private func chooseSplitView(text: String, apps: [String], allowCompanion: Bool, provider: ModelProvider, model: Model) async -> WorkspaceChoice {
-        let names = apps.enumerated().map { "\($0.offset + 1). \(AppIconStore.name($0.element) ?? $0.element)" }.joined(separator: "\n")
+    private func chooseSplitView(text: String, apps: [KnownApp], allowCompanion: Bool, provider: ModelProvider, model: Model) async -> WorkspaceChoice {
+        let names = apps.enumerated().map { "\($0.offset + 1). \($0.element.name(in: .current))" }.joined(separator: "\n")
         let instructions = """
         Choose how to arrange the iPhone for the owner's task. Select an app only if the owner needs Poki to open or operate it. A name can be incidental: 写一封邮件 can describe a message, and 照片 can mean an image in Safari. For an interaction between two apps, such as dragging, comparing, or transferring between them, output SPLIT and their two numbers, source first. \(allowCompanion ? "If only one app is needed, output SINGLE and its number; Poki keeps the chat next to it." : "") For everything else, output NORMAL. Output one line.
         """
@@ -706,10 +713,10 @@ final class ChatModel {
         if outcome == .done {
             if words == ["NORMAL"] { return .normal }
             if allowCompanion, words.count == 2, words[0] == "SINGLE", let index = Int(words[1]),
-               (1...apps.count).contains(index) { return .companion(apps[index - 1]) }
+               (1...apps.count).contains(index) { return .companion(apps[index - 1].id) }
             if words.count == 3, words[0] == "SPLIT", let first = Int(words[1]), let second = Int(words[2]),
                first != second, (1...apps.count).contains(first), (1...apps.count).contains(second) {
-                return .split([apps[first - 1], apps[second - 1]])
+                return .split([apps[first - 1].id, apps[second - 1].id])
             }
         }
         return .failed(Self.splitViewPlanningMessage)

@@ -106,23 +106,57 @@ final class AppIconStore {
     /// only as a whole word, and one-letter names ("X") never. A name of digits ("12306") counts next to
     /// Chinese text ("打开12306查询") but not inside a longer run of Latin letters or digits.
     static func bundleIDs(namedIn text: String) -> [String] {
+        let ids = matchingNames(in: text, names: namesLongestFirst, latinBesideChinese: false).compactMap { KnownApps.byName[$0] }
+        var seen = Set<String>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
+    /// Resolve mentions locally and pass only the matching apps to the task planner.
+    static func workspaceApps(namedIn text: String, installed: [String: String]?, suggested: KnownApp?) -> [KnownApp] {
+        // Installation instructions in a recommendation can mention other apps.
+        if let suggested { return [suggested] }
+        guard let installed else { return bundleIDs(namedIn: text).compactMap(KnownApps.find) }
+        let ownID = Bundle.main.bundleIdentifier?.lowercased()
+        var apps: [String: KnownApp] = [:]
+        var names: [String: Set<String>] = [:]
+        for (id, label) in installed where id.lowercased() != ownID && id.lowercased() != "com.apple.springboard" {
+            let key = id.lowercased()
+            let builtIn = KnownApps.byID[key]
+            let app = KnownApp(id, icon: nil, label, builtIn?.simplified, builtIn?.traditional,
+                               aliases: builtIn?.names ?? [])
+            apps[key] = app
+            for name in app.names + [id] where !name.isEmpty {
+                names[name.lowercased(), default: []].insert(key)
+            }
+        }
+        var seen = Set<String>()
+        return matchingNames(in: text, names: names.keys.sorted { $0.count > $1.count }, latinBesideChinese: true)
+            .compactMap { name -> KnownApp? in
+                guard let ids = names[name], ids.count == 1, let id = ids.first, seen.insert(id).inserted else { return nil }
+                return apps[id]
+            }
+    }
+
+    private static func matchingNames(in text: String, names: [String], latinBesideChinese: Bool) -> [String] {
         let text = Array(text.lowercased())
+        let names = names.map { ($0, Array($0)) }
         var found: [String] = []
         var i = 0
         while i < text.count {
-            let hit = namesLongestFirst.first { name in
-                let chars = Array(name)
+            let hit = names.first { _, chars in
                 guard i + chars.count <= text.count, Array(text[i..<i + chars.count]) == chars else { return false }
                 guard chars.allSatisfy(\.isASCII) else { return true }
                 // A Latin name stops at any letter; a number only at a Latin letter or a digit, as Chinese
                 // characters are letters too and sit right against it.
-                let numeric = chars.allSatisfy(\.isNumber)
-                let joins: (Character) -> Bool = numeric ? { $0.isASCII && ($0.isLetter || $0.isNumber) } : { $0.isLetter }
+                let latinBoundary = latinBesideChinese || chars.allSatisfy(\.isNumber)
+                let joins: (Character) -> Bool = latinBoundary
+                    ? { $0.isASCII && ($0.isLetter || $0.isNumber) }
+                    : { $0.isLetter }
                 return (i == 0 || !joins(text[i - 1])) && (i + chars.count == text.count || !joins(text[i + chars.count]))
             }
-            guard let hit, let id = KnownApps.byName[hit] else { i += 1; continue }
-            if !found.contains(id) { found.append(id) }
-            i += hit.count
+            guard let (name, chars) = hit else { i += 1; continue }
+            found.append(name)
+            i += chars.count
         }
         return found
     }

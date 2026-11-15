@@ -54,7 +54,7 @@ final class HomeShortcutsTests: XCTestCase {
 
     /// The owner (2026-11-14): starring Poki is on the home page from the first open, second (the top
     /// row opens with its first pill half off the screen), also for an owner whose own pills fill the
-    /// rows, and it pushes none of theirs off. A tap fills the field with the task for Poki's browser.
+    /// rows, and it pushes none of theirs off. A tap fills the field with the task for the GitHub app.
     /// Forgotten, it is gone and its place goes back to the owner's. Old code had no such pill.
     func testStarringPokiComesSecondAndPushesNothingOff() {
         let own = ["打开相机拍一张照片", "打开备忘录记一条待办", "打开淘宝看看购物车", "打开京东看看购物车", "打开闲鱼看看我的闲置",
@@ -76,6 +76,9 @@ final class HomeShortcutsTests: XCTestCase {
             let star = pills(routines: [routine], requests: busy + history)[1]
             XCTAssertEqual(star.text, title, language)
             XCTAssertEqual(star.prompt, prompt, language)
+            XCTAssertEqual(star.target(for: prompt)?.id, "com.github.stormbreaker.prod")
+            XCTAssertEqual(star.target(for: prompt + "\nOnly open the app.")?.id, "com.github.stormbreaker.prod")
+            XCTAssertNil(star.target(for: "Open Safari instead."))
             XCTAssertEqual(star.key, shown[1].key, "Forget keeps the same key across languages")
         }
         AppLocalization.shared.preference = "en"
@@ -143,7 +146,7 @@ final class HomeShortcutsTests: XCTestCase {
         defer { for (key, value) in zip(keys, before) { defaults.set(value, forKey: key) } }
 
         let store = HomeShortcutStore()
-        // The second is starring Poki, which has GitHub's mark and no app.
+        // One of the suggestions is starring Poki, which carries GitHub's mark.
         let (first, second) = (store.shortcuts[0], store.shortcuts[2])
         store.edit(first, sentence: first.prompt + " please", app: first.app)
         store.edit(second, sentence: "Water the plants", app: nil)

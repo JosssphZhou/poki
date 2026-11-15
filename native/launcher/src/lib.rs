@@ -10,6 +10,7 @@ pub mod signer;
 pub mod supervisor;
 
 use serde_json::Value;
+use std::time::Duration;
 use std::{
     ffi::{CStr, CString, c_char, c_void},
     sync::{Arc, OnceLock},
@@ -154,6 +155,28 @@ pub unsafe extern "C" fn poki_string_free(text: *mut c_char) {
     if !text.is_null() {
         drop(unsafe { CString::from_raw(text) });
     }
+}
+
+/// Reports launcher names keyed by bundle ID, or JSON null when the paired service is unavailable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn poki_installed_application_names(config_json: *const c_char, cb: EventCallback, context: *mut c_void) -> i32 {
+    let Some(text) = (unsafe { read_str(config_json) }) else { return -1 };
+    let Ok(config) = serde_json::from_str::<Config>(&text) else { return -1 };
+    let callback = Callback { function: cb, context };
+    runtime().spawn(async move {
+        let deadline = Duration::from_secs(5);
+        let names = tokio::time::timeout(deadline, async {
+            let mut pairing = device::Pairing::read(&config.pairing_file, config.host_name.as_deref())?;
+            let mut phone = device::Device::open(config.device_address, &mut pairing, deadline).await?;
+            phone.application_names().await
+        }).await;
+        let value = match names {
+            Ok(Ok(names)) => serde_json::json!(names),
+            _ => Value::Null,
+        };
+        callback.call(&value);
+    });
+    0
 }
 
 pub struct PokiPairing {

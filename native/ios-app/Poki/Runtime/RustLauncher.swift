@@ -27,6 +27,29 @@ final class RustLauncher: RunnerLauncher {
 
     func restart() { if let handle { poki_launcher_restart(handle) } }
 
+    private final class AppNamesQuery {
+        let continuation: CheckedContinuation<[String: String]?, Never>
+        init(_ continuation: CheckedContinuation<[String: String]?, Never>) { self.continuation = continuation }
+    }
+
+    func installedApplicationNames(config: LauncherConfig?) async -> [String: String]? {
+        guard let config, let data = try? JSONEncoder().encode(config) else { return nil }
+        let configJSON = String(decoding: data, as: UTF8.self)
+        return await withCheckedContinuation { continuation in
+            let query = Unmanaged.passRetained(AppNamesQuery(continuation))
+            let started = configJSON.withCString { poki_installed_application_names($0, { context, text in
+                guard let context else { return }
+                let query = Unmanaged<AppNamesQuery>.fromOpaque(context).takeRetainedValue()
+                let names = text.flatMap { try? JSONDecoder().decode([String: String].self, from: Data(String(cString: $0).utf8)) }
+                query.continuation.resume(returning: names)
+            }, query.toOpaque()) }
+            if started != 0 {
+                query.release()
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+
     func stop() {
         if let handle { poki_launcher_free(handle) } // stops it, then frees it
         handle = nil
