@@ -52,7 +52,7 @@ jobs:
           RUN=false
           while IFS= read -r file; do
             case "$file" in
-              native/ios-app/*|native/ios/PokiCore/*|native/ios/PokiLoopback/*|native/launcher/*|native/codex-voice/*|native/patches/*|desktop/core/*|bin/setup|.github/actions/build-ipa/*|.github/workflows/ios-app-tests.yml)
+              native/ios-app/*|native/ios-gym/check/*|native/ios/PokiCore/*|native/ios/PokiLoopback/*|native/launcher/*|native/codex-voice/*|native/patches/*|desktop/core/*|bin/setup|.github/actions/build-ipa/*|.github/workflows/ios-app-tests.yml)
                 RUN=true
                 break
                 ;;

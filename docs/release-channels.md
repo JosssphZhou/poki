@@ -65,10 +65,10 @@ testers on Alpha run the file that was tried on Pre-alpha, and Beta runs the fil
    empty for the current Alpha. The Poki Release Bot opens a PR that adds the promotion to
    `.github/channels.json` and moves `native/ios-app/VERSION` to the next patch version. The PR's
    `promotion gate` check (`promotion-gate.yml`) verifies that `CHANGELOG.md` has a dated entry for
-   this version, runs the Gym on that commit and passes when neither scorecard has more failures
-   than the last beta's. Merging waits for approval in `beta`, re-checks `CHANGELOG.md`, then
-   publishes `app-X.Y.Z-beta.K` (`publish-promotion.yml`) with that changelog section in its release
-   notes and the scorecards attached, and creates `release/X.Y` on a version's first beta.
+   this version, runs the Gym on that commit and passes only when both scorecards finish with zero
+   failures. Merging waits for approval in `beta`, re-checks `CHANGELOG.md`, then publishes
+   `app-X.Y.Z-beta.K` (`publish-promotion.yml`) with that changelog section in its release notes
+   and the scorecards attached, and creates `release/X.Y` on a version's first beta.
 
    Promotions only move the patch version. To start a new minor version (0.3.x to 0.4.0), the
    repository owner merges a PR that sets `native/ios-app/VERSION` to it; the pre-alpha built from
@@ -166,14 +166,35 @@ one of the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the
 same Xcode selection as `prealpha.yml`) without secrets: it builds the unsigned external IPA via
 `.github/actions/build-ipa` (`editions: external`) and runs `PokiTests` on a fresh iOS Simulator.
 
-- On every PR into `main` or `release/**` that changes `native/ios-app` or its local iOS, launcher,
-  Codex Voice, or signing dependencies (`PokiCore`, `PokiLoopback`, `native/launcher`,
-  `native/codex-voice`, `native/patches`, `desktop/core`, `bin/setup`, `.github/actions/build-ipa`).
+- On every PR into `main` or `release/**` that changes `native/ios-app` or its local iOS, Gym,
+  launcher, Codex Voice, or signing dependencies (`native/ios-gym/check`, `PokiCore`,
+  `PokiLoopback`, `native/launcher`, `native/codex-voice`, `native/patches`, `desktop/core`,
+  `bin/setup`, `.github/actions/build-ipa`).
   PRs that do not touch those paths skip the macOS job while `iOS app tests / verdict` still reports
   green.
 - Every night on `main` (`schedule`) and via `workflow_dispatch`. Any build or test failure marks the
   workflow run red on `main`. Before starting release promotion (`Promote to Alpha` or
   `Propose promotion`), confirm that the latest nightly `iOS app tests` run on `main` is green.
+
+### Release checklist
+
+Every check on the release path either blocks promotion when red or is not on the release path. No check passes by comparing nonzero failure counts against an older build.
+
+| Stage | Check | What it verifies | Typical time | Blocks release? |
+| --- | --- | --- | --- | --- |
+| Pull request | `PR checks` (`pr-checks.yml`) | `poki-setup-core` and `poki-setup-cli` tests on Linux and Windows, `--locked` Cargo manifests (`desktop`, `native/launcher`), `actionlint`, `promotion.py` syntax, and release-contract Node tests (`publish-r2`, `publish-compat`, `hotfix-release`, `codex-voice-build`, `promotion-gate`) | 3 to 4 min | Yes: required check on `main` and `release/**` |
+| Pull request | `iOS app tests` (`ios-app-tests.yml`, `iOS app tests / verdict`) | Builds the unsigned external IPA with Pre-alpha's Xcode (`xcode-27`, `.github/actions/build-ipa`) and runs `PokiTests` on a fresh simulator when iOS app or dependency paths change; skips macOS runner otherwise | 15 to 25 min cached (30 to 35 min cold); ~10 s when skipped | Yes: required check on `main` and `release/**` |
+| Pull request (local / release scripts) | `npm test` (`test/*.test.mjs`) | Poki MCP tools, signed R2 catalog generation (`publish-r2.test.mjs`), compatibility script (`publish-compat.test.mjs`), and `promotion.py` gate enforcement (`promotion-gate.test.mjs`) | < 1 min | Run before opening PRs that touch `src/`, `scripts/release/`, `.github/scripts/`, or `test/` |
+| Night before promotion | Nightly `iOS app tests` (`ios-app-tests.yml`, `schedule` on `main`) | Full external IPA build and `PokiTests` on a fresh simulator against `main` head | 15 to 25 min | Marks `main` red on failure; confirm the latest nightly run is green before starting `Promote to Alpha` or `Propose promotion` |
+| Merge to `main` (Pre-alpha) | `Pre-alpha` (`prealpha.yml`) | Builds `Poki-external-unsigned.ipa`, `Poki-signing.zip`, and `poki-relay-worker.js`, stores the 90-day `Poki-unsigned` artifact, tags `app-X.Y.Z-prealpha.N`, and updates `app-prealpha-latest` (`ios-prealpha-latest`) | 7 to 14 min cached (~20 min cold) | Yes: `Promote to Alpha` and `Publish promotion` require a green `Pre-alpha` run for the promoted SHA |
+| Before Alpha | `scripts/release/publish-compat.sh check` | Verifies Pre-alpha assets and prints the `Poki-signing.zip` entitlements digest before updating rolling tags | < 1 min | Yes: stop promotion on missing files or an unexpected entitlements change |
+| Alpha | `Promote to Alpha` (`promote-alpha.yml`, calling `ios-app.yml`) | `PokiCoreTests`, `PokiLoopbackTests`, simulator smoke test, in-process field/apps/reopen/chat probes, and Linux `poki-setup-core`/`poki-setup-cli` tests on the Pre-alpha commit, then `alpha` environment approval (`promote-alpha-fast.yml` skips re-running tests in 1 to 3 min when already verified) | 20 to 25 min (1 to 3 min fast) + owner approval | Yes: publish job requires green test jobs and `JosssphZhou` approval in `alpha` |
+| Beta proposal | `Propose promotion` (`propose-promotion.yml`, `channel=beta`) | Validates Alpha tag (`app-X.Y.Z-alpha.N`), verifies `app-X.Y.Z` is not already Stable, appends `.github/channels.json`, bumps `native/ios-app/VERSION`, and opens `promote/beta-*` PR | 15 to 20 s | Yes: exits before opening PR if source tag is invalid or version is already Stable |
+| Beta PR | `promotion gate` (`promotion-gate.yml` + `ios-gym.yml`, `promotion gate / verdict`) | Validates pending `channels.json` record and dated `CHANGELOG.md` section, builds `PokiGym` and simulator `Poki`, runs Poki Gym on both `scorecard` (WebDriverAgent runner) and `scorecard-inprocess` (`-pokiInProcess gym`), and requires `failures: 0` on both scorecards (`promotion.py gym`) | 29 to 35 min | Yes: required check on `main`; missing changelog entry or any failure on either scorecard fails `promotion gate / verdict` |
+| Before Beta approval | `first-hop-check.mjs`, `oracle.sh`, and `publish-compat.sh` | Verifies installed clients (Poki 0.3.1, Poki Setup 0.2.2) resolve an installable build on every channel (`plans/as-published.json`), matches the 0.3.1 Swift picker oracle, and stages/publishes `ios-beta-X.Y.Z-N` (owner-only `draft`/`public`) | 1 to 2 min | Yes: run before approving Beta so installed clients never pick an uninstallable release |
+| Beta merge | `Publish promotion` (`publish-promotion.yml` + `publish-r2.yml`) | Waits for `beta` approval, re-checks `CHANGELOG.md`, verifies draft file count and SHA-256 sums, attaches both Gym scorecards, publishes `app-X.Y.Z-beta.K`, creates `release/X.Y` on first beta, and mirrors signed catalog + assets to R2 | 3 to 4 min + owner approval | Yes: requires `JosssphZhou` approval in `beta`; aborts as draft on file mismatch and fails if R2 signing or upload fails |
+| Stable PR & merge | `promotion gate` (`changelog` + `soak`) + `Publish promotion` (`stable`) | Verifies dated `CHANGELOG.md` section and that Beta has been out for `soak_days` (3 days in `.github/channels.json`, unless `soak-override` is set with a reason) with zero open `blocker` issues, then publishes `app-X.Y.Z` after `stable` approval | < 1 min gate; 3 to 4 min publish + owner approval | Yes: `promotion gate / verdict` blocks merge until changelog, soak, and blocker checks pass; `stable` requires `JosssphZhou` approval |
+| Desktop (when Poki Setup changes) | `Poki Setup` (`desktop.yml`) & `Poki Setup macOS` (`desktop-mac.yml`) | Builds Linux, Windows, and macOS Universal2 `.dmg` installers and runs Poki Setup core/CLI tests | 8 to 17 min | Yes when shipping new Poki Setup installers (`Windows` job also gates on `stable` approval) |
 
 ## Setup (once)
 
