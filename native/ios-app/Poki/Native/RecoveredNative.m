@@ -122,6 +122,7 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
     [_lock unlock];
     return result;
 }
+- (NSError *)replyError { [_lock lock]; NSError *error = _replyError; [_lock unlock]; return error; }
 @end
 
 @implementation SRNativeSession {
@@ -150,6 +151,13 @@ static BOOL SRABI(id target, SEL selector, const char *result, NSArray<NSString 
 }
 - (BOOL)enableWasReused {
     [_lifecycleLock lock]; BOOL value = _reused; [_lifecycleLock unlock]; return value;
+}
+- (id)enabledSession:(uint64_t *)generation {
+    [_lifecycleLock lock];
+    if (generation) *generation = _generation;
+    id session = (_observed && !_invalidated && _token && _enabled == _observed && _enabledGeneration == _generation) ? _observed : nil;
+    [_lifecycleLock unlock];
+    return session;
 }
 - (BOOL)isCurrent:(id)session generation:(uint64_t)generation {
     [_lifecycleLock lock];
