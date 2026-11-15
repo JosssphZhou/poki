@@ -16,6 +16,36 @@ enum EarlierVersion {
     }
 }
 
+enum LaunchMode: Equatable, Sendable {
+    case interactive
+    case scripted
+    case xctest
+
+    private nonisolated static let xctestEnvironmentKeys = [
+        "XCTestBundlePath",
+        "XCTestConfigurationFilePath",
+        "XCTestSessionIdentifier",
+        "XCTestManagerVariant",
+    ]
+
+    nonisolated static var current: LaunchMode {
+        resolve(environment: ProcessInfo.processInfo.environment,
+                arguments: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
+    }
+
+    nonisolated static func resolve(environment: [String: String], arguments: [String: Any]) -> LaunchMode {
+        if xctestEnvironmentKeys.contains(where: { environment[$0] != nil }) || arguments["XCTest"] != nil {
+            return .xctest
+        }
+        if arguments.keys.contains(where: { $0.hasPrefix("poki") }) {
+            return .scripted
+        }
+        return .interactive
+    }
+
+    nonisolated var suppressesSystemPermissionPrompts: Bool { self != .interactive }
+}
+
 /// The welcome panel: on a fresh install, and once after each new version (the owner, 2026-11-20), Poki
 /// comes out of the launch screen into one page that sets up everything it uses. A fresh install gets the
 /// hello first; an update gets a shorter hello that names the version. It can be gone through again from
@@ -66,8 +96,9 @@ enum FirstRun {
         case "welcomeUpdate": return .update(version)
         default: break
         }
-        if ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil { return nil }
-        if arguments.keys.contains(where: { $0.hasPrefix("poki") }) { return nil }
+        if LaunchMode.resolve(environment: ProcessInfo.processInfo.environment, arguments: arguments) != .interactive {
+            return nil
+        }
         return pending(defaults: defaults, version: version)
     }
 

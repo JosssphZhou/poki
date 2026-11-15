@@ -189,10 +189,12 @@ final class LiveActivityTests: XCTestCase {
         let setup = SetupState.load()
         let existingIDs = Set(Activity<PokiActivityAttributes>.activities.map(\.id))
         let automation = FakeAutomation()
+        InProcessWDA.resetGate()
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation)
         defer {
             automation.answer(nil)
             if app.sessionOn { app.stopSession() }
+            InProcessWDA.resetGate()
             for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
             setup.save()
         }

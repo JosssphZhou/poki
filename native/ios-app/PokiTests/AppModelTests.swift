@@ -564,9 +564,13 @@ final class PasscodeTests: XCTestCase {
 /// iOS asks the owner for the passcode before it allows automation, after Poki restarts and 8 hours
 /// after the last time. An in-process open that waits on it is named: Poki's home asks the owner, and
 /// the agent reads that only the owner can enter it, also after iOS gives up.
+extension InProcessWDA {
+    nonisolated static func resetGate() { gate.withLock { $0 = OpenGate() } }
+}
+
 @MainActor
 final class InProcessPasscodeTests: XCTestCase {
-    private var saved: (relay: String?, relayEnabled: Any?, setup: SetupState)!
+    private var saved: (relay: String?, relayEnabled: Any?, wantsOn: Any?, startedBoot: Any?, setup: SetupState)!
     private var savedAllowance: Any?
     private var model: AppModel!
     private var session: FakeAutomation!
@@ -576,10 +580,13 @@ final class InProcessPasscodeTests: XCTestCase {
         try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
         // The open gate is process-wide: a suite that sent Poki to the background before this one
         // must not leave each open here refused as "open Poki first".
-        InProcessWDA.gate.withLock { $0 = InProcessWDA.OpenGate() }
-        savedAllowance = UserDefaults.standard.object(forKey: AutomationAllowance.key)
-        UserDefaults.standard.removeObject(forKey: AutomationAllowance.key)
-        saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load())
+        InProcessWDA.resetGate()
+        let defaults = UserDefaults.standard
+        savedAllowance = defaults.object(forKey: AutomationAllowance.key)
+        defaults.removeObject(forKey: AutomationAllowance.key)
+        saved = (defaults.string(forKey: "relayAddress"), defaults.object(forKey: "relayEnabled"),
+                 defaults.object(forKey: "wantsOn"), defaults.object(forKey: "automationStartedBoot"), SetupState.load())
+        defaults.removeObject(forKey: "automationStartedBoot")
         session = FakeAutomation()
         launcher = FakeLauncher()
         useSystem(27)
@@ -600,11 +607,15 @@ final class InProcessPasscodeTests: XCTestCase {
     override func tearDown() async throws {
         session?.answer(nil)
         session?.releasePause()
-        UserDefaults.standard.set(savedAllowance, forKey: AutomationAllowance.key)
+        InProcessWDA.resetGate()
+        let defaults = UserDefaults.standard
+        defaults.set(savedAllowance, forKey: AutomationAllowance.key)
         guard let saved, let model else { return }
         model.stopSession()
-        UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
-        UserDefaults.standard.set(saved.relayEnabled, forKey: "relayEnabled")
+        defaults.set(saved.relay, forKey: "relayAddress")
+        defaults.set(saved.relayEnabled, forKey: "relayEnabled")
+        defaults.set(saved.wantsOn, forKey: "wantsOn")
+        defaults.set(saved.startedBoot, forKey: "automationStartedBoot")
         saved.setup.save()
     }
 
@@ -624,6 +635,19 @@ final class InProcessPasscodeTests: XCTestCase {
 
         await fulfillment(of: [opened], timeout: 0.5)
         XCTAssertFalse(model.hasOpenInProcessSession)
+    }
+
+    func testSetUpResetsBootMarkerAndOpenGateAcrossRuns() async throws {
+        UserDefaults.standard.set(BootClock.current, forKey: "automationStartedBoot")
+        InProcessWDA.gate.withLock {
+            $0.inFront = false
+            $0.declined = true
+            $0.startedThisBoot = true
+        }
+        try await tearDown()
+        try await setUp()
+        XCTAssertTrue(model.passcodeExpected, "each test starts before this boot's first automation")
+        XCTAssertFalse(InProcessWDA.automationDeclined)
     }
 
     func testCellularPreparationWaitsForTheImageWithoutOpeningAutomation() async {
@@ -2262,10 +2286,14 @@ final class FrontendSubtractionTests: XCTestCase {
     /// reach the new screens: the failure is the hint line on Home and in the chat, and an issue row
     /// on Poki's details.
     func testUnreachableRunnerFailureAndAutoTurnOnSurfaceInNewHomeAndDetails() async throws {
+        let defaults = UserDefaults.standard
+        let savedWantsOn = defaults.object(forKey: "wantsOn")
+        let savedRelay = defaults.object(forKey: "relayAddress")
+        let savedRelayEnabled = defaults.object(forKey: "relayEnabled")
         defer { try? FileManager.default.removeItem(at: SelfSigner.handedIdentity) }
         try FileManager.default.createDirectory(at: SelfSigner.handedIdentity.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: SelfSigner.handedIdentity)
-        UserDefaults.standard.removeObject(forKey: "wantsOn")
+        defaults.removeObject(forKey: "wantsOn")
 
         let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         XCTAssertTrue(model.wantsOn, "#79: Poki Setup install turns wantsOn on automatically")
@@ -2276,8 +2304,9 @@ final class FrontendSubtractionTests: XCTestCase {
         model.startSession()
         defer {
             model.stopSession()
-            UserDefaults.standard.removeObject(forKey: "relayAddress")
-            UserDefaults.standard.set(nil as Any?, forKey: "relayEnabled")
+            defaults.set(savedWantsOn, forKey: "wantsOn")
+            defaults.set(savedRelay, forKey: "relayAddress")
+            defaults.set(savedRelayEnabled, forKey: "relayEnabled")
         }
         model.wakeRunner()
         let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in ["failed", "running"].contains(model.runner.state) }, object: nil)
