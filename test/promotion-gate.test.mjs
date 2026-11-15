@@ -335,11 +335,10 @@ test('labeled beta event reuses the newest completed Gym run with non-expired sc
   });
   assert.equal(dlRes.status, 0, dlRes.stdout + dlRes.stderr);
 
-  mkdirSync(join(sandbox.dir, 'base'), { recursive: true });
-  writeFileSync(join(sandbox.dir, 'base/gym-scorecard.txt'), 'failures: 0\n');
-  writeFileSync(join(sandbox.dir, 'base/gym-scorecard-inprocess.txt'), 'failures: 0\n');
-  const verdictRes = sandbox.runPython(['gym', 'base', 'new']);
+  const verdictRes = sandbox.runPython(['gym', 'new']);
   assert.equal(verdictRes.status, 0, verdictRes.stdout + verdictRes.stderr);
+  assert.match(verdictRes.stdout, /gym-scorecard\.txt: 0 failures/);
+  assert.match(verdictRes.stdout, /gym-scorecard-inprocess\.txt: 0 failures/);
 });
 
 test('missing, partial, or forged scorecards are still rejected by verdict and promotion.py', t => {
@@ -393,30 +392,26 @@ test('missing, partial, or forged scorecards are still rejected by verdict and p
     GITHUB_RUN_ID: '921',
   });
   assert.equal(partialDl.status, 0, partialDl.stdout + partialDl.stderr);
-  mkdirSync(join(partialBox.dir, 'base'), { recursive: true });
-  const partialVerdict = partialBox.runPython(['gym', 'base', 'new']);
+  const partialVerdict = partialBox.runPython(['gym', 'new']);
   assert.notEqual(partialVerdict.status, 0);
   assert.match(partialVerdict.stdout + partialVerdict.stderr, /gym-scorecard-inprocess\.txt has no scorecard/);
 
-  // 3. Invalid SHA is rejected by gym-run; forged / malformed scorecard or regression is rejected by gym.
+  // 3. Invalid SHA is rejected by gym-run; forged / malformed or failing scorecards are rejected by gym.
   const invalidSha = partialBox.runPython(['gym-run', 'not-a-sha']);
   assert.notEqual(invalidSha.status, 0);
 
   const forgedBox = makeSandbox(t);
-  mkdirSync(join(forgedBox.dir, 'base'), { recursive: true });
   mkdirSync(join(forgedBox.dir, 'new'), { recursive: true });
-  writeFileSync(join(forgedBox.dir, 'base/gym-scorecard.txt'), 'failures: 0\n');
-  writeFileSync(join(forgedBox.dir, 'base/gym-scorecard-inprocess.txt'), 'failures: 0\n');
   writeFileSync(join(forgedBox.dir, 'new/gym-scorecard.txt'), 'all green trust me\n');
   writeFileSync(join(forgedBox.dir, 'new/gym-scorecard-inprocess.txt'), 'failures: 0\n');
-  const forged = forgedBox.runPython(['gym', 'base', 'new']);
+  const forged = forgedBox.runPython(['gym', 'new']);
   assert.notEqual(forged.status, 0);
   assert.match(forged.stdout + forged.stderr, /gym-scorecard\.txt has no scorecard/);
 
   writeFileSync(join(forgedBox.dir, 'new/gym-scorecard.txt'), 'failures: 1\n');
-  const regressed = forgedBox.runPython(['gym', 'base', 'new']);
-  assert.notEqual(regressed.status, 0);
-  assert.match(regressed.stdout + regressed.stderr, /gym-scorecard\.txt: 1 failures, the last beta had 0/);
+  const failedRunner = forgedBox.runPython(['gym', 'new']);
+  assert.notEqual(failedRunner.status, 0);
+  assert.match(failedRunner.stdout + failedRunner.stderr, /gym-scorecard\.txt: 1 failures \(must be 0\)/);
 });
 
 const stale042Changelog = [
@@ -699,4 +694,46 @@ test('repository CHANGELOG.md has a valid dated section for every release record
       `CHANGELOG.md must cover ${rec.version} (${rec.tag}): ${res.stdout}${res.stderr}`,
     );
   }
+});
+
+function makeGymDir(t, scorecards) {
+  const dir = mkdtempSync(join(tmpdir(), 'poki-gym-gate-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [name, content] of Object.entries(scorecards)) {
+    writeFileSync(join(dir, name), content);
+  }
+  return dir;
+}
+
+test('promotion.py gym passes only when both scorecards report zero failures', t => {
+  const sandbox = makeSandbox(t);
+  const clean = makeGymDir(t, {
+    'gym-scorecard.txt': 'path: runner; calls: 149, slowest: Safari / launch 21000 ms, failures: 0\n',
+    'gym-scorecard-inprocess.txt': 'path: in-process; calls: 133, slowest: Safari / launch 8801 ms, failures: 0\n',
+  });
+  const ok = sandbox.runPython(['gym', clean]);
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout, /gym-scorecard\.txt: 0 failures/);
+  assert.match(ok.stdout, /gym-scorecard-inprocess\.txt: 0 failures/);
+});
+
+test('promotion.py gym blocks nonzero in-process failures even when lower than prior beta', t => {
+  const sandbox = makeSandbox(t);
+  const withInProcessFailures = makeGymDir(t, {
+    'gym-scorecard.txt': 'path: runner; calls: 149, slowest: Safari / launch 21000 ms, failures: 0\n',
+    'gym-scorecard-inprocess.txt': 'path: in-process; calls: 133, slowest: Safari / launch 8801 ms, failures: 6\n  - setup / look (cold): no picture\n',
+  });
+  const failed = sandbox.runPython(['gym', withInProcessFailures]);
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /gym-scorecard-inprocess\.txt: 6 failures/);
+});
+
+test('promotion.py gym blocks missing scorecards', t => {
+  const sandbox = makeSandbox(t);
+  const missingInProcess = makeGymDir(t, {
+    'gym-scorecard.txt': 'path: runner; calls: 149, slowest: Safari / launch 21000 ms, failures: 0\n',
+  });
+  const failed = sandbox.runPython(['gym', missingInProcess]);
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /gym-scorecard-inprocess\.txt has no scorecard/);
 });
