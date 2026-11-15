@@ -170,8 +170,8 @@ same Xcode selection as `prealpha.yml`) without secrets: it builds the unsigned 
   launcher, Codex Voice, or signing dependencies (`native/ios-gym/check`, `PokiCore`,
   `PokiLoopback`, `native/launcher`, `native/codex-voice`, `native/patches`, `desktop/core`,
   `bin/setup`, `.github/actions/build-ipa`).
-  PRs that do not touch those paths skip the macOS job while `iOS app tests / verdict` still reports
-  green.
+  PRs that do not touch those paths skip the macOS job while `ios-app-tests`
+  (`iOS app tests / ios-app-tests`) still reports green.
 - Every night on `main` (`schedule`) and via `workflow_dispatch`. Any build or test failure marks the
   workflow run red on `main`. Before starting release promotion (`Promote to Alpha` or
   `Propose promotion`), confirm that the latest nightly `iOS app tests` run on `main` is green.
@@ -182,8 +182,8 @@ Every check on the release path either blocks promotion when red or is not on th
 
 | Stage | Check | What it verifies | Typical time | Blocks release? |
 | --- | --- | --- | --- | --- |
-| Pull request | `PR checks` (`pr-checks.yml`) | `poki-setup-core` and `poki-setup-cli` tests on Linux and Windows, `--locked` Cargo manifests (`desktop`, `native/launcher`), `actionlint`, `promotion.py` syntax, and release-contract Node tests (`publish-r2`, `publish-compat`, `hotfix-release`, `codex-voice-build`, `promotion-gate`) | 3 to 4 min | Yes: required check on `main` and `release/**` |
-| Pull request | `iOS app tests` (`ios-app-tests.yml`, `iOS app tests / verdict`) | Builds the unsigned external IPA with Pre-alpha's Xcode (`xcode-27`, `.github/actions/build-ipa`) and runs `PokiTests` on a fresh simulator when iOS app or dependency paths change; skips macOS runner otherwise | 15 to 25 min cached (30 to 35 min cold); ~10 s when skipped | Yes: required check on `main` and `release/**` |
+| Pull request | `PR checks` (`pr-checks.yml`) | `poki-setup-core` and `poki-setup-cli` tests on Linux and Windows, `--locked` Cargo manifests (`desktop`, `native/launcher`), `actionlint`, `promotion.py` syntax, and release-contract Node tests (`publish-r2`, `publish-compat`, `hotfix-release`, `codex-voice-build`, `promotion-gate`) | 3 to 4 min | Yes: required checks on `main` and `release/**` (see Setup (once)) |
+| Pull request | `iOS app tests` (`ios-app-tests.yml`, check `ios-app-tests`) | Builds the unsigned external IPA with Pre-alpha's Xcode (`xcode-27`, `.github/actions/build-ipa`) and runs `PokiTests` on a fresh simulator when iOS app or dependency paths change; skips macOS runner otherwise | 15 to 25 min cached (30 to 35 min cold); ~10 s when skipped | Yes: `ios-app-tests` required check on `main` and `release/**` once `ios-app-tests.yml` is on the branch (see Setup (once)) |
 | Pull request (local / release scripts) | `npm test` (`test/*.test.mjs`) | Poki MCP tools, signed R2 catalog generation (`publish-r2.test.mjs`), compatibility script (`publish-compat.test.mjs`), and `promotion.py` gate enforcement (`promotion-gate.test.mjs`) | < 1 min | Run before opening PRs that touch `src/`, `scripts/release/`, `.github/scripts/`, or `test/` |
 | Night before promotion | Nightly `iOS app tests` (`ios-app-tests.yml`, `schedule` on `main`) | Full external IPA build and `PokiTests` on a fresh simulator against `main` head | 15 to 25 min | Marks `main` red on failure; confirm the latest nightly run is green before starting `Promote to Alpha` or `Propose promotion` |
 | Merge to `main` (Pre-alpha) | `Pre-alpha` (`prealpha.yml`) | Builds `Poki-external-unsigned.ipa`, `Poki-signing.zip`, and `poki-relay-worker.js`, stores the 90-day `Poki-unsigned` artifact, tags `app-X.Y.Z-prealpha.N`, and updates `app-prealpha-latest` (`ios-prealpha-latest`) | 7 to 14 min cached (~20 min cold) | Yes: `Promote to Alpha` and `Publish promotion` require a green `Pre-alpha` run for the promoted SHA |
@@ -206,8 +206,10 @@ Every check on the release path either blocks promotion when red or is not on th
   required reviewer and administrator bypass disabled. Self-review prevention is off so the owner
   can approve a run they started. Agents must not approve on the owner's behalf.
   See [GitHub's environment setup](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
-- Branch protection on `main`: the `PR checks` jobs, `iOS app tests / verdict`, and
-  `promotion gate / verdict` as required checks.
+- Branch rulesets on `main` (and `release/**` when active): require the `PR checks` jobs
+  (`desktop-core`, `lockfiles`, `windows-auth`, `workflows`), `ios-app-tests`
+  (`iOS app tests / ios-app-tests`), and `promotion gate`'s `verdict` (`promotion gate / verdict`)
+  from GitHub Actions (`app_id: 15368`) once `ios-app-tests.yml` is on the target branch.
 
 ## Fallback
 

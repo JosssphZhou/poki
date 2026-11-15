@@ -2,7 +2,7 @@
 # inside Poki on a fresh iOS Simulator:
 # - On pull requests into main or release/** when native/ios-app or its dependencies change.
 #   External fork PRs run without secrets (permissions: contents: read).
-#   Make "iOS app tests / verdict" a required check on main.
+#   Make "ios-app-tests" ("iOS app tests / ios-app-tests" in the PR UI) a required check on main and release/**.
 # - Every night on main and on manual dispatch, so build or test regressions surface as a red run
 #   on main before release promotion starts.
 name: iOS app tests
@@ -198,7 +198,7 @@ jobs:
             build/diagnostics/
           if-no-files-found: ignore
 
-  verdict:
+  ios-app-tests:
     needs: [changes, build-and-test]
     if: always()
     runs-on: ubuntu-24.04
