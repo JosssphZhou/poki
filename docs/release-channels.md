@@ -159,8 +159,21 @@ A public `desktop-vX.Y.Z` prerelease can reach Poki Setup through the signed Bet
 
 ## Checks
 
-`pr-checks.yml` runs on every PR into `main` or `release/**`, on Linux only so it never takes one of
-the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workflows (actionlint).
+`pr-checks.yml` runs on every PR into `main` or `release/**`, on Linux and Windows so it never takes
+one of the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workflows (actionlint).
+
+`ios-app-tests.yml` (`iOS app tests`) runs on GitHub's `xcode-27` macOS runner (using the
+same Xcode selection as `prealpha.yml`) without secrets: it builds the unsigned external IPA via
+`.github/actions/build-ipa` (`editions: external`) and runs `PokiTests` on a fresh iOS Simulator.
+
+- On every PR into `main` or `release/**` that changes `native/ios-app` or its local iOS, launcher,
+  Codex Voice, or signing dependencies (`PokiCore`, `PokiLoopback`, `native/launcher`,
+  `native/codex-voice`, `native/patches`, `desktop/core`, `bin/setup`, `.github/actions/build-ipa`).
+  PRs that do not touch those paths skip the macOS job while `iOS app tests / verdict` still reports
+  green.
+- Every night on `main` (`schedule`) and via `workflow_dispatch`. Any build or test failure marks the
+  workflow run red on `main`. Before starting release promotion (`Promote to Alpha` or
+  `Propose promotion`), confirm that the latest nightly `iOS app tests` run on `main` is green.
 
 ## Setup (once)
 
@@ -172,7 +185,8 @@ the 5 macOS runners: Poki Setup's core tests, the Rust lockfiles, and the workfl
   required reviewer and administrator bypass disabled. Self-review prevention is off so the owner
   can approve a run they started. Agents must not approve on the owner's behalf.
   See [GitHub's environment setup](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
-- Branch protection on `main`: the `PR checks` jobs and `promotion gate / verdict` as required checks.
+- Branch protection on `main`: the `PR checks` jobs, `iOS app tests / verdict`, and
+  `promotion gate / verdict` as required checks.
 
 ## Fallback
 

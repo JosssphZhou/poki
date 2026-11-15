@@ -1,0 +1,233 @@
+# Builds Poki with Pre-alpha's Xcode and build-ipa settings (external edition) and runs PokiTests
+# inside Poki on a fresh iOS Simulator:
+# - On pull requests into main or release/** when native/ios-app or its dependencies change.
+#   External fork PRs run without secrets (permissions: contents: read).
+#   Make "iOS app tests / verdict" a required check on main.
+# - Every night on main and on manual dispatch, so build or test regressions surface as a red run
+#   on main before release promotion starts.
+name: iOS app tests
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+  schedule:
+    - cron: '17 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-app-tests-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: filter
+        name: Check changed paths
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if git rev-parse --verify HEAD^2 >/dev/null 2>&1; then
+            CHANGED="$(git diff --name-only HEAD^1 HEAD)"
+          elif git fetch --no-tags --depth=50 origin "$BASE_REF" >/dev/null 2>&1; then
+            CHANGED="$(git diff --name-only FETCH_HEAD...HEAD)"
+          else
+            echo "Could not compute diff against $BASE_REF; running iOS app checks."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Changed files:"
+          echo "$CHANGED"
+          RUN=false
+          while IFS= read -r file; do
+            case "$file" in
+              native/ios-app/*|native/ios/PokiCore/*|native/ios/PokiLoopback/*|native/launcher/*|native/codex-voice/*|native/patches/*|desktop/core/*|bin/setup|.github/actions/build-ipa/*|.github/workflows/ios-app-tests.yml)
+                RUN=true
+                break
+                ;;
+            esac
+          done <<< "$CHANGED"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+  build-and-test:
+    needs: [changes]
+    if: always() && (github.event_name != 'pull_request' || (needs.changes.result == 'success' && needs.changes.outputs.run == 'true'))
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: ipa
+        name: Build iOS app (Pre-alpha external edition)
+        uses: ./.github/actions/build-ipa
+        with:
+          editions: external
+
+      - uses: actions/cache@v4
+        with:
+          path: build/sim-launcher
+          key: sim-${{ steps.ipa.outputs.rust-key }}
+
+      - name: Build PokiLauncher for simulator
+        run: |
+          set -euo pipefail
+          SIM_LIB="native/launcher/target/aarch64-apple-ios-sim/release/libpoki_launcher.a"
+          if [ -f build/sim-launcher/libpoki_launcher.a ]; then
+            mkdir -p "$(dirname "$SIM_LIB")"
+            cp build/sim-launcher/libpoki_launcher.a "$SIM_LIB"
+            ls -la "$SIM_LIB"
+            exit 0
+          fi
+          [ -d .deps/idevice-launcher ] || native/launcher/fetch-idevice.sh
+          rustup update stable --no-self-update && rustup default stable
+          rustup target add aarch64-apple-ios-sim
+          cargo build --release --locked --target aarch64-apple-ios-sim --manifest-path native/launcher/Cargo.toml
+          mkdir -p build/sim-launcher
+          cp "$SIM_LIB" build/sim-launcher/libpoki_launcher.a
+          ls -la "$SIM_LIB"
+
+      - id: sim-codex-voice
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/codex-voice/aarch64-apple-ios-sim/target/aarch64-apple-ios-sim/release/libpoki_codex_voice.a
+            build/codex-voice/aarch64-apple-ios-sim/target/aarch64-apple-ios-sim/release/libpoki_codex_voice.a.sha256
+          key: sim-${{ steps.ipa.outputs.codex-voice-key }}
+
+      - name: Build Codex Voice for simulator
+        if: steps.sim-codex-voice.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rustup update stable --no-self-update && rustup default stable
+          native/codex-voice/build.sh build aarch64-apple-ios-sim
+          ls -la build/codex-voice/aarch64-apple-ios-sim/target/aarch64-apple-ios-sim/release/libpoki_codex_voice.a
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/spm
+            build/app-tests
+          key: ios-app-tests-dd-${{ runner.os }}-xcode27-${{ hashFiles('native/ios-app/project*.yml', 'native/ios/PokiCore/Package.*', 'native/ios/PokiLoopback/Package.*') }}-${{ github.sha }}
+          restore-keys: |
+            ios-app-tests-dd-${{ runner.os }}-xcode27-${{ hashFiles('native/ios-app/project*.yml', 'native/ios/PokiCore/Package.*', 'native/ios/PokiLoopback/Package.*') }}-
+            ios-app-tests-dd-${{ runner.os }}-xcode27-
+
+      - name: Create and boot fresh simulator
+        run: |
+          set -euo pipefail
+          SDK="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          read -r RUNTIME TYPE < <(python3 - "$SDK" <<'PY'
+          import json, subprocess, sys
+          sdk = tuple(int(v) for v in sys.argv[1].split('.'))
+          runtimes = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'runtimes', '-j']))['runtimes']
+          def ver(r):
+              return tuple(int(v) for v in r['version'].split('.'))
+          avail = sorted((r for r in runtimes if r.get('isAvailable') and r.get('platform') == 'iOS' and ver(r) <= sdk), key=ver, reverse=True)
+          if not avail:
+              avail = sorted((r for r in runtimes if r.get('isAvailable') and r.get('platform') == 'iOS'), key=ver, reverse=True)
+          chosen = avail[0]
+          supported = chosen.get('supportedDeviceTypes') or json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devicetypes', '-j']))['devicetypes']
+          phones = [d for d in supported if d['name'].startswith('iPhone')]
+          pro = [d for d in phones if 'Pro' in d['name'] and 'Max' not in d['name']]
+          print(chosen['identifier'], (pro or phones)[0]['identifier'])
+          PY
+          )
+          UDID="$(xcrun simctl create "poki-app-tests-$GITHUB_RUN_ID" "$TYPE" "$RUNTIME")"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          echo "Created simulator $UDID ($TYPE on $RUNTIME)"
+          PREFS="$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Preferences"
+          mkdir -p "$PREFS"
+          for domain in com.apple.Preferences com.apple.keyboard.preferences com.apple.keyboard.ContinuousPath; do
+            defaults write "$PREFS/$domain" DidShowContinuousPathIntroduction -bool true
+            defaults write "$PREFS/$domain" KeyboardContinuousPathEnabled -bool false
+          done
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Run PokiTests
+        run: |
+          set -euo pipefail
+          POKI_SPM_DIR="$PWD/build/spm" POKI_TEST_LOG="$PWD/build/app-tests.log" \
+            native/ios-app/scripts/app-tests.sh "$UDID" "$PWD/build/app-tests"
+
+      - name: Summary and simulator cleanup
+        if: always()
+        run: |
+          {
+            echo "## iOS app build and PokiTests ($(git rev-parse --short HEAD))"
+            echo
+            if [ -f out/Poki-external-unsigned.ipa ]; then
+              echo "Pre-alpha external IPA built: \`out/Poki-external-unsigned.ipa\`"
+            fi
+            if [ -f build/app-tests.log ]; then
+              echo
+              echo '```'
+              grep -E "Test Suite '.*' (passed|failed)|Executed [0-9]+ tests?" build/app-tests.log | tail -n 30 || true
+              echo '```'
+            else
+              echo "No build/app-tests.log produced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p build/diagnostics
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/Poki* 2>/dev/null | head -3); do
+            cp "$f" build/diagnostics/ || true
+          done
+          if [ -n "${UDID:-}" ]; then
+            xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$UDID" >/dev/null 2>&1 || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ios-app-tests-log
+          path: |
+            build/app-external.log
+            build/app-tests.log
+            build/diagnostics/
+          if-no-files-found: ignore
+
+  verdict:
+    needs: [changes, build-and-test]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate iOS app build and PokiTests result
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SHOULD_RUN: ${{ needs.changes.outputs.run }}
+          TESTS_RESULT: ${{ needs.build-and-test.result }}
+        run: |
+          set -euo pipefail
+          echo "event=$EVENT_NAME changes=$CHANGES_RESULT run=$SHOULD_RUN build-and-test=$TESTS_RESULT"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            if [ "$CHANGES_RESULT" = "success" ] && [ "$SHOULD_RUN" = "false" ] && [ "$TESTS_RESULT" = "skipped" ]; then
+              echo "No iOS app files changed; macOS build and simulator tests skipped."
+              exit 0
+            fi
+            if [ "$CHANGES_RESULT" = "success" ] && [ "$SHOULD_RUN" = "true" ] && [ "$TESTS_RESULT" = "success" ]; then
+              echo "Pre-alpha external IPA build and PokiTests passed."
+              exit 0
+            fi
+            echo "::error::iOS app build or PokiTests did not pass (changes=$CHANGES_RESULT, build-and-test=$TESTS_RESULT)."
+            exit 1
+          fi
+          if [ "$TESTS_RESULT" = "success" ]; then
+            echo "Pre-alpha external IPA build and PokiTests passed on $EVENT_NAME."
+            exit 0
+          fi
+          echo "::error::Scheduled or manual iOS app tests failed ($TESTS_RESULT)."
+          exit 1
