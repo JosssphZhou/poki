@@ -333,6 +333,14 @@ final class AppModel {
                            connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
+        voice.duoWorkspaceAvailable = { [weak self] in self?.duoChatPlacement != nil }
+        voice.runWorkspaceTask = { [weak self] request in
+            guard let self, AskPoki.app === self, let chat = AskPoki.chat, duoChatPlacement != nil else {
+                return ("Poki cannot see its window on the unfolded Duo. Nothing ran.", true)
+            }
+            let result = await chat.runVoiceTask(request)
+            return (result.text, result.success != true)
+        }
         // inFront starts true before the first scene callback, including a background launch.
         self.activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)

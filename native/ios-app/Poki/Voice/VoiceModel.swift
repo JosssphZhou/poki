@@ -297,6 +297,10 @@ final class VoiceModel {
     static let stall: Duration = .seconds(60)
     static let backgroundStall: Duration = .seconds(30)
     private var localTools: Set<String> = []
+    var duoWorkspaceAvailable: @MainActor () -> Bool = { false }
+    var runWorkspaceTask: (@MainActor (String) async -> (String, Bool))?
+    private var userTurn = 0
+    private var workspaceTaskTurn: Int?
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
     private let clearTap: @MainActor (String, String?, String?) async -> TapClearance
@@ -485,7 +489,9 @@ final class VoiceModel {
         let number = session
         do {
             let token: VoiceBridge.Token
-            if rehearsing { token = Self.rehearsalToken } else if let key { token = try await VoiceDirect.token(apiKey: key) } else { token = try await bridge!.token() }
+            if rehearsing { token = Self.rehearsalToken }
+            else if let key { token = try await VoiceDirect.token(apiKey: key, onDuo: duoWorkspaceAvailable()) }
+            else { token = try await bridge!.token() }
             // Ended (End, or the button again) while the key was exchanged.
             guard number == session else { return }
             localTools = Set(token.local_tools)
@@ -746,6 +752,7 @@ final class VoiceModel {
             sent = link.send(["type": "conversation.item.create", "item": ["type": "message", "role": "user", "content": [["type": "input_audio", "audio": audio]]]]) && sent
         }
         if !sent { log.add("voice", "the recorded speech did not go out on the data channel") }
+        userTurn += 1
         clock = TurnClock(said: Date())
         wantsResponse = true
         flush()
@@ -782,6 +789,7 @@ final class VoiceModel {
             if phase == .speaking { markInterrupted() }
             phase = .hearing
         case "input_audio_buffer.speech_stopped":
+            userTurn += 1
             phase = .thinking
             awaitingAnswer = true
             clock = TurnClock(said: Date())
@@ -845,8 +853,28 @@ final class VoiceModel {
         clock.callNames.append(call.name)
         phase = .thinking
         lines.append(VoiceLine(role: .tool, text: Self.describe(call)))
-        log.add("voice", "tool \(call.name) \(call.arguments)")
         let local = localTools.contains(call.name)
+        if call.name == VoiceDirect.workspaceToolName {
+            log.add("voice", "tool \(call.name)")
+            let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String: Any]
+            guard local, let runWorkspaceTask,
+                  let request = (args?["request"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !request.isEmpty else {
+                finish(call.id, state: .failed, output: "Phone task unavailable or empty. Nothing ran.")
+                return
+            }
+            guard userTurn > 0, workspaceTaskTurn != userTurn, !calls.contains(where: { $0.id != call.id && $0.state == .running }) else {
+                finish(call.id, state: .failed, output: "A phone task already started for this turn, or is still running. Nothing was repeated.")
+                return
+            }
+            workspaceTaskTurn = userTurn
+            Task {
+                let (text, failed) = await runWorkspaceTask(request)
+                finish(call.id, state: failed ? .failed : .done, output: text)
+            }
+            return
+        }
+        log.add("voice", "tool \(call.name) \(call.arguments)")
         let bridge = bridge
         Task {
             var state = VoiceCall.State.done
@@ -1013,7 +1041,7 @@ final class VoiceModel {
         case "tap_text": AppLocalization.text(LocalizedStringResource("Tapping"))
         case "go_home": AppLocalization.text(LocalizedStringResource("Going Home"))
         case "look": AppLocalization.text(LocalizedStringResource("Looking at the screen"))
-        case "do": AppLocalization.text(LocalizedStringResource("Using the phone"))
+        case "do", VoiceDirect.workspaceToolName: AppLocalization.text(LocalizedStringResource("Using the phone"))
         default: call.name
         }
     }

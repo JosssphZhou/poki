@@ -95,7 +95,7 @@ enum Harness {
     static let companionTools: [ToolSpec] = [
         ToolSpec(name: "look", description: "Read the target app beside Poki, including its numbered elements and cropped screenshot.",
                  schema: object(["full": ["type": "boolean"]], [])),
-        ToolSpec(name: "do", description: "Act within the target app, then read it. Use screenshot-local points or element references. Actions include tap, type, key, swipe, scroll_to, back, wait_until and handoff. The chat and all other apps stay outside this task.",
+        ToolSpec(name: "do", description: "Act within the target app, then read it. Each entry in actions uses the action's name as its key. For example {\"actions\":[{\"tap\":[100,200]}]} taps a screenshot-local point, {\"actions\":[{\"tap\":12}]} taps a numbered element, and {\"actions\":[{\"type\":\"draft text\"}]} types into the focused field. Check the intended field before typing and read back the result before reporting success. For a draft-only request, stop after verifying the field and leave the draft unsent. Other entries include {key: return}, {swipe: direction}, {scroll_to: text}, {back: true}, {wait_until: text} and {handoff: {kind, text}}. Keep the app beside Poki.",
                  schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
     ] + phoneTools.filter { $0.name == "status" } + [reportPlan, finishTask]
 

@@ -788,14 +788,15 @@ final class Computer: @unchecked Sendable {
 
     /// What one action may take (`run` holds each to it). A launch gets 9 s; a fresh one (the app
     /// ended first, up to 6 s on its own) 14 s. A type is a tap, a wait for the focus and the keys (and
-    /// a wait for a busy runner): 9 s. A wait_until gets the time it asks for (up to 10 s) plus a read:
+    /// a wait for a busy runner): 9 s, or 14 in a local workspace where the keyboard may hold the
+    /// pane's reads. A wait_until gets the time it asks for (up to 10 s) plus a read:
     /// 8000 ms asked became 6000 under the action cap (gym, an app relaunch under the wait).
     func actionCap(_ action: JSON) -> Double {
         // A routine's steps each have their own time inside it; the run as a whole has the call's.
         if action["run"] != nil { return max(config.actionCap, config.toolDeadline - config.readTimeout - 1) }
         if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) }
         if action["scroll_to"] != nil { return max(config.actionCap, Self.scrollCap) }
-        if action["type"] != nil { return max(config.actionCap, 9) }
+        if action["type"] != nil { return max(config.actionCap, hasLocalWorkspace ? 14 : 9) }
         if action["wait_until"] != nil { return max(config.actionCap, min(10, max(0.2, (action["wait_until"]?["ms"]?.double ?? 3000) / 1000)) + 1.5) }
         return config.actionCap
     }

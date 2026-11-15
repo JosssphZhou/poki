@@ -8,7 +8,7 @@ final class BridgeStub: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host() == "voice-bridge.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#
+        let body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do","run_phone_task"]}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
@@ -139,6 +139,30 @@ final class VoiceModelTests: XCTestCase {
                       ["type": "response.output_audio_transcript.done", "transcript": answer],
                       ["type": "response.done", "response": ["id": id]], ["type": "output_audio_buffer.stopped"])
         }
+    }
+
+    func testDuoWorkspaceTaskKeepsTheDraftInstructionAndRunsOncePerTurn() async {
+        let h = Harness(phoneTool: { _, _ in
+            XCTFail("The raw phone tools should not arrange the workspace")
+            return ("", true)
+        })
+        var requests: [String] = []
+        h.voice.runWorkspaceTask = { request in
+            requests.append(request)
+            return ("Draft ready.", false)
+        }
+        await h.talk()
+        h.link.play(["type": "input_audio_buffer.speech_stopped"])
+        let args = #"{"request":"打开微信文件传输助手，输入草稿，不要发送。"}"#
+        for id in ["task-1", "task-2"] {
+            h.link.play(["type": "response.output_item.done", "item": [
+                "type": "function_call", "name": VoiceDirect.workspaceToolName, "call_id": id, "arguments": args]])
+        }
+        await h.time.settle()
+        XCTAssertEqual(requests, ["打开微信文件传输助手，输入草稿，不要发送。"])
+        XCTAssertTrue(h.voice.calls.contains { $0.id == "task-1" && $0.output == "Draft ready." })
+        XCTAssertTrue(h.voice.calls.contains { $0.id == "task-2" && $0.state == .failed })
+        h.voice.stop()
     }
 
     /// Said once, answered once: the conversation waits 8 s for the person to go on, then ends and lets

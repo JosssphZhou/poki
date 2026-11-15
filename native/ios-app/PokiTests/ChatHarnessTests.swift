@@ -259,6 +259,26 @@ final class ChatHarnessTests: XCTestCase {
         }
     }
 
+    func testVoiceTaskUsesChatWorkspaceAndKeepsTheDoNotSendInstruction() async throws {
+        let launcher = FakeLauncher()
+        launcher.installedApps = ["com.tencent.xin": "微信"]
+        let automation = FakeAutomation(chatPlacement: "full")
+        let transport = CompanionWorkspace(targetSide: "right", automation: automation, targetID: "com.tencent.xin", targetName: "微信")
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.text("SINGLE 1"), FakeCompletions.tool("look", [:]),
+            FakeCompletions.text("The draft is ready.")
+        ])
+        let chat = chat(on: server, transport: transport, automation: automation, launcher: launcher, kind: .poki)
+        chat.restore(SavedSession(id: UUID().uuidString, kind: .poki, title: "Voice workspace test", started: Date(),
+                                  updated: Date(), live: false, entries: [ChatEntry(.you("Prior message", delivered: true))], calls: []))
+        let request = "打开微信文件传输助手，只输入草稿，不要发送。"
+        let result = await chat.runVoiceTask(request)
+        XCTAssertTrue(result.text.contains("The draft is ready."), result.text)
+        XCTAssertEqual(transport.launchSteps, ["dock chat", "launcher right", "open 微信 right"])
+        XCTAssertTrue(server.requests.contains { Self.json($0).contains(request) })
+        XCTAssertTrue(chat.savedCalls.contains { $0.name == "look" && $0.answer.contains("Split View: right is com.tencent.xin") })
+    }
+
     func testInstalledAppLookupLeavesAmbiguousNamesAndHonorsRecommendationTarget() {
         let star = HomeIdea.star
         let installed = ["local.test.one": "Viewer", "local.test.two": "Viewer", "local.test.x": "X",

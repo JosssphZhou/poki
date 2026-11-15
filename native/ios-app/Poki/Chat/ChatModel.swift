@@ -782,9 +782,22 @@ final class ChatModel {
         guard !running, ChatModel.delegatedBusy == nil else { return ("Poki is already running a task.", false) }
         ChatModel.delegatedBusy = requester ?? AppLocalization.text(LocalizedStringResource("an agent"))
         defer { ChatModel.delegatedBusy = nil }
+        return await runSubmittedTask { send(task) }
+    }
+
+    /// A Realtime voice turn uses the same installed apps, workspace and pane checks as a typed message.
+    func runVoiceTask(_ request: String) async -> (text: String, success: Bool?) {
+        guard !running, Self.delegatedBusy == nil else { return ("Poki is already running a task.", false) }
+        return await runSubmittedTask { send(request, attachments: []) }
+    }
+
+    private func runSubmittedTask(_ submit: () -> Void) async -> (text: String, success: Bool?) {
+        guard !Task.isCancelled else { return ("Poki's task was cancelled.", false) }
+        let firstEntry = entries.count
         lastOutcome = nil
-        send(task)
-        if running, let started = self.task {
+        taskResult = nil
+        submit()
+        if running, let started = task {
             let token = runToken
             await withTaskCancellationHandler {
                 await started.value
@@ -798,7 +811,10 @@ final class ChatModel {
                 return ("Stopped. Poki's task was cancelled.", false)
             }
         }
-        let replies = entries.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
+        let replies = entries.dropFirst(firstEntry).compactMap { entry -> String? in
+            if case .poki(let text) = entry.kind { return text }
+            return nil
+        }
         var lines: [String] = []
         if let taskResult {
             lines.append("result: \(taskResult.success ? "done" : "not done"): \(taskResult.summary)")
@@ -806,7 +822,10 @@ final class ChatModel {
         }
         if let last = replies.last { lines.append("Poki said: \(last)") }
         if case .failed(let why)? = lastOutcome { lines.append("error: \(why)") }
-        if lastOutcome == nil, let tail = entries.last, case .note(.problem(let why)) = tail.kind { lines.append("error: \(why)") }
+        if lastOutcome == nil, entries.count > firstEntry, let tail = entries.last, case .note(.problem(let why)) = tail.kind {
+            lines.append("error: \(why)")
+            return (lines.joined(separator: "\n"), false)
+        }
         if lines.isEmpty { lines.append("Poki ended without an answer.") }
         return (lines.joined(separator: "\n"), taskResult?.success)
     }

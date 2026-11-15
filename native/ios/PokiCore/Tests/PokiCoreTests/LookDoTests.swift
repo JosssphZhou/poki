@@ -37,6 +37,17 @@ final class LookDoTests: XCTestCase {
         XCTAssertEqual(wda.bodies("GET /screenshot").count, precedingScreenshots)
     }
 
+    func testLocalSplitViewTypingSendsTheDraftInOneBatch() async throws {
+        let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true)) { $0.humanize = true }
+        let owned = await core.prepareWorkspace(session: "local")
+        XCTAssertTrue(owned)
+        let text = "a split view draft"
+        try await core.computer.sendKeys(deletes: 0, text: text, until: now() + 14)
+        let batches = wda.bodies("POST /wda/keys")
+        XCTAssertEqual(batches.count, 1)
+        XCTAssertEqual(batches.first?["value"]?.array?.compactMap(\.string).joined(), text)
+    }
+
     func testSplitViewTypingRetriesOnlyKeysThatWereNotSent() async throws {
         let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true)) { $0.humanize = false }
         let owned = await core.prepareWorkspace(session: "local")

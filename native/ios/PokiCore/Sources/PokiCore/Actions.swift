@@ -518,7 +518,9 @@ extension Computer {
     /// would not fit, the rest goes in one call at the fixed pace.
     func sendKeys(deletes: Int, text: String, until: Double) async throws {
         let backspaces = Array(repeating: "\u{8}", count: deletes)
-        let plan = humanize.enabled ? Humanize.merged(humanize.typing(text), into: Self.maxBursts) : []
+        // The inner split-view keyboard can hold each dispatch while its pane settles. Send one
+        // batch so the focused field is verified after the whole draft, rather than between bursts.
+        let plan = humanize.enabled && !hasLocalWorkspace ? Humanize.merged(humanize.typing(text), into: Self.maxBursts) : []
         func dispatchKeys(_ body: JSON, timeout: Double) async throws {
             do {
                 _ = try await runner.call("POST", "/wda/keys", body, timeout: timeout)

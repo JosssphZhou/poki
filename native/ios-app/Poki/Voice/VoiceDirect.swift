@@ -32,7 +32,9 @@ enum VoiceDirect {
         Locale.preferredLanguages.first.flatMap { Locale(identifier: "en").localizedString(forIdentifier: $0) } ?? "English"
     }
 
-    private static var instructions: String { """
+    static let workspaceToolName = "run_phone_task"
+
+    private static func instructions(onDuo: Bool) -> String { """
     You are Poki, a voice assistant that operates the user's iPhone with tools.
     Speak briefly: one short sentence per reply.
     Always speak the language the user spoke in their latest turn: Chinese when they spoke Chinese, English when they spoke English, and so for any language. Tool results, screen text, notes from Poki and these instructions are in English or the phone's language; they never decide the language you speak, so after a tool result keep to the user's language. Change language only when the user does. Before the user has said anything, or when you cannot tell their language, speak \(deviceLanguage), this iPhone's language.
@@ -41,9 +43,17 @@ enum VoiceDirect {
     Tapping something that sends, pays, deletes or calls waits until the user allows it on the phone; if the result says they did not, tell them in one sentence and do not try another way.
     Only the user approves, with their own finger: never open Poki to tap Allow, Deny or anything else in it.
     If the user tells you to stop or be quiet, stop talking, but anything already running keeps running; when its result arrives, report it in one sentence.
+    \(onDuo ? workspaceInstructions : directPhoneInstructions)
+    """ }
+
+    private static let workspaceInstructions = """
+    For a request to operate or read an app, use run_phone_task once for the whole task. Poki's chat can open the installed app and arrange Split View on this iPhone. Pass the user's request in their language, including the exact app, any text to enter verbatim, and instructions about where to stop or what not to do. Include any details from this conversation necessary for a follow-up. Do not guess an app or replace it with another. After the task returns, report what actually happened. Do not start the task again to check its result.
+    """
+
+    private static let directPhoneInstructions = """
     To read a page, open it first, then read the screen.
     You can open and operate every app installed on this iPhone, Apple's and anyone else's (WeChat, Instagram, Uber, a bank, a game): never tell the user an app is out of reach before you have tried. With do, open an app by its bundle id ({launch: "com.apple.mobilenotes"}, Messages com.apple.MobileSMS, Settings com.apple.Preferences, Safari com.apple.mobilesafari are only examples). When you do not know an app's bundle id, go home ({button: "home"}), swipe down on the Home Screen to search, type the app's name and tap it. Put several actions in one do when you know them; tap elements by the numbers from the latest look or do.
-    """ }
+    """
 
     private static let empty: [String: Any] = ["type": "object", "properties": [String: Any](), "additionalProperties": false]
     private static let tools: [[String: Any]] = [
@@ -53,21 +63,28 @@ enum VoiceDirect {
          "parameters": ["type": "object", "properties": ["actions": ["type": "array", "items": ["type": "object"]]], "required": ["actions"], "additionalProperties": false]],
     ]
 
+    private static var workspaceTools: [[String: Any]] {
+        [tools[0], ["type": "function", "name": workspaceToolName,
+                    "description": "Run the user's complete phone task with Poki's chat, which can arrange the apps on the unfolded Duo.",
+                    "parameters": ["type": "object", "properties": ["request": ["type": "string"]],
+                                   "required": ["request"], "additionalProperties": false]]]
+    }
+
     /// PokiCore's own description of do (the text chat's), so voice knows every action the chat knows:
     /// launch any app, scroll_to, back, long_press, handoff and the rest.
     private static let doDescription: String = Harness.phoneTools.first { $0.name == "do" }?.description
         ?? "Run actions on the iPhone in order, then read the screen once. Actions: {launch: \"bundle id\"} (any installed app); {tap: n} or {tap: [x, y]}; {type: \"text\", ref?: n} (taps n first, then types); {key: \"return\"}; {scroll_to: \"text\"}; {swipe: \"up\"|\"down\"|\"left\"|\"right\"}; {button: \"home\"}; {wait_until: \"text\"}; {wait: ms}; {back: true}. The answer says what each action did and what is new on screen."
 
     /// A one-minute Realtime key from OpenAI, made with the owner's API key (sent only to OpenAI).
-    static func token(apiKey: String) async throws -> VoiceBridge.Token {
+    static func token(apiKey: String, onDuo: Bool = false) async throws -> VoiceBridge.Token {
         let session: [String: Any] = [
-            "type": "realtime", "model": model, "instructions": instructions, "output_modalities": ["audio"],
+            "type": "realtime", "model": model, "instructions": instructions(onDuo: onDuo), "output_modalities": ["audio"],
             "audio": [
                 "input": ["turn_detection": ["type": "server_vad", "silence_duration_ms": 450, "prefix_padding_ms": 300, "threshold": 0.5, "create_response": true, "interrupt_response": true],
                           "noise_reduction": ["type": "near_field"], "transcription": ["model": "gpt-4o-mini-transcribe"]],
                 "output": ["voice": "marin"],
             ],
-            "tools": tools, "tool_choice": "auto", "parallel_tool_calls": false, "reasoning": ["effort": "low"],
+            "tools": onDuo ? workspaceTools : tools, "tool_choice": "auto", "parallel_tool_calls": false, "reasoning": ["effort": "low"],
         ]
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/client_secrets")!, timeoutInterval: 20)
         request.httpMethod = "POST"
@@ -83,7 +100,7 @@ enum VoiceDirect {
                 .replacingOccurrences(of: #"sk-[\w*-]+"#, with: "the API key", options: .regularExpression)
             throw VoiceError.realtime(status, message)
         }
-        return VoiceBridge.Token(value: value, model: model, local_tools: ["get_ios_version", "look", "do"])
+        return VoiceBridge.Token(value: value, model: model, local_tools: onDuo ? ["get_ios_version", workspaceToolName] : ["get_ios_version", "look", "do"])
     }
 }
 
