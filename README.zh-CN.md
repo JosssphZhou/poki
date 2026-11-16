@@ -38,26 +38,6 @@ Poki 是能操作你 iPhone 的应用。它会读取屏幕，在真实应用中�
 - **Windows 用户**可以下载 Windows 版 Poki Setup，按窗口提示操作。请先安装 Apple Devices 或 iTunes，让电脑能通过 USB 识别 iPhone。智能体也可以调用 Poki Setup 内置的命令行工具。
 - **安装后**，Poki 在 iPhone 上独立执行任务。免费 Apple 账户的签名有效期为 7 天，电脑上的 Poki Setup 保持运行时可以续签。详见[常见问题](#常见问题)。
 
-### 让智能体安装（推荐）
-
-把下面这段发给 Claude Code、Codex 等智能体：
-
-```text
-从 https://github.com/JosssphZhou/poki 把 Poki 安装到我的 iPhone 上
-```
-
-智能体会按 [install-poki 技能](skills/install-poki/SKILL.md)运行 `bin/install-iphone.mjs`，完成能自动处理的步骤。你只需处理 iOS 要求本人完成的操作：在 Mac 上的 Poki Setup 窗口输入 Apple 账户，在 iPhone 上点「信任」、开启开发者模式、信任开发者，然后打开 Poki。首次打开会请求开启自动化模式，点「继续」并输入 iPhone 密码即可。如果取消，重新开启 Poki 后会再次询问。每一步需要你操作时，智能体都会说明。免费 Apple 账户也能用。
-
-安装器默认使用 Alpha 通道，你也可以让智能体改用 Beta 等其他通道。构建先进入 Alpha，经过更多测试后，同一构建再进入 Beta。
-
-没有 Node.js 24，或使用 Windows？装好 Poki Setup 后，同一段提示也能用，智能体会调用其内置命令行工具。Poki Setup 菜单也能复制安装提示，Mac 上位于 Poki > Copy Prompt for Your Agent，Windows 上位于 Settings > Use an agent。
-
-如果安装器读取 GitHub 发布信息时遇到 403 或 429，通常是同一网络共用的匿名请求额度已耗尽。可以换网络或代理节点重试，也可以等一小时。
-
-### 使用 Poki Setup 安装
-
-想自己点击安装？从 [Alpha 发布页](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest)下载 macOS 版 Poki Setup（`.dmg`）或 Windows 版（`.exe`，由 [ZhehanZhang](https://github.com/ZhehanZhang) 贡献），按窗口提示操作。Beta 发布页提供相同的 Poki Setup 文件。在设置里选择通道前，Poki Setup 会安装最新 Stable 版；没有 Stable 时则安装 Beta 版。详细步骤见 [Poki Setup](desktop/README.md)。
-
 ### 需要准备什么
 
 | 项目 | 要求 |
@@ -69,6 +49,40 @@ Poki 是能操作你 iPhone 的应用。它会读取屏幕，在真实应用中�
 | 模型账户 | 需要自备。用 ChatGPT Plus 或 Pro 套餐登录最方便，也可以填写 Anthropic、OpenAI、Gemini、DeepSeek 或 OpenRouter 的 API 密钥，或接入自己的 OpenAI 兼容服务。Claude 订阅不能直接登录，请使用 Anthropic API 密钥。 |
 
 iOS 27 及以上通过原生服务控制 iPhone。iOS 18 至 26 使用 XCTest 会话，需要在 iPhone 的开发者设置里开启 UI 自动化。应用也可安装到 iPadOS 18 或更高版本的 iPad。
+
+iPhone App 使用你自备的模型账号，电脑上编码智能体的订阅不会自动为 Poki 配好账号。若只想在现有编码智能体中使用 Poki MCP，请按 [MCP 安装说明](docs/install.md)操作，MCP 使用该客户端已有的模型权限。
+
+### 一键安装（推荐）
+
+需要你做的只有连接并解锁 iPhone、按提示登录账户，以及完成 iPhone 权限、本机连接和模型账号设置。
+
+把下面这段发给 Claude Code、Codex 等智能体：
+
+```text
+从 https://github.com/JosssphZhou/poki 把 Poki 安装到我的 iPhone 上
+```
+
+智能体会按 [install-poki 技能](skills/install-poki/SKILL.md)运行 `bin/install-iphone.mjs`，完成能自动处理的步骤。你只需处理 iOS 要求本人完成的操作：在 Mac 上的 Poki Setup 窗口输入 Apple 账户，在 iPhone 上点「信任」、开启开发者模式、信任开发者，然后打开 Poki。首次打开会请求开启自动化模式，点「继续」并输入 iPhone 密码即可。如果取消，重新开启 Poki 后会再次询问。每一步需要你操作时，智能体都会说明。免费 Apple 账户也能用。
+
+当前安装器统一选择 Beta，历史 Stable、Alpha 和 Pre-alpha 偏好也会转为 Beta；没有可用 Beta 时停止。已安装的旧版 Poki Setup 可能仍按原通道选择，请以本次安装显示的版本为准。
+
+没有 Node.js 24，或使用 Windows？装好 Poki Setup 后，同一段提示也能用，智能体会调用其内置命令行工具。Poki Setup 菜单也能复制安装提示，Mac 上位于 Poki > Copy Prompt for Your Agent，Windows 上位于 Settings > Use an agent。
+
+如果安装器读取 GitHub 发布信息时遇到 403 或 429，通常是同一网络共用的匿名请求额度已耗尽。可以换网络或代理节点重试，也可以等一小时。
+
+### 使用 Poki Setup 安装
+
+从包含安装器的最新 [Beta 发布](https://github.com/JosssphZhou/poki/releases)下载 macOS 版 Poki Setup（`.dmg`）或 Windows 版（`.exe`，由 [ZhehanZhang](https://github.com/ZhehanZhang) 贡献），然后按窗口提示操作。详细步骤见 [Poki Setup](desktop/README.md)。
+
+### 运行第一个任务
+
+安装器核对已安装版本，且你完成本机连接和模型账号设置后，打开 Poki 并发送：
+
+```text
+在备忘录中新建一条标题为“Poki Demo”的笔记，正文分三行写 Milk、Eggs、Coffee。完成后打开这条笔记，不修改已有笔记。
+```
+
+在备忘录中核对新笔记：标题应为“Poki Demo”，正文三行分别为 Milk、Eggs、Coffee。不能只凭聊天中的完成回复判断成功。如果没有备忘录应用或设置尚未完成，先处理对应步骤。中断后重试前，先检查笔记是否已经创建。
 
 ### 常见问题
 
@@ -88,7 +102,7 @@ iOS 27 及以上通过原生服务控制 iPhone。iOS 18 至 26 使用 XCTest �
 
 ## 更新 Poki
 
-- **在 iPhone 上更新。** 0.4.0 中打开设置 > 连接 > 签名与更新。有新构建时，页面会提供下载和安装。如果要求先登录，说明 Poki 从电脑安装，手机上还没有你的 Apple 账户。请使用安装时的账户登录，或改用电脑更新。
+- **在 iPhone 上更新。** 当前版本打开设置 > 签名与更新；旧版本可能放在“连接”下面。有新构建时，页面会提供下载和安装。如果要求先登录，说明 Poki 从电脑安装，手机上还没有你的 Apple 账户。请使用安装时的账户登录，或改用电脑更新。
 - **从电脑更新。** Poki Setup 中的 Renew 会将所选通道的最新构建安装到现有应用上。Mac 用户也可以告诉智能体「更新我 iPhone 上的 Poki」。install-poki 技能有独立的更新流程，会先核对已安装版本和签名身份。
 - 如果更新停在「正在完成更新」，请在应用切换器中划掉 Poki，再重新打开并查看设置中的版本。版本未变化时，请用电脑上的 Poki Setup 更新。不要为了修复更新而删除 Poki，删除应用会一并删除对话。
 
@@ -202,7 +216,13 @@ iOS 27 及以上通过原生服务控制 iPhone。iOS 18 至 26 使用 XCTest �
     </tr>
     <tr>
       <td align="center" valign="top" width="33%"><a href="https://github.com/heyallencao"><img src="https://avatars.githubusercontent.com/u/258265534?v=4&size=240" width="120" height="120" alt="heyallencao"/><br /><sub><b>heyallencao</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/pull/139">#139</a> 中修复读屏超过调用期限的问题，并为持续变慢的 Runner 响应补了回归测试。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/Ryanwu316"><img src="https://avatars.githubusercontent.com/u/49024277?v=4&size=240" width="120" height="120" alt="Ryanwu316"/><br /><sub><b>Ryanwu316</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/pull/354">#354</a> 中为 iPhone Duo 加入双应用工作区，任务在旋转时会等待，并在同一对应用上继续。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/soloface"><img src="https://avatars.githubusercontent.com/u/62548950?v=4&size=240" width="120" height="120" alt="soloface"/><br /><sub><b>soloface</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/issues/311">#311</a> 中查明手机显示在线却返回 MCP 503 错误的原因是中继重连缺陷，并附上可复现的测试和补丁。</td>
+    </tr>
+    <tr>
       <td align="center" valign="top" width="33%"><a href="https://github.com/whiteluw"><img src="https://avatars.githubusercontent.com/u/86720151?v=4&size=240" width="120" height="120" alt="whiteluw"/><br /><sub><b>whiteluw</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/pull/326">#326</a> 中修复 iPhone 上三维小熊初始化时的闪退。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/cs50Mu"><img src="https://avatars.githubusercontent.com/u/4456781?v=4&size=240" width="120" height="120" alt="cs50Mu"/><br /><sub><b>cs50Mu</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/issues/362">#362</a> 中发现 Poki Setup 的 macOS 安装包只能在 Apple 芯片上运行；随后的通用版本也能在 Intel Mac 上运行。</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/mgkvibez"><img src="https://avatars.githubusercontent.com/u/198796435?v=4&size=240" width="120" height="120" alt="mgkvibez"/><br /><sub><b>mgkvibez</b></sub></a><br />在 <a href="https://github.com/JosssphZhou/poki/pull/380">#380</a> 中新增一个测试，保证付款判断先于发送消息判断，因此 Mail 里的 “Send money” 这类按钮仍需先审批。</td>
     </tr>
   </tbody>
 </table>
@@ -228,46 +248,50 @@ iOS 27 及以上通过原生服务控制 iPhone。iOS 18 至 26 使用 XCTest �
     <tr>
       <td align="center" valign="top" width="20%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=160" width="80" height="80" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/carrotciallo"><img src="https://avatars.githubusercontent.com/u/69567867?v=4&size=160" width="80" height="80" alt="carrotciallo"/><br /><sub><b>carrotciallo</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/cs50Mu"><img src="https://avatars.githubusercontent.com/u/4456781?v=4&size=160" width="80" height="80" alt="cs50Mu"/><br /><sub><b>cs50Mu</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/Dreaminmaster"><img src="https://avatars.githubusercontent.com/u/189544503?v=4&size=160" width="80" height="80" alt="Dreaminmaster"/><br /><sub><b>Dreaminmaster</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/edge369"><img src="https://avatars.githubusercontent.com/u/63720633?v=4&size=160" width="80" height="80" alt="edge369"/><br /><sub><b>edge369</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/foshanfm"><img src="https://avatars.githubusercontent.com/u/24779370?v=4&size=160" width="80" height="80" alt="foshanfm"/><br /><sub><b>foshanfm</b></sub></a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/foshanfm"><img src="https://avatars.githubusercontent.com/u/24779370?v=4&size=160" width="80" height="80" alt="foshanfm"/><br /><sub><b>foshanfm</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/fucknima"><img src="https://avatars.githubusercontent.com/u/18666223?v=4&size=160" width="80" height="80" alt="f&#42;&#42;&#42;&#42;&#42;&#42;&#42;"/><br /><sub><b>f&#42;&#42;&#42;&#42;&#42;&#42;&#42;</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/guangtouge82"><img src="https://avatars.githubusercontent.com/u/269691899?v=4&size=160" width="80" height="80" alt="guangtouge82"/><br /><sub><b>guangtouge82</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/heyallencao"><img src="https://avatars.githubusercontent.com/u/258265534?v=4&size=160" width="80" height="80" alt="heyallencao"/><br /><sub><b>heyallencao</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/htx996"><img src="https://avatars.githubusercontent.com/u/95217139?v=4&size=160" width="80" height="80" alt="htx996"/><br /><sub><b>htx996</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80" height="80" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80" height="80" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/iTry"><img src="https://avatars.githubusercontent.com/u/1381960?v=4&size=160" width="80" height="80" alt="iTry"/><br /><sub><b>iTry</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/jiahuipaung"><img src="https://avatars.githubusercontent.com/u/70688286?v=4&size=160" width="80" height="80" alt="jiahuipaung"/><br /><sub><b>jiahuipaung</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/kilingzhang"><img src="https://avatars.githubusercontent.com/u/17439300?v=4&size=160" width="80" height="80" alt="kilingzhang"/><br /><sub><b>kilingzhang</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/kira-ariaki"><img src="https://avatars.githubusercontent.com/u/257352493?v=4&size=160" width="80" height="80" alt="kira-ariaki"/><br /><sub><b>kira-ariaki</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/lunar-me"><img src="https://avatars.githubusercontent.com/u/275556969?v=4&size=160" width="80" height="80" alt="lunar-me"/><br /><sub><b>lunar-me</b></sub></a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/lunar-me"><img src="https://avatars.githubusercontent.com/u/275556969?v=4&size=160" width="80" height="80" alt="lunar-me"/><br /><sub><b>lunar-me</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/makirqi-alt"><img src="https://avatars.githubusercontent.com/u/295395617?v=4&size=160" width="80" height="80" alt="makirqi-alt"/><br /><sub><b>makirqi-alt</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/mawenhao1028"><img src="https://avatars.githubusercontent.com/u/70818670?v=4&size=160" width="80" height="80" alt="mawenhao1028"/><br /><sub><b>mawenhao1028</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/mgkvibez"><img src="https://avatars.githubusercontent.com/u/198796435?v=4&size=160" width="80" height="80" alt="mgkvibez"/><br /><sub><b>mgkvibez</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/oasis979559-alt"><img src="https://avatars.githubusercontent.com/u/295108220?v=4&size=160" width="80" height="80" alt="oasis979559-alt"/><br /><sub><b>oasis979559-alt</b></sub></a></td>
+    </tr>
+    <tr>
       <td align="center" valign="top" width="20%"><a href="https://github.com/owensn951954688"><img src="https://avatars.githubusercontent.com/u/312761798?v=4&size=160" width="80" height="80" alt="owensn951954688"/><br /><sub><b>owensn951954688</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/PeterKingXu1s"><img src="https://avatars.githubusercontent.com/u/89392314?v=4&size=160" width="80" height="80" alt="PeterKingXu1s"/><br /><sub><b>PeterKingXu1s</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/Purelite"><img src="https://avatars.githubusercontent.com/u/9334469?v=4&size=160" width="80" height="80" alt="Purelite"/><br /><sub><b>Purelite</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/Ryanwu316"><img src="https://avatars.githubusercontent.com/u/49024277?v=4&size=160" width="80" height="80" alt="Ryanwu316"/><br /><sub><b>Ryanwu316</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/ScottH1122"><img src="https://avatars.githubusercontent.com/u/142722955?v=4&size=160" width="80" height="80" alt="ScottH1122"/><br /><sub><b>ScottH1122</b></sub></a></td>
     </tr>
     <tr>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/Purelite"><img src="https://avatars.githubusercontent.com/u/9334469?v=4&size=160" width="80" height="80" alt="Purelite"/><br /><sub><b>Purelite</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/ScottH1122"><img src="https://avatars.githubusercontent.com/u/142722955?v=4&size=160" width="80" height="80" alt="ScottH1122"/><br /><sub><b>ScottH1122</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/scy7796"><img src="https://avatars.githubusercontent.com/u/282529358?v=4&size=160" width="80" height="80" alt="scy7796"/><br /><sub><b>scy7796</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/soloface"><img src="https://avatars.githubusercontent.com/u/62548950?v=4&size=160" width="80" height="80" alt="soloface"/><br /><sub><b>soloface</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/wanghao-SunSky"><img src="https://avatars.githubusercontent.com/u/73684879?v=4&size=160" width="80" height="80" alt="wanghao-SunSky"/><br /><sub><b>wanghao-SunSky</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/whiteluw"><img src="https://avatars.githubusercontent.com/u/86720151?v=4&size=160" width="80" height="80" alt="whiteluw"/><br /><sub><b>whiteluw</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/windywendyday"><img src="https://avatars.githubusercontent.com/u/65647922?v=4&size=160" width="80" height="80" alt="windywendyday"/><br /><sub><b>windywendyday</b></sub></a></td>
     </tr>
     <tr>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/windywendyday"><img src="https://avatars.githubusercontent.com/u/65647922?v=4&size=160" width="80" height="80" alt="windywendyday"/><br /><sub><b>windywendyday</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/xiaweiyi713"><img src="https://avatars.githubusercontent.com/u/208608622?v=4&size=160" width="80" height="80" alt="xiaweiyi713"/><br /><sub><b>xiaweiyi713</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/yulunRyanw"><img src="https://avatars.githubusercontent.com/u/216360668?v=4&size=160" width="80" height="80" alt="yulunRyanw"/><br /><sub><b>yulunRyanw</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/zcyoung2000"><img src="https://avatars.githubusercontent.com/u/62181891?v=4&size=160" width="80" height="80" alt="zcyoung2000"/><br /><sub><b>zcyoung2000</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/Zeno6898"><img src="https://avatars.githubusercontent.com/u/229920081?v=4&size=160" width="80" height="80" alt="Zeno6898"/><br /><sub><b>Zeno6898</b></sub></a></td>
-    </tr>
-    <tr>
       <td align="center" valign="top" width="20%"><a href="https://github.com/zqy5608"><img src="https://avatars.githubusercontent.com/u/14949471?v=4&size=160" width="80" height="80" alt="zqy5608"/><br /><sub><b>zqy5608</b></sub></a></td>
     </tr>
   </tbody>

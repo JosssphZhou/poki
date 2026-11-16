@@ -53,6 +53,7 @@ final class ActivityController {
     private var worker: Task<Void, Never>?
     private var tail: Task<Void, Never>?
     private var finishTimer: Task<Void, Never>?
+    private var chatOwnsCompletion = false
     private var foldTimer: Task<Void, Never>?
     /// Halfway to an approval's deadline the island is popped open once more (ESP-467).
     private var approvalReminder: Task<Void, Never>?
@@ -101,6 +102,9 @@ final class ActivityController {
     func start(deviceName: String) {
         wanted = deviceName
         guard activity == nil else { return }
+        // Keep it wanted for the next foreground update, without asking ActivityKit to start from
+        // the background. Direct callers and update-driven restarts share the same restriction.
+        guard canStart() else { return }
         if state.isQuiet, hidesWhenIdle() { lastError = nil; return }
         guard enabled else { lastError = "Live Activities are off for Poki (Settings > Poki > Live Activities)."; return }
         // A Live Activity left from an earlier run of the app is replaced.
@@ -144,6 +148,7 @@ final class ActivityController {
     @discardableResult
     func end(dismissalPolicy: ActivityUIDismissalPolicy? = nil) -> Task<Void, Never>? {
         wanted = nil
+        chatOwnsCompletion = false
         finishTimer?.cancel(); foldTimer?.cancel(); eventTimer?.cancel()
         if Self.runPhases.contains(state.phase) { logRun("cut off by ending the Live Activity") }
         worker?.cancel(); worker = nil; plainWaiting = false
@@ -300,7 +305,7 @@ final class ActivityController {
         }
         if state.stepCount != old.stepCount { inStep = false }
         // The finish timer: re-armed by every change during a run; never fires in the middle of a step.
-        if state.phase == .working, state.approval == nil, state.handoff == nil, state.stepCount > 0 { armFinish() } else { finishTimer?.cancel() }
+        if !chatOwnsCompletion, state.phase == .working, state.approval == nil, state.handoff == nil, state.stepCount > 0 { armFinish() } else { finishTimer?.cancel() }
         return alert
     }
 
@@ -334,6 +339,22 @@ final class ActivityController {
         }
     }
 
+    /// The local chat can be waiting for its model after a phone step has finished.
+    func setChatOwnsCompletion(_ ownsCompletion: Bool) {
+        chatOwnsCompletion = ownsCompletion
+        if ownsCompletion { finishTimer?.cancel() }
+    }
+
+    func endStoppedRun() {
+        update { state in
+            state.phase = .idle
+            state.headline = "Waiting for agent"
+            state.plan = nil
+            state.since = nil
+        }
+        end(dismissalPolicy: .immediate)
+    }
+
     /// The chat's task ended: the run is finished now, not after the quiet wait. `alert` false when
     /// the chat tells the owner itself (its reply notification).
     func finishNow(alert: Bool) {
@@ -347,7 +368,7 @@ final class ActivityController {
     }
 
     private func finishRun(ifCount count: Int) {
-        guard state.phase == .working, state.approval == nil, !inStep, state.stepCount == count, count > 0 else { return }
+        guard !chatOwnsCompletion, state.phase == .working, state.approval == nil, !inStep, state.stepCount == count, count > 0 else { return }
         finish(alert: true)
     }
 

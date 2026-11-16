@@ -38,26 +38,6 @@ Necesitas un Mac o un PC con Windows para la instalación inicial.
 - **En Windows**, descarga Poki Setup para Windows y sigue sus instrucciones. Instala antes Apple Devices o iTunes para que el PC detecte el iPhone por USB. Tu agente también puede usar la herramienta de línea de comandos de Poki Setup.
 - **Después**, Poki ejecuta tareas en el iPhone sin el ordenador. Con una cuenta de Apple gratuita, la firma dura 7 días y Poki Setup puede renovarla mientras siga abierto en el ordenador. Consulta las [preguntas frecuentes](#preguntas-frecuentes).
 
-### Con tu agente (recomendado)
-
-Dile a tu agente, por ejemplo Claude Code o Codex:
-
-```text
-Instala Poki en mi iPhone desde https://github.com/JosssphZhou/poki
-```
-
-El agente sigue la [habilidad install-poki](skills/install-poki/SKILL.md) y ejecuta `bin/install-iphone.mjs`, que automatiza los pasos posibles. Tú completas lo que iOS exige en persona: introducir tu cuenta de Apple en la ventana de Poki Setup del Mac, tocar Confiar en el iPhone, activar el modo de desarrollador, confiar en el desarrollador y abrir Poki. En el primer inicio, Poki pide activar el modo de automatización. Toca Continuar e introduce el código del iPhone. Si cancelas, vuelve a activar Poki para que lo pregunte de nuevo. El agente te indica qué hacer en cada paso. Una cuenta de Apple gratuita sirve.
-
-El instalador usa el canal Alpha, salvo que pidas otro, como Beta. Cada compilación llega primero a Alpha y pasa a Beta tras más pruebas.
-
-¿No tienes Node.js 24 o usas Windows? La misma petición funciona después de instalar Poki Setup; el agente usa su herramienta de línea de comandos. También puedes copiar la petición desde su menú: Poki > Copy Prompt for Your Agent en Mac, o Settings > Use an agent en Windows.
-
-Si GitHub devuelve 403 o 429 al consultar las versiones, suele haberse agotado el límite horario de peticiones anónimas compartido por tu red. Prueba otra red o servidor proxy, o espera una hora.
-
-### Con Poki Setup
-
-Si prefieres hacerlo tú, descarga Poki Setup para macOS (`.dmg`) o Windows (`.exe`, aportado por [ZhehanZhang](https://github.com/ZhehanZhang)) desde la [versión Alpha](https://github.com/JosssphZhou/poki/releases/tag/app-alpha-latest) y sigue las instrucciones. La versión Beta incluye los mismos archivos de Poki Setup. Hasta que elijas un canal en sus ajustes, instala la versión Stable más reciente, o Beta si todavía no hay Stable. Consulta los pasos en [Poki Setup](desktop/README.md).
-
 ### Qué necesitas
 
 | Elemento | Requisito |
@@ -69,6 +49,40 @@ Si prefieres hacerlo tú, descarga Poki Setup para macOS (`.dmg`) o Windows (`.e
 | Cuenta del modelo | Necesitas la tuya. Puedes empezar con ChatGPT Plus o Pro, introducir una clave API de Anthropic, OpenAI, Gemini, DeepSeek u OpenRouter, o usar tu propio servidor compatible con OpenAI. La suscripción de Claude no permite iniciar sesión aquí; usa una clave API de Anthropic. |
 
 En iOS 27 y posteriores, Poki controla el iPhone mediante servicios nativos. En iOS 18 a 26 usa una sesión XCTest, que necesita la automatización de la interfaz activada en los ajustes de desarrollador del iPhone. La app también se instala en iPad con iPadOS 18 o posterior.
+
+La app del iPhone usa tu propia cuenta del modelo. La suscripción de tu agente de programación no conecta esa cuenta a Poki automáticamente. Si solo quieres usar Poki MCP con tu agente actual, sigue la [instalación de MCP](docs/install.md); MCP usa el acceso al modelo de ese cliente.
+
+### Instalación con un clic (recomendada)
+
+Solo tienes que conectar y desbloquear el iPhone, iniciar sesión cuando se indique y completar los permisos del iPhone, la conexión local y la cuenta del modelo.
+
+Dile a tu agente, por ejemplo Claude Code o Codex:
+
+```text
+Instala Poki en mi iPhone desde https://github.com/JosssphZhou/poki
+```
+
+El agente sigue la [habilidad install-poki](skills/install-poki/SKILL.md) y ejecuta `bin/install-iphone.mjs`, que automatiza los pasos posibles. Tú completas lo que iOS exige en persona: introducir tu cuenta de Apple en la ventana de Poki Setup del Mac, tocar Confiar en el iPhone, activar el modo de desarrollador, confiar en el desarrollador y abrir Poki. En el primer inicio, Poki pide activar el modo de automatización. Toca Continuar e introduce el código del iPhone. Si cancelas, vuelve a activar Poki para que lo pregunte de nuevo. El agente te indica qué hacer en cada paso. Una cuenta de Apple gratuita sirve.
+
+El instalador actual selecciona Beta. Las preferencias anteriores de Stable, Alpha y Pre-alpha también se resuelven como Beta. Si no hay Beta, se detiene. Las copias antiguas de Poki Setup pueden mantener su selección anterior; comprueba la versión que muestre tu instalación.
+
+¿No tienes Node.js 24 o usas Windows? La misma petición funciona después de instalar Poki Setup; el agente usa su herramienta de línea de comandos. También puedes copiar la petición desde su menú: Poki > Copy Prompt for Your Agent en Mac, o Settings > Use an agent en Windows.
+
+Si GitHub devuelve 403 o 429 al consultar las versiones, suele haberse agotado el límite horario de peticiones anónimas compartido por tu red. Prueba otra red o servidor proxy, o espera una hora.
+
+### Con Poki Setup
+
+Descarga Poki Setup para macOS (`.dmg`) o Windows (`.exe`, aportado por [ZhehanZhang](https://github.com/ZhehanZhang)) de la [versión Beta](https://github.com/JosssphZhou/poki/releases) más reciente que incluya el instalador y sigue su ventana. Consulta los pasos en [Poki Setup](desktop/README.md).
+
+### Ejecuta tu primera tarea
+
+Tras verificar la versión instalada y terminar la conexión local y la cuenta del modelo, abre Poki y envía:
+
+```text
+Crea una nota nueva en Notas titulada "Poki Demo" con estas tres líneas: Milk, Eggs, Coffee. Abre la nota al terminar. No cambies las notas existentes.
+```
+
+Comprueba la nota en Notas: el título debe ser "Poki Demo" y el contenido debe tener Milk, Eggs y Coffee en líneas separadas. Un mensaje de finalización no basta. Si falta Notas o la configuración está incompleta, termina ese paso primero. Tras una interrupción, comprueba si la nota ya existe antes de repetir la tarea.
 
 ### Preguntas frecuentes
 
@@ -88,7 +102,7 @@ En iOS 27 y posteriores, Poki controla el iPhone mediante servicios nativos. En 
 
 ## Actualizar Poki
 
-- **En el iPhone.** En 0.4.0, abre Ajustes > Conexión > Firma y actualizaciones. Si hay una compilación nueva, podrás descargarla e instalarla. Si pide iniciar sesión, la instalación se hizo desde un ordenador y el iPhone aún no tiene tu cuenta de Apple. Usa la cuenta con la que instalaste Poki o actualiza desde el ordenador.
+- **En el iPhone.** En las versiones actuales, abre Ajustes > Firma y actualizaciones. En versiones anteriores puede estar dentro de Conexión. Si hay una compilación nueva, podrás descargarla e instalarla. Si pide iniciar sesión, la instalación se hizo desde un ordenador y el iPhone aún no tiene tu cuenta de Apple. Usa la cuenta con la que instalaste Poki o actualiza desde el ordenador.
 - **Desde el ordenador.** Renew en Poki Setup instala la compilación más reciente del canal elegido sobre la app existente. En Mac también puedes pedir al agente «Actualiza Poki en mi iPhone». La habilidad install-poki tiene un proceso de actualización que comprueba primero la versión instalada y la identidad de firma.
 - Si la actualización se detiene en «Finishing the update», cierra Poki desde el selector de apps, ábrelo y comprueba la versión en Ajustes. Si no ha cambiado, actualiza con Poki Setup desde el ordenador. No borres Poki para arreglar una actualización: también se borrarían las conversaciones.
 
@@ -202,7 +216,13 @@ Son líneas de trabajo, no fechas. Las funciones publicadas figuran en [CHANGELO
     </tr>
     <tr>
       <td align="center" valign="top" width="33%"><a href="https://github.com/heyallencao"><img src="https://avatars.githubusercontent.com/u/258265534?v=4&size=240" width="120" height="120" alt="heyallencao"/><br /><sub><b>heyallencao</b></sub></a><br />Corrigió en <a href="https://github.com/JosssphZhou/poki/pull/139">#139</a> las lecturas de pantalla que superaban el plazo de la llamada, con una prueba de regresión para respuestas del Runner constantemente lentas.</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/Ryanwu316"><img src="https://avatars.githubusercontent.com/u/49024277?v=4&size=240" width="120" height="120" alt="Ryanwu316"/><br /><sub><b>Ryanwu316</b></sub></a><br />Añadió en <a href="https://github.com/JosssphZhou/poki/pull/354">#354</a> los espacios de trabajo con dos apps en el iPhone Duo: la tarea espera durante la rotación y continúa en el mismo par de apps.</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/soloface"><img src="https://avatars.githubusercontent.com/u/62548950?v=4&size=240" width="120" height="120" alt="soloface"/><br /><sub><b>soloface</b></sub></a><br />Descubrió en <a href="https://github.com/JosssphZhou/poki/issues/311">#311</a> que los errores 503 de MCP con el teléfono en línea venían de un fallo de reconexión del relé, y aportó una prueba que lo reproduce y un parche.</td>
+    </tr>
+    <tr>
       <td align="center" valign="top" width="33%"><a href="https://github.com/whiteluw"><img src="https://avatars.githubusercontent.com/u/86720151?v=4&size=240" width="120" height="120" alt="whiteluw"/><br /><sub><b>whiteluw</b></sub></a><br />Corrigió en <a href="https://github.com/JosssphZhou/poki/pull/326">#326</a> un fallo al inicializar el oso 3D en el iPhone.</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/cs50Mu"><img src="https://avatars.githubusercontent.com/u/4456781?v=4&size=240" width="120" height="120" alt="cs50Mu"/><br /><sub><b>cs50Mu</b></sub></a><br />Descubrió en <a href="https://github.com/JosssphZhou/poki/issues/362">#362</a> que la descarga de Poki Setup para macOS solo funcionaba en Apple silicon; la compilación universal posterior también funciona en Mac con Intel.</td>
+      <td align="center" valign="top" width="33%"><a href="https://github.com/mgkvibez"><img src="https://avatars.githubusercontent.com/u/198796435?v=4&size=240" width="120" height="120" alt="mgkvibez"/><br /><sub><b>mgkvibez</b></sub></a><br />Añadió en <a href="https://github.com/JosssphZhou/poki/pull/380">#380</a> una prueba que mantiene la comprobación de pagos antes que la de envío de mensajes, de modo que un botón “Send money” en Mail sigue pidiendo aprobación.</td>
     </tr>
   </tbody>
 </table>
@@ -228,46 +248,50 @@ Gracias a todas las personas que han abierto un issue o un pull request; sus rep
     <tr>
       <td align="center" valign="top" width="20%"><a href="https://github.com/ZhehanZhang"><img src="https://avatars.githubusercontent.com/u/67270559?v=4&size=160" width="80" height="80" alt="ZhehanZhang"/><br /><sub><b>ZhehanZhang</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/carrotciallo"><img src="https://avatars.githubusercontent.com/u/69567867?v=4&size=160" width="80" height="80" alt="carrotciallo"/><br /><sub><b>carrotciallo</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/cs50Mu"><img src="https://avatars.githubusercontent.com/u/4456781?v=4&size=160" width="80" height="80" alt="cs50Mu"/><br /><sub><b>cs50Mu</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/Dreaminmaster"><img src="https://avatars.githubusercontent.com/u/189544503?v=4&size=160" width="80" height="80" alt="Dreaminmaster"/><br /><sub><b>Dreaminmaster</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/edge369"><img src="https://avatars.githubusercontent.com/u/63720633?v=4&size=160" width="80" height="80" alt="edge369"/><br /><sub><b>edge369</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/foshanfm"><img src="https://avatars.githubusercontent.com/u/24779370?v=4&size=160" width="80" height="80" alt="foshanfm"/><br /><sub><b>foshanfm</b></sub></a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/foshanfm"><img src="https://avatars.githubusercontent.com/u/24779370?v=4&size=160" width="80" height="80" alt="foshanfm"/><br /><sub><b>foshanfm</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/fucknima"><img src="https://avatars.githubusercontent.com/u/18666223?v=4&size=160" width="80" height="80" alt="f&#42;&#42;&#42;&#42;&#42;&#42;&#42;"/><br /><sub><b>f&#42;&#42;&#42;&#42;&#42;&#42;&#42;</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/guangtouge82"><img src="https://avatars.githubusercontent.com/u/269691899?v=4&size=160" width="80" height="80" alt="guangtouge82"/><br /><sub><b>guangtouge82</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/heyallencao"><img src="https://avatars.githubusercontent.com/u/258265534?v=4&size=160" width="80" height="80" alt="heyallencao"/><br /><sub><b>heyallencao</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/htx996"><img src="https://avatars.githubusercontent.com/u/95217139?v=4&size=160" width="80" height="80" alt="htx996"/><br /><sub><b>htx996</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80" height="80" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/igc110"><img src="https://avatars.githubusercontent.com/u/241411380?v=4&size=160" width="80" height="80" alt="igc110"/><br /><sub><b>igc110</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/iTry"><img src="https://avatars.githubusercontent.com/u/1381960?v=4&size=160" width="80" height="80" alt="iTry"/><br /><sub><b>iTry</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/jiahuipaung"><img src="https://avatars.githubusercontent.com/u/70688286?v=4&size=160" width="80" height="80" alt="jiahuipaung"/><br /><sub><b>jiahuipaung</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/kilingzhang"><img src="https://avatars.githubusercontent.com/u/17439300?v=4&size=160" width="80" height="80" alt="kilingzhang"/><br /><sub><b>kilingzhang</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/kira-ariaki"><img src="https://avatars.githubusercontent.com/u/257352493?v=4&size=160" width="80" height="80" alt="kira-ariaki"/><br /><sub><b>kira-ariaki</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/lunar-me"><img src="https://avatars.githubusercontent.com/u/275556969?v=4&size=160" width="80" height="80" alt="lunar-me"/><br /><sub><b>lunar-me</b></sub></a></td>
     </tr>
     <tr>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/lunar-me"><img src="https://avatars.githubusercontent.com/u/275556969?v=4&size=160" width="80" height="80" alt="lunar-me"/><br /><sub><b>lunar-me</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/makirqi-alt"><img src="https://avatars.githubusercontent.com/u/295395617?v=4&size=160" width="80" height="80" alt="makirqi-alt"/><br /><sub><b>makirqi-alt</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/mawenhao1028"><img src="https://avatars.githubusercontent.com/u/70818670?v=4&size=160" width="80" height="80" alt="mawenhao1028"/><br /><sub><b>mawenhao1028</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/mgkvibez"><img src="https://avatars.githubusercontent.com/u/198796435?v=4&size=160" width="80" height="80" alt="mgkvibez"/><br /><sub><b>mgkvibez</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/oasis979559-alt"><img src="https://avatars.githubusercontent.com/u/295108220?v=4&size=160" width="80" height="80" alt="oasis979559-alt"/><br /><sub><b>oasis979559-alt</b></sub></a></td>
+    </tr>
+    <tr>
       <td align="center" valign="top" width="20%"><a href="https://github.com/owensn951954688"><img src="https://avatars.githubusercontent.com/u/312761798?v=4&size=160" width="80" height="80" alt="owensn951954688"/><br /><sub><b>owensn951954688</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/PeterKingXu1s"><img src="https://avatars.githubusercontent.com/u/89392314?v=4&size=160" width="80" height="80" alt="PeterKingXu1s"/><br /><sub><b>PeterKingXu1s</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/Purelite"><img src="https://avatars.githubusercontent.com/u/9334469?v=4&size=160" width="80" height="80" alt="Purelite"/><br /><sub><b>Purelite</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/Ryanwu316"><img src="https://avatars.githubusercontent.com/u/49024277?v=4&size=160" width="80" height="80" alt="Ryanwu316"/><br /><sub><b>Ryanwu316</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/ScottH1122"><img src="https://avatars.githubusercontent.com/u/142722955?v=4&size=160" width="80" height="80" alt="ScottH1122"/><br /><sub><b>ScottH1122</b></sub></a></td>
     </tr>
     <tr>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/Purelite"><img src="https://avatars.githubusercontent.com/u/9334469?v=4&size=160" width="80" height="80" alt="Purelite"/><br /><sub><b>Purelite</b></sub></a></td>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/ScottH1122"><img src="https://avatars.githubusercontent.com/u/142722955?v=4&size=160" width="80" height="80" alt="ScottH1122"/><br /><sub><b>ScottH1122</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/scy7796"><img src="https://avatars.githubusercontent.com/u/282529358?v=4&size=160" width="80" height="80" alt="scy7796"/><br /><sub><b>scy7796</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/soloface"><img src="https://avatars.githubusercontent.com/u/62548950?v=4&size=160" width="80" height="80" alt="soloface"/><br /><sub><b>soloface</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/wanghao-SunSky"><img src="https://avatars.githubusercontent.com/u/73684879?v=4&size=160" width="80" height="80" alt="wanghao-SunSky"/><br /><sub><b>wanghao-SunSky</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/whiteluw"><img src="https://avatars.githubusercontent.com/u/86720151?v=4&size=160" width="80" height="80" alt="whiteluw"/><br /><sub><b>whiteluw</b></sub></a></td>
+      <td align="center" valign="top" width="20%"><a href="https://github.com/windywendyday"><img src="https://avatars.githubusercontent.com/u/65647922?v=4&size=160" width="80" height="80" alt="windywendyday"/><br /><sub><b>windywendyday</b></sub></a></td>
     </tr>
     <tr>
-      <td align="center" valign="top" width="20%"><a href="https://github.com/windywendyday"><img src="https://avatars.githubusercontent.com/u/65647922?v=4&size=160" width="80" height="80" alt="windywendyday"/><br /><sub><b>windywendyday</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/xiaweiyi713"><img src="https://avatars.githubusercontent.com/u/208608622?v=4&size=160" width="80" height="80" alt="xiaweiyi713"/><br /><sub><b>xiaweiyi713</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/yulunRyanw"><img src="https://avatars.githubusercontent.com/u/216360668?v=4&size=160" width="80" height="80" alt="yulunRyanw"/><br /><sub><b>yulunRyanw</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/zcyoung2000"><img src="https://avatars.githubusercontent.com/u/62181891?v=4&size=160" width="80" height="80" alt="zcyoung2000"/><br /><sub><b>zcyoung2000</b></sub></a></td>
       <td align="center" valign="top" width="20%"><a href="https://github.com/Zeno6898"><img src="https://avatars.githubusercontent.com/u/229920081?v=4&size=160" width="80" height="80" alt="Zeno6898"/><br /><sub><b>Zeno6898</b></sub></a></td>
-    </tr>
-    <tr>
       <td align="center" valign="top" width="20%"><a href="https://github.com/zqy5608"><img src="https://avatars.githubusercontent.com/u/14949471?v=4&size=160" width="80" height="80" alt="zqy5608"/><br /><sub><b>zqy5608</b></sub></a></td>
     </tr>
   </tbody>

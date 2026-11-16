@@ -140,11 +140,18 @@ struct ActivityFace: Hashable {
     var subtitle: String? = nil
     var subtitleLines = 1
     var bottom: Bottom
+    /// The card has a Don’t Ask Again row under Allow and Don’t Allow.
+    var offersStopAsking = false
     /// The latest screenshot on the right of the Lock Screen card.
     var thumbnail: Thumbnail = .none
     var compact: Compact
     /// The screen a tap opens.
     var link: URL = ActivityLink.chat
+    /// While the agent may be acting (a run, an approval, a hand-off), a tap on the expanded island
+    /// that misses its controls does nothing instead of opening Poki (`TapShield`): the expanded
+    /// island lies over the top of the app being worked in, so the agent's taps there, and the owner's
+    /// near misses of Allow and Don't Allow, brought Poki to the front in the middle of the task.
+    var shieldsTaps = false
     /// The app has not updated the activity for longer than it should have: what it shows may be old.
     var stale = false
     /// Who is calling: the outside agent whose badge sits beside the meta value.
@@ -212,6 +219,7 @@ extension PokiState {
     /// Poki's own ("Thinking"). Never the action under it ("Tap “Send”"): on its own that says nothing
     /// about the task. nil when none of these is known.
     var doing: String? {
+        if headline == "Waiting for Split View" { return String(activity: "Waiting for Split View") }
         if let words = taskWords { return words }
         if let to = plan?.to?.nonBlank { return String(activity: "Poki’s messaging \(to)") }
         return ActivityWords.statusLines.contains(headline) ? ActivityWords.local(headline) : nil
@@ -248,6 +256,7 @@ extension PokiState {
         // keeps them to itself.
         face.endsTalk = voice != nil && (phase == .idle || phase == .working) && !stale
         face.talkGlow = voice != nil && !stale
+        face.shieldsTaps = !stale && [.working, .approval, .deciding, .handoff].contains(phase)
         // A fresh event ("Started", "Allowed") shows beside the app's name for a few seconds. An app
         // switch is the app's name itself, already there.
         if let event, !phase.holdsApproval, event.kind != .app {
@@ -295,6 +304,7 @@ extension PokiState {
                     meta: .none,
                     content: question,
                     bottom: .deciding(allowed ? String(activity: "Continuing") : String(activity: "Telling the agent")),
+                    offersStopAsking: approval.offersStopAsking,
                     thumbnail: hasThumbnail ? .small : .none,
                     compact: .symbol(allowed ? "checkmark" : "xmark", allowed ? .accent : .quiet))
             }
@@ -304,6 +314,7 @@ extension PokiState {
                 meta: .countdown(approval.expires),
                 content: question,
                 bottom: .approval(id: approval.id),
+                offersStopAsking: approval.offersStopAsking,
                 thumbnail: hasThumbnail ? .small : .none,
                 compact: .asking(String(activity: "Allow?"), approval.expires))
         case .done:
@@ -407,7 +418,7 @@ extension PokiState {
                     ? String(activity: "The runner wakes when an agent asks.")
                     : String(activity: "Runner on. Waiting for the agent."))
             }
-        // Standing by looks ready: it takes the next request by itself (the owner, 2026-11-13).
+        // Standing by looks ready: it takes the next request by itself.
         return ActivityFace(
             symbol: "checkmark",
             bear: .ready, size: .low,
