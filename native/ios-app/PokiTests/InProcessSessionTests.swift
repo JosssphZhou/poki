@@ -7,19 +7,45 @@ import XCTest
 /// open that failed hears why and ends; the next call asks for a new open and waits for it, instead
 /// of hearing the old failure again while an open nobody waits for starts behind it.
 final class InProcessSessionTests: XCTestCase {
+    func testCompanionSparseContentNeedsOneDistinctiveLabelOnTheTargetSide() {
+        let left: Set<String> = ["fullscreenpreviews"]
+        let chat: Set<String> = ["opencapturesettings"]
+        let target: Set<String> = ["settings", "fullscreenpreviews"]
+        XCTAssertTrue(PKCompanionContentMatches([left, chat], target, "settings", false))
+        XCTAssertFalse(PKCompanionContentMatches([left, chat], target, "settings", true))
+        XCTAssertFalse(PKCompanionContentMatches([left, left], target, "settings", false))
+        XCTAssertFalse(PKCompanionContentMatches([["averylongappname"], []], ["averylongappname"], "averylongappname", false))
+    }
+
+    func testCalculatorRequiresAKeypadOnlyOnTheSelectedSide() {
+        XCTAssertTrue(PKCalculatorKeypadMatches(0, 4, true))
+        XCTAssertTrue(PKCalculatorKeypadMatches(4, 1, false))
+        XCTAssertFalse(PKCalculatorKeypadMatches(4, 0, true))
+        XCTAssertFalse(PKCalculatorKeypadMatches(4, 4, true))
+        XCTAssertFalse(PKCalculatorKeypadMatches(0, 3, true))
+    }
+
     func testWorkspaceLauncherIgnoresDuplicateSystemEntriesAndTheMatchingWidgetLabel() {
         let icon = NSValue(cgRect: CGRect(x: 100, y: 250, width: 86, height: 86))
         let offPage = NSValue(cgRect: CGRect(x: 490, y: 720, width: 160, height: 162))
         let title = NSValue(cgPoint: CGPoint(x: 587, y: 323))
         let widget = NSValue(cgPoint: CGPoint(x: 120, y: 550))
-        let point = PKWorkspaceLauncherPoint(["备忘录": [offPage, icon, icon]], ["备忘录": [widget, title]], false)
+        let point = PKWorkspaceLauncherPoint(["备忘录": [offPage, icon, icon]], ["备忘录": [widget, title]], false, .identity)
         XCTAssertEqual(point, CGPoint(x: 587, y: 287))
     }
 
     func testWorkspaceLauncherRefusesTwoVisibleIconsWithTheSameName() {
         let icon = NSValue(cgRect: CGRect(x: 100, y: 250, width: 86, height: 86))
         let labels = [NSValue(cgPoint: CGPoint(x: 587, y: 323)), NSValue(cgPoint: CGPoint(x: 690, y: 323))]
-        XCTAssertTrue(PKWorkspaceLauncherPoint(["备忘录": [icon]], ["备忘录": labels], false).x.isNaN)
+        XCTAssertTrue(PKWorkspaceLauncherPoint(["备忘录": [icon]], ["备忘录": labels], false, .identity).x.isNaN)
+    }
+
+    func testWorkspaceLauncherMatchesFixedPortraitFramesToLandscapeLabels() {
+        let icon = NSValue(cgRect: CGRect(x: 52, y: 822, width: 86, height: 68))
+        let title = NSValue(cgPoint: CGPoint(x: 95, y: 126))
+        let toFixed = CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: 951)
+        let point = PKWorkspaceLauncherPoint(["Settings": [icon, icon]], ["Settings": [title]], false, toFixed.inverted())
+        XCTAssertEqual(point, CGPoint(x: 95, y: 89))
     }
 
     func testACallThatBeginsOnAFailedOpenAsksForANewOneAndWaits() {

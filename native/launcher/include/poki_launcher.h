@@ -27,6 +27,9 @@ void poki_launcher_stop(PokiLauncher *launcher);
 char *poki_launcher_status(PokiLauncher *launcher);
 void poki_launcher_free(PokiLauncher *launcher);
 void poki_string_free(char *text);
+// Asks the existing paired service for installed app names, with a 5-second deadline. Returns -1
+// for invalid config (no callback), or 0 and calls back once with a JSON object or null.
+int32_t poki_installed_application_names(const char *config_json, poki_event_cb cb, void *context);
 // The phone's remote pairing port, as found in Bonjour (_remotepairing._tcp): iOS moves the service
 // off 49152 when it starts it again. Every later connection goes there. 0 means 49152.
 void poki_set_remote_pairing_port(uint16_t port);

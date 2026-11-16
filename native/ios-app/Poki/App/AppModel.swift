@@ -333,6 +333,14 @@ final class AppModel {
                            connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
+        voice.duoWorkspaceAvailable = { [weak self] in self?.duoChatPlacement != nil }
+        voice.runWorkspaceTask = { [weak self] request in
+            guard let self, AskPoki.app === self, let chat = AskPoki.chat, duoChatPlacement != nil else {
+                return ("Poki cannot see its window on the unfolded Duo. Nothing ran.", true)
+            }
+            let result = await chat.runVoiceTask(request)
+            return (result.text, result.success != true)
+        }
         // inFront starts true before the first scene callback, including a background launch.
         self.activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
@@ -980,7 +988,7 @@ final class AppModel {
         log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
-        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess, ddi_marker: Self.ddiMarker)
+        launcherConfig = launcherConfiguration(pairing: pairing)
         lastAgentActivity = Date()
         // Away from Poki the runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
@@ -1111,6 +1119,11 @@ final class AppModel {
     #else
     static let onSimulator = false
     #endif
+
+    private func launcherConfiguration(pairing: String) -> LauncherConfig {
+        LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path,
+                       in_process: automationPath == .inProcess, ddi_marker: Self.ddiMarker)
+    }
 
     private func launchRunner() {
         #if targetEnvironment(simulator)
@@ -1669,6 +1682,49 @@ final class AppModel {
 
     func clearSplitViewPaneForSetup(session: String) async -> Bool {
         await core.clearWorkspacePaneForSetup(session: session)
+    }
+
+    var duoChatPlacement: String? { automation.duoChatPlacement() }
+
+    func installedApplicationNames() async -> [String: String]? {
+        // Inventory is read by the paired service even while the UI automation runner is on standby.
+        let config = pairingPath.map { launcherConfiguration(pairing: $0) }
+        return await launcher.installedApplicationNames(config: config)
+    }
+
+    func prepareWorkspacePlanning() async -> Bool {
+        guard automationPath == .inProcess, probeDriven || PKInProcess.canUseDuoSplitView() else { return false }
+        if !sessionOn {
+            prepareForTask()
+            await sessionStartTask?.value
+        }
+        return canPlanSplitView
+    }
+
+    func activateSplitViewSetupApp(_ bundleID: String, session: String) async throws {
+        lastAgentActivity = Date()
+        try await core.activateWorkspaceApp(bundleID, session: session)
+    }
+
+    func dockChatBesideLauncher(session: String) async throws -> Bool {
+        lastAgentActivity = Date()
+        return try await core.workspaceLauncherStep(session: session, request: ["dockChat": true]).bool == true
+    }
+
+    func replaceChatPane(keeping anchor: String, opening source: String? = nil, session: String) async throws -> Bool {
+        lastAgentActivity = Date()
+        var request: [String: JSON] = ["releaseChatKeeping": .string(anchor)]
+        if let source { request["openInReleasedChatPane"] = .string(source) }
+        return try await core.workspaceLauncherStep(session: session, request: .object(request)).bool == true
+    }
+
+    func openCompanionLauncherItem(labels: [String], side: String, dismissSwitcher: Bool = false,
+                                   bundle: String? = nil, session: String) async throws -> Bool {
+        lastAgentActivity = Date()
+        var request: [String: JSON] = ["labels": .array(labels.map(JSON.string)), "companionSide": .string(side),
+                                       "dismissSwitcher": .bool(dismissSwitcher)]
+        if let bundle { request["companionBundle"] = .string(bundle) }
+        return try await core.workspaceLauncherStep(session: session, request: .object(request)).bool == true
     }
 
     func openSplitViewLauncherItem(labels: [String], menu: Bool, session: String) async throws -> Bool {

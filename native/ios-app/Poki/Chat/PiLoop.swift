@@ -53,7 +53,8 @@ final class PiLoop {
     /// The owner's message (with the JPEGs of its photos and PDFs) under this task's instructions, then
     /// pi's loop until the model answers without tools, `stop()` or `maxTurns` model turns. `onText`
     /// gets each finished text block.
-    func run(_ text: String, images: [Data] = [], instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
+    func run(_ text: String, images: [Data] = [], instructions: String, maxTurns: Int,
+             openingLook: PokiCore.ToolAnswer? = nil, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
         use(instructions)
         let turns = Counter()
@@ -77,7 +78,25 @@ final class PiLoop {
         }
         defer { unsubscribe() }
         do {
-            try await agent.prompt(text, images: images.map { ImageContent(data: $0.base64EncodedString(), mimeType: "image/jpeg") })
+            let attachments = images.map { ImageContent(data: $0.base64EncodedString(), mimeType: "image/jpeg") }
+            if let openingLook {
+                // Setup already executed and verified this look. Preserve its tool-result role so
+                // screen text does not become part of the owner's request.
+                let name = "look"
+                let id = "call_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+                let call = PiSwiftAI.ToolCall(id: id, name: name, arguments: [:])
+                let content: [ContentBlock] = [.text(TextContent(text: text))] + attachments.map { .image($0) }
+                try await agent.prompt([
+                    .user(UserMessage(content: .blocks(content))),
+                    .assistant(AssistantMessage(content: [.toolCall(call)], api: model.api, provider: model.provider, model: model.id,
+                                                usage: Usage(input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0),
+                                                stopReason: .toolUse)),
+                    .toolResult(ToolResultMessage(toolCallId: id, toolName: name, content: Self.result(openingLook).content,
+                                                  isError: openingLook.isError))
+                ])
+            } else {
+                try await agent.prompt(text, images: attachments)
+            }
         } catch {
             failure.set(error.localizedDescription)
         }

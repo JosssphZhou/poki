@@ -505,6 +505,9 @@ final class Computer: @unchecked Sendable {
         if let blocked = await waitForRunner(until: until) { return blocked }
         if let selectedPane, selectedPane.session != session, (hasLocalWorkspace || !beginsTask() || pane == nil) { return workspaceInUse() }
         if let pane {
+            if pane == "peer", !local || expectedApps?.count != 2 {
+                return ToolResult(text: "The companion pane is available only to its local Poki chat.", jpeg: nil, isError: true)
+            }
             if let failure = await selectPane(pane, session: session, until: until) { return failure }
             workspaceOwner.value = local && pane != "auto" ? session : nil
         }
@@ -516,7 +519,20 @@ final class Computer: @unchecked Sendable {
         let begins = beginsTask() || (pane != nil && origin?.session != session)
         if begins { beginRecording(); typedText = nil }
         async let locked = isLocked()
-        var result = restartNote(await readAndReply(until: until, full: full))
+        var result = await readAndReply(until: until, full: full)
+        // The launcher can finish before the companion's first picture and element tree are
+        // ready. Recheck the identified pair before retrying the read, without reopening it.
+        if pane == "peer", result.splitViewNeedsRead, !Task.isCancelled, until - now() > 7 {
+            await sleep(seconds: 0.4)
+            if let failure = await selectPane("peer", session: session, until: until) { return failure }
+            guard let selectedPane, Set([selectedPane.app, selectedPane.other]) == expectedApps else {
+                invalidateWorkspaceRead()
+                return ToolResult(text: "not_sent: the two visible apps do not match the planned Split View pair.",
+                                  jpeg: nil, isError: true, splitViewNeedsRead: true)
+            }
+            result = await readAndReply(until: until, full: full)
+        }
+        result = restartNote(result)
         if let selectedPane {
             if !result.isError, let size, let paneOffset {
                 result.splitView = .init(side: selectedPane.side, app: selectedPane.app, otherApp: selectedPane.other,
@@ -549,7 +565,8 @@ final class Computer: @unchecked Sendable {
             } else {
                 workspaceReads.removeValue(forKey: selectedPane.side)
             }
-            result.text += "\nSplit View: \(selectedPane.side) is \(selectedPane.app); the other pane is \(selectedPane.other). Use look with pane left or right before acting on the other app."
+            result.text += "\nSplit View: \(selectedPane.side) is \(selectedPane.app); the other pane is \(selectedPane.other)."
+            result.text += pane == "peer" ? " Only the requested app is available for input." : " Use look with pane left or right before acting on the other app."
         }
         if begins, let app = lastForeground { origin = (app, session, now()) } else if origin?.session == session { origin?.lastCall = now() }
         if begins, let line = routinesLine() { result.text += "\n" + line }
@@ -566,7 +583,7 @@ final class Computer: @unchecked Sendable {
     }
 
     private func selectPane(_ side: String, session: String?, until: Double, keepWorkspace: Bool = false) async -> ToolResult? {
-        guard ["left", "right", "auto"].contains(side) else {
+        guard ["left", "right", "auto", "peer"].contains(side) else {
             return ToolResult(text: "pane must be left, right, or auto", jpeg: nil, isError: true)
         }
         guard runner.transport.supportsPaneSelection else {
@@ -602,7 +619,13 @@ final class Computer: @unchecked Sendable {
                     interruptedDropApp = nil
                     workspaceDrags.removeAll()
                 }
-                selectedPane = (side, identity, app, other, session)
+                let selectedSide = side == "peer" ? reply["side"]?.string : side
+                guard let selectedSide, selectedSide == "left" || selectedSide == "right" else {
+                    invalidateWorkspaceRead()
+                    return ToolResult(text: "could not confirm the companion pane's side", jpeg: nil, isError: true,
+                                      splitViewNeedsRead: true)
+                }
+                selectedPane = (selectedSide, identity, app, other, session)
                 paneOffset = reply["x"]?.double.flatMap { x in reply["y"]?.double.map { (x, $0) } }
             }
             if oldIdentity != selectedPane?.identity || ownerChanged {
@@ -778,14 +801,15 @@ final class Computer: @unchecked Sendable {
 
     /// What one action may take (`run` holds each to it). A launch gets 9 s; a fresh one (the app
     /// ended first, up to 6 s on its own) 14 s. A type is a tap, a wait for the focus and the keys (and
-    /// a wait for a busy runner): 9 s. A wait_until gets the time it asks for (up to 10 s) plus a read:
+    /// a wait for a busy runner): 9 s, or 14 in a local workspace where the keyboard may hold the
+    /// pane's reads. A wait_until gets the time it asks for (up to 10 s) plus a read:
     /// 8000 ms asked became 6000 under the action cap (gym, an app relaunch under the wait).
     func actionCap(_ action: JSON) -> Double {
         // A routine's steps each have their own time inside it; the run as a whole has the call's.
         if action["run"] != nil { return max(config.actionCap, config.toolDeadline - config.readTimeout - 1) }
         if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) }
         if action["scroll_to"] != nil { return max(config.actionCap, Self.scrollCap) }
-        if action["type"] != nil { return max(config.actionCap, 9) }
+        if action["type"] != nil { return max(config.actionCap, hasLocalWorkspace ? 14 : 9) }
         if action["wait_until"] != nil { return max(config.actionCap, min(10, max(0.2, (action["wait_until"]?["ms"]?.double ?? 3000) / 1000)) + 1.5) }
         return config.actionCap
     }

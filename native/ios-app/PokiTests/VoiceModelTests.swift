@@ -8,7 +8,7 @@ final class BridgeStub: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host() == "voice-bridge.test" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#
+        let body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do","run_phone_task"]}"#
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
@@ -38,7 +38,12 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     var onClosed: (@MainActor (String) -> Void)?
     private(set) var closed = false
     private(set) var sent: [[String: Any]] = []
-    func connect(secret: String, microphone: Bool, direct: Bool) async throws {}
+    var connectError: Error?
+    private(set) var ignoredVPN = false
+    func connect(secret: String, microphone: Bool, direct: Bool) async throws {
+        ignoredVPN = direct
+        if let connectError { throw connectError }
+    }
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
@@ -108,14 +113,20 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) }) {
+        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> (String, Bool) = { _, _ in ("", false) },
+                        firstConnectError: Error? = nil) {
             let time = FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
-            made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
+            made = { [unowned self] in
+                let link = FakeConnection()
+                if self.links.isEmpty { link.connectError = firstConnectError }
+                self.links.append(link)
+                return link
+            }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
             // As in the app: an ended conversation goes into the chat, and its lines leave the voice model.
@@ -139,6 +150,56 @@ final class VoiceModelTests: XCTestCase {
                       ["type": "response.output_audio_transcript.done", "transcript": answer],
                       ["type": "response.done", "response": ["id": id]], ["type": "output_audio_buffer.stopped"])
         }
+    }
+
+    func testVoiceRetriesOneInterruptedConnectionAndKeepsTheWorkspaceTool() async {
+        let h = Harness(firstConnectError: URLError(.networkConnectionLost))
+        var run = false
+        h.voice.runWorkspaceTask = { _ in run = true; return ("Done.", false) }
+        await h.talk()
+        XCTAssertEqual(h.links.count, 2)
+        XCTAssertTrue(h.links.first?.closed == true)
+        XCTAssertFalse(h.link.ignoredVPN)
+        h.link.play(["type": "input_audio_buffer.speech_stopped"], ["type": "response.output_item.done", "item": [
+            "type": "function_call", "name": VoiceDirect.workspaceToolName, "call_id": "retry",
+            "arguments": #"{"request":"Open WeChat"}"#]])
+        await h.time.settle()
+        XCTAssertTrue(run)
+        h.voice.stop()
+    }
+
+    func testVoiceRetriesWithoutVPNInterfacesWhenNoPathOpens() async {
+        let h = Harness(firstConnectError: VoiceError.noPath("failed"))
+        await h.talk()
+        XCTAssertEqual(h.links.count, 2)
+        XCTAssertTrue(h.links.first?.closed == true)
+        XCTAssertTrue(h.link.ignoredVPN)
+        XCTAssertTrue(h.voice.isOn)
+        h.voice.stop()
+    }
+
+    func testDuoWorkspaceTaskKeepsTheDraftInstructionAndRunsOncePerTurn() async {
+        let h = Harness(phoneTool: { _, _ in
+            XCTFail("The raw phone tools should not arrange the workspace")
+            return ("", true)
+        })
+        var requests: [String] = []
+        h.voice.runWorkspaceTask = { request in
+            requests.append(request)
+            return ("Draft ready.", false)
+        }
+        await h.talk()
+        h.link.play(["type": "input_audio_buffer.speech_stopped"])
+        let args = #"{"request":"打开微信文件传输助手，输入草稿，不要发送。"}"#
+        for id in ["task-1", "task-2"] {
+            h.link.play(["type": "response.output_item.done", "item": [
+                "type": "function_call", "name": VoiceDirect.workspaceToolName, "call_id": id, "arguments": args]])
+        }
+        await h.time.settle()
+        XCTAssertEqual(requests, ["打开微信文件传输助手，输入草稿，不要发送。"])
+        XCTAssertTrue(h.voice.calls.contains { $0.id == "task-1" && $0.output == "Draft ready." })
+        XCTAssertTrue(h.voice.calls.contains { $0.id == "task-2" && $0.state == .failed })
+        h.voice.stop()
     }
 
     /// Said once, answered once: the conversation waits 8 s for the person to go on, then ends and lets

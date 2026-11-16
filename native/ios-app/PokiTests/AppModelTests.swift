@@ -7,6 +7,8 @@ import XCTest
 /// A launcher that records what the app asked of it and plays back runner events.
 final class FakeLauncher: RunnerLauncher, @unchecked Sendable {
     var starts = 0, restarts = 0, stops = 0
+    var installedApps: [String: String]?
+    func installedApplicationNames(config: LauncherConfig?) async -> [String: String]? { installedApps }
     var emit: (@Sendable (RunnerStatus) -> Void)?
     func start(config: LauncherConfig, onEvent: @escaping @Sendable (RunnerStatus) -> Void) throws { starts += 1; emit = onEvent }
     func restart() { restarts += 1 }
@@ -17,6 +19,11 @@ final class FakeLauncher: RunnerLauncher, @unchecked Sendable {
 /// the passcode, until `answer(_:)`.
 final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private let lock = NSLock()
+    private var chatPlacement: String?
+    init(chatPlacement: String? = nil) { self.chatPlacement = chatPlacement }
+    func duoChatPlacement() -> String? { lock.withLock { chatPlacement } }
+    func setChatPlacement(_ placement: String) { lock.withLock { chatPlacement = placement } }
+
     private var open = false
     var isOpen: Bool { lock.withLock { open } }
     private var gate: DispatchSemaphore?

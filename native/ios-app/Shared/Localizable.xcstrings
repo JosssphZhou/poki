@@ -8544,6 +8544,22 @@
         }
       }
     },
+    "Poki couldn't open %@ beside the chat. Keep the iPhone unfolded and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 没能在聊天旁打开 %@。请保持 iPhone 展开后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 未能在聊天旁打開 %@。請保持 iPhone 展開後再試。"
+          }
+        }
+      }
+    },
     "Poki can’t reach this address. Check the address and the network." : {
       "localizations" : {
         "en" : {

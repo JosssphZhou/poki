@@ -593,6 +593,16 @@ public final class PokiCore: @unchecked Sendable {
         return try await runner.call("POST", "/poki/workspace-launcher", request, timeout: 12, countsAsMiss: false)
     }
 
+    /// Setup only needs to switch scenes. Reading the entire screen here would delay launcher
+    /// setup and could bring unrelated content into the task before the target pane is confirmed.
+    public func activateWorkspaceApp(_ bundleID: String, session: String) async throws {
+        guard runner.transport.supportsPaneSelection, await gate.enter(waiting: config.busyWait) else { throw CancellationError() }
+        defer { gate.leave() }
+        try Task.checkCancellation()
+        guard computer.hasLocalWorkspace, !computer.heldByLocalTask(otherThan: session), !computer.handoffWaiting else { throw CancellationError() }
+        _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundleID)], timeout: 12, countsAsMiss: false)
+    }
+
     func call(_ name: String, _ args: JSON, session: String? = nil, answerBy: Double? = nil, local: Bool = false, expectedApps: Set<String>? = nil) async -> ToolResult {
         if name == "status" { return status() }
         if let tool = hostTools.value.first(where: { $0.name == name }) {

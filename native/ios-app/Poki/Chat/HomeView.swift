@@ -359,7 +359,7 @@ enum HomeIdea {
     /// The fixed key keeps Forget stable across language changes. The carried mark also appears
     /// when GitHub is not installed, so the task can explain how to install it.
     static var star: HomeShortcut {
-        HomeShortcut(key: "starpokiongithub", app: "", appName: "GitHub", text: AppLocalization.text(LocalizedStringResource("Star Poki")),
+        HomeShortcut(key: "starpokiongithub", app: "com.github.stormbreaker.prod", appName: "GitHub", text: AppLocalization.text(LocalizedStringResource("Star Poki")),
                      prompt: AppLocalization.text(LocalizedStringResource("Open the GitHub app on this iPhone, go to the JosssphZhou/poki repository, and star it. If the app is not installed, stop and ask me to install it from the App Store. Do not use a browser. If I am not signed in, stop on the login screen and let me sign in myself. If I have already starred the repository, tell me and leave it starred.")), icon: "github")
     }
 
@@ -453,7 +453,7 @@ struct HomePage<Footer: View>: View {
     var writing = false
     /// How far Poki's picture rises into the top bar as the conversation begins: the greeting rises with it.
     var rise: CGFloat = 0
-    var pick: (String) -> Void
+    var pick: (HomeShortcut) -> Void
     @ViewBuilder var footer: () -> Footer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -598,7 +598,7 @@ struct HomePage<Footer: View>: View {
     }
 
     private func shortcut(_ idea: HomeShortcut, row: Int) -> some View {
-        ShortcutPill(idea: idea, row: row, locked: busy, pick: { pick(idea.prompt) },
+        ShortcutPill(idea: idea, row: row, locked: busy, pick: { pick(idea) },
                      hold: { frame in
                          guard home, !busy else { return }
                          holds += 1

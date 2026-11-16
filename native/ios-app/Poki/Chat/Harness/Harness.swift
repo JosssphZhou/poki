@@ -40,7 +40,12 @@ enum Harness {
     """
 
     /// The instructions for a task: the above, then the saved notes and the routines that fit it.
-    @MainActor static func instructions(for task: String, inSplitView: Bool = false) -> String {
+    @MainActor static func instructions(for task: String, inSplitView: Bool = false, alongsidePoki: Bool = false,
+                                        targetApps: [KnownApp]? = nil) -> String {
+        if alongsidePoki {
+            let instructions = "The owner's requested app is open beside the Poki chat. Use the verified look included with this turn as your first read. A do result with a current screenshot and element list also gives you a read. Call look if the screen is unclear, you need more detail, or the layout changes. Each screenshot and reference belongs only to the target app. Keep the app beside the chat. Publish a short plan with report_plan and conclude with finish_task. Reply in the owner's language."
+            return ApprovalClassifier.mode == .reply ? instructions + "\n\n" + replyApprovals : instructions
+        }
         if inSplitView {
             if ApprovalClassifier.mode == .reply { return splitViewInstructions + "\n\n" + replyApprovals }
             return splitViewInstructions
@@ -59,15 +64,15 @@ enum Harness {
         if ApprovalClassifier.mode == .reply {
             parts.append(replyApprovals)
         }
-        if let apps = appIDs(for: task) { parts.append(apps) }
+        if let apps = appIDs(for: task, targetApps: targetApps) { parts.append(apps) }
         if !brief.isEmpty { parts.append(brief) }
         return parts.joined(separator: "\n\n")
     }
 
     private static let replyApprovals = "Approvals here are decided from what the owner said in this chat. When a step is refused (declined), do not tell the owner to tap anything: ask them in plain words whether they want that step done, naming the step, and if they say yes, send the same step again."
 
-    @MainActor private static func appIDs(for task: String) -> String? {
-        let apps = AppIconStore.bundleIDs(namedIn: task).compactMap { KnownApps.byID[$0.lowercased()] }
+    @MainActor private static func appIDs(for task: String, targetApps: [KnownApp]?) -> String? {
+        let apps = targetApps ?? AppIconStore.bundleIDs(namedIn: task).compactMap { KnownApps.byID[$0.lowercased()] }
         guard !apps.isEmpty else { return nil }
         let lines = apps.map { app -> String in
             let names = app.names.joined(separator: " / ")
@@ -84,6 +89,13 @@ enum Harness {
         ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
                  schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
         ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
+                 schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
+    ] + phoneTools.filter { $0.name == "status" } + [reportPlan, finishTask]
+
+    static let companionTools: [ToolSpec] = [
+        ToolSpec(name: "look", description: "Read the target app beside Poki, including its numbered elements and cropped screenshot.",
+                 schema: object(["full": ["type": "boolean"]], [])),
+        ToolSpec(name: "do", description: "Act within the target app, then read it. Each entry in actions uses the action's name as its key. For example {\"actions\":[{\"tap\":[100,200]}]} taps a screenshot-local point, {\"actions\":[{\"tap\":12}]} taps a numbered element, and {\"actions\":[{\"type\":\"draft text\"}]} types into the focused field. Check the intended field before typing and read back the result before reporting success. For a draft-only request, stop after verifying the field and leave the draft unsent. Other entries include {key: return}, {swipe: direction}, {scroll_to: text}, {back: true}, {wait_until: text} and {handoff: {kind, text}}. Keep the app beside Poki.",
                  schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
     ] + phoneTools.filter { $0.name == "status" } + [reportPlan, finishTask]
 

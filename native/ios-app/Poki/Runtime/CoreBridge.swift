@@ -78,6 +78,7 @@ protocol RunnerLauncher: AnyObject {
     func start(config: LauncherConfig, onEvent: @escaping @Sendable (RunnerStatus) -> Void) throws
     func restart()
     func stop()
+    func installedApplicationNames(config: LauncherConfig?) async -> [String: String]?
 }
 
 struct LauncherConfig: Encodable {

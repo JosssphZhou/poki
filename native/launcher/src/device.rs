@@ -14,7 +14,7 @@ use idevice::{
     rsd::RsdHandshake,
     tcp::handle::AdapterHandle,
 };
-use std::{net::IpAddr, path::Path, time::Duration};
+use std::{collections::HashMap, net::IpAddr, path::Path, time::Duration};
 
 pub type Result<T> = std::result::Result<T, Failure>;
 
@@ -176,6 +176,17 @@ impl Device {
         let mut lockdown: LockdownClient = self.connect().await?;
         let value = lockdown.get_value(Some("ProductVersion"), None).await?;
         Ok(value.as_string().unwrap_or("").to_string())
+    }
+
+    pub async fn application_names(&mut self) -> Result<HashMap<String, String>> {
+        let mut proxy = self.installation_proxy().await?;
+        let apps = proxy.get_apps(None, None).await?;
+        Ok(apps.into_iter().filter_map(|(id, info)| {
+            let info = info.as_dictionary()?;
+            let name = ["LocalizedDisplayName", "CFBundleDisplayName", "CFBundleName"]
+                .into_iter().find_map(|key| info.get(key)?.as_string().filter(|name| !name.is_empty()))?;
+            Some((id, name.to_string()))
+        }).collect())
     }
 
     pub async fn installation_proxy(&mut self) -> Result<InstallationProxyClient> {
