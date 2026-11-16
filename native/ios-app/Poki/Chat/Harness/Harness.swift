@@ -78,7 +78,7 @@ enum Harness {
     }
 
     /// Poki's own browser's tools (ESP-145) sit beside the phone's.
-    static let tools: [ToolSpec] = phoneTools + WebTools.specs + [reportPlan, finishTask]
+    static let tools: [ToolSpec] = phoneTools + WebTools.specs + [copyScreenshot, reportPlan, finishTask]
 
     static let splitViewTools: [ToolSpec] = [
         ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
@@ -100,6 +100,11 @@ enum Harness {
         ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
     }
     private static let string: [String: Any] = ["type": "string"]
+
+    static let copyScreenshot = ToolSpec(
+        name: "copy_screenshot",
+        description: "Capture the current app with a fresh screen read and copy its screenshot as an image to this iPhone's clipboard. Launch the source app first. For screenshot sharing, use this tool, launch the destination app normally, open the requested conversation, and use its Paste UI to attach the image. Split View is not required. Verify the attachment and recipient before sending, follow the existing approval rules, and verify delivery before reporting success. A screenshot returned by look alone is not in the clipboard or Photos.",
+        schema: object([:], []))
 
     static let reportPlan = ToolSpec(
         name: "report_plan",
