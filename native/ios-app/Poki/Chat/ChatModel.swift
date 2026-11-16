@@ -676,10 +676,15 @@ final class ChatModel {
     static var delegatedBusy: String?
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
-        if case .failed(let words) = outcome {
+        if case .failed = outcome {
             updatePlan { steps in
-                guard !steps.isEmpty, !steps.contains(where: { $0.state == .failed }) else { return }
-                steps.append(PlanStep(words, state: .failed))
+                guard !steps.isEmpty else { return }
+                for i in steps.indices where steps[i].state == .current || steps[i].state == .waiting {
+                    steps[i].state = .failed
+                }
+                if !steps.contains(where: { $0.state == .failed }) {
+                    steps.append(PlanStep(AppLocalization.text(LocalizedStringResource("Task failed.")), state: .failed))
+                }
             }
         }
         finishPlan()

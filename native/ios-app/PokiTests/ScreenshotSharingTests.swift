@@ -77,7 +77,7 @@ final class ScreenshotSharingTests: XCTestCase {
 
     func testModelFailureDoesNotLeaveTheTaskCardDone() async throws {
         let server = try FakeCompletions(replies: [
-            FakeCompletions.tool("report_plan", ["steps": ["Copy screenshot", "Send attachment"], "currentStep": 1]),
+            FakeCompletions.tool("report_plan", ["steps": ["Open source", "Copy screenshot", "Send attachment"], "currentStep": 2]),
             "data: {\"error\":{\"message\":\"Fixture model failure\",\"type\":\"server_error\"}}\n\ndata: [DONE]\n\n",
         ])
         let (model, chat) = makeChat(server)
@@ -89,7 +89,46 @@ final class ScreenshotSharingTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(plans.count, 1)
-        XCTAssertTrue(plans.first?.contains { $0.state == .failed } == true)
+        let steps = try XCTUnwrap(plans.first)
+        XCTAssertEqual(steps.map(\.text), ["Open source", "Copy screenshot"])
+        XCTAssertEqual(steps.map(\.state), [.done, .failed])
+        assertSingleFailureMessage(chat)
+    }
+
+    func testModelFailureAfterCompletedPlanAddsOnlyOneFailureMessage() async throws {
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("report_plan", ["steps": ["Copy screenshot"], "currentStep": 1]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Copied the screenshot.", "details": [], "answer": ["kind": "action"]]),
+            "data: {\"error\":{\"message\":\"Fixture model failure\",\"type\":\"server_error\"}}\n\ndata: [DONE]\n\n",
+        ])
+        let (model, chat) = makeChat(server)
+        defer { model.stopSession() }
+        _ = await chat.runDelegated("Copy a screenshot")
+        XCTAssertTrue(chat.savedCalls.contains { $0.name == "finish_task" && $0.ok })
+        let plans = chat.entries.compactMap { entry -> [PlanStep]? in
+            if case .plan(let steps) = entry.kind { return steps }
+            return nil
+        }
+        XCTAssertEqual(plans.count, 1)
+        let steps = try XCTUnwrap(plans.first)
+        XCTAssertEqual(steps.map(\.state), [.done, .failed])
+        XCTAssertEqual(steps.first?.text, "Copy screenshot")
+        assertSingleFailureMessage(chat)
+    }
+
+    private func assertSingleFailureMessage(_ chat: ChatModel, file: StaticString = #filePath, line: UInt = #line) {
+        let texts = chat.entries.flatMap { entry -> [String] in
+            switch entry.kind {
+            case .plan(let steps): steps.map(\.text)
+            case .note(.problem(let text)), .poki(let text): [text]
+            default: []
+            }
+        }
+        guard case .note(.problem(let problem)) = chat.entries.last?.kind, !problem.isEmpty else {
+            return XCTFail("Keep the problem note so the task can be retried", file: file, line: line)
+        }
+        let occurrences = texts.reduce(0) { $0 + $1.components(separatedBy: problem).count - 1 }
+        XCTAssertEqual(occurrences, 1, file: file, line: line)
     }
 
     private func makeChat(_ server: FakeCompletions, transport: HTTPTransport? = nil,

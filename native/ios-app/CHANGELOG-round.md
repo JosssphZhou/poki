@@ -5,7 +5,7 @@ What changed in each round, and what still needs the phone. Newest first.
 ## Screenshot sharing (Unreleased, 2026-11-15)
 
 - Screenshot sharing uses apps sequentially rather than requiring Split View. A new phone-local clipboard tool lets the chat copy a fresh screenshot for pasting into the destination app. Failed, missing and stale captures leave the clipboard unchanged. Sending still requires the existing approval flow.
-- A task that fails after showing a plan marks its card as failed instead of leaving a green completion check.
+- A task that fails after showing a plan marks its unfinished and waiting steps as failed, preserving already completed steps. The error appears once, with Retry still available; a generic failed step is added only when the plan has no unfinished or failed step.
 - Physical Telegram attachment and delivery verification is pending.
 
 ## Developer Mode only when the phone says so (2026-11-09, on standalone)
