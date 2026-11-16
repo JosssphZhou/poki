@@ -15,7 +15,7 @@ final class ChatHarnessTests: XCTestCase {
     private var saved: [String: Any?] = [:]
     private var app: AppModel?
     private var notes: [String] = []
-    private static let settings = ["chat.provider", "chat.customURL", "chat.customModel"]
+    private static let settings = ["chat.provider", "chat.customURL", "chat.customModel", ActivityController.capturePermissionKey]
 
     override func setUp() async throws {
         for key in Self.settings { saved[key] = UserDefaults.standard.object(forKey: key) }
@@ -42,6 +42,24 @@ final class ChatHarnessTests: XCTestCase {
 
     private static func json(_ object: [String: Any]) -> String {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+    }
+
+    func testModelCanHideLiveActivityForCapture() async throws {
+        UserDefaults.standard.removeObject(forKey: ActivityController.capturePermissionKey)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("hide_live_activity", [:]),
+            FakeCompletions.text("Ready to capture."),
+        ])
+        let chat = chat(on: server)
+        chat.send("Hide Poki’s Live Activity so I can take a screenshot.")
+        try await waitForTask(chat)
+
+        let request = try XCTUnwrap(server.requests.first)
+        let tools = try XCTUnwrap(request["tools"] as? [[String: Any]])
+        XCTAssertTrue(tools.contains { ($0["function"] as? [String: Any])?["name"] as? String == "hide_live_activity" })
+        let receipt = try XCTUnwrap(chat.savedCalls.first { $0.name == "hide_live_activity" })
+        XCTAssertTrue(receipt.ok, receipt.answer)
+        XCTAssertTrue(receipt.answer.contains("until this task ends and Poki is opened again"))
     }
 
     func testSplitViewTaskWaitsForOriginalPairAndResumesFromFreshReads() async throws {

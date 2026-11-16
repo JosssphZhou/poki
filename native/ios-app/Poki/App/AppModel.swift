@@ -292,8 +292,18 @@ final class AppModel {
     func addShellObserver(_ observer: @escaping (ShellEvent) -> Void) { shellObservers.append(observer) }
     /// A Debug probe drives PokiCore on the simulator without a runner session (the chat's end-to-end check).
     private(set) var probeDriven = false
-    /// The app's MCP tools (ask_poki), set by AskPoki.
-    func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
+    /// The app's MCP tools, including the optional delegation tool set by AskPoki.
+    func setHostTools(_ tools: [HostTool]) {
+        let capture = Harness.hideLiveActivity
+        core.setHostTools(tools + [HostTool(name: capture.name, description: capture.description,
+                                           schemaJSON: #"{"type":"object","properties":{},"additionalProperties":false}"#,
+                                           requiresCurrentTask: true) { [weak self] _, session, _ in
+            guard let self, let session else {
+                return .init(text: "The phone task is no longer available.", jpeg: nil, isError: true)
+            }
+            return await self.hideLiveActivityForCapture(task: .external(session))
+        }])
+    }
     /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
     var onProbeApproval: ((PendingApproval) -> Void)?
 
@@ -392,6 +402,10 @@ final class AppModel {
         eventsTask = Task { [weak self, core] in
             for await event in core.events { self?.handle(event) }
         }
+        host.onExternalTaskFinished { [weak self] session in
+            await self?.externalCaptureTaskEnded(session)
+        }
+        setHostTools([])
         loopback.onChange = { [weak self] old, new in self?.loopbackChanged(from: old, to: new) }
         loopback.onPairingPort = { [weak self] port in self?.pairingPortFound(port) }
         loopback.onPairingPortSearchEnded = { [weak self] in self?.pairingPortSearchEnded() }
@@ -654,7 +668,10 @@ final class AppModel {
     /// Poki came to the front: turn on again if it was on, check the loopback live, and finish a
     /// setup step the person just did in Settings.
     func becameActive() {
+        let reopened = !inFront
         inFront = true
+        // A task can return to Poki through the runner as part of its cleanup.
+        if reopened, endingTasks == 0 { activity.reopenedAfterBackground() }
         guard signer.installFinish == .idle else { return }
         InProcessWDA.gate.withLock { $0.inFront = true }
         cameToFront = Date()
@@ -1073,6 +1090,7 @@ final class AppModel {
     }
 
     func stopSession() {
+        activity.stopExternalCaptureTask()
         sessionStartTask?.cancel()
         wantsOn = false
         if AskPoki.app === self, let chat = AskPoki.chat, chat.isRunningInSplitView { chat.stop() }
@@ -1145,6 +1163,7 @@ final class AppModel {
             return
         }
         guard approvals.isEmpty || splitChat != nil else { return }
+        activity.stopExternalCaptureTask()
         ownerPaused = byOwner
         if automationPath == .inProcess {
             Task { [core] in _ = await core.finishTask(switching: false) }
@@ -1508,6 +1527,7 @@ final class AppModel {
                 Task { [weak self, core] in
                     _ = await core.finishTask(session: id)
                     guard let self else { return }
+                    self.activity.captureTaskEnded(.external(id))
                     self.endingTasks -= 1
                     if self.outsideAgentsAtWork.isEmpty { self.closeAfterTask("an agent ended its session") }
                     if let agent { self.tellOwner(agentWasHere: agent) }
@@ -1678,6 +1698,35 @@ final class AppModel {
     }
 
     // MARK: The chat's task
+
+    func hideLiveActivityForCapture(task: ActivityController.CaptureTask) async -> PokiCore.ToolAnswer {
+        guard UserDefaults.standard.object(forKey: ActivityController.capturePermissionKey) as? Bool ?? true else {
+            return .init(text: "The owner has disabled hiding the Live Activity.", jpeg: nil, isError: true)
+        }
+        guard approvals.isEmpty, checking.isEmpty, handoffText == nil,
+              activity.state.approval == nil, activity.state.handoff == nil, !core.hasPendingDecision else {
+            return .init(text: "Wait for the owner to answer the pending approval or hand-off, then try again.", jpeg: nil, isError: true)
+        }
+        if case .external = task, !sessionOn || chatTaskActive || (AskPoki.app === self && AskPoki.chat?.running == true) {
+            return .init(text: "The phone session is off or Poki’s chat is using it.", jpeg: nil, isError: true)
+        }
+        switch await activity.hideForCapture(task: task) {
+        case .hidden:
+            return .init(text: "Poki’s Live Activity is hidden until this task ends and Poki is opened again.", jpeg: nil, isError: false)
+        case .ownedByAnotherTask:
+            return .init(text: "Another task has already hidden the Live Activity. Wait for that task to end before requesting a new capture.", jpeg: nil, isError: true)
+        case .dismissalUnconfirmed:
+            return .init(text: "iOS has not confirmed that Poki’s Live Activity is hidden. Retry before capturing.", jpeg: nil, isError: true)
+        }
+    }
+
+    func chatCaptureTaskEnded(_ taskID: UUID) {
+        activity.captureTaskEnded(.chat(taskID))
+    }
+
+    private func externalCaptureTaskEnded(_ session: String) {
+        activity.captureTaskEnded(.external(session))
+    }
 
     /// The chat's task began (Poki is in front): the Live Activity is there for it, with no old plan.
     func chatTaskBegan(splitViewSession: String? = nil) {

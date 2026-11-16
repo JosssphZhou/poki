@@ -81,11 +81,96 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    func testCaptureHideWaitsForTaskEndAndThenForegroundReturn() async throws {
+        let taskID = UUID()
+        try await withSessionApp { app, activities in
+            app.startSession()
+            app.chatTaskBegan()
+            let original = try XCTUnwrap(activities().first)
+
+            UserDefaults.standard.set(false, forKey: ActivityController.capturePermissionKey)
+            let refused = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertTrue(refused.isError)
+            XCTAssertEqual(activities().map(\.id), [original.id])
+
+            UserDefaults.standard.removeObject(forKey: ActivityController.capturePermissionKey)
+            app.wakeRunner(asked: "Capture QA")
+            app.runnerChanged(RunnerStatus(state: "launching", code: "passcode"))
+            let blocked = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertTrue(blocked.isError, "A pending hand-off must keep its Live Activity")
+            XCTAssertEqual(activities().map(\.id), [original.id])
+            app.handoffDoneInApp()
+
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertFalse(hidden.isError)
+            XCTAssertTrue(activities().isEmpty)
+
+            app.chatCaptureTaskEnded(UUID())
+            app.wentToBackground()
+            app.becameActive()
+            XCTAssertTrue(activities().isEmpty, "Opening Poki while the task is running must not restore the activity")
+
+            app.chatCaptureTaskEnded(taskID)
+            app.becameActive()
+            XCTAssertTrue(activities().isEmpty, "An active-scene callback without reopening must not restore the activity")
+
+            app.wentToBackground()
+            app.becameActive()
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testActivityKitDismissesAndRestoresCaptureActivity() async throws {
+        let activity = ActivityController()
+        let taskID = UUID()
+        let recordEvidence = ProcessInfo.processInfo.environment["POKI_CAPTURE_QA"] == "1"
+        let background = recordEvidence ? UIApplication.shared.beginBackgroundTask(withName: "Capture QA") : .invalid
+        defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+        defer { activity.end(dismissalPolicy: .immediate) }
+        activity.start(deviceName: "Capture QA")
+        XCTAssertTrue(activity.isRunning, activity.lastError ?? "ActivityKit did not start")
+        let initial = try XCTUnwrap(Activity<PokiActivityAttributes>.activities.first {
+            $0.attributes.deviceName == "Capture QA" && $0.activityState == .active
+        })
+        try await captureEvidenceWindow("visible")
+        if recordEvidence { XCTAssertEqual(UIApplication.shared.applicationState, .background) }
+
+        let hidden = await activity.hideForCapture(task: .chat(taskID))
+        guard case .hidden = hidden else { return XCTFail("ActivityKit did not confirm dismissal") }
+        XCTAssertFalse(activity.isRunning)
+        XCTAssertFalse(Activity<PokiActivityAttributes>.activities.contains {
+            $0.id == initial.id && $0.activityState != .ended && $0.activityState != .dismissed
+        })
+        try await captureEvidenceWindow("hidden")
+        activity.update { $0.phase = .working; $0.headline = "Capture QA" }
+        activity.reopenedAfterBackground()
+        activity.start(deviceName: "Capture QA")
+        XCTAssertFalse(activity.isRunning)
+
+        activity.captureTaskEnded(.chat(taskID))
+        activity.endStoppedRun()
+        try await captureEvidenceWindow("reopen")
+        if recordEvidence { XCTAssertEqual(UIApplication.shared.applicationState, .active) }
+        activity.reopenedAfterBackground()
+        activity.start(deviceName: "Capture QA")
+        XCTAssertTrue(activity.isRunning, activity.lastError ?? "ActivityKit did not restore")
+        try await captureEvidenceWindow("restored")
+        await activity.end(dismissalPolicy: .immediate)?.value
+    }
+
+    /// Optional windows for a physical-device recording of the ActivityKit test.
+    private func captureEvidenceWindow(_ phase: String) async throws {
+        guard ProcessInfo.processInfo.environment["POKI_CAPTURE_QA"] == "1" else { return }
+        NSLog("Capture QA: %@", phase)
+        try await Task.sleep(for: .seconds(4))
+    }
+
     private func withSessionApp(
         _ test: (AppModel, () -> [Activity<PokiActivityAttributes>]) async throws -> Void
     ) async throws {
         let defaults = UserDefaults.standard
-        let keys = ["relayAddress", "relayEnabled", "wantsOn"]
+        let keys = ["relayAddress", "relayEnabled", "wantsOn", ActivityController.capturePermissionKey]
         let saved = keys.map { defaults.object(forKey: $0) }
         let setup = SetupState.load()
         let existingIDs = Set(Activity<PokiActivityAttributes>.activities.map(\.id))

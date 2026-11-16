@@ -197,6 +197,15 @@ The computer-use profile, ported from `src/cua.mjs` and `src/cua-wda.mjs`:
 - `routines {action, ...}`: the phone's saved routines and the owner's notes (see below), without touching the device.
 - `status`: the relay, the runner and pending approvals, without touching the device.
 
+The iPhone app also exposes `hide_live_activity {}` to the active MCP task and to Poki's built-in
+chat. For MCP, start the task with `look` or `do` in the same session. Call the tool before taking
+a screenshot or recording. A pending approval or hand-off blocks the call. Any later request for
+the owner still uses Poki's notifications.
+
+The activity stays hidden until the task ends and the owner reopens Poki. In Settings › Advanced,
+turn off **Let Poki Hide the Live Activity** to disable this tool. iOS system indicators may still
+appear in a capture.
+
 Each answer is facts only: the app in front, numbered elements, what each action did (`sent`,
 `not_sent`, `unknown`), timings and a JPEG screenshot. No verdicts.
 

@@ -7,6 +7,7 @@ public struct ToolResult: Sendable {
     public var isError = false
     var splitView: PokiCore.SplitViewRead?
     var splitViewNeedsRead = false
+    var finishedExternalSession: String?
 }
 
 /// A sent action failed: whether it may have reached the phone.
@@ -1042,7 +1043,9 @@ final class Computer: @unchecked Sendable {
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
+            let finishedSession = origin?.session
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
+            result.finishedExternalSession = finishedSession
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))
             if trace.count >= 2, !routineRanWhole {

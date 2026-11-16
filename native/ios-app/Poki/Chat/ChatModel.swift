@@ -393,7 +393,8 @@ final class ChatModel {
                 await previous?.value
                 guard let self, self.runToken == token else { return }
                 client.say(message)
-                self.began("direct", provider, model)
+                let captureTaskID = self.began("direct", provider, model)
+                defer { self.app.chatCaptureTaskEnded(captureTaskID) }
                 await self.run(client, instructions: instructions, delivered: you.id, token: token)
                 let current = self.runToken == token
                 if !current { self.app.finishTask() }
@@ -440,7 +441,8 @@ final class ChatModel {
                 }
             }
             let splitSession = self.splitViewSession
-            self.began("pi", provider, model, splitViewSession: splitSession)
+            let captureTaskID = self.began("pi", provider, model, splitViewSession: splitSession)
+            defer { self.app.chatCaptureTaskEnded(captureTaskID) }
             if let splitSession, pair.count == 2 {
                 self.phoneStepUnderWay = true
                 let confirmed = await self.openSplitViewPair(pair, session: splitSession, token: token)
@@ -610,12 +612,16 @@ final class ChatModel {
     /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
 
-    private func began(_ engine: String, _ provider: ModelProvider, _ model: String, splitViewSession: String? = nil) {
+    private var captureTaskID = UUID()
+
+    private func began(_ engine: String, _ provider: ModelProvider, _ model: String, splitViewSession: String? = nil) -> UUID {
+        captureTaskID = UUID()
         taskStart = Date(); toolCalls = 0; taskResult = nil
         taskCalls.removeAll()
         app.prepareForTask()
         app.chatTaskBegan(splitViewSession: splitViewSession)
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
+        return captureTaskID
     }
 
     private func logEnd(_ engine: String, outcome: PiLoop.Outcome?, session: String, text: String, stopped: Bool) {
@@ -831,12 +837,17 @@ final class ChatModel {
                 if args["finish"] as? Bool == true || actions.contains(where: { $0["launch"] != nil || $0["run"] != nil || $0["button"] != nil }) {
                     return splitViewRefusal("Keep both apps in place. Do not launch apps, use hardware buttons, or run routines. Finish with finish_task.")
                 }
-            case "report_plan", "finish_task", "status": break
+            case "report_plan", "finish_task", "status", Harness.hideLiveActivity.name: break
             default:
                 return splitViewRefusal("Use the two visible apps with look and do for this task.")
             }
         }
         switch call.name {
+        case Harness.hideLiveActivity.name:
+            guard running, !stopAsked, !Task.isCancelled else {
+                return .init(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)
+            }
+            return await app.hideLiveActivityForCapture(task: .chat(captureTaskID))
         case "report_plan":
             guard let steps = args["steps"] as? [String], (1...8).contains(steps.count), let current = args["currentStep"] as? Int, (1...steps.count).contains(current) else {
                 return PokiCore.ToolAnswer(text: Harness.invalidPlan, jpeg: nil, isError: true)
