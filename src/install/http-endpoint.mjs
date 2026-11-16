@@ -9,13 +9,9 @@ export function normalizeHttpHosts(values) {
 export function isHttpHost(value) {
     if (!value || value.includes('://') || value.includes('@') || value.includes('?')
         || value.includes('#') || /\s/.test(value)) return false;
-    const parts = value.split('/');
-    if (parts.length > 2) return false;
-    if (parts.length === 2 && (!parts[1] || !/^\d+$/.test(parts[1]))) return false;
-    // "host:port" is not a host. IPv6 literals and CIDR ranges keep their colons.
-    if (parts.length === 1 && (value.match(/:/g) ?? []).length === 1) {
-        const port = value.slice(value.lastIndexOf(':') + 1);
-        if (port && /^\d+$/.test(port)) return false;
-    }
+    // No path or CIDR mask: an NSExceptionDomains key names one host and matches it literally.
+    if (value.includes('/')) return false;
+    // "host:port" is not a host. One colon can never be a host: IPv6 literals have at least two.
+    if ((value.match(/:/g) ?? []).length === 1) return false;
     return true;
 }

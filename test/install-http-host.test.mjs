@@ -47,10 +47,11 @@ function installer(state, args, env = {}) {
 }
 
 test('host validation matches the signer', () => {
-    for (const good of ['gateway.example.com', '203.0.113.9', '192.168.1.0/24', '2001:db8:12::34', '2001:db8:12::/48', 'my-mac.local']) {
+    for (const good of ['gateway.example.com', '203.0.113.9', '2001:db8:12::34', 'my-mac.local']) {
         assert.equal(isHttpHost(good), true, `accept ${good}`);
     }
-    for (const bad of ['', 'http://gateway.example.com', 'gateway.example.com:3425', 'gateway.example.com/v1',
+    for (const bad of ['', 'http://gateway.example.com', 'gateway.example.com:3425', 'gateway.example.com:', 'gateway.example.com:abc',
+        '192.168.1.0/24', '2001:db8:12::/48', 'gateway.example.com/v1',
         'user@gateway.example.com', 'gateway.example.com?x=1', 'gateway.example.com#f', 'gateway.example.com/v1/v2', 'has space']) {
         assert.equal(isHttpHost(bad), false, `reject ${bad}`);
     }

@@ -55,9 +55,10 @@ pub fn team_bundle_id(released: &str, team: &str) -> String {
 pub fn team_app_group(team: &str) -> String { format!("{}.{}", crate::POKI_APP_GROUP, team) }
 
 /// The hosts the owner explicitly allowed for plain-HTTP Custom Endpoints. Poki Setup sets
-/// POKI_HTTP_ENDPOINT_HOST from --allow-http-host. An entry is a DNS name, an IP literal or a CIDR
-/// range in the form NSExceptionDomains expects: lowercase, no scheme, port, path, userinfo or
-/// trailing dot. Empty and malformed entries are ignored, so a stray value cannot widen ATS.
+/// POKI_HTTP_ENDPOINT_HOST from --allow-http-host. An entry is a DNS name or an IP literal in the
+/// form NSExceptionDomains expects: lowercase, no scheme, port, path, userinfo or trailing dot.
+/// A CIDR mask is not one host, so it is rejected rather than written as a key that never matches.
+/// Empty and malformed entries are ignored, so a stray value cannot widen ATS.
 pub fn http_endpoint_hosts() -> Vec<String> {
     let Ok(raw) = std::env::var("POKI_HTTP_ENDPOINT_HOST") else { return vec![] };
     raw.split(',')
@@ -70,16 +71,10 @@ fn is_exception_host(value: &str) -> bool {
     if value.is_empty() || value.contains("://") || value.contains('@')
         || value.contains('?') || value.contains('#')
         || value.chars().any(char::is_whitespace) { return false; }
-    let parts: Vec<&str> = value.split('/').collect();
-    if parts.len() > 2 { return false; }
-    if parts.len() == 2 && (parts[1].is_empty() || !parts[1].chars().all(|c| c.is_ascii_digit())) { return false; }
-    // "host:port" is not a host. IPv6 literals and CIDR ranges keep their colons, so only a lone
-    // colon followed by digits is treated as a port.
-    if parts.len() == 1 && value.matches(':').count() == 1 {
-        if let Some((_, port)) = value.rsplit_once(':') {
-            if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) { return false; }
-        }
-    }
+    // No path or CIDR mask: an NSExceptionDomains key names one host and matches it literally.
+    if value.contains('/') { return false; }
+    // "host:port" is not a host. One colon can never be a host: IPv6 literals have at least two.
+    if value.matches(':').count() == 1 { return false; }
     true
 }
 
@@ -337,14 +332,15 @@ mod tests {
         assert_eq!(team_bundle_id("nz.zheha.poki.ABC123.widgets", "ABC123"), "nz.zheha.poki.ABC123.widgets");
     }
 
-    /// Only a DNS name, an IP literal or a CIDR range can be an NSExceptionDomains key.
+    /// Only a DNS name or an IP literal can be an NSExceptionDomains key.
     #[test]
     fn http_exception_hosts_are_validated() {
-        for good in ["gateway.example.com", "203.0.113.9", "192.168.1.0/24",
-                     "2001:db8:12::34", "2001:db8:12::/48", "my-mac.local"] {
+        for good in ["gateway.example.com", "203.0.113.9", "2001:db8:12::34", "my-mac.local"] {
             assert!(is_exception_host(good), "should accept {good}");
         }
         for bad in ["", "http://gateway.example.com", "gateway.example.com:3425",
+                    "gateway.example.com:", "gateway.example.com:abc",
+                    "192.168.1.0/24", "2001:db8:12::/48",
                     "gateway.example.com/v1", "user@gateway.example.com",
                     "gateway.example.com?x=1", "gateway.example.com#f",
                     "gateway.example.com/v1/v2", "has space", "gateway.example.com/abc"] {

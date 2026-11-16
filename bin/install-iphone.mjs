@@ -47,7 +47,7 @@ Options:
                       to a key Poki makes on the phone and never printed, logged or put on a command line.
   --model-key-item <item>  The keychain item to read it from (default <name>-api-key, e.g. openai-api-key).
   --allow-http-host <host> Let this one host serve the Custom Endpoint over plain HTTP. Repeatable.
-                      A DNS name, IP literal or CIDR range, without scheme, port or path. Poki Setup
+                      A DNS name or IP literal, without scheme, port, path or mask. Poki Setup
                       adds it to the signed app's Info.plist. Every other host keeps full ATS.
                       Bring it again on an update; a plain-HTTP gateway sends its key in cleartext.
   --version           Print the installer's version and build commit.
@@ -119,7 +119,7 @@ if (opts['update-only'] && !opts.help &&
 const httpHosts = normalizeHttpHosts(opts['allow-http-host'] ?? []);
 for (const host of httpHosts) {
   if (!isHttpHost(host)) {
-    console.error(`--allow-http-host takes a DNS name, IP literal or CIDR range, without a scheme, port, path or userinfo: ${host}`);
+    console.error(`--allow-http-host takes a DNS name or IP literal, without a scheme, port, path, mask or userinfo: ${host}`);
     process.exit(2);
   }
 }
