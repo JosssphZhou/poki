@@ -18,6 +18,7 @@ final class ChatHarnessTests: XCTestCase {
     private static let settings = ["chat.provider", "chat.customURL", "chat.customModel"]
 
     override func setUp() async throws {
+        InProcessWDA.resetGate()
         for key in Self.settings { saved[key] = UserDefaults.standard.object(forKey: key) }
     }
 
@@ -25,6 +26,7 @@ final class ChatHarnessTests: XCTestCase {
         for key in Self.settings { UserDefaults.standard.set(saved[key] ?? nil, forKey: key) }
         for text in notes { _ = await app?.runTool("routines", arguments: Self.json(["action": "forget_note", "id": text])) }
         ChatModel.afterTask = nil
+        InProcessWDA.resetGate()
     }
 
     /// A conversation handed over by an outside agent, on the fake endpoint. The phone's tools answer

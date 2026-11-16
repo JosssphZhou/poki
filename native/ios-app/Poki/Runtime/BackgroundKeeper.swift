@@ -34,6 +34,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     var always: Bool { authorization == .authorizedAlways }
 
     func requestPermission() {
+        guard !LaunchMode.current.suppressesSystemPermissionPrompts else { return }
         if authorization == .notDetermined { manager.requestWhenInUseAuthorization() } else { manager.requestAlwaysAuthorization() }
     }
 
@@ -123,7 +124,9 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func holdForPairing() {
         guard !pairingHold else { return }
         pairingHold = true
-        if authorization == .notDetermined { manager.requestWhenInUseAuthorization() }
+        if authorization == .notDetermined, !LaunchMode.current.suppressesSystemPermissionPrompts {
+            manager.requestWhenInUseAuthorization()
+        }
         startPairingLocation()
     }
 

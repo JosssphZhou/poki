@@ -8,6 +8,7 @@
 // `gym` mode). Everything that depends on the host (the tool call, simctl, pictures) comes in
 // through `GymEnvironment`.
 import Foundation
+import Network
 import PokiCore
 
 /// What the scorecard needs from where it runs.
@@ -80,6 +81,12 @@ public final class GymScorecard {
 
     private func log(_ line: String) { env.log(line) }
 
+    nonisolated static func expectsPicture(tool name: String, answer text: String) -> Bool {
+        if name == "routines" { return false }
+        if name == "look", text.contains("poki: Poki is in front,") { return false }
+        return true
+    }
+
     /// One tool call, timed. A call that does not answer within `hang` seconds is the worst failure the
     /// owner named (the agent stuck); it is recorded as HUNG and the run goes on.
     @discardableResult
@@ -112,8 +119,9 @@ public final class GymScorecard {
         let first = text.split(separator: "\n").first.map(String.init) ?? ""
         var notes: [String] = []
         if Double(ms) / 1000 > budget { notes.append("slow: over \(Int(budget)) s") }
-        // The routines tool reads and writes the phone's memory only: it never sends a picture.
-        if pictures.isEmpty, name != "routines" { notes.append("no picture") }
+        // `routines` never reads the screen, and `look` with Poki itself in front omits the picture so
+        // the owner's chat is never sent to the model or the Live Activity (PokiCore's pokiInFront).
+        if pictures.isEmpty, Self.expectsPicture(tool: name, answer: text) { notes.append("no picture") }
         log("=== \(scenario) / \(step): \(ms) ms, \(pictures.count) image(s)\n\(text)\n")
         rows.append(GymRow(scenario: scenario, step: step, ms: ms, ok: notes.isEmpty, note: notes.isEmpty ? first.prefix(70).description : notes.joined(separator: "; ")))
         for n in notes { failures.append("\(scenario) / \(step): \(n)") }
@@ -160,6 +168,19 @@ public final class GymScorecard {
         guard answer.contains("Would Like") || answer.contains("Don’t Allow") || answer.contains("Don't Allow") else { return answer }
         guard let no = ref(in: answer, "Don’t Allow", type: "Button") ?? ref(in: answer, "Don't Allow", type: "Button") else { return answer }
         return await call("tap Don't Allow on the system alert", "do", ["actions": [["tap": .number(Double(no))], ["wait_until": ["settled": true, "ms": 2000]]]])
+    }
+
+    /// Dismisses a system alert, What's New sheet, or Safari TipView popup covering a web page, then
+    /// reads the page behind it when `target` was hidden behind the popup's modal tree.
+    func clearSafariOverlays(_ answer: String, target: String) async -> String {
+        var page = answer
+        for _ in 1...2 {
+            let afterAlert = await dismissSystemAlert(page)
+            let afterTip = await dismissTip(afterAlert)
+            if afterTip == page { break }
+            page = ref(in: afterTip, target) != nil ? afterTip : await call("look at the page after dismissing overlay", "look", ["full": true])
+        }
+        return page
     }
 
     /// While the runner is down (killed, or restarted by PokiCore's watchdog), every answer says so
@@ -248,11 +269,14 @@ public final class GymScorecard {
     func launchApp(_ name: String, _ bundle: String) async -> String {
         scenario = name
         // A first-run sheet (What's New, Continue) can slide up a few seconds after the launch (Photos:
-        // 3 s), so the screen is read again once it holds still, and Continue tapped when it is there.
-        var answer = await call("launch \(name) fresh", "do", ["actions": [["launch": ["bundle": .string(bundle), "fresh": true]], ["wait_until": ["settled": true, "ms": 3000]]]], budget: 25)
+        // 3 s), and a cold system app can briefly stall the accessibility server while starting.
+        var answer = await awaitRunner(await call("launch \(name) fresh", "do", ["actions": [["launch": ["bundle": .string(bundle), "fresh": true]], ["wait_until": ["settled": true, "ms": 3000]]]], budget: 30))
+        if !answer.contains("app: \(name)") {
+            answer = await awaitRunner(await call("launch \(name) after runner recovery", "do", ["actions": [["launch": ["bundle": .string(bundle), "fresh": false]], ["wait_until": ["settled": true, "ms": 2000]]]], budget: 30))
+        }
         for i in 1...3 {
             if ref(in: answer, "Continue", type: "Button") == nil, i == 1 || !answer.contains("app: \(name)") {
-                answer = await call("look at \(name) (\(i))", "look", ["full": true])
+                answer = await awaitRunner(await call("look at \(name) (\(i))", "look", ["full": true]))
             }
             answer = await dismissSystemAlert(answer)
             if let cont = ref(in: answer, "Continue", type: "Button") {
@@ -553,58 +577,62 @@ public final class GymScorecard {
         } else { check(false, "the New Note button is listed") }
         }
 
-        // 15. Safari: a page with links, scroll_to on page text, a link tapped.
-        a = await launchApp("Safari", "com.apple.mobilesafari")
-        // In-process, Safari's start page lists the address capsule as an Other "Search or enter website" for a
-        // moment before it is the TextField "Address"; a tap on either focuses the field, so both serve.
-        for i in 1...3 where ref(in: a, "Address") == nil && (i == 1 || ref(in: a, "Search or enter website") == nil) {
-            if i > 1 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
-            a = await call("look (full) for the address bar (\(i))", "look", ["full": true])
+        // 15. Safari: a local 127.0.0.1 page with links, scroll_to on page text, a link tapped.
+        scenario = "Safari"
+        if let web = try? GymLocalServer.safariPages(), web.port > 0 {
+            defer { web.stop() }
+            let firstURL = "http://127.0.0.1:\(web.port)/first"
+            let hostPort = "127.0.0.1:\(web.port)"
+            a = await launchApp("Safari", "com.apple.mobilesafari")
+            // In-process, Safari's start page lists the address capsule as an Other "Search or enter website" for a
+            // moment before it is the TextField "Address"; a tap on either focuses the field, so both serve.
+            for i in 1...3 where ref(in: a, "Address") == nil && (i == 1 || ref(in: a, "Search or enter website") == nil) {
+                if i > 1 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+                a = await dismissTip(await dismissSystemAlert(await call("look (full) for the address bar (\(i))", "look", ["full": true])))
+            }
+            if let address = ref(in: a, "Address") ?? ref(in: a, "Search or enter website") {
+                var opened = await call("type a URL and return", "do", ["actions": [["type": .string(firstURL), "ref": .number(Double(address))], ["key": "return"], ["wait_until": ["text": "Gym Local Page", "ms": 12000]]]], budget: 25)
+                // A busy runner answers not_sent and says to send the type again; Safari's first-use sheet
+                // ("Safari search now shows personalized suggestions", Continue) can come up over the keyboard.
+                for i in 1...2 where opened.contains("not_sent") || ref(in: opened, "Continue", type: "Button") != nil {
+                    if let cont = ref(in: opened, "Continue", type: "Button") {
+                        opened = await call("tap Continue on Safari's first-use sheet", "do", ["actions": [["tap": .number(Double(cont))]]])
+                    }
+                    if opened.contains("not_sent") || ref(in: opened, "Gym Local Page") == nil {
+                        opened = await awaitRunner(opened)
+                        let field = ref(in: opened, "Address") ?? address
+                        opened = await call("type a URL and return (again, \(i))", "do", ["actions": [["type": .string(firstURL), "ref": .number(Double(field)), "clear": true], ["key": "return"], ["wait_until": ["text": "Gym Local Page", "ms": 12000]]]], budget: 25)
+                    }
+                }
+                opened = await clearSafariOverlays(opened, target: "Gym Local Page")
+                var loaded = ref(in: opened, "Gym Local Page") != nil ? opened : await clearSafariOverlays(await call("look at the page", "look", ["full": true]), target: "Gym Local Page")
+                if ref(in: loaded, "Gym Local Page") == nil, let go = ref(in: loaded, "Go", type: "Button") ?? ref(in: loaded, "go", type: "Button") ?? ref(in: loaded, "Go", type: "Key") ?? ref(in: loaded, hostPort, type: "StaticText") {
+                    loaded = await call("tap Go, or the site's suggestion row (return did not submit)", "do", ["actions": [["tap": .number(Double(go))], ["wait_until": ["text": "Gym Local Page", "ms": 12000]]]], budget: 25)
+                    loaded = await clearSafariOverlays(loaded, target: "Gym Local Page")
+                    if ref(in: loaded, "Gym Local Page") == nil { loaded = await clearSafariOverlays(await call("look at the page (after the suggestion)", "look", ["full": true]), target: "Gym Local Page") }
+                }
+                if ref(in: loaded, "Gym Local Page") != nil {
+                    check(true, "the page loads and its text is in the tree")
+                    var link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
+                    if link.contains("TipView") {
+                        _ = await dismissTip(link)
+                        link = await scrollTo("Learn more", step: "scroll_to the link's text (after the tip)", budget: 30, max: 3)
+                    }
+                    check(link.contains("found at") || link.contains("found by scroll_to") || ref(in: link, "Learn more") != nil, "scroll_to finds page text in Safari")
+                    var page = link
+                    if ref(in: page, "Learn more") == nil { page = await clearSafariOverlays(await call("look (full) for the link", "look", ["full": true]), target: "Learn more") }
+                    if let l = ref(in: page, "Learn more", type: "Link") ?? ref(in: page, "Learn more") {
+                        let followed = await clearSafariOverlays(await call("tap the link and wait for the next page", "do", ["actions": [["tap": .number(Double(l))], ["wait_until": ["text": "Gym Second Page", "ms": 12000]]]], budget: 25), target: "Gym Second Page")
+                        let next = followed.contains("Gym Second Page") ? followed : await clearSafariOverlays(await call("look at the next page", "look", ["full": true]), target: "Gym Second Page")
+                        check(next.contains("Gym Second Page") || next.contains("screen_changed: true"), "tapping a link in Safari opens the next page")
+                        let back = await call("back", "do", ["actions": [["back": true], ["wait_until": ["text": "Gym Local Page", "ms": 8000]]]], budget: 20)
+                        check(back.contains("Gym Local Page") || back.contains("did: back"), "back returns to the first page")
+                    } else { check(false, "the link is listed in the tree") }
+                } else { check(false, "the page loads from 127.0.0.1 in Safari") }
+            } else { check(false, "the Safari address bar is listed") }
+        } else {
+            check(false, "the local Safari test server started")
         }
-        if let address = ref(in: a, "Address") ?? ref(in: a, "Search or enter website") {
-            // With the scheme, Safari's first suggestion is the site itself (a bare host's first suggestion
-            // is a Google search on this runtime, and Go did not load it on 3 of 4 runs).
-            var opened = await call("type a URL and return", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(address))], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
-            // A busy runner answers not_sent and says to send the type again; Safari's first-use sheet
-            // ("Safari search now shows personalized suggestions", Continue) can come up over the keyboard.
-            for i in 1...2 where opened.contains("not_sent") || ref(in: opened, "Continue", type: "Button") != nil {
-                if let cont = ref(in: opened, "Continue", type: "Button") {
-                    opened = await call("tap Continue on Safari's first-use sheet", "do", ["actions": [["tap": .number(Double(cont))]]])
-                }
-                if opened.contains("not_sent") || ref(in: opened, "Example Domain") == nil {
-                    opened = await awaitRunner(opened)
-                    let field = ref(in: opened, "Address") ?? address
-                    opened = await call("type a URL and return (again, \(i))", "do", ["actions": [["type": "https://example.com/", "ref": .number(Double(field)), "clear": true], ["key": "return"], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
-                }
-            }
-            // The page's title as an element (not the wait_until's wording); when the return key did not
-            // submit (seen once: the suggestions stayed), the suggestion row with the URL is tapped.
-            var loaded = ref(in: opened, "Example Domain") != nil ? opened : await call("look at the page", "look")
-            // (A suggestion row runs a search instead; the keyboard's Go key loads the URL.)
-            if ref(in: loaded, "Example Domain") == nil, let go = ref(in: loaded, "Go", type: "Button") ?? ref(in: loaded, "go", type: "Button") ?? ref(in: loaded, "Go", type: "Key") ?? ref(in: loaded, "example.com", type: "StaticText") {
-                loaded = await call("tap Go, or the site's suggestion row (return did not submit)", "do", ["actions": [["tap": .number(Double(go))], ["wait_until": ["text": "Example Domain", "ms": 12000]]]], budget: 25)
-                if ref(in: loaded, "Example Domain") == nil { loaded = await call("look at the page (after the suggestion)", "look") }
-            }
-            if ref(in: loaded, "Example Domain") != nil {
-                check(true, "the page loads and its text is in the tree")
-                var link = await scrollTo("Learn more", step: "scroll_to the link's text", budget: 30, max: 3)
-                // Safari's first-run tip (View Bookmarks, Share Menu...) can come up over the page.
-                if link.contains("TipView") {
-                    _ = await dismissTip(link)
-                    link = await scrollTo("Learn more", step: "scroll_to the link's text (after the tip)", budget: 30, max: 3)
-                }
-                check(link.contains("found at") || link.contains("found by scroll_to") || ref(in: link, "Learn more") != nil, "scroll_to finds page text in Safari")
-                var page = link
-                if ref(in: page, "Learn more") == nil { page = await call("look (full) for the link", "look", ["full": true]) }
-                if let l = ref(in: page, "Learn more", type: "Link") ?? ref(in: page, "Learn more") {
-                    let followed = await call("tap the link and wait for the next page", "do", ["actions": [["tap": .number(Double(l))], ["wait_until": ["text": "Reserved Domains", "ms": 12000]]]], budget: 25)
-                    let next = followed.contains("Reserved Domains") ? followed : await call("look at the next page", "look")
-                    check(next.contains("Reserved Domains") || next.contains("screen_changed: true"), "tapping a link in Safari opens the next page")
-                    let back = await call("back", "do", ["actions": [["back": true], ["wait_until": ["text": "Example Domain", "ms": 8000]]]], budget: 20)
-                    check(back.contains("Example Domain") || back.contains("did: back"), "back returns to the first page")
-                } else { check(false, "the link is listed in the tree") }
-            } else { check(false, "the page loads (example.com over the runner's network)") }
-        } else { check(false, "the Safari address bar is listed") }
 
         // 16. Photos: a grid cell tapped, then back to the grid.
         a = await launchApp("Photos", "com.apple.mobileslideshow")
@@ -740,5 +768,79 @@ public final class GymScorecard {
         out += "\npath: \(env.path); calls: \(calls.count), slowest: \(worst.map { "\($0.scenario) / \($0.step) \($0.ms) ms" } ?? "none"), failures: \(failures.count)\n"
         for f in failures { out += "  - \(f)\n" }
         return out
+    }
+}
+
+/// Serves deterministic HTML pages on 127.0.0.1 for the Safari Gym scenario without external network access.
+final class GymLocalServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "poki.gym.local-server")
+    private let pages: [String: String]
+
+    var port: UInt16 { listener.port?.rawValue ?? 0 }
+
+    static func safariPages() throws -> GymLocalServer {
+        try GymLocalServer(pages: [
+            "/first": """
+            <!doctype html>
+            <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gym Local Page</title></head>
+            <body style="font:18px -apple-system,sans-serif;margin:24px">
+            <h1>Gym Local Page</h1>
+            <p>Local loopback fixture for Safari UI automation.</p>
+            <div style="height:900px"></div>
+            <p><a href="/second">Learn more</a></p>
+            </body></html>
+            """,
+            "/second": """
+            <!doctype html>
+            <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gym Second Page</title></head>
+            <body style="font:18px -apple-system,sans-serif;margin:24px">
+            <h1>Gym Second Page</h1>
+            <p>Second local page reached from the link.</p>
+            </body></html>
+            """,
+        ])
+    }
+
+    init(pages: [String: String]) throws {
+        self.pages = pages
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        listener = try NWListener(using: parameters)
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { if case .ready = $0 { ready.signal() } }
+        listener.newConnectionHandler = { [weak self] connection in self?.serve(connection) }
+        listener.start(queue: queue)
+        guard ready.wait(timeout: .now() + 5) == .success else {
+            listener.cancel()
+            throw URLError(.cannotConnectToHost)
+        }
+    }
+
+    func stop() { listener.cancel() }
+
+    deinit { listener.cancel() }
+
+    private func serve(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        read(connection, Data())
+    }
+
+    private func read(_ connection: NWConnection, _ received: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { [weak self] data, _, done, error in
+            guard let self else { return }
+            let received = received + (data ?? Data())
+            if received.range(of: Data("\r\n\r\n".utf8)) != nil {
+                let firstLine = String(decoding: received.prefix(256), as: UTF8.self).split(whereSeparator: \.isNewline).first ?? ""
+                let rawTarget = firstLine.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+                let path = rawTarget.split(separator: "?").first.map(String.init) ?? rawTarget
+                let body = self.pages[path] ?? ""
+                let status = self.pages[path] == nil ? "404 Not Found" : "200 OK"
+                let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
+                return connection.send(content: Data((head + body).utf8), completion: .contentProcessed { _ in connection.cancel() })
+            }
+            if done || error != nil { return connection.cancel() }
+            self.read(connection, received)
+        }
     }
 }

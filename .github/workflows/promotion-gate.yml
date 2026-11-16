@@ -1,6 +1,5 @@
 # The check on a promotion PR (propose-promotion.yml). For a beta: the Gym on the promoted commit,
-# passing when neither scorecard has more failures than the last published beta's (the first beta
-# has nothing to compare with and passes on the scorecards existing). For a stable: the beta has been
+# passing only when both scorecards finish with zero failures. For a stable: the beta has been
 # out for soak_days (.github/channels.json, 3), unless the PR has the soak-override label or the
 # proposal gave a reason. Make "promotion gate / verdict" a required check on main.
 name: promotion gate
@@ -59,16 +58,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: python3 .github/scripts/promotion.py soak
-      - name: The last beta's scorecards
-        if: needs.read.outputs.channel == 'beta'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          mkdir -p base
-          last="$(gh api "repos/$GH_REPO/releases?per_page=100" --jq '[.[] | select(.draft | not) | select(.tag_name | test("^app-[0-9.]+-beta\\.[0-9]+$"))] | sort_by(.published_at) | last | .tag_name // empty')"
-          if [ -n "$last" ]; then gh release download "$last" --dir base --pattern 'gym-scorecard*.txt' || true; fi
-          echo "Baseline: ${last:-none (first beta)}"
       - name: This build's scorecards
         if: needs.read.outputs.channel == 'beta'
         env:
@@ -91,6 +80,14 @@ jobs:
             gh run download "$run" --name "$name" --dir "new/$name" || echo "::warning::$name missing in run $run"
             cp "new/$name/$name.txt" new/ 2>/dev/null || true
           done
-      - name: The Gym is no worse than the last beta
+      - name: Both Gym scorecards have zero failures
         if: needs.read.outputs.channel == 'beta'
-        run: python3 .github/scripts/promotion.py gym base new
+        env:
+          GYM: ${{ needs.gym.result }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/promotion.py gym new
+          if [ "$GYM" != success ] && [ "$GYM" != skipped ]; then
+            echo "::error::the Gym workflow did not succeed (result: $GYM)"
+            exit 1
+          fi

@@ -171,26 +171,26 @@ final class BrowserGuardTests: XCTestCase {
 
     func testOwnerFieldValuesStayOutOfModelSessionsAndLogs() async throws {
         let fields = [
-            ("<input autocomplete='one-time-code' inputmode='numeric'>", "739281"),
+            ("<input autocomplete='one-time-code' inputmode='numeric'>", "7392816405"),
             ("<input type='tel' autocomplete='section-pay billing cc-number'>", "4111222233334444"),
             ("<input type='password'>", "fake-password-739"),
             ("<input autocomplete='current-password'>", "fake-current-392"),
             ("<input autocomplete='new-password'>", "fake-new-824"),
-            ("<input type='number' autocomplete='cc-csc'>", "937482"),
+            ("<input type='number' autocomplete='cc-csc'>", "9374826150"),
             ("<input autocomplete='cc-exp'>", "12/2039"),
             ("<input autocomplete='cc-exp-month'>", "fake-month-09"),
-            ("<input autocomplete='cc-exp-year'>", "2038"),
+            ("<input autocomplete='cc-exp-year'>", "fake-year-2038"),
             ("<input name='passportNumber'>", "FAKE-PASSPORT-821"),
             ("<input aria-label='身份证号码'>", "FAKE-ID-624"),
-            ("<input name='verificationCode'>", "842617"),
+            ("<input name='verificationCode'>", "8426179304"),
             ("<input name='cardNumber'>", "5555666677778888"),
             ("<input name='expiryDate'>", "11/2037"),
-            ("<input name='securityCode'>", "826491"),
-            ("<input inputmode='numeric'>", "318642"),
+            ("<input name='securityCode'>", "8264917305"),
+            ("<input inputmode='numeric'>", "3186429507"),
             ("<input>", "private-unknown-952"),
             ("<textarea name='passport'></textarea>", "FAKE-TEXTAREA-739"),
             ("<div contenteditable='true' aria-label='Identity document'></div>", "FAKE-EDITABLE-521"),
-            ("<select autocomplete='cc-exp-year'><option value=''>Choose</option><option>2036</option></select>", "2036"),
+            ("<select autocomplete='cc-exp-year'><option value=''>Choose</option><option>fake-year-2036</option></select>", "fake-year-2036"),
         ]
         let controls = fields.map(\.0).joined(separator: "<br>")
         let page = "<html><head><title>Local privacy fixture</title></head><body><input type='search' aria-label='Search' value='ordinary search'><button>Refresh</button>" + controls + "</body></html>"

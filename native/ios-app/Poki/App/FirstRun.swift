@@ -15,6 +15,36 @@ enum EarlierVersion {
     }
 }
 
+enum LaunchMode: Equatable, Sendable {
+    case interactive
+    case scripted
+    case xctest
+
+    private nonisolated static let xctestEnvironmentKeys = [
+        "XCTestBundlePath",
+        "XCTestConfigurationFilePath",
+        "XCTestSessionIdentifier",
+        "XCTestManagerVariant",
+    ]
+
+    nonisolated static var current: LaunchMode {
+        resolve(environment: ProcessInfo.processInfo.environment,
+                arguments: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
+    }
+
+    nonisolated static func resolve(environment: [String: String], arguments: [String: Any]) -> LaunchMode {
+        if xctestEnvironmentKeys.contains(where: { environment[$0] != nil }) || arguments["XCTest"] != nil {
+            return .xctest
+        }
+        if arguments.keys.contains(where: { $0.hasPrefix("poki") }) {
+            return .scripted
+        }
+        return .interactive
+    }
+
+    nonisolated var suppressesSystemPermissionPrompts: Bool { self != .interactive }
+}
+
 /// The first run: Poki says hello, then goes through what it needs (this iPhone, a model, the microphone),
 /// each of which can wait, and says what to try. Someone who used an earlier version never sees it on
 /// updating; it can be gone through again from Settings › Automation › Setup.
@@ -36,8 +66,9 @@ enum FirstRun {
     static func isDue(defaults: UserDefaults = .standard) -> Bool {
         let arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
         if arguments["pokiScreen"] as? String == "welcome" { return true }
-        if ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil { return false }
-        if arguments.keys.contains(where: { $0.hasPrefix("poki") }) { return false }
+        if LaunchMode.resolve(environment: ProcessInfo.processInfo.environment, arguments: arguments) != .interactive {
+            return false
+        }
         return defaults.string(forKey: key) == Record.due.rawValue
     }
 

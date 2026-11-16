@@ -53,8 +53,7 @@ final class ComposerReturnTests: XCTestCase {
 
     func testPastingTextThatEndsInANewLineKeepsTheDraft() throws {
         let (field, draft) = try composer()
-        let previous = UIPasteboard.general.items
-        defer { UIPasteboard.general.items = previous }
+        defer { UIPasteboard.general.items = [] }
         type("Draft", into: field)
         settle { draft.text == "Draft" }
         field.selectedTextRange = field.textRange(from: field.beginningOfDocument, to: field.endOfDocument)

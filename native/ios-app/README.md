@@ -67,17 +67,13 @@ Use Xcode 27.1 or later to build and test on iPhone Duo. The iOS 27.1 SDK lets t
 edges of the unfolded display. In Split View, Poki sizes its chat and conversations drawer to the
 space assigned by the system. The iOS deployment target remains unchanged.
 
-`native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers).
+`native/ios-app/scripts/app-tests.sh SIMULATOR_UDID` builds `PokiTests` and runs it inside Poki on a booted simulator (the in-process transport's clipboard and session answers). `.github/workflows/ios-app-tests.yml` builds the Release external IPA with `.github/actions/build-ipa` (`editions: external`, using the same Xcode selection as `prealpha.yml`) and runs `app-tests.sh` on a fresh simulator for pull requests that touch `native/ios-app` (or its local iOS, launcher, and signing dependencies) and every night on `main`.
 
 ### Notification permission before UI and Live Activity tests
 
-A new simulator has no notification decision for Poki. Tests that start a session can request
-permission asynchronously, leaving the system alert above later tests, even after the test app
-exits. While that alert is present, Poki is inactive: a foreground-only Live Activity must not
-start, and accessibility reads describe the alert instead of the preview or browser header.
-An absent activity or missing localized text in this state is not a completed product check.
+When Poki launches under XCTest or with `-poki…` scripted launch arguments (`LaunchMode` in `Poki/App/FirstRun.swift`), it registers notification actions without requesting system notification, microphone, speech, or location authorization. `app-tests.sh` can therefore run on a brand-new simulator without triggering a SpringBoard permission alert.
 
-Use this preparation whenever the simulator is new or its notification permission was reset:
+If you first launch Poki interactively on a new simulator without test arguments, iOS can still show the notification prompt and leave Poki inactive above later tests. Use this recovery whenever an interactive launch left a permission alert on a simulator:
 
 1. Record the simulator UUID and use that explicit UUID for every command; do not select a physical
    iPhone or rely on a default device. Build and install the test host, then run the session-starting
