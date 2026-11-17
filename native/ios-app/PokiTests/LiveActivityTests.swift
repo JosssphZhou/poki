@@ -1,5 +1,6 @@
 import ActivityKit
 import Darwin
+import PokiCore
 import UIKit
 import UserNotifications
 import XCTest
@@ -170,6 +171,46 @@ final class LiveActivityTests: XCTestCase {
             XCTAssertTrue(activities().isEmpty)
 
             await app.host.externalTaskFinished(session: session)
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testDeletingMCPSessionRestoresCaptureBeforeSessionEventIsHandled() async throws {
+        try await withSessionApp { app, activities in
+            let automation = FakeAutomation()
+            _ = automation.prepare()
+            let transport = CaptureReturnTransport(session: automation) {
+                await MainActor.run {
+                    app.becameActive()
+                    XCTAssertTrue(activities().isEmpty, "Return activation is still in progress")
+                }
+            }
+            let core = PokiCore(config: CoreConfig(treeFormat: "xml", humanize: false),
+                                host: app.host, transport: transport)
+            // This core's end event is deliberately not pumped into AppModel. UIKit's callback
+            // must be safe even when the AsyncStream consumer has not incremented endingTasks.
+            let initialized = await core.handle(RelayRequest(id: "init", method: "POST", headers: [:],
+                body: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#))
+            let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+            app.startSession()
+            app.inProcessReadyForProbe()
+            XCTAssertTrue(app.sessionOn, app.problem ?? "Session did not start")
+            let original = try XCTUnwrap(activities().first, AppLog.shared.lines.suffix(12).joined(separator: "\n"))
+            let looked = await core.handle(RelayRequest(id: "look", method: "POST",
+                headers: ["mcp-session-id": session],
+                body: #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"look","arguments":{}}}"#))
+            XCTAssertFalse(looked.body.contains(#""isError":true"#), looked.body)
+            let hidden = await app.hideLiveActivityForCapture(task: .external(session))
+            XCTAssertFalse(hidden.isError)
+            app.wentToBackground()
+            await transport.leaveOrigin()
+
+            let deleted = await core.handle(RelayRequest(id: "delete", method: "DELETE",
+                headers: ["mcp-session-id": session], body: ""))
+            XCTAssertEqual(deleted.status, 200)
+            let activations = await transport.activations
+            XCTAssertEqual(activations, 1, "The test must actually return to the origin")
             XCTAssertEqual(activities().count, 1)
             XCTAssertNotEqual(activities().first?.id, original.id)
         }
@@ -726,5 +767,33 @@ private extension ActivityFace.Compact {
     func says(_ text: String) -> Bool {
         let words = Mirror(reflecting: self).children.first.map { String(describing: $0.value) } ?? ""
         return words.contains(text)
+    }
+}
+
+
+private actor CaptureReturnTransport: HTTPTransport {
+    private let screen: SessionScreenTransport
+    private let returning: @Sendable () async -> Void
+    private var atOrigin = true
+    private(set) var activations = 0
+
+    init(session: FakeAutomation, returning: @escaping @Sendable () async -> Void) {
+        screen = SessionScreenTransport(session: session)
+        self.returning = returning
+    }
+
+    func leaveOrigin() { atOrigin = false }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        if url.path.hasSuffix("/wda/apps/activate") {
+            activations += 1
+            await returning()
+            atOrigin = true
+        }
+        if url.path.hasSuffix("/wda/activeAppInfo"), !atOrigin {
+            let response: JSON = ["value": ["bundleId": "com.apple.calculator", "name": "Calculator"]]
+            return (200, response.data())
+        }
+        return try await screen.send(method: method, url: url, body: body, timeout: timeout)
     }
 }

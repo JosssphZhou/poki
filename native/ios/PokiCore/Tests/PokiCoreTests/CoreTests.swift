@@ -1070,6 +1070,8 @@ final class MCPTests: XCTestCase {
         _ = try await call("hide_live_activity")
         _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": session], body: ""))
         XCTAssertEqual(host.finishedExternalTasks.value, [session, session])
+        XCTAssertEqual(host.externalTaskLifecycle.value,
+                       ["returning \(session)", "finished \(session)", "returning \(session)", "finished \(session)"])
     }
 
     func testGetIsNotAllowed() async {

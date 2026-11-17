@@ -434,6 +434,8 @@ public final class PokiCore: @unchecked Sendable {
         let externalSession = computer.origin?.session
         let line: String?
         if switching || (session != nil && computer.hasLocalWorkspace) {
+            // Returning can activate Poki before the queued session-end event is consumed.
+            if let externalSession { await host?.externalTaskReturning(session: externalSession) }
             line = await computer.returnToOrigin()
         } else {
             computer.forgetTask()
