@@ -46,8 +46,9 @@ PROVIDERS = '''How should Poki reach iMessage?
 2. Photon
    Photon hosts the iMessage line, so you run only the Poki worker, on macOS
    or Linux. You text a number Photon assigns to you. Task text and replies
-   pass through Photon's servers. Setup signs you in to Photon in a browser
-   and prepares a Photon project for Poki.
+   pass through Photon's servers. Setup signs you in to Photon in a browser,
+   then sets up a project and an API key for Poki in your Photon account and
+   assigns your sender a line.
 '''
 PHOTON_ASSIGNED_STEPS = '''Next (no message was sent and no worker was started):
 1. Send that iMessage from the allowed sender. A shared line can only reply
