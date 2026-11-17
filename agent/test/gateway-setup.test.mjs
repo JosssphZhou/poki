@@ -155,7 +155,7 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   await evidence('photon-setup-and-launcher.json', { setup, existing, check, assign, forbidden, permissions, requests: api.requests });
 });
 
-test('Photon setup describes both iMessage routes, signs in with a device code and stores the project key it creates', async t => {
+test('Photon setup describes both iMessage routes, signs in with a device code, prepares the project and stores the key it creates', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'poki-photon-login-'));
   const browser = await mkdtemp(join(tmpdir(), 'poki-photon-browser-'));
   const api = await makePhoton();
@@ -170,22 +170,21 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
     return child.then(result => ({ code: 0, ...result }), error => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }));
   };
   const answers = join(directory, 'answers.json');
+  const placed = join(directory, 'placed.json');
+  const other = { organizationId: `pho_org_${'0'.repeat(25)}2`, name: 'Other org' };
   await writeFile(answers, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device' }), { mode: 0o600 });
-  const setup = (configDir, fileLimit) => cli('sh', ['-c', `${fileLimit ? 'ulimit -f 0 && ' : ''}exec ./bin/setup-channels "$@"`, 'sh',
-    '--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', answers], { env });
-  const second = { projectId: `pho_prj_${'0'.repeat(25)}2`, name: 'Second project' };
+  const setup = (configDir, fileLimit, args = [], file = answers) => cli('sh', ['-c', `${fileLimit ? 'ulimit -f 0 && ' : ''}exec ./bin/setup-channels "$@"`, 'sh',
+    '--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', file, ...args], { env });
+  const connection = async configDir => JSON.parse(await readFile(join(configDir, 'connection.json'), 'utf8'));
+  const earlier = { projectId: `pho_prj_${'0'.repeat(25)}2`, name: 'Earlier project' };
+  api.projects = [earlier];
 
   api.login.denied = true;
   const denied = await setup(join(directory, 'denied'));
   assert.equal(denied.code, 1);
   assert.match(denied.stderr, /sign-in did not complete \(access_denied\)/);
-  api.login = { pending: 0, polls: 0 };
-  api.projects.push(second);
-  const several = await setup(join(directory, 'several'));
-  assert.equal(several.code, 1);
-  assert.match(several.stderr, /Add projectId to the answers file:\n1\. Poki tasks [^\n]*\n2\. Second project/);
-  api.projects.pop();
-  for (const [fault, problem] of [['projects', /did not list the projects of Example org \(HTTP 500\)/], ['redirect', /did not list your organizations \(HTTP 307\)/]]) {
+  for (const [fault, problem] of [['projects', /did not list the projects of Example org \(HTTP 500\)/], ['redirect', /did not list your organizations \(HTTP 307\)/],
+    ['create', /did not create the project "Poki Agent" in Example org \(HTTP 409, SLUG_TAKEN\)\. Nothing was changed/]]) {
     api.accountFault = fault;
     api.login = { pending: 0, polls: 0 };
     const result = await setup(join(directory, fault));
@@ -193,11 +192,15 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
     assert.match(result.stderr, problem);
   }
   api.accountFault = null;
-  api.projects.push(second);
+  api.organizations.push(other);
+  const unplaced = await setup(join(directory, 'unplaced'));
+  assert.equal(unplaced.code, 1);
+  assert.match(unplaced.stderr, /Add organizationId to the answers file[^\n]*"Poki Agent" project:\n1\. Example org \(pho_org_0{25}1\)\n2\. Other org \(pho_org_0{25}2\)/);
+  api.organizations.pop();
   assert.deepEqual(api.redirected, [], 'The sign-in is not sent to a redirect target');
-  assert.deepEqual([await readdir(directory), api.keys], [['answers.json'], []], 'A sign-in that cannot finish creates no key and writes nothing');
+  assert.deepEqual([await readdir(directory), api.keys, api.created], [['answers.json'], [], []], 'A sign-in that cannot finish creates no project or key and writes nothing');
 
-  api.projects.pop();
+  api.billing = 1;
   const unsaved = {};
   for (const [fault, target, problem, outcome] of [
     ['refused', 'refused', /did not accept the API key it had just created \(HTTP 403\)/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
@@ -218,6 +221,12 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   api.keyFault = null;
   assert.deepEqual([await readdir(directory), api.keys.length, api.revoked.length], [['answers.json'], 7, 6], 'A key that cannot be saved is revoked and leaves nothing behind');
   assert.deepEqual(api.redirected, [], 'The new key is not sent to a redirect target');
+  assert.deepEqual(api.created.map(({ projectId, organizationId, name }) => ({ projectId, organizationId, name })),
+    [{ projectId: api.project, organizationId: api.organizations[0].organizationId, name: 'Poki Agent' }], 'Setup creates the project once; later runs find it by name');
+  assert.match(api.created[0].slug, /^poki-agent-[0-9a-f]{8}$/);
+  assert.equal(api.waited, 1, 'Setup waits until a new project is ready before it creates a key');
+  assert.match(unsaved['refused refused'].stdout, /Created the Photon project "Poki Agent" \(Example org, pho_prj_0{25}1\)\./);
+  assert.match(unsaved['moved moved'].stdout, /Using your Photon project "Poki Agent" \(Example org, pho_prj_0{25}1\)\./);
   api.keys.length = 0;
 
   api.login = { pending: 2, polls: 0 };
@@ -231,16 +240,37 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   assert.match(api.keys[0].name, /^Poki Agent/);
   assert.equal((await stat(configDir)).mode & 0o777, 0o700);
   for (const name of ['photon.json', 'connection.json']) assert.equal((await stat(join(configDir, name))).mode & 0o777, 0o600);
-  assert.deepEqual(JSON.parse(await readFile(join(configDir, 'connection.json'), 'utf8')), { projectId: api.project, apiKey: api.key });
+  assert.deepEqual(await connection(configDir), { projectId: api.project, apiKey: api.key });
+  assert.match(signedIn.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent and no worker was started\):\n1\. Send that iMessage/);
+  assert.ok(!signedIn.stdout.includes('--assign'), 'Setup that assigned the line does not ask for the assignment again');
+  assert.deepEqual(api.assignments.map(({ projectId, handle }) => ({ projectId, handle })), [{ projectId: api.project, handle: 'allowed@example.test' }]);
   const check = await cli(process.execPath, ['bin/poki-photon.mjs', '--config-dir', configDir, '--check'], { env });
   assert.equal(check.code, 0, check.stderr);
   assert.match(check.stdout, /authentication and read check succeeded/);
 
-  api.projects.push(second);
+  api.assignError = { status: 403, code: 'INSUFFICIENT_SCOPE' };
+  const named = join(directory, 'named');
+  const unassigned = await setup(named, false, ['--project-name', ' earlier PROJECT ']);
+  assert.equal(unassigned.code, 0, unassigned.stderr);
+  assert.match(unassigned.stdout, /Using your Photon project "Earlier project" \(Example org, pho_prj_0{25}2\)\./);
+  assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: This API key cannot assign shared lines[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
+  assert.equal((await connection(named)).projectId, earlier.projectId);
+  api.assignError = null;
+
+  api.organizations.push(other);
+  await writeFile(placed, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', organizationId: `pho_org_${'0'.repeat(25)}9` }), { mode: 0o600 });
+  const stranger = await setup(join(directory, 'stranger'), false, ['--project-name', 'Team line'], placed);
+  assert.equal(stranger.code, 1);
+  assert.match(stranger.stderr, /does not belong to that organization ID/);
+  await writeFile(placed, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', organizationId: other.organizationId }));
+  const team = await setup(join(directory, 'team'), false, ['--project-name', 'Team line'], placed);
+  assert.equal(team.code, 0, team.stderr);
+  assert.match(team.stdout, /Created the Photon project "Team line" \(Other org, pho_prj_0{23}101\)\.[^]*Shared line assigned\./);
+  assert.deepEqual(await connection(join(directory, 'team')), { projectId: api.created[1].projectId, apiKey: api.key });
+
   api.fullSecret = true;
-  api.login = { pending: 0, polls: 0 };
   const chosen = join(directory, 'chosen');
-  const interactive = await terminal(['--config-dir', chosen], '2\nallowed@example.test\nsynthetic-device\n2\n');
+  const interactive = await terminal(['--config-dir', chosen, '--project-name', 'Side line'], '2\nallowed@example.test\nsynthetic-device\n2\n');
   assert.equal(interactive.code, 0, interactive.stdout);
   assert.match(interactive.stdout, /The code is valid for 5 minutes\.\s+Opened the link in your browser\.\s+Waiting for your approval/);
   const link = `${api.url}/device?user_code=WXYZ-1234\n`;
@@ -253,10 +283,13 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   }
   assert.equal(await readFile(env.POKI_OPENED, 'utf8'), link, 'The link is not opened with --no-browser or in CI');
   assert.match(interactive.stdout, /1\. BlueBubbles \(default\)[^]*stay on your machine[^]*2\. Photon[^]*pass through Photon's servers/);
-  assert.match(interactive.stdout, /Your Photon projects:\s+1\. Poki tasks [^\n]*\s+2\. Second project/);
+  assert.match(interactive.stdout, /Your Photon organizations:\s+1\. Example org [^\n]*\s+2\. Other org [^]*Created the Photon project "Side line" \(Other org, pho_prj_0{23}102\)\./);
+  assert.match(interactive.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\./);
+  assert.deepEqual(api.created.slice(1).map(({ organizationId, name, slug }) => ({ organizationId, name, slug: slug.slice(0, -8) })),
+    [{ organizationId: other.organizationId, name: 'Team line', slug: 'team-line-' }, { organizationId: other.organizationId, name: 'Side line', slug: 'side-line-' }]);
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
-  assert.deepEqual(JSON.parse(await readFile(join(chosen, 'connection.json'), 'utf8')), { projectId: second.projectId, apiKey: api.key });
-  const output = JSON.stringify([denied, several, unsaved, signedIn, check, interactive]);
+  assert.deepEqual(await connection(chosen), { projectId: api.created[2].projectId, apiKey: api.key });
+  const output = JSON.stringify([denied, unplaced, unsaved, signedIn, check, unassigned, stranger, team, interactive]);
   assert.ok(!output.includes(api.key) && !output.includes(api.account) && !output.includes('local-device-code'));
-  await evidence('photon-sign-in-setup.json', { denied, several, unsaved, signedIn, check, interactive, keys: api.keys });
+  await evidence('photon-sign-in-setup.json', { denied, unplaced, unsaved, signedIn, check, unassigned, stranger, team, interactive, keys: api.keys, created: api.created });
 });

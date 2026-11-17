@@ -153,7 +153,7 @@ For an isolated MCP and worker lifecycle, run `node agent/scripts/self-chat.mjs 
 
 Poki can also receive iMessage tasks through [Photon](https://photon.codes/docs/beta/photon), which hosts the iMessage line. This channel needs no Mac running Messages and no BlueBubbles, but task text and replies pass through Photon's servers. Read the [Photon channel guide](../docs/photon-channel.md) for setup, the shared-line assignment and the limits of Photon Beta.
 
-The guided route is `./bin/setup-channels --channel imessage`: choose Photon, and setup signs you in to Photon in a browser, creates the project API key and stores it privately for `node bin/poki-photon.mjs`.
+The guided route is `./bin/setup-channels --channel imessage`: choose Photon, and setup signs you in to Photon in a browser, finds or creates your `Poki Agent` project, creates its API key, stores it privately for `node bin/poki-photon.mjs` and assigns your sender a shared line.
 
 To supply the credentials yourself, set the project ID and API key in the worker's environment. The key needs `project:read` and `project:write`. Keep it out of configuration files, shell history, and source control. These lines work in zsh and bash:
 

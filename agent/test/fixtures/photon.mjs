@@ -16,7 +16,8 @@ export async function makePhoton() {
   const keyId = id('sk', 1), organization = id('org', 1);
   Object.assign(fixture, { project, agent, space: space(1, 'direct'), key: `${keyId}_local-photon-test-secret`, account: 'local-photon-account-token',
     events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [], read: [], typing: [],
-    login: { pending: 0, polls: 0 }, projects: [{ projectId: project, name: 'Poki tasks' }], keys: [], revoked: [], calls: 0, redirected: [] });
+    login: { pending: 0, polls: 0 }, organizations: [{ organizationId: organization, name: 'Example org' }], projects: [{ projectId: project, name: 'Poki tasks' }],
+    created: [], billing: 0, waited: 0, keys: [], revoked: [], calls: 0, redirected: [] });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -47,14 +48,30 @@ export async function makePhoton() {
     if (req.headers.authorization === `Bearer ${fixture.account}`) {
       const created = url.pathname.match(/^\/v1\/projects\/(pho_prj_[0-9a-z]{26})\/api-keys$/)?.[1];
       const revoked = url.pathname.match(/^\/v1\/projects\/pho_prj_[0-9a-z]{26}\/api-keys\/(pho_sk_[0-9a-z]{26})$/)?.[1];
+      const member = fixture.organizations.find(item => url.pathname === `/v1/organizations/${item.organizationId}/projects`);
+      const settling = fixture.created.find(item => url.pathname === `/v1/projects/${item.projectId}`);
       if (fixture.accountFault === 'redirect') {
         res.writeHead(307, { location: `${fixture.url}/elsewhere` }).end();
-      } else if (fixture.accountFault === 'projects' && url.pathname.endsWith('/projects')) {
+      } else if (fixture.accountFault === 'projects' && member && req.method === 'GET') {
         problem({ status: 500, code: 'INTERNAL' });
       } else if (url.pathname === '/v1/organizations' && req.method === 'GET') {
-        send(200, { organizations: [{ organizationId: organization, name: 'Example org' }], ownedOrganizationIds: [organization], acquisitionQuestionnaireExempt: true });
-      } else if (url.pathname === `/v1/organizations/${organization}/projects` && req.method === 'GET') {
-        send(200, { projects: fixture.projects.map(item => ({ ...item, organizationId: organization })) });
+        send(200, { organizations: fixture.organizations, ownedOrganizationIds: [organization], acquisitionQuestionnaireExempt: true });
+      } else if (member && req.method === 'GET') {
+        send(200, { projects: fixture.projects.map(item => ({ organizationId: organization, ...item })).filter(item => item.organizationId === member.organizationId) });
+      } else if (member && req.method === 'POST' && req.headers['idempotency-key']) {
+        if (fixture.accountFault === 'create') { problem({ status: 409, code: 'SLUG_TAKEN' }); return; }
+        const made = { projectId: fixture.projects.some(item => item.projectId === project) ? id('prj', 100 + fixture.created.length) : project,
+          organizationId: member.organizationId, ...body, billingInitialization: fixture.billing ? 'pending' : 'completed' };
+        fixture.created.push(made);
+        fixture.projects.push(made);
+        send(fixture.billing ? 202 : 201, made);
+      } else if (settling && req.method === 'GET') {
+        fixture.waited += 1;
+        fixture.billing = Math.max(0, fixture.billing - 1);
+        settling.billingInitialization = fixture.billing ? 'pending' : 'completed';
+        send(200, settling);
+      } else if (created && fixture.billing) {
+        problem({ status: 409, code: 'PROJECT_NOT_READY' });
       } else if (created && req.method === 'POST' && req.headers['idempotency-key']) {
         fixture.keys.push({ project: created, ...body });
         send(201, { apiKey: { apiKeyId: keyId, projectId: created, name: body.name, permissions: body.permissions, expiresAt: null, revokedAt: null },
@@ -99,11 +116,13 @@ export async function makePhoton() {
         metadata: {}, createdAt: now, updatedAt: now, status: 'dispatched', timestamps: { dispatchedAt: now } });
       return;
     }
-    if (url.pathname === `/v1/projects/${project}/platforms/imessage/assignments`) {
+    const line = url.pathname.match(/^\/v1\/projects\/(pho_prj_[0-9a-z]{26})\/platforms\/imessage\/assignments$/)?.[1];
+    if (line === project || line && fixture.projects.some(item => item.projectId === line)) {
       if (fixture.assignError) { problem(fixture.assignError); return; }
-      if (req.method === 'GET') { send(200, { assignments: fixture.assignments }); return; }
-      if (fixture.assignments.some(assignment => assignment.handle === body.handle)) { problem({ status: 409, code: 'ASSIGNMENT_EXISTS' }); return; }
-      const assignment = { assignmentId: `assignment-${fixture.assignments.length + 1}`, projectId: project, platform: 'imessage', handle: body.handle,
+      const assignments = fixture.assignments.filter(assignment => assignment.projectId === line);
+      if (req.method === 'GET') { send(200, { assignments }); return; }
+      if (assignments.some(assignment => assignment.handle === body.handle)) { problem({ status: 409, code: 'ASSIGNMENT_EXISTS' }); return; }
+      const assignment = { assignmentId: `assignment-${fixture.assignments.length + 1}`, projectId: line, platform: 'imessage', handle: body.handle,
         assignedPhoneNumber: agent.handle, optIn: { state: 'pending' }, createdAt: now, updatedAt: now };
       fixture.assignments.push(assignment);
       send(201, assignment);

@@ -20,7 +20,7 @@ Photon filters one-time passcodes on iMessage lines, so do not rely on this chan
 ## Requirements
 
 - Node.js 24 or later, Python 3.11 or newer for the setup command, and the [Poki Agent prerequisites](../agent/README.md), including `npm ci --prefix agent` and model login.
-- A Photon account with a Photon Beta project. Follow Photon's [project setup](https://photon.codes/docs/beta/get-started/project) to create one. Setup signs you in and creates the project API key, so you need no key beforehand.
+- A Photon account. Setup signs you in, prepares the Photon Beta project and creates its API key, so you need no project or key beforehand.
 - A plan with shared iMessage capacity. See Photon's [plans](https://photon.codes/docs/beta/plans-and-billing).
 - One iMessage identity you send from: a phone number with country code, such as `+14155550123`, or an Apple Account email. On iPhone, **Settings → Apps → Messages → Send & Receive** shows it. A number and an email are different senders.
 
@@ -35,8 +35,9 @@ From the repository root, run:
 Setup describes the two ways Poki can reach iMessage, BlueBubbles and Photon, and asks which one to use. Choose Photon, or skip the question with `--provider photon`. It then asks for the allowed sender and the Poki device name or ID, and signs you in to Photon:
 
 1. It prints a link and a code, and opens the link in your browser. Check that the page shows the same code and approve. This is Photon's device login, the one `photon login` uses, so setup never sees your password. The code is valid for a few minutes. You can also open the link on another device. Setup opens a browser only in a terminal on a computer with a desktop, never when `CI` is set, and not with `--no-browser`.
-2. It lists the projects your account can read and asks which one to use. With a single project it uses that one.
-3. It creates a project API key named `Poki Agent on <this computer's name>` in that project and stores it. The key has `project:read` and `project:write` for the worker, and `platforms:read` and `platforms:write` so that `--assign` below can map your sender to a line. It does not expire. Revoke it under the project's API keys in the Photon dashboard when you stop using this channel.
+2. It uses your Photon project named `Poki Agent`, and creates that project when your account has none of that name. Running setup again therefore reuses the same project instead of adding another. To use a project you already have, pass its name, for example `--project-name "My project"`; a name that matches no project creates one with that name. An account that belongs to several organizations is asked which one gets a new project.
+3. It creates a project API key named `Poki Agent on <this computer's name>` in that project and stores it. The key has `project:read` and `project:write` for the worker, and `platforms:read` and `platforms:write` to map your sender to a line. It does not expire. Revoke it under the project's API keys in the Photon dashboard when you stop using this channel.
+4. It maps your sender to a shared iMessage line in that project and prints the number to text. This uses one shared iMessage assignment from the project's plan. If Photon refuses the assignment, setup says why, keeps the configuration and leaves the step to you, as described under [Assign a shared line](#assign-a-shared-line).
 
 The sign-in is used for these steps only and is not stored. The worker runs on the project key.
 
@@ -46,18 +47,18 @@ Setup creates `~/.config/poki-agent/photon/`:
 - `connection.json`: project ID and API key. Keep this file private.
 - `state/`: created by the channel later for its cursor and task records.
 
-The directory has mode `700` and both JSON files have mode `600`. Setup prints no key, sends no message and starts no worker. An existing destination causes an error before any sign-in and is left unchanged. If the sign-in is denied or its code expires, no key is created and nothing is written. If setup fails after it has created the key, it revokes that key and says so. When it cannot revoke it, it names the key so that you can revoke it in the Photon dashboard. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
+The directory has mode `700` and both JSON files have mode `600`. Setup prints no key, sends no message and starts no worker. An existing destination causes an error before any sign-in and is left unchanged. If the sign-in is denied or its code expires, no project or key is created and nothing is written. A project that setup created stays in your account when a later step fails, and the next run finds it by name. If setup fails after it has created the key, it revokes that key and says so. When it cannot revoke it, it names the key so that you can revoke it in the Photon dashboard. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
 
 For setup without questions, use `--provider photon --answers /path/to/private-answers.json` with mode `600`:
 
-- With `sender` and `device` only, setup still signs in. It prints the link without opening it and waits, so an agent that runs setup for you can pass the link on. Add `projectId` when the account has more than one project.
+- With `sender` and `device` only, setup still signs in. It prints the link without opening it and waits, so an agent that runs setup for you can pass the link on. Add `projectId` to use one project by its ID, or `organizationId` to say where a new project goes when the account belongs to several organizations.
 - With `sender`, `device`, `projectId` and `apiKey`, setup contacts no service and stores the key you supply. That key needs `project:read` and `project:write`, plus `platforms:read` and `platforms:write` if Poki should assign the shared line.
 
 Keep the answers file outside the repository and remove it afterwards. Do not put a key in command arguments, shell history, screenshots or logs.
 
 ## Assign a shared line
 
-A shared line serves one sender. Map your sender to a line once:
+A shared line serves one sender. Setup maps your sender to a line and prints its number. Run this yourself when setup could not, when you supplied your own key, or to see the number again:
 
 ```sh
 node bin/poki-photon.mjs --assign
@@ -101,6 +102,6 @@ A dropped connection reconnects on its own and resumes after the last event rece
 
 ## Verification scope
 
-The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators, the choice between BlueBubbles and Photon, the device sign-in, project choice, key creation and private configuration. They send no real messages.
+The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators, the choice between BlueBubbles and Photon, the device sign-in, finding or creating the project, key creation, the line assignment during setup and private configuration. They send no real messages.
 
-The browser sign-in against the live Photon service, receipt and delivery through it, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.
+The browser sign-in, project creation and line assignment against the live Photon service, receipt and delivery through it, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.
