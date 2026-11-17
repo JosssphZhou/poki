@@ -22,6 +22,10 @@ export async function makePhoton() {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const send = (status, data) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
+    const page = (key, items) => {
+      const start = Number(url.searchParams.get('pageToken') ?? 0), end = start + (fixture.pageSize || items.length);
+      return { [key]: items.slice(start, end), ...(end < items.length ? { nextPageToken: String(end) } : {}) };
+    };
     const problem = ({ status, code }) => res.writeHead(status, { 'content-type': 'application/problem+json' })
       .end(JSON.stringify({ type: `https://photon.codes/docs/problems/${code.toLowerCase().replaceAll('_', '-')}`, title: code, status, code }));
     fixture.calls += 1;
@@ -57,7 +61,7 @@ export async function makePhoton() {
       } else if (url.pathname === '/v1/organizations' && req.method === 'GET') {
         send(200, { organizations: fixture.organizations, ownedOrganizationIds: [organization], acquisitionQuestionnaireExempt: true });
       } else if (member && req.method === 'GET') {
-        send(200, { projects: fixture.projects.map(item => ({ organizationId: organization, ...item })).filter(item => item.organizationId === member.organizationId) });
+        send(200, page('projects', fixture.projects.map(item => ({ organizationId: organization, ...item })).filter(item => item.organizationId === member.organizationId)));
       } else if (member && req.method === 'POST' && req.headers['idempotency-key']) {
         if (fixture.accountFault === 'create') { problem({ status: 409, code: 'SLUG_TAKEN' }); return; }
         const made = { projectId: fixture.projects.some(item => item.projectId === project) ? id('prj', 100 + fixture.created.length) : project,
@@ -120,7 +124,7 @@ export async function makePhoton() {
     if (line === project || line && fixture.projects.some(item => item.projectId === line)) {
       if (fixture.assignError) { problem(fixture.assignError); return; }
       const assignments = fixture.assignments.filter(assignment => assignment.projectId === line);
-      if (req.method === 'GET') { send(200, { assignments }); return; }
+      if (req.method === 'GET') { send(200, page('assignments', assignments)); return; }
       if (assignments.some(assignment => assignment.handle === body.handle)) { problem({ status: 409, code: 'ASSIGNMENT_EXISTS' }); return; }
       const assignment = { assignmentId: `assignment-${fixture.assignments.length + 1}`, projectId: line, platform: 'imessage', handle: body.handle,
         assignedPhoneNumber: agent.handle, optIn: { state: 'pending' }, createdAt: now, updatedAt: now };

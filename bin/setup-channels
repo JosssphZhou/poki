@@ -256,7 +256,7 @@ def photon_project(token, wanted, name, organization, interactive):
                 if project['projectId'] == wanted or not wanted and project['name'].strip().lower() == name.lower():
                     print(f"Using your Photon project \"{project['name']}\" ({item['name']}, {project['projectId']}).")
                     return project['projectId']
-            page = result.get('nextPageToken')
+            page = result.get('nextPageToken') or None
     if wanted:
         raise ValueError('This Photon account cannot read that project ID.')
     if len(organizations) > 1:
@@ -297,7 +297,7 @@ def photon_assign(project, key, sender):
             for assignment in result['assignments']:
                 if assignment['handle'] == sender:
                     return assignment['assignedPhoneNumber']
-            page = result.get('nextPageToken')
+            page = result.get('nextPageToken') or None
         raise ValueError('This sender already has a shared line. Find its number in the Photon dashboard under iMessage.')
     if status != 201:
         raise ValueError(f"Photon rejected the assignment ({rejection(status, result)}). Check the plan's shared iMessage capacity.")

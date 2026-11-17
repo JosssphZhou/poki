@@ -232,6 +232,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.match(unsaved['moved moved'].stdout, /Using your Photon project "Poki Agent" \(Example org, pho_prj_0{25}1\)\./);
   api.keys.length = 0;
 
+  api.pageSize = 1;
   api.login = { pending: 2, polls: 0 };
   const configDir = join(directory, 'photon');
   const signedIn = await setup(configDir);
@@ -244,6 +245,8 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.equal((await stat(configDir)).mode & 0o777, 0o700);
   for (const name of ['photon.json', 'connection.json']) assert.equal((await stat(join(configDir, name))).mode & 0o777, 0o600);
   assert.deepEqual(await connection(configDir), { projectId: api.project, apiKey: api.key });
+  assert.match(signedIn.stdout, /Using your Photon project "Poki Agent"/, 'A project on a later page of the list is found');
+  assert.equal(api.created.length, 1, 'A project on a later page of the list is not created again');
   assert.match(signedIn.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent and no worker was started\):\n1\. Send that iMessage/);
   assert.ok(!signedIn.stdout.includes('--assign'), 'Setup that assigned the line does not ask for the assignment again');
   assert.deepEqual(api.assignments.map(({ projectId, handle }) => ({ projectId, handle })), [{ projectId: api.project, handle: 'allowed@example.test' }]);
@@ -259,14 +262,15 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: Photon rejected the assignment \(HTTP 403, INSUFFICIENT_SCOPE\)[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
   assert.equal((await connection(named)).projectId, earlier.projectId);
   api.assignError = null;
+  api.assignments.unshift({ projectId: api.project, handle: 'other@example.test', assignedPhoneNumber: '+14155550199' });
   const bare = join(directory, 'bare');
   await mkdir(join(bare, 'bin'), { recursive: true });
   for (const name of ['setup-channels', 'poki-photon.mjs']) await writeFile(join(bare, 'bin', name), await readFile(join(root, 'bin', name)), { mode: 0o755 });
   const uninstalled = await cli(join(bare, 'bin/setup-channels'), ['--channel', 'imessage', '--provider', 'photon', '--config-dir', join(bare, 'photon'), '--answers', answers], { env });
   assert.equal(uninstalled.code, 0, uninstalled.stderr);
   assert.match(uninstalled.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent/,
-    'Setup assigns the line without the agent packages, and prints the number of a line the sender already has');
-  assert.equal(api.assignments.length, 1, 'A sender that already has a line in the project gets no second assignment');
+    'Setup assigns the line without the agent packages, and prints the number of a line the sender already has, from a later page of the list');
+  assert.equal(api.assignments.length, 2, 'A sender that already has a line in the project gets no second assignment');
   const unloaded = await cli(process.execPath, [join(bare, 'bin/poki-photon.mjs'), '--config-dir', join(bare, 'photon')], { env });
   assert.equal(unloaded.code, 1);
   assert.match(unloaded.stderr, /^Poki Agent's packages are not installed \(Cannot find module '[^']*photon\.mjs'\)\. Run npm ci --prefix agent from the repository root first\.\n$/);
