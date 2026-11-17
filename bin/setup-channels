@@ -30,6 +30,13 @@ NEXT_STEPS = '''Finish setup yourself (the installer does not open apps or send 
    Follow any remaining onboarding prompts in BlueBubbles yourself.
 4. Private API and disabling SIP are not required for Poki's plain-text channel.
    See docs/imessage-gateway.md before checking or starting the channel.'''
+PHOTON_NEXT_STEPS = '''Finish setup yourself (nothing was sent to Photon and no worker was started):
+1. Run node bin/poki-photon.mjs --assign to map the sender to a shared Photon
+   iMessage line, or assign it in the Photon dashboard under iMessage.
+2. From the allowed sender, send an iMessage to the assigned number. A shared
+   line can only reply after the sender has messaged it.
+3. Run node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
+   See docs/photon-channel.md before starting the channel.'''
 
 
 def ask(label, default=None):
@@ -142,23 +149,67 @@ def install(args):
     print(NEXT_STEPS)
 
 
+def configure_photon(args):
+    config_dir = Path(args.config_dir).expanduser().absolute()
+    if os.path.lexists(config_dir):
+        raise ValueError('The configuration destination already exists; nothing was changed. Choose an unused directory.')
+    if args.answers:
+        path = Path(args.answers)
+        if path.stat().st_mode & 0o077:
+            raise ValueError('The answers file must be private. Run chmod 600 on it.')
+        try:
+            data = json.loads(path.read_text())
+        except (ValueError, OSError):
+            raise ValueError('Cannot read the private answers file as JSON.') from None
+    else:
+        if not sys.stdin.isatty():
+            raise ValueError('Use a terminal for hidden key input, or pass --answers with a private JSON file.')
+        data = {'sender': ask('Allowed iMessage sender (email, or phone number with country code)'),
+                'device': ask('Poki device name or ID'),
+                'projectId': ask('Photon project ID (pho_prj_...)')}
+        data['apiKey'] = getpass.getpass('Photon project API key (hidden): ')
+    if not isinstance(data, dict):
+        raise ValueError('Answers must be a JSON object.')
+    for field in ['sender', 'device', 'projectId', 'apiKey']:
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            raise ValueError(f'Missing {field} in setup answers.')
+    if not data['projectId'].startswith('pho_prj_'):
+        raise ValueError('Use the Photon Beta project ID, which starts with pho_prj_.')
+    config_dir.mkdir(parents=True, mode=0o700)
+    try:
+        for name, value in [('photon.json', {'sender': data['sender'].strip(), 'device': data['device'], 'auth': 'chatgpt'}),
+                            ('connection.json', {'projectId': data['projectId'], 'apiKey': data['apiKey']})]:
+            with (config_dir / name).open('x') as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                json.dump(value, stream, indent=2)
+                stream.write('\n')
+    except BaseException:
+        shutil.rmtree(config_dir)
+        raise
+    print(f'Private Photon channel configuration: {config_dir}')
+    print(PHOTON_NEXT_STEPS)
+
+
 def main():
-    parser = argparse.ArgumentParser(description='Optionally install the pinned BlueBubbles gateway and configure Poki iMessage.')
-    parser.add_argument('--channel', choices=['none', 'imessage'], help='Omit to choose interactively; default is none.')
+    parser = argparse.ArgumentParser(description='Optionally install the pinned BlueBubbles gateway and configure Poki iMessage, or configure the Photon iMessage channel.')
+    parser.add_argument('--channel', choices=['none', 'imessage', 'photon'], help='Omit to choose interactively; default is none.')
     parser.add_argument('--app-dir', default='~/Applications', help='Application destination directory; existing apps are never replaced.')
-    parser.add_argument('--config-dir', default='~/.config/poki-agent/imessage', help='New private configuration directory.')
-    parser.add_argument('--answers', help='Private JSON file with url, password, sender, chatGuid and device for unattended setup.')
+    parser.add_argument('--config-dir', help='New private configuration directory; default is ~/.config/poki-agent/<channel>.')
+    parser.add_argument('--answers', help='Private JSON file for unattended setup: url, password, sender, chatGuid and device for imessage; sender, device, projectId and apiKey for photon.')
     parser.add_argument('--archive', help='Use an already downloaded official ZIP; the pinned checksum is still required.')
     args = parser.parse_args()
     channel = args.channel
     if channel is None:
-        channel = ask('Optional messaging channel: none or imessage', 'none').lower()
+        channel = ask('Optional messaging channel: none, imessage or photon', 'none').lower()
+    args.config_dir = args.config_dir or '~/.config/poki-agent/' + channel
     if channel == 'none':
         print('Skipped iMessage. No gateway downloaded or installed; existing Poki setup is unchanged.')
     elif channel == 'imessage':
         install(args)
+    elif channel == 'photon':
+        configure_photon(args)
     else:
-        raise ValueError('Choose none or imessage.')
+        raise ValueError('Choose none, imessage or photon.')
 
 
 if __name__ == '__main__':

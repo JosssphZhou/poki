@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, chmod, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { makeMessages } from './fixtures/messages.mjs';
+import { makePhoton } from './fixtures/photon.mjs';
 
 const run = promisify(execFile);
 const root = resolve(import.meta.dirname, '../..');
@@ -96,4 +97,50 @@ test('Private-config launcher checks only the configured chat and does not discl
   assert.equal(api.requests.length, 2, 'Invalid credentials must not reach the gateway');
   assert.ok(!JSON.stringify([result, permissions, malformed]).includes(api.password));
   await evidence('private-launcher.json', { result, permissions, malformed, requests: api.requests, messagesSent: api.sent.length });
+});
+
+test('Photon setup writes private configuration, and its launcher checks and assigns without disclosing the key', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'poki-photon-setup-'));
+  const api = await makePhoton();
+  t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); });
+  const configDir = join(directory, 'photon');
+  const answers = join(directory, 'answers.json');
+  await writeFile(answers, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device',
+    projectId: api.project, apiKey: api.key }), { mode: 0o600 });
+  const setupArgs = ['--channel', 'photon', '--config-dir', configDir, '--answers', answers];
+  const setup = await cli('./bin/setup-channels', setupArgs);
+  assert.equal(setup.code, 0, setup.stderr);
+  assert.equal((await stat(configDir)).mode & 0o777, 0o700);
+  for (const name of ['photon.json', 'connection.json']) assert.equal((await stat(join(configDir, name))).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(await readFile(join(configDir, 'photon.json'), 'utf8')),
+    { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
+  assert.deepEqual(JSON.parse(await readFile(join(configDir, 'connection.json'), 'utf8')), { projectId: api.project, apiKey: api.key });
+  assert.equal(api.requests.length, 0, 'Setup contacts no service');
+  const existing = await cli('./bin/setup-channels', setupArgs);
+  assert.equal(existing.code, 1);
+  assert.match(existing.stderr, /already exists/);
+  const env = { ...process.env, PHOTON_API_URL: api.url };
+  const args = ['bin/poki-photon.mjs', '--config-dir', configDir];
+  const check = await cli(process.execPath, [...args, '--check'], { env });
+  assert.equal(check.code, 0, check.stderr);
+  assert.match(check.stdout, /authentication and read check succeeded/);
+  assert.deepEqual(api.subscriptions, [0]);
+  assert.equal(api.requests.length, 0, 'A check sends no request beyond the event subscription');
+  await assert.rejects(readFile(join(configDir, 'state/messages.lock')), { code: 'ENOENT' });
+  const assign = await cli(process.execPath, [...args, '--assign'], { env });
+  assert.equal(assign.code, 0, assign.stderr);
+  assert.ok(assign.stdout.includes(`From allowed@example.test, send an iMessage to ${api.agent.handle}`));
+  assert.deepEqual(api.assignments.map(assignment => assignment.handle), ['allowed@example.test']);
+  api.assignError = { status: 403, code: 'INSUFFICIENT_SCOPE' };
+  const forbidden = await cli(process.execPath, [...args, '--assign'], { env });
+  assert.equal(forbidden.code, 1);
+  assert.match(forbidden.stderr, /platforms:write/);
+  const connection = join(configDir, 'connection.json');
+  await chmod(connection, 0o644);
+  const permissions = await cli(process.execPath, [...args, '--check'], { env });
+  assert.equal(permissions.code, 1);
+  assert.deepEqual(api.subscriptions, [0], 'A readable key file must not reach Photon');
+  assert.equal(api.sent.length, 0);
+  assert.ok(!JSON.stringify([setup, existing, check, assign, forbidden, permissions]).includes(api.key));
+  await evidence('photon-setup-and-launcher.json', { setup, existing, check, assign, forbidden, permissions, requests: api.requests });
 });
