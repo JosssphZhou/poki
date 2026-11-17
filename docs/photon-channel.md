@@ -34,7 +34,7 @@ From the repository root, run:
 
 Setup describes the two ways Poki can reach iMessage, BlueBubbles and Photon, and asks which one to use. Choose Photon, or skip the question with `--provider photon`. It then asks for the allowed sender and the Poki device name or ID, and signs you in to Photon:
 
-1. It prints a link and a code. Open the link in a browser on any device, check the code and approve. This is Photon's device login, the one `photon login` uses, so setup never sees your password.
+1. It prints a link and a code, and opens the link in your browser. Check that the page shows the same code and approve. This is Photon's device login, the one `photon login` uses, so setup never sees your password. The code is valid for a few minutes. You can also open the link on another device. Setup opens a browser only in a terminal on a computer with a desktop, never when `CI` is set, and not with `--no-browser`.
 2. It lists the projects your account can read and asks which one to use. With a single project it uses that one.
 3. It creates a project API key named `Poki Agent on <this computer's name>` in that project and stores it. The key has `project:read` and `project:write` for the worker, and `platforms:read` and `platforms:write` so that `--assign` below can map your sender to a line. It does not expire. Revoke it under the project's API keys in the Photon dashboard when you stop using this channel.
 
@@ -50,7 +50,7 @@ The directory has mode `700` and both JSON files have mode `600`. Setup prints n
 
 For setup without questions, use `--provider photon --answers /path/to/private-answers.json` with mode `600`:
 
-- With `sender` and `device` only, setup still signs in. It prints the link and waits, so an agent that runs setup for you can pass the link on. Add `projectId` when the account has more than one project.
+- With `sender` and `device` only, setup still signs in. It prints the link without opening it and waits, so an agent that runs setup for you can pass the link on. Add `projectId` when the account has more than one project.
 - With `sender`, `device`, `projectId` and `apiKey`, setup contacts no service and stores the key you supply. That key needs `project:read` and `project:write`, plus `platforms:read` and `platforms:write` if Poki should assign the shared line.
 
 Keep the answers file outside the repository and remove it afterwards. Do not put a key in command arguments, shell history, screenshots or logs.

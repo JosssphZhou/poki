@@ -157,9 +157,18 @@ test('Photon setup writes private configuration, and its launcher checks and ass
 
 test('Photon setup describes both iMessage routes, signs in with a device code and stores the project key it creates', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'poki-photon-login-'));
+  const browser = await mkdtemp(join(tmpdir(), 'poki-photon-browser-'));
   const api = await makePhoton();
-  t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); });
-  const env = { ...process.env, PHOTON_API_URL: api.url };
+  t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); await rm(browser, { recursive: true, force: true }); });
+  await writeFile(join(browser, 'open'), '#!/bin/sh\nprintf "%s\\n" "$1" >> "$POKI_OPENED"\n', { mode: 0o755 });
+  const env = { ...process.env, PHOTON_API_URL: api.url, BROWSER: join(browser, 'open'), POKI_OPENED: join(browser, 'opened') };
+  delete env.CI;
+  const terminal = (args, input, extra = {}) => {
+    const child = run('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',
+      './bin/setup-channels', '--channel', 'imessage', ...args], { cwd: root, env: { ...env, ...extra } });
+    child.child.stdin.end(input);
+    return child.then(result => ({ code: 0, ...result }), error => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }));
+  };
   const answers = join(directory, 'answers.json');
   await writeFile(answers, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device' }), { mode: 0o600 });
   const setup = (configDir, fileLimit) => cli('sh', ['-c', `${fileLimit ? 'ulimit -f 0 && ' : ''}exec ./bin/setup-channels "$@"`, 'sh',
@@ -231,11 +240,18 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   api.fullSecret = true;
   api.login = { pending: 0, polls: 0 };
   const chosen = join(directory, 'chosen');
-  const terminal = run('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',
-    './bin/setup-channels', '--channel', 'imessage', '--config-dir', chosen], { cwd: root, env });
-  terminal.child.stdin.end('2\nallowed@example.test\nsynthetic-device\n2\n');
-  const interactive = await terminal.then(result => ({ code: 0, ...result }), error => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }));
+  const interactive = await terminal(['--config-dir', chosen], '2\nallowed@example.test\nsynthetic-device\n2\n');
   assert.equal(interactive.code, 0, interactive.stdout);
+  assert.match(interactive.stdout, /The code is valid for 5 minutes\.\s+Opened the link in your browser\.\s+Waiting for your approval/);
+  const link = `${api.url}/device?user_code=WXYZ-1234\n`;
+  assert.equal(await readFile(env.POKI_OPENED, 'utf8'), link, 'Only setup in a terminal opens the sign-in link, and once');
+  api.login.denied = true;
+  for (const [args, extra] of [[['--no-browser'], {}], [[], { CI: 'true' }]]) {
+    const printed = await terminal([...args, '--config-dir', join(directory, 'printed')], '2\nallowed@example.test\nsynthetic-device\n', extra);
+    assert.equal(printed.code, 1);
+    assert.ok(printed.stdout.includes(link.trim()) && !printed.stdout.includes('Opened the link'), printed.stdout);
+  }
+  assert.equal(await readFile(env.POKI_OPENED, 'utf8'), link, 'The link is not opened with --no-browser or in CI');
   assert.match(interactive.stdout, /1\. BlueBubbles \(default\)[^]*stay on your machine[^]*2\. Photon[^]*pass through Photon's servers/);
   assert.match(interactive.stdout, /Your Photon projects:\s+1\. Poki tasks [^\n]*\s+2\. Second project/);
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });

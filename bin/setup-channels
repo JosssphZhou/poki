@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import quote, urlsplit
 import uuid
+import webbrowser
 
 
 VERSION = '1.9.12'
@@ -199,12 +200,16 @@ def photon(method, path, token=None, body=None):
         raise ValueError('Cannot reach Photon. Check the network and run setup again.') from None
 
 
-def photon_sign_in():
+def photon_sign_in(open_browser):
     status, grant = photon('POST', '/v1/auth/device/code', body={})
     if status != 200:
         raise ValueError(f'Photon did not start the sign-in (HTTP {status}). Run setup again later.')
-    print(f"Sign in to Photon to continue. Open this link in a browser:\n  {grant['verification_uri_complete']}\n"
-          f"and confirm the code {grant['user_code']}. Waiting for your approval...", flush=True)
+    link = grant['verification_uri_complete']
+    print(f"Sign in to Photon to continue. Open this link in a browser:\n  {link}\n"
+          f"and confirm the code {grant['user_code']}. The code is valid for {max(1, round(grant['expires_in'] / 60))} minutes.", flush=True)
+    if open_browser and webbrowser.open(link):
+        print('Opened the link in your browser.', flush=True)
+    print('Waiting for your approval...', flush=True)
     wait = grant['interval']
     deadline = time.monotonic() + grant['expires_in']
     while time.monotonic() < deadline:
@@ -290,7 +295,8 @@ def configure_photon(args):
     try:
         if 'apiKey' not in data:
             try:
-                token = photon_sign_in()
+                token = photon_sign_in(not args.answers and not args.no_browser and not os.environ.get('CI') and (
+                    sys.platform == 'darwin' or any(os.environ.get(name) for name in ['BROWSER', 'DISPLAY', 'WAYLAND_DISPLAY'])))
                 project = data['projectId'] = photon_project(token, data.get('projectId'), not args.answers)
                 name = ('Poki Agent on ' + platform.node())[:128] if platform.node() else 'Poki Agent'
                 status, result = photon('POST', f'/v1/projects/{project}/api-keys', token, {
@@ -336,6 +342,7 @@ def main():
     parser = argparse.ArgumentParser(description='Optionally install the pinned BlueBubbles gateway and configure Poki iMessage, or configure the Photon iMessage channel.')
     parser.add_argument('--channel', choices=['none', 'imessage'], help='Omit to choose interactively; default is none.')
     parser.add_argument('--provider', choices=['bluebubbles', 'photon'], help='How the imessage channel reaches iMessage. Omit to choose in a terminal; default is bluebubbles.')
+    parser.add_argument('--no-browser', action='store_true', help='Print the Photon sign-in link without opening it. Setup opens it only in a terminal on a computer with a desktop, and never when CI is set.')
     parser.add_argument('--app-dir', default='~/Applications', help='Application destination directory; existing apps are never replaced.')
     parser.add_argument('--config-dir', help='New private configuration directory; default is ~/.config/poki-agent/imessage for BlueBubbles and ~/.config/poki-agent/photon for Photon.')
     parser.add_argument('--answers', help='Private JSON file for unattended setup: url, password, sender, chatGuid and device for BlueBubbles; sender and device for Photon, plus projectId and apiKey to skip the browser sign-in.')
