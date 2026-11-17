@@ -256,6 +256,16 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: This API key cannot assign shared lines[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
   assert.equal((await connection(named)).projectId, earlier.projectId);
   api.assignError = null;
+  const bare = join(directory, 'bare');
+  await mkdir(join(bare, 'bin'), { recursive: true });
+  for (const name of ['setup-channels', 'poki-photon.mjs']) await writeFile(join(bare, 'bin', name), await readFile(join(root, 'bin', name)), { mode: 0o755 });
+  const uninstalled = await cli(join(bare, 'bin/setup-channels'), ['--channel', 'imessage', '--provider', 'photon', '--config-dir', join(bare, 'photon'), '--answers', answers], { env });
+  assert.equal(uninstalled.code, 0, uninstalled.stderr);
+  assert.match(uninstalled.stdout, /Setup could not assign a shared iMessage line: Poki Agent's packages are not installed \(Cannot find module '[^']*photon-source\.mjs'\)\. Run npm ci --prefix agent from the repository root first\.\nFinish setup yourself/,
+    'A checkout without the agent packages keeps the configuration and names what to install');
+  const unloaded = await cli(process.execPath, [join(bare, 'bin/poki-photon.mjs'), '--config-dir', join(bare, 'photon')], { env });
+  assert.equal(unloaded.code, 1);
+  assert.match(unloaded.stderr, /^Poki Agent's packages are not installed \(Cannot find module '[^']*photon\.mjs'\)\. Run npm ci --prefix agent from the repository root first\.\n$/);
 
   api.organizations.push(other);
   await writeFile(placed, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', organizationId: `pho_org_${'0'.repeat(25)}9` }), { mode: 0o600 });
@@ -289,7 +299,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
     [{ organizationId: other.organizationId, name: 'Poki Agent', slug: 'poki-agent-' }, { organizationId: other.organizationId, name: 'Side line', slug: 'side-line-' }]);
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
   assert.deepEqual(await connection(chosen), { projectId: api.created[2].projectId, apiKey: api.key });
-  const output = JSON.stringify([denied, unplaced, unsaved, signedIn, check, unassigned, stranger, team, interactive]);
+  const output = JSON.stringify([denied, unplaced, unsaved, signedIn, check, unassigned, uninstalled, unloaded, stranger, team, interactive]);
   assert.ok(!output.includes(api.key) && !output.includes(api.account) && !output.includes('local-device-code'));
-  await evidence('photon-sign-in-setup.json', { denied, unplaced, unsaved, signedIn, check, unassigned, stranger, team, interactive, keys: api.keys, created: api.created });
+  await evidence('photon-sign-in-setup.json', { denied, unplaced, unsaved, signedIn, check, unassigned, uninstalled, unloaded, stranger, team, interactive, keys: api.keys, created: api.created });
 });

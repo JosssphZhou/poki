@@ -4,6 +4,11 @@ import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
 
+if (Number(process.versions.node.split('.')[0]) < 24) {
+  console.error(`Poki Agent needs Node.js 24 or later; this is ${process.version}. Install it, then run npm ci --prefix agent from the repository root.`);
+  process.exit(1);
+}
+
 let run;
 try {
   const { values } = parseArgs({ options: {
@@ -43,4 +48,10 @@ try {
   console.error('Cannot load private Photon settings. Check the configuration directory, JSON fields and file permissions.');
   process.exitCode = 1;
 }
-await run?.();
+try {
+  await run?.();
+} catch (error) {
+  if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+  console.error(`Poki Agent's packages are not installed (${error.message.split(' imported from ')[0]}). Run npm ci --prefix agent from the repository root first.`);
+  process.exitCode = 1;
+}
