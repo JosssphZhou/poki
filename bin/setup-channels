@@ -176,8 +176,10 @@ def photon(method, path, token=None, body=None):
     headers = {'accept': 'application/json', 'user-agent': 'poki-setup-channels'}
     if token:
         headers['authorization'] = 'Bearer ' + token
+    if method != 'GET':
+        headers['idempotency-key'] = str(uuid.uuid4())
     if body is not None:
-        headers.update({'content-type': 'application/json', 'idempotency-key': str(uuid.uuid4())})
+        headers['content-type'] = 'application/json'
     request = urllib.request.Request(base + path, method=method, headers=headers,
                                      data=None if body is None else json.dumps(body).encode())
     try:
@@ -248,21 +250,6 @@ def photon_project(token, wanted, interactive):
     return projects[int(choice) - 1][0]
 
 
-def photon_key(token, project):
-    name = ('Poki Agent on ' + platform.node())[:128] if platform.node() else 'Poki Agent'
-    status, result = photon('POST', f'/v1/projects/{project}/api-keys', token,
-                            {'name': name, 'permissions': ['project:read', 'project:write', 'platforms:read', 'platforms:write']})
-    if status not in [200, 201]:
-        raise ValueError(f'Photon did not create a project API key (HTTP {status}). Your account may not manage keys in that project.')
-    key_id, secret = result['apiKey']['apiKeyId'], result['secret']
-    key = secret if secret.startswith('pho_sk_') else f'{key_id}_{secret}'
-    status, _ = photon('GET', f'/v1/projects/{project}/messages?pageSize=1', key)
-    if status in [401, 403]:
-        raise ValueError(f'Photon created the API key {key_id} but then refused it (HTTP {status}). Revoke it in the Photon dashboard.')
-    print(f'Created the Photon project API key "{name}" ({key_id}) with project and platform read and write permissions.')
-    return key_id, key
-
-
 def configure_photon(args):
     config_dir = Path(args.config_dir).expanduser().absolute()
     if os.path.lexists(config_dir):
@@ -293,16 +280,28 @@ def configure_photon(args):
         data[field] = data[field].strip()
     if 'projectId' in data and not re.fullmatch(r'pho_prj_[0-9a-z]{26}', data['projectId']):
         raise ValueError('Use the Photon Beta project ID: pho_prj_ followed by 26 lowercase letters or digits.')
-    created = None
-    if 'apiKey' not in data:
-        try:
-            token = photon_sign_in()
-            data['projectId'] = photon_project(token, data.get('projectId'), not args.answers)
-            created, data['apiKey'] = photon_key(token, data['projectId'])
-        except (KeyError, TypeError, AttributeError):
-            raise ValueError('Photon answered in an unexpected form. Nothing was saved; run setup again later.') from None
+    name = key_id = None
     made = False
     try:
+        if 'apiKey' not in data:
+            try:
+                token = photon_sign_in()
+                project = data['projectId'] = photon_project(token, data.get('projectId'), not args.answers)
+                name = ('Poki Agent on ' + platform.node())[:128] if platform.node() else 'Poki Agent'
+                status, result = photon('POST', f'/v1/projects/{project}/api-keys', token, {
+                    'name': name, 'permissions': ['project:read', 'project:write', 'platforms:read', 'platforms:write']})
+                if status not in [200, 201]:
+                    name = None
+                    raise ValueError(f'Photon did not create a project API key (HTTP {status}). Your account may not manage keys in that project.')
+                key_id = result['apiKey']['apiKeyId']
+                secret = result['secret']
+                data['apiKey'] = secret if secret.startswith('pho_sk_') else f'{key_id}_{secret}'
+                status, _ = photon('GET', f'/v1/projects/{project}/messages?pageSize=1', data['apiKey'])
+                if status in [401, 403]:
+                    raise ValueError(f'Photon refused the API key it had just created (HTTP {status}).')
+                print(f'Created the Photon project API key "{name}" ({key_id}) with project and platform read and write permissions.')
+            except (KeyError, TypeError, AttributeError):
+                raise ValueError('Photon answered in an unexpected form. Nothing was saved; run setup again later.') from None
         config_dir.mkdir(parents=True, mode=0o700)
         made = True
         for name, value in [('photon.json', {'sender': data['sender'], 'device': data['device'], 'auth': 'chatgpt'}),
@@ -314,8 +313,15 @@ def configure_photon(args):
     except BaseException:
         if made:
             shutil.rmtree(config_dir)
-        if created:
-            print(f'The new Photon API key {created} was not saved. Revoke it in the Photon dashboard.', file=sys.stderr)
+        if name and not isinstance(key_id, str):
+            print(f'Photon may have created an API key named "{name}" that was not saved. Look under the project\'s API keys in the Photon dashboard and revoke it.', file=sys.stderr)
+        elif name:
+            try:
+                revoked = photon('DELETE', f'/v1/projects/{project}/api-keys/{key_id}', token)[0] == 200
+            except ValueError:
+                revoked = False
+            print(f'The new Photon API key "{name}" ({key_id}) was not saved. ' + ('Setup revoked it.' if revoked else
+                  'It is still active: revoke it under the project\'s API keys in the Photon dashboard.'), file=sys.stderr)
         raise
     print(f'Private Photon channel configuration: {config_dir}')
     print(PHOTON_NEXT_STEPS)

@@ -173,6 +173,25 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   assert.deepEqual([await readdir(directory), api.keys], [['answers.json'], []], 'A sign-in that cannot finish creates no key and writes nothing');
 
   api.projects.pop();
+  const unsaved = {};
+  for (const [fault, target, problem, outcome] of [
+    ['refused', 'refused', /refused the API key it had just created \(HTTP 403\)/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['dropped', 'dropped', /Cannot reach Photon/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['no secret', 'malformed', /unexpected form/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    [null, 'answers.json/inside', /Setup could not finish/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['no revoke', 'answers.json/inside', /Setup could not finish/, /\(pho_sk_0{25}1\) was not saved\. It is still active: revoke it/],
+  ]) {
+    api.keyFault = fault;
+    api.login = { pending: 0, polls: 0 };
+    const result = unsaved[`${fault} ${target}`] = await setup(join(directory, target));
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, problem);
+    assert.match(result.stderr, outcome);
+  }
+  api.keyFault = null;
+  assert.deepEqual([await readdir(directory), api.keys.length, api.revoked.length], [['answers.json'], 5, 4], 'A key that cannot be saved is revoked and leaves nothing behind');
+  api.keys.length = 0;
+
   api.login = { pending: 2, polls: 0 };
   const configDir = join(directory, 'photon');
   const signedIn = await setup(configDir);
@@ -202,7 +221,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   assert.match(interactive.stdout, /Your Photon projects:\s+1\. Poki tasks [^\n]*\s+2\. Second project/);
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'connection.json'), 'utf8')), { projectId: second.projectId, apiKey: api.key });
-  const output = JSON.stringify([denied, several, signedIn, check, interactive]);
+  const output = JSON.stringify([denied, several, unsaved, signedIn, check, interactive]);
   assert.ok(!output.includes(api.key) && !output.includes(api.account) && !output.includes('local-device-code'));
-  await evidence('photon-sign-in-setup.json', { denied, several, signedIn, check, interactive, keys: api.keys });
+  await evidence('photon-sign-in-setup.json', { denied, several, unsaved, signedIn, check, interactive, keys: api.keys });
 });

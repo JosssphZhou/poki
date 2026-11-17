@@ -16,7 +16,7 @@ export async function makePhoton() {
   const keyId = id('sk', 1), organization = id('org', 1);
   Object.assign(fixture, { project, agent, space: space(1, 'direct'), key: `${keyId}_local-photon-test-secret`, account: 'local-photon-account-token',
     events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [], read: [], typing: [],
-    login: { pending: 0, polls: 0 }, projects: [{ projectId: project, name: 'Poki tasks' }], keys: [] });
+    login: { pending: 0, polls: 0 }, projects: [{ projectId: project, name: 'Poki tasks' }], keys: [], revoked: [] });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -43,6 +43,7 @@ export async function makePhoton() {
     }
     if (req.headers.authorization === `Bearer ${fixture.account}`) {
       const created = url.pathname.match(/^\/v1\/projects\/(pho_prj_[0-9a-z]{26})\/api-keys$/)?.[1];
+      const revoked = url.pathname.match(/^\/v1\/projects\/pho_prj_[0-9a-z]{26}\/api-keys\/(pho_sk_[0-9a-z]{26})$/)?.[1];
       if (url.pathname === '/v1/organizations' && req.method === 'GET') {
         send(200, { organizations: [{ organizationId: organization, name: 'Example org' }], ownedOrganizationIds: [organization], acquisitionQuestionnaireExempt: true });
       } else if (url.pathname === `/v1/organizations/${organization}/projects` && req.method === 'GET') {
@@ -50,12 +51,21 @@ export async function makePhoton() {
       } else if (created && req.method === 'POST' && req.headers['idempotency-key']) {
         fixture.keys.push({ project: created, ...body });
         send(201, { apiKey: { apiKeyId: keyId, projectId: created, name: body.name, permissions: body.permissions, expiresAt: null, revokedAt: null },
-          secret: fixture.fullSecret ? fixture.key : fixture.key.slice(keyId.length + 1) });
+          ...(fixture.keyFault === 'no secret' ? {} : { secret: fixture.fullSecret ? fixture.key : fixture.key.slice(keyId.length + 1) }) });
+      } else if (revoked && req.method === 'DELETE' && req.headers['idempotency-key']) {
+        if (fixture.keyFault === 'no revoke') { problem({ status: 503, code: 'UNAVAILABLE' }); return; }
+        fixture.revoked.push(revoked);
+        send(200, { apiKey: { apiKeyId: revoked, revokedAt: now } });
       } else problem({ status: 404, code: 'NOT_FOUND' });
       return;
     }
     if (req.headers.authorization !== `Bearer ${fixture.key}`) { problem({ status: 401, code: 'NOT_AUTHENTICATED' }); return; }
-    if (url.pathname === `/v1/projects/${project}/messages` && req.method === 'GET') { send(200, { items: [] }); return; }
+    if (url.pathname === `/v1/projects/${project}/messages` && req.method === 'GET') {
+      if (fixture.keyFault === 'refused') problem({ status: 403, code: 'FORBIDDEN' });
+      else if (fixture.keyFault === 'dropped') req.socket.destroy();
+      else send(200, { items: [] });
+      return;
+    }
     fixture.requests.push({ method: req.method, path: url.pathname, key: req.headers['idempotency-key'], body });
     if (url.pathname === `/v1/projects/${project}/messages` && req.method === 'POST') {
       if (fixture.sendError) {

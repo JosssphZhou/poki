@@ -46,7 +46,7 @@ Setup creates `~/.config/poki-agent/photon/`:
 - `connection.json`: project ID and API key. Keep this file private.
 - `state/`: created by the channel later for its cursor and task records.
 
-The directory has mode `700` and both JSON files have mode `600`. Setup prints no key, sends no message and starts no worker. An existing destination causes an error before any sign-in and is left unchanged. If the sign-in is denied or its code expires, no key is created and nothing is written. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
+The directory has mode `700` and both JSON files have mode `600`. Setup prints no key, sends no message and starts no worker. An existing destination causes an error before any sign-in and is left unchanged. If the sign-in is denied or its code expires, no key is created and nothing is written. If setup fails after it has created the key, it revokes that key and says so. When it cannot revoke it, it names the key so that you can revoke it in the Photon dashboard. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
 
 For setup without questions, use `--provider photon --answers /path/to/private-answers.json` with mode `600`:
 
