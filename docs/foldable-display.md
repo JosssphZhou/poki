@@ -288,3 +288,27 @@ Not run on hardware:
 
 - A screen with more than 256 elements. The Settings root has 24.
 - The launcher, which this branch no longer changes.
+
+## Fourth rebase onto main
+
+`main` moved on to `84f4a6e`. #239 moved the read-only requests in
+`execute_connected` into an `op` future that releases idle input media after
+`INPUT_MEDIA_MAX_READ_HOLD`. That conflicted with the branch's screenshot change
+in `main.rs`. The branch now makes its changes inside `op`:
+
+- The screenshot routing (the capture service for the active panel of a
+  two-panel phone, DVT otherwise) replaces `main`'s DVT screenshot inside `op`.
+- `Panels` is answered inside `op`, before `DisplayInfo`, and
+  `Request::uses_input_media()` lists it with the other reads. Without that line
+  a `panels` request would open input media and then reach the `unreachable!()`
+  arm. A new test, `read_only_requests_never_open_input_media`, checks the
+  read-only requests against that list; with `Panels` removed from it, the test
+  fails on `panels`.
+- A test that #239 added names the touch service through
+  `crate::Touch::rsd_service_name()`. `Touch` is a struct on this branch, so that
+  test uses `crate::Hid`, as the branch's other tests do.
+
+Every other line that `main` added to `main.rs`, `remote.rs` and
+`src/device.mjs` since `291a904` is in the rebased files.
+
+The hardware runs above were done before this rebase and were not repeated.
