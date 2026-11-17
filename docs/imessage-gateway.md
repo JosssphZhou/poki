@@ -1,6 +1,6 @@
 # Optional iMessage gateway
 
-Poki uses BlueBubbles to receive iMessage tasks and return replies. Install it only if you want this channel. The normal `./bin/setup` build and Telegram do not download a gateway.
+Poki uses BlueBubbles to receive iMessage tasks and return replies. Install it only if you want this channel. The normal `./bin/setup` build and Telegram do not download a gateway. To receive iMessage tasks without a Mac running Messages, see the [Photon channel](photon-channel.md) instead.
 
 ## Install
 

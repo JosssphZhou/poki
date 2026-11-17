@@ -149,6 +149,30 @@ The default private state directory is `agent/.runtime/bluebubbles`. Use `--stat
 
 For an isolated MCP and worker lifecycle, run `node agent/scripts/self-chat.mjs --config <private JSON file> --state <private directory>` from the repository root. Add `--check` for a read-only startup check. The supervisor records device-call notifications from this worker. Stopping an idle worker closes its services without acquiring or cleaning up a device. Physical-device runs must still use the shared device lock.
 
+## Configure iMessage through Photon
+
+Poki can also receive iMessage tasks through [Photon](https://photon.codes/docs/beta/photon), which hosts the iMessage line. This channel needs no Mac running Messages and no BlueBubbles, but task text and replies pass through Photon's servers. Read the [Photon channel guide](../docs/photon-channel.md) for setup, the shared-line assignment and the limits of Photon Beta.
+
+Set the project ID and API key in the worker's environment. The key needs `project:read` and `project:write`. Keep it out of configuration files, shell history, and source control:
+
+```sh
+export PHOTON_PROJECT_ID=pho_prj_REPLACE_WITH_YOUR_PROJECT_ID
+read -rs 'PHOTON_API_KEY?Photon API key: '
+export PHOTON_API_KEY
+```
+
+Create a private JSON file such as `~/.config/poki-agent/photon.json` with the same fields as the BlueBubbles configuration, without `chatGuid`. Set `sender` to the exact iMessage phone number, including country code, or email address that has a shared-line assignment in the project.
+
+```sh
+chmod 600 ~/.config/poki-agent/photon.json
+poki photon --config ~/.config/poki-agent/photon.json --check
+poki photon --config ~/.config/poki-agent/photon.json
+```
+
+`--check` authenticates and subscribes to the project's event stream. It sends no replies, saves no cursor and starts no phone task. Only plain-text messages from the configured sender in a direct conversation become tasks; the first start skips history. Confirmations, `/stop`, corrections and results behave as on the BlueBubbles channel, without a reply ledger. The default private state directory is `agent/.runtime/photon`.
+
+For local protocol development only, `PHOTON_API_URL` may point to a loopback HTTP service. Other endpoints are rejected. The default is `https://api.photon.codes`.
+
 ## Telegram
 
 Local protocol checks pass. A real bot receipt and delivery run has not been verified for this release.
@@ -197,17 +221,17 @@ For local protocol development only, `TELEGRAM_API_URL` may point to a loopback 
 
 ## Test the message transport locally
 
-`test/fixtures/messages.mjs` serves a synthetic BlueBubbles HTTP API on a random loopback port. It uses no personal Messages data and sends no real messages. The channel checks exercise sender isolation, pagination, restart, long replies, bounded retries and progress editing. The CLI checks run the real worker, task state machine, pi SDK and MCP stdio bridge against synthetic local model and device services:
+`test/fixtures/messages.mjs` serves a synthetic BlueBubbles HTTP API on a random loopback port, and `test/fixtures/photon.mjs` serves a synthetic Photon REST and Socket.IO API. They use no personal Messages data and send no real messages. The channel checks exercise sender isolation, pagination, restart, long replies, bounded retries and progress editing. The CLI checks run the real worker, task state machine, pi SDK and MCP stdio bridge against synthetic local model and device services:
 
 ```sh
-node --test agent/test/messages.test.mjs agent/test/telegram.test.mjs agent/test/channels.test.mjs
+node --test agent/test/messages.test.mjs agent/test/photon.test.mjs agent/test/telegram.test.mjs agent/test/channels.test.mjs
 ```
 
 The existing simulator acceptance script uses this HTTP fixture and a real dedicated simulator. Do not run it against a physical device. Provider protocol checks also use a local fake HTTP service and synthetic keys.
 
 ## Validation boundary
 
-Real iMessage and Telegram receipt and delivery, and physical iPhone operation, need a separate authorized run. Fake transport results do not prove either. The local acceptance evidence distinguishes those paths. Source revisions and future synchronization points are in [SOURCES.md](SOURCES.md).
+Real iMessage and Telegram receipt and delivery, including through Photon, and physical iPhone operation, need a separate authorized run. Fake transport results do not prove either. The local acceptance evidence distinguishes those paths. Source revisions and future synchronization points are in [SOURCES.md](SOURCES.md).
 
 ## Startup checks and app lookup
 

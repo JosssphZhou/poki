@@ -1,0 +1,91 @@
+# Optional iMessage channel through Photon
+
+Poki can receive iMessage tasks through [Photon](https://photon.codes/docs/beta/photon) instead of BlueBubbles. Photon hosts the iMessage line, so this channel needs no Mac running Messages, no Apple Account sign-in and no macOS permissions. Install it only if you want it. The normal `./bin/setup` build, the [BlueBubbles channel](imessage-gateway.md) and Telegram do not use Photon.
+
+This channel uses Photon Beta (2.0): the API at `https://api.photon.codes`, the `@photon-ai/api` client and the Socket.IO event stream. Photon describes Beta as a preview and its contract can change. The worker pins the event contract dated `2026-07-01`.
+
+## Before you choose it
+
+| | BlueBubbles | Photon |
+| --- | --- | --- |
+| Where messages travel | Between Messages and Poki on your Mac | Through Photon's servers |
+| What you run | A Mac signed in to Messages, with BlueBubbles Server | Only the Poki worker |
+| The number you text | Your own Apple Account | A shared line Photon assigns to your sender |
+| Credentials | A local server password | A Photon project API key |
+
+Task text and replies pass through Photon. A reply can describe what is on the phone's screen. Use BlueBubbles if that text must stay on your own machine.
+
+Photon filters one-time passcodes on iMessage lines, so do not rely on this channel to pass a verification code to Poki. See Photon's [iMessage notes](https://photon.codes/docs/beta/messaging/imessage).
+
+## Requirements
+
+- Node.js 24 or later, Python 3.11 or newer for the setup command, and the [Poki Agent prerequisites](../agent/README.md), including `npm ci --prefix agent` and model login.
+- A Photon Beta project and a project API key with `project:read` and `project:write`. Follow Photon's [project setup](https://photon.codes/docs/beta/get-started/project). Add `platforms:write` and `platforms:read` only if Poki should assign the shared line for you.
+- A plan with shared iMessage capacity. See Photon's [plans](https://photon.codes/docs/beta/plans-and-billing).
+- One iMessage identity you send from: a phone number with country code, such as `+14155550123`, or an Apple Account email. On iPhone, **Settings → Apps → Messages → Send & Receive** shows it. A number and an email are different senders.
+
+## Configure
+
+From the repository root, run:
+
+```sh
+./bin/setup-channels --channel photon
+```
+
+The command asks for the allowed sender, the Poki device name or ID, the Photon project ID (`pho_prj_...`) and the API key. Key input is hidden. It creates `~/.config/poki-agent/photon/`:
+
+- `photon.json`: sender, device and ChatGPT authentication selection.
+- `connection.json`: project ID and API key. Keep this file private.
+- `state/`: created by the channel later for its cursor and task records.
+
+The directory has mode `700` and both JSON files have mode `600`. The command contacts no service, prints no key and starts no worker. An existing destination causes an error and is left unchanged. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
+
+For unattended setup, use `--answers /path/to/private-answers.json` with mode `600` and the fields `sender`, `device`, `projectId` and `apiKey`. Keep it outside the repository and remove it afterwards. Do not put the key in command arguments, shell history, screenshots or logs.
+
+## Assign a shared line
+
+A shared line serves one sender. Map your sender to a line once:
+
+```sh
+node bin/poki-photon.mjs --assign
+```
+
+This prints the assigned number. It uses one shared iMessage assignment from the project's plan. If the sender already has a line, the command prints that line's number instead of creating another. If the key lacks `platforms:write`, assign the sender in the Photon dashboard under **iMessage** instead, as described in Photon's [iMessage guide](https://photon.codes/docs/beta/get-started/imessage).
+
+Then, from the allowed sender, start a new direct iMessage conversation with the assigned number and send a message. A shared line cannot message first: Photon refuses replies until the sender has texted the line since the assignment.
+
+## Check, then start
+
+```sh
+node bin/poki-photon.mjs --check
+```
+
+This loads the key privately, authenticates and subscribes to the project's event stream. It sends no message, saves no cursor and starts no phone task. A successful check confirms the project ID, the key and its `project:read` permission. It does not confirm `project:write`, the assignment or message delivery.
+
+Once Poki's MCP service, the selected device and model access are ready, start the channel explicitly:
+
+```sh
+node bin/poki-photon.mjs
+```
+
+Keep this process running. Do not run two workers for the same configuration directory, and stop the worker with Ctrl-C before moving or removing its private configuration.
+
+To supply credentials through the environment instead, export `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` and run `poki photon --config <private JSON file>`, as described in the [agent guide](../agent/README.md#configure-imessage-through-photon).
+
+## What the worker does
+
+Only plain-text messages from the configured sender in a direct conversation become tasks. Messages from other senders, group conversations, read receipts and typing updates are ignored without a reply. An attachment or voice message from the sender gets `Unsupported message. Send a plain-text task.`
+
+Confirmations, `/stop`, task corrections and final results work as they do for the [BlueBubbles channel](../agent/README.md#configure-imessage-through-bluebubbles): one local confirmation, no progress messages, then the result. There is no reply ledger, because the agent has its own number and its replies do not return as incoming messages.
+
+Only messages sent after the first start become tasks. The worker saves Photon's event cursor before it dispatches a task, so an interrupted task is not replayed after a restart, and messages sent while the worker was stopped are delivered when it starts again. Photon replays only events it still retains. Until the first event arrives after a fresh setup there is no cursor to resume from, so a message sent while the worker is disconnected in that window is not recovered.
+
+Each reply carries an idempotency key. The Photon client makes up to three attempts on a transient failure, all with the same key, so a retry cannot post the reply twice. Photon accepts replies for asynchronous delivery; acceptance is not delivery. If Photon later reports that a reply failed, the worker logs it. A rejected or uncertain reply stops the worker without another resend. Check the conversation before restarting.
+
+A dropped connection reconnects on its own and resumes after the last event received; the worker logs the disconnect and the resume. If Photon closes the event stream explicitly or refuses the key, the worker stops and names the cause.
+
+## Verification scope
+
+The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies and private configuration. They send no real messages.
+
+Receipt and delivery through the live Photon service, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.
