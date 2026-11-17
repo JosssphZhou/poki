@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
 
+let run;
 try {
   const { values } = parseArgs({ options: {
     'config-dir': { type: 'string', default: join(homedir(), '.config/poki-agent/photon') },
@@ -24,19 +25,22 @@ try {
     const config = join(directory, 'photon.json');
     if (values.assign) {
       const { sender } = JSON.parse(await readFile(config, 'utf8'));
-      const { assignSharedLine } = await import('../agent/photon-source.mjs');
-      try { console.log(`Shared line assigned. From ${sender}, send an iMessage to ${await assignSharedLine(sender)} to start.`); }
-      catch (error) {
-        console.error(error.message.replaceAll(connection.apiKey, '[redacted]'));
-        process.exitCode = 1;
-      }
+      run = async () => {
+        const { assignSharedLine } = await import('../agent/photon-source.mjs');
+        try { console.log(`Shared line assigned. From ${sender}, send an iMessage to ${await assignSharedLine(sender)} to start.`); }
+        catch (error) {
+          console.error(error.message.replaceAll(connection.apiKey, '[redacted]'));
+          process.exitCode = 1;
+        }
+      };
     } else {
       process.argv = [process.execPath, 'agent/photon.mjs', '--config', config,
         '--state', join(directory, 'state'), ...(values.check ? ['--check'] : [])];
-      await import('../agent/photon.mjs');
+      run = () => import('../agent/photon.mjs');
     }
   }
 } catch {
   console.error('Cannot load private Photon settings. Check the configuration directory, JSON fields and file permissions.');
   process.exitCode = 1;
 }
+await run?.();

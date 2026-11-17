@@ -105,9 +105,15 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); });
   const configDir = join(directory, 'photon');
   const answers = join(directory, 'answers.json');
-  await writeFile(answers, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device',
-    projectId: api.project, apiKey: api.key }), { mode: 0o600 });
+  await writeFile(answers, JSON.stringify({ sender: ' allowed@example.test ', device: 'synthetic-device\n',
+    projectId: ` ${api.project}`, apiKey: `${api.key}\n` }), { mode: 0o600 });
   const setupArgs = ['--channel', 'photon', '--config-dir', configDir, '--answers', answers];
+  const mistyped = join(directory, 'mistyped.json');
+  await writeFile(mistyped, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', projectId: 'pho_prj_abc', apiKey: api.key }), { mode: 0o600 });
+  const rejected = await cli('./bin/setup-channels', ['--channel', 'photon', '--config-dir', configDir, '--answers', mistyped]);
+  assert.equal(rejected.code, 1);
+  assert.match(rejected.stderr, /26 lowercase letters or digits/);
+  await assert.rejects(stat(configDir), { code: 'ENOENT' }, 'A mistyped project ID writes nothing');
   const setup = await cli('./bin/setup-channels', setupArgs);
   assert.equal(setup.code, 0, setup.stderr);
   assert.equal((await stat(configDir)).mode & 0o777, 0o700);
@@ -141,6 +147,6 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   assert.equal(permissions.code, 1);
   assert.deepEqual(api.subscriptions, [0], 'A readable key file must not reach Photon');
   assert.equal(api.sent.length, 0);
-  assert.ok(!JSON.stringify([setup, existing, check, assign, forbidden, permissions]).includes(api.key));
+  assert.ok(!JSON.stringify([rejected, setup, existing, check, assign, forbidden, permissions]).includes(api.key));
   await evidence('photon-setup-and-launcher.json', { setup, existing, check, assign, forbidden, permissions, requests: api.requests });
 });

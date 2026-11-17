@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -173,11 +174,12 @@ def configure_photon(args):
     for field in ['sender', 'device', 'projectId', 'apiKey']:
         if not isinstance(data.get(field), str) or not data[field].strip():
             raise ValueError(f'Missing {field} in setup answers.')
-    if not data['projectId'].startswith('pho_prj_'):
-        raise ValueError('Use the Photon Beta project ID, which starts with pho_prj_.')
+        data[field] = data[field].strip()
+    if not re.fullmatch(r'pho_prj_[0-9a-z]{26}', data['projectId']):
+        raise ValueError('Use the Photon Beta project ID: pho_prj_ followed by 26 lowercase letters or digits.')
     config_dir.mkdir(parents=True, mode=0o700)
     try:
-        for name, value in [('photon.json', {'sender': data['sender'].strip(), 'device': data['device'], 'auth': 'chatgpt'}),
+        for name, value in [('photon.json', {'sender': data['sender'], 'device': data['device'], 'auth': 'chatgpt'}),
                             ('connection.json', {'projectId': data['projectId'], 'apiKey': data['apiKey']})]:
             with (config_dir / name).open('x') as stream:
                 os.fchmod(stream.fileno(), 0o600)
