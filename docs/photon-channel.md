@@ -76,6 +76,8 @@ To supply credentials through the environment instead, export `PHOTON_PROJECT_ID
 
 Only plain-text messages from the configured sender in a direct conversation become tasks. Messages from other senders, group conversations, read receipts and typing updates are ignored without a reply. An attachment or voice message from the sender gets `Unsupported message. Send a plain-text task.`
 
+The worker marks each message it takes from the configured sender as read. While a task runs it shows a typing indicator, from the first reply until the final one. Both are best effort: if Photon rejects one, the worker logs that once and continues without it, and replies are not affected. Whether "Read" appears on the sender's phone also depends on Photon and on iMessage settings.
+
 Confirmations, `/stop`, task corrections and final results work as they do for the [BlueBubbles channel](../agent/README.md#configure-imessage-through-bluebubbles): one local confirmation, no progress messages, then the result. There is no reply ledger, because the agent has its own number and its replies do not return as incoming messages.
 
 Only messages sent after the first start become tasks. The worker saves Photon's event cursor before it dispatches a task, so an interrupted task is not replayed after a restart, and messages sent while the worker was stopped are delivered when it starts again. Photon replays only events it still retains. Until the first event arrives after a fresh setup there is no cursor to resume from, so a message sent while the worker is disconnected in that window is not recovered.
@@ -86,6 +88,6 @@ A dropped connection reconnects on its own and resumes after the last event rece
 
 ## Verification scope
 
-The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies and private configuration. They send no real messages.
+The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators and private configuration. They send no real messages.
 
 Receipt and delivery through the live Photon service, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.

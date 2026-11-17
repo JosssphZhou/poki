@@ -169,7 +169,7 @@ poki photon --config ~/.config/poki-agent/photon.json --check
 poki photon --config ~/.config/poki-agent/photon.json
 ```
 
-`--check` authenticates and subscribes to the project's event stream. It sends no replies, saves no cursor and starts no phone task. Only plain-text messages from the configured sender in a direct conversation become tasks; the first start skips history. Confirmations, `/stop`, corrections and results behave as on the BlueBubbles channel, without a reply ledger. The default private state directory is `agent/.runtime/photon`.
+`--check` authenticates and subscribes to the project's event stream. It sends no replies, saves no cursor and starts no phone task. Only plain-text messages from the configured sender in a direct conversation become tasks; the first start skips history. Confirmations, `/stop`, corrections and results behave as on the BlueBubbles channel, without a reply ledger. The worker also marks the sender's messages as read and shows a typing indicator while a task runs. The default private state directory is `agent/.runtime/photon`.
 
 For local protocol development only, `PHOTON_API_URL` may point to a loopback HTTP service. Other endpoints are rejected. The default is `https://api.photon.codes`.
 

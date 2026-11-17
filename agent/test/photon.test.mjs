@@ -98,6 +98,47 @@ test('Photon limits tasks and replies to one sender, skips history and resumes f
   }
 });
 
+test('Photon marks the sender\'s messages read and shows typing from the opening to the final reply', async t => {
+  const { fixture, start } = await prepare(t);
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const source = start();
+  await source.open();
+  fixture.add('Private other task', { sender: 2 });
+  const task = fixture.add('Allowed task');
+  await read(source, task);
+  await source.presence;
+  assert.deepEqual(fixture.read, [fixture.events.at(-1).event.data.object.id], 'Only the configured sender\'s message is marked read');
+  assert.match(fixture.requests.at(-1).key, /^[0-9a-f-]{36}$/);
+  await source.send('No task is running.');
+  await source.presence;
+  assert.deepEqual(fixture.typing, [], 'A reply outside a task shows no typing');
+
+  await source.send('I\'ll work on "Allowed task".', { kind: 'opening' });
+  await source.send('Added to the current task. Send /stop to stop it now.');
+  t.mock.timers.tick(20000);
+  await source.presence;
+  assert.deepEqual(fixture.typing, [true, true, true], 'Typing restarts after each reply during a task and is refreshed while it runs');
+  await source.send('Done.', { kind: 'final' });
+  t.mock.timers.tick(60000);
+  await source.presence;
+  assert.deepEqual(fixture.typing, [true, true, true, false], 'The final reply ends typing and its refreshes');
+  assert.deepEqual(fixture.requests.at(-1).body, { senderId: fixture.agent.id, typing: false });
+
+  const errors = t.mock.method(console, 'error', () => {});
+  fixture.presenceError = { status: 422, code: 'OPERATION_UNAVAILABLE' };
+  await read(source, fixture.add('Second task'));
+  await source.send('I\'ll work on "Second task".', { kind: 'opening' });
+  t.mock.timers.tick(20000);
+  await source.send('Done again.', { kind: 'final' });
+  await source.presence;
+  assert.deepEqual(fixture.sent.slice(-2).map(message => message.content.text), ['I\'ll work on "Second task".', 'Done again.'], 'Replies continue when Photon rejects read receipts and typing');
+  assert.deepEqual(errors.mock.calls.map(call => call.arguments[0]), [
+    'photon: read receipts are unavailable (HTTP 422, OPERATION_UNAVAILABLE); continuing without them.',
+    'photon: typing indicators are unavailable (HTTP 422, OPERATION_UNAVAILABLE); continuing without them.',
+  ], 'Each is reported once and not tried again');
+  assert.equal(fixture.requests.filter(request => /\/(read|typing)$/.test(request.path)).length, 7);
+});
+
 test('Photon check connects without saving a cursor or sending, and refuses a wrong key', async t => {
   const { directory, fixture, start } = await prepare(t);
   await start().check();

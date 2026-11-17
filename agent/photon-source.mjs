@@ -4,6 +4,7 @@ import { Photon, ApiError } from '@photon-ai/api';
 import { ChannelCursor, channelURL } from './channel-state.mjs';
 
 const apiVersion = '2026-07-01';
+const typingRefresh = 20000;
 
 function connection() {
   const project = process.env.PHOTON_PROJECT_ID;
@@ -54,6 +55,8 @@ export class PhotonSource {
     this.queue = [];
     this.sent = new Set();
     this.lastQueued = 0;
+    this.presence = Promise.resolve();
+    this.unavailable = new Set();
   }
 
   listen(signal) {
@@ -132,6 +135,9 @@ export class PhotonSource {
       const { seq, event } = this.queue.shift();
       const message = this.message(event);
       if (!message) { skipped = seq; continue; }
+      this.signal('read receipts', () => this.photon.projects.markMessageRead({
+        path: { id: this.project, messageId: event.data.object.id }, headers: { 'idempotency-key': randomUUID() },
+      }));
       yielded = seq;
       yield { id: seq, ...message };
     }
@@ -142,9 +148,24 @@ export class PhotonSource {
   acknowledge(id) { return this.state.save(id); }
   replyTo() { return this; }
 
-  async send(text) {
+  signal(feature, request) {
+    this.presence = this.presence.then(() => this.unavailable.has(feature) ? undefined : request()).catch(error => {
+      if (!(error instanceof ApiError) || error.status >= 500) return;
+      this.unavailable.add(feature);
+      console.error(`photon: ${feature} are unavailable (${rejection(error)}); continuing without them.`);
+    });
+  }
+
+  setTyping(typing) {
+    const { spaceId, senderId } = this.target;
+    this.signal('typing indicators', () => this.photon.projects.setSpaceTyping({ path: { id: this.project, spaceId }, body: { senderId, typing } }));
+  }
+
+  async send(text, metadata) {
     if (!text.trim()) return;
     if (!this.target) throw new Error('No Photon conversation to reply in yet.');
+    const final = metadata?.kind === 'final', typing = this.typing;
+    if (final) { clearInterval(typing); this.typing = null; }
     let message;
     try {
       message = await this.photon.projects.sendMessage({
@@ -157,7 +178,16 @@ export class PhotonSource {
     }
     this.sent.add(message.id);
     if (this.sent.size > 100) this.sent.delete(this.sent.values().next().value);
+    if (final) {
+      if (typing) this.setTyping(false);
+    } else if (metadata?.kind || typing) {
+      this.setTyping(true);
+      this.typing ??= setInterval(() => this.setTyping(true), typingRefresh);
+    }
   }
 
-  close() { this.socket?.disconnect(); }
+  close() {
+    clearInterval(this.typing);
+    this.socket?.disconnect();
+  }
 }

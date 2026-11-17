@@ -126,6 +126,8 @@ for (const channel of ['bluebubbles', 'telegram', 'photon']) {
       assert.ok(api.messages.every(message => message.chat.id === 101));
     } else if (channel === 'photon') {
       assert.ok(api.sent.every(message => message.spaceId === api.space.id && message.senderId === api.agent.id));
+      assert.equal(api.read.length, 3, 'Each of the three tasks is marked read');
+      assert.deepEqual(api.typing, [true, false, true, false, true, false], 'Typing runs from each opening to its final reply');
     } else assert.ok(api.sent.every(message => message.chatGuid === 'any;-;allowed@example.test'));
     if (process.env.POKI_CHANNEL_EVIDENCE) {
       const evidence = join(resolve(process.env.POKI_CHANNEL_EVIDENCE), channel);

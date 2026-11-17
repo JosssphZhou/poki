@@ -14,7 +14,7 @@ export async function makePhoton() {
   const subscribers = new Set();
   let seq = 0;
   Object.assign(fixture, { project, agent, space: space(1, 'direct'), key: 'pho_sk_local-photon-test-secret',
-    events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [] });
+    events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [], read: [], typing: [] });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -39,6 +39,15 @@ export async function makePhoton() {
       fixture.ids.push(message.id);
       send(202, message);
       fixture.emit('reply', body.content.text);
+      return;
+    }
+    const read = url.pathname.match(new RegExp(`^/v1/projects/${project}/messages/(pho_msg_[0-9a-z]{26})/read$`))?.[1];
+    if ((read || url.pathname === `/v1/projects/${project}/spaces/${fixture.space.id}/typing`) && req.method === 'POST') {
+      if (fixture.presenceError) { problem(fixture.presenceError); return; }
+      if (read) fixture.read.push(read); else fixture.typing.push(body.typing);
+      send(202, { id: id('msg', 5000 + fixture.requests.length), projectId: project, platform: 'imessage', space: fixture.space, sentBy: agent,
+        content: read ? { type: 'message.read' } : { type: 'space.typing.update', typing: body.typing }, ...(read ? { parentMessageId: read } : {}),
+        metadata: {}, createdAt: now, updatedAt: now, status: 'dispatched', timestamps: { dispatchedAt: now } });
       return;
     }
     if (url.pathname === `/v1/projects/${project}/platforms/imessage/assignments`) {
