@@ -107,6 +107,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var paused = false
     private var wake: (@Sendable () -> Void)?
     private var warm: (@Sendable () -> Void)?
+    private var taskReturning: (@Sendable (String) async -> Void)?
     private var taskFinished: (@Sendable (String) async -> Void)?
     private var retry: (@Sendable () -> Void)?
 
@@ -117,6 +118,13 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
     func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
+    func onExternalTaskReturning(_ action: @escaping @Sendable (String) async -> Void) {
+        lock.withLock { taskReturning = action }
+    }
+    func externalTaskReturning(session: String) async {
+        let action = lock.withLock { taskReturning }
+        await action?(session)
+    }
     func onExternalTaskFinished(_ action: @escaping @Sendable (String) async -> Void) {
         lock.withLock { taskFinished = action }
     }

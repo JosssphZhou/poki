@@ -142,6 +142,7 @@ public protocol CoreHost: AnyObject, Sendable {
     /// An agent connected (MCP initialize): get ready for its first look now, not during it.
     func warmUp()
     /// An outside agent completed its phone task. Called before another phone step can start.
+    func externalTaskReturning(session: String) async
     func externalTaskFinished(session: String) async
     /// Text read from a PNG screenshot, used for elements an app collapsed. PokiCore answers it with
     /// Vision by default, so a host need not implement it.
@@ -159,6 +160,7 @@ public protocol CoreHost: AnyObject, Sendable {
 
 extension CoreHost {
     public var currentRunner: RunnerState { runnerState() }
+    public func externalTaskReturning(session: String) async {}
     public func externalTaskFinished(session: String) async {}
     public func screenshotWithoutRunner() async -> Data? { nil }
     public func approveConnection(client: String, callback: String, connector: String) async -> Bool { false }

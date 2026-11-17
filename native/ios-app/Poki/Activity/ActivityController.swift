@@ -230,12 +230,18 @@ final class ActivityController {
         if captureVisibility == .hiddenDuringTask(task) { captureVisibility = .hiddenUntilReopen }
     }
 
-    func stopExternalCaptureTask() {
-        if case .hiddenDuringTask(.external) = captureVisibility { captureVisibility = .hiddenUntilReopen }
+    func resetCaptureVisibility() { captureVisibility = .visible }
+
+    var captureOwner: CaptureTask? {
+        if case .hiddenDuringTask(let task) = captureVisibility { return task }
+        return nil
     }
 
-    func reopenedAfterBackground() {
-        if captureVisibility == .hiddenUntilReopen { captureVisibility = .visible }
+    @discardableResult
+    func reopenedAfterBackground() -> Bool {
+        guard captureVisibility == .hiddenUntilReopen else { return false }
+        captureVisibility = .visible
+        return true
     }
 
     /// Language is a presentation update, never an activity transition or a new automation session.

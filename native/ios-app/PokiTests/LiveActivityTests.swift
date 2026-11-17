@@ -123,6 +123,78 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    func testCaptureActivityReturnsWhenPokiOpensDuringTaskCleanup() async throws {
+        for captureEndsFirst in [true, false] {
+            try await withSessionApp { app, activities in
+                let taskID = UUID()
+                app.startSession()
+                app.chatTaskBegan()
+                let original = try XCTUnwrap(activities().first)
+                let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+                XCTAssertFalse(hidden.isError)
+
+                app.wentToBackground()
+                let cleanup = expectation(description: "Task cleanup finished")
+                app.finishTask { cleanup.fulfill() }
+                // The scene callback arrives before the async return-to-origin call has completed.
+                app.becameActive()
+                XCTAssertTrue(activities().isEmpty)
+                if captureEndsFirst {
+                    app.chatCaptureTaskEnded(taskID)
+                    XCTAssertTrue(activities().isEmpty)
+                }
+
+                await fulfillment(of: [cleanup], timeout: 10)
+                if !captureEndsFirst {
+                    XCTAssertTrue(activities().isEmpty)
+                    app.chatCaptureTaskEnded(taskID)
+                }
+                XCTAssertEqual(activities().count, 1)
+                XCTAssertNotEqual(activities().first?.id, original.id)
+            }
+        }
+    }
+
+    func testExternalCaptureActivityReturnsAfterExplicitFinish() async throws {
+        try await withSessionApp { app, activities in
+            let session = "capture-session"
+            app.startSession()
+            let original = try XCTUnwrap(activities().first)
+            let hidden = await app.hideLiveActivityForCapture(task: .external(session))
+            XCTAssertFalse(hidden.isError)
+
+            app.wentToBackground()
+            await app.host.externalTaskReturning(session: session)
+            app.becameActive()
+            await app.host.externalTaskFinished(session: "other-session")
+            XCTAssertTrue(activities().isEmpty)
+
+            await app.host.externalTaskFinished(session: session)
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testRestartingSessionInPokiClearsCaptureVisibility() async throws {
+        try await withSessionApp { app, activities in
+            app.startSession()
+            app.chatTaskBegan()
+            let taskID = UUID()
+            let original = try XCTUnwrap(activities().first)
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertFalse(hidden.isError)
+            app.chatCaptureTaskEnded(taskID)
+            XCTAssertTrue(activities().isEmpty)
+
+            app.stopSession()
+            XCTAssertFalse(app.sessionOn)
+            app.startSession()
+            XCTAssertTrue(app.sessionOn)
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
     func testActivityKitDismissesAndRestoresCaptureActivity() async throws {
         let activity = ActivityController()
         let taskID = UUID()

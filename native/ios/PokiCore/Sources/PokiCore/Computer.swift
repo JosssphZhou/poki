@@ -1059,6 +1059,7 @@ final class Computer: @unchecked Sendable {
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
             let finishedSession = origin?.session
+            if let finishedSession { await host.externalTaskReturning(session: finishedSession) }
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
             result.finishedExternalSession = finishedSession
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)

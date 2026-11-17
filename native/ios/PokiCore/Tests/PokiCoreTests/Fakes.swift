@@ -145,7 +145,12 @@ final class FakeHost: CoreHost, @unchecked Sendable {
     let warmUps = LockedBox(0)
     let finishedExternalTasks = LockedBox<[String]>([])
     func warmUp() { warmUps.update { $0 += 1 } }
-    func externalTaskFinished(session: String) async { finishedExternalTasks.update { $0.append(session) } }
+    let externalTaskLifecycle = LockedBox<[String]>([])
+    func externalTaskReturning(session: String) async { externalTaskLifecycle.update { $0.append("returning \(session)") } }
+    func externalTaskFinished(session: String) async {
+        externalTaskLifecycle.update { $0.append("finished \(session)") }
+        finishedExternalTasks.update { $0.append(session) }
+    }
     func recognizeText(inPNG png: Data) async -> [RecognizedText]? { texts.value }
     func signingKey() throws -> RelayKey { FakeKey() }
     func accessHashes() -> [String] { ["abc123"] }

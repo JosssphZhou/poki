@@ -421,6 +421,9 @@ final class AppModel {
         eventsTask = Task { [weak self, core] in
             for await event in core.events { self?.handle(event) }
         }
+        host.onExternalTaskReturning { [weak self] session in
+            await self?.externalCaptureTaskReturning(session)
+        }
         host.onExternalTaskFinished { [weak self] session in
             await self?.externalCaptureTaskEnded(session)
         }
@@ -735,8 +738,11 @@ final class AppModel {
     func becameActive() {
         let reopened = !inFront
         inFront = true
-        // A task can return to Poki through the runner as part of its cleanup.
-        if reopened, endingTasks == 0 { activity.reopenedAfterBackground() }
+        // Remember a return during cleanup, even if the capture owner finishes after the return.
+        if reopened {
+            reopenedDuringTaskCleanup = endingTasks > 0 || returningCaptureSession != nil
+        }
+        if reopened || reopenedDuringTaskCleanup { restoreCaptureActivityIfReady() }
         guard signer.installFinish == .idle else { return }
         InProcessWDA.gate.withLock { $0.inFront = true }
         cameToFront = Date()
@@ -806,6 +812,7 @@ final class AppModel {
     /// it): every 6 s, light enough for the location-kept background time.
     func wentToBackground() {
         inFront = false
+        reopenedDuringTaskCleanup = false
         InProcessWDA.gate.withLock { $0.inFront = false }
         // The idle time counts from here: Poki in front was not idle (it stands by only away from it).
         if sessionOn { lastAgentActivity = max(lastAgentActivity, Date()) }
@@ -1194,7 +1201,9 @@ final class AppModel {
     }
 
     func stopSession() {
-        activity.stopExternalCaptureTask()
+        reopenedDuringTaskCleanup = false
+        returningCaptureSession = nil
+        activity.resetCaptureVisibility()
         sessionStartTask?.cancel()
         pendingPrepareForTask = false
         wantsOn = false
@@ -1268,7 +1277,7 @@ final class AppModel {
             return
         }
         guard approvals.isEmpty || splitChat != nil else { return }
-        activity.stopExternalCaptureTask()
+        if case .external(let session) = activity.captureOwner { externalCaptureTaskEnded(session) }
         ownerPaused = byOwner
         if runnerPaused {
             if automationPath == .inProcess { closeInProcess("stopped by the owner") }
@@ -1365,7 +1374,20 @@ final class AppModel {
     /// screen hands the front back to Poki). The next phone step opens a new session.
     /// Task endings whose return to the app the task began in is still under way: that return needs
     /// the session, so Poki coming forward because of it does not close the session under it.
-    private var endingTasks = 0
+    private var endingTasks = 0 {
+        didSet {
+            if reopenedDuringTaskCleanup { restoreCaptureActivityIfReady() }
+        }
+    }
+    private var reopenedDuringTaskCleanup = false
+    private var returningCaptureSession: String?
+
+    private func restoreCaptureActivityIfReady() {
+        guard inFront, signer.installFinish == .idle, endingTasks == 0, returningCaptureSession == nil,
+              activity.reopenedAfterBackground() else { return }
+        reopenedDuringTaskCleanup = false
+        if sessionOn { activity.start(deviceName: deviceName) }
+    }
 
     private func closeBecausePokiOpened() {
         guard automationPath == .inProcess, sessionOn, !runnerPaused, inProcessSession == .open, !inProcessWarming,
@@ -1669,7 +1691,7 @@ final class AppModel {
                 Task { [weak self, core] in
                     _ = await core.finishTask(session: id)
                     guard let self else { return }
-                    self.activity.captureTaskEnded(.external(id))
+                    self.externalCaptureTaskEnded(id)
                     self.endingTasks -= 1
                     if self.outsideAgentsAtWork.isEmpty { self.closeAfterTask("an agent ended its session") }
                     if let agent { self.tellOwner(agentWasHere: agent) }
@@ -1812,6 +1834,8 @@ final class AppModel {
     }
 
     func finishSplitViewTask(localSession: String, pairConfirmed: Bool = true, cancelled: () -> Bool = { false }) async {
+        endingTasks += 1
+        defer { endingTasks -= 1 }
         _ = await core.settle(timeout: 30)
         if let line = await core.finishTask(switching: pairConfirmed, localSession: localSession) { log.add("runner", line) }
         // The Split View task is over: as at the end of any task, the automation session closes.
@@ -1852,6 +1876,7 @@ final class AppModel {
         if case .external = task, !sessionOn || chatTaskActive || (AskPoki.app === self && AskPoki.chat?.running == true) {
             return .init(text: "The phone session is off or Poki’s chat is using it.", jpeg: nil, isError: true)
         }
+        if activity.captureOwner == nil { reopenedDuringTaskCleanup = false }
         switch await activity.hideForCapture(task: task) {
         case .hidden:
             return .init(text: "Poki’s Live Activity is hidden until this task ends and Poki is opened again.", jpeg: nil, isError: false)
@@ -1864,10 +1889,17 @@ final class AppModel {
 
     func chatCaptureTaskEnded(_ taskID: UUID) {
         activity.captureTaskEnded(.chat(taskID))
+        if reopenedDuringTaskCleanup { restoreCaptureActivityIfReady() }
+    }
+
+    private func externalCaptureTaskReturning(_ session: String) {
+        if activity.captureOwner == .external(session) { returningCaptureSession = session }
     }
 
     private func externalCaptureTaskEnded(_ session: String) {
+        if returningCaptureSession == session { returningCaptureSession = nil }
         activity.captureTaskEnded(.external(session))
+        if reopenedDuringTaskCleanup { restoreCaptureActivityIfReady() }
     }
 
     /// The chat's task began (Poki is in front): the Live Activity is there for it, with no old plan.

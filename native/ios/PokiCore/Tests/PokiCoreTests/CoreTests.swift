@@ -1062,6 +1062,7 @@ final class MCPTests: XCTestCase {
         let finish = try await call("do", ["actions": [], "finish": true])
         XCTAssertEqual(finish["isError"], false)
         XCTAssertEqual(host.finishedExternalTasks.value, [session])
+        XCTAssertEqual(host.externalTaskLifecycle.value, ["returning \(session)", "finished \(session)"])
         let betweenTasks = try await call("hide_live_activity")
         XCTAssertEqual(betweenTasks["isError"], true)
 
