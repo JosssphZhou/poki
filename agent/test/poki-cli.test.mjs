@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { makeMessages } from './fixtures/messages.mjs';
 import { makeTelegram } from './fixtures/telegram.mjs';
+import { makePhoton } from './fixtures/photon.mjs';
 import { taskServices } from './fixtures/task-services.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -127,13 +128,14 @@ test('fresh OAuth login persists through the SDK and hides provider failures', a
 test('channel commands reach existing read checks without sending messages', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'poki-channels-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  for (const channel of ['imessage', 'telegram']) {
-    const api = await (channel === 'imessage' ? makeMessages() : makeTelegram());
+  for (const channel of ['imessage', 'telegram', 'photon']) {
+    const api = await (channel === 'imessage' ? makeMessages() : channel === 'photon' ? makePhoton() : makeTelegram());
     try {
       const config = join(dir, `${channel}.json`);
-      await writeFile(config, JSON.stringify({ device: 'synthetic-device', ...(channel === 'imessage' ? { sender: 'allowed@example.test' } : { allowedUsers: [101] }) }));
+      await writeFile(config, JSON.stringify({ device: 'synthetic-device', ...(channel === 'telegram' ? { allowedUsers: [101] } : { sender: 'allowed@example.test' }) }));
       const result = await run([channel, '--config', config, '--state', join(dir, channel), '--check'], {
         BLUEBUBBLES_URL: api.url, BLUEBUBBLES_PASSWORD: api.password ?? '', TELEGRAM_API_URL: api.url, TELEGRAM_BOT_TOKEN: api.token ?? '',
+        PHOTON_API_URL: api.url, PHOTON_PROJECT_ID: api.project ?? '', PHOTON_API_KEY: api.key ?? '',
       });
       assert.equal(result.code, 0, result.output);
       assert.match(result.output, /authentication and read check succeeded/);

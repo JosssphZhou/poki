@@ -8,7 +8,7 @@ import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { PokiClient } from './poki-client.mjs';
 import { modelConfig, safeModelError } from './model-config.mjs';
 
-const entries = { task: 'cli.mjs', imessage: 'imessage.mjs', telegram: 'telegram.mjs' };
+const entries = { task: 'cli.mjs', imessage: 'imessage.mjs', telegram: 'telegram.mjs', photon: 'photon.mjs' };
 const taskOptions = {
   device: { type: 'string' }, state: { type: 'string' }, model: { type: 'string' },
   auth: { type: 'string' }, 'service-tier': { type: 'string' }, context: { type: 'string' },
@@ -22,6 +22,7 @@ const help = `Usage: poki "task" [--device <UUID>] [--state <directory>] [--mode
        poki update
        poki imessage --config <private JSON file> [--check]
        poki telegram --config <private JSON file> [--check]
+       poki photon --config <private JSON file> [--check]
 With one connected physical phone, --device is optional. Use --device for a simulator.
 Tasks accept /stop and corrections on stdin. Step timeout defaults to 60 seconds.
 API keys belong only in OPENAI_API_KEY, never in command arguments.`;
@@ -132,7 +133,7 @@ async function main() {
   if (command === 'login') return login(args.slice(1));
   if (command === 'status') return status(args.slice(1));
   let target = 'task', forwarded = args;
-  if (command === 'imessage' || command === 'telegram') {
+  if (['imessage', 'telegram', 'photon'].includes(command)) {
     target = command; forwarded = args.slice(1);
     if (forwarded.includes('--help') || forwarded.includes('-h')) {
       console.log(`Usage: poki ${command} --config <private JSON file> [--state <directory>] [--step-timeout <seconds>] [--once] [--check]\n--check authenticates and reads only; no task or reply is sent.`);
