@@ -16,14 +16,16 @@ export async function makePhoton() {
   const keyId = id('sk', 1), organization = id('org', 1);
   Object.assign(fixture, { project, agent, space: space(1, 'direct'), key: `${keyId}_local-photon-test-secret`, account: 'local-photon-account-token',
     events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [], read: [], typing: [],
-    login: { pending: 0, polls: 0 }, projects: [{ projectId: project, name: 'Poki tasks' }], keys: [], revoked: [] });
+    login: { pending: 0, polls: 0 }, projects: [{ projectId: project, name: 'Poki tasks' }], keys: [], revoked: [], calls: 0, redirected: [] });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const send = (status, data) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
     const problem = ({ status, code }) => res.writeHead(status, { 'content-type': 'application/problem+json' })
       .end(JSON.stringify({ type: `https://photon.codes/docs/problems/${code.toLowerCase().replaceAll('_', '-')}`, title: code, status, code }));
+    fixture.calls += 1;
     if (/^Python-urllib/.test(req.headers['user-agent'] ?? '')) { problem({ status: 403, code: 'ACCESS_DENIED' }); return; }
+    if (url.pathname === '/elsewhere') { fixture.redirected.push(req.headers.authorization); send(200, { organizations: [] }); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : null;
     const now = new Date().toISOString();
@@ -44,7 +46,11 @@ export async function makePhoton() {
     if (req.headers.authorization === `Bearer ${fixture.account}`) {
       const created = url.pathname.match(/^\/v1\/projects\/(pho_prj_[0-9a-z]{26})\/api-keys$/)?.[1];
       const revoked = url.pathname.match(/^\/v1\/projects\/pho_prj_[0-9a-z]{26}\/api-keys\/(pho_sk_[0-9a-z]{26})$/)?.[1];
-      if (url.pathname === '/v1/organizations' && req.method === 'GET') {
+      if (fixture.accountFault === 'redirect') {
+        res.writeHead(307, { location: `${fixture.url}/elsewhere` }).end();
+      } else if (fixture.accountFault === 'projects' && url.pathname.endsWith('/projects')) {
+        problem({ status: 500, code: 'INTERNAL' });
+      } else if (url.pathname === '/v1/organizations' && req.method === 'GET') {
         send(200, { organizations: [{ organizationId: organization, name: 'Example org' }], ownedOrganizationIds: [organization], acquisitionQuestionnaireExempt: true });
       } else if (url.pathname === `/v1/organizations/${organization}/projects` && req.method === 'GET') {
         send(200, { projects: fixture.projects.map(item => ({ ...item, organizationId: organization })) });

@@ -166,6 +166,11 @@ def install(args):
     print(NEXT_STEPS)
 
 
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
 def photon(method, path, token=None, body=None):
     base = os.environ.get('PHOTON_API_URL', 'https://api.photon.codes').rstrip('/')
     if base != 'https://api.photon.codes':
@@ -183,7 +188,7 @@ def photon(method, path, token=None, body=None):
     request = urllib.request.Request(base + path, method=method, headers=headers,
                                      data=None if body is None else json.dumps(body).encode())
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:
             return response.status, json.load(response)
     except urllib.error.HTTPError as error:
         try:
@@ -227,7 +232,7 @@ def photon_project(token, wanted, interactive):
             status, result = photon('GET', f"/v1/organizations/{organization['organizationId']}/projects"
                                     + (f'?pageToken={quote(page)}' if page else ''), token)
             if status != 200:
-                break
+                raise ValueError(f"Photon did not list the projects of {organization['name']} (HTTP {status}). Nothing was changed; run setup again later.")
             projects += [(project['projectId'], f"{project['name']} ({organization['name']}, {project['projectId']})")
                          for project in result['projects']]
             page = result.get('nextPageToken')

@@ -110,26 +110,26 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   const setupArgs = ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', answers];
   const mistyped = join(directory, 'mistyped.json');
   await writeFile(mistyped, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', projectId: 'pho_prj_abc', apiKey: api.key }), { mode: 0o600 });
-  const rejected = await cli('./bin/setup-channels', ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', mistyped]);
+  const env = { ...process.env, PHOTON_API_URL: api.url };
+  const rejected = await cli('./bin/setup-channels', ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', mistyped], { env });
   assert.equal(rejected.code, 1);
   assert.match(rejected.stderr, /26 lowercase letters or digits/);
   await assert.rejects(stat(configDir), { code: 'ENOENT' }, 'A mistyped project ID writes nothing');
-  const setup = await cli('./bin/setup-channels', setupArgs);
+  const setup = await cli('./bin/setup-channels', setupArgs, { env });
   assert.equal(setup.code, 0, setup.stderr);
   assert.equal((await stat(configDir)).mode & 0o777, 0o700);
   for (const name of ['photon.json', 'connection.json']) assert.equal((await stat(join(configDir, name))).mode & 0o777, 0o600);
   assert.deepEqual(JSON.parse(await readFile(join(configDir, 'photon.json'), 'utf8')),
     { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
   assert.deepEqual(JSON.parse(await readFile(join(configDir, 'connection.json'), 'utf8')), { projectId: api.project, apiKey: api.key });
-  assert.deepEqual([api.requests.length, api.login.polls], [0, 0], 'Setup with a supplied key contacts no service');
-  const existing = await cli('./bin/setup-channels', setupArgs);
+  const existing = await cli('./bin/setup-channels', setupArgs, { env });
   assert.equal(existing.code, 1);
   assert.match(existing.stderr, /already exists/);
-  const unwritable = await cli('sh', ['-c', 'ulimit -f 0 && exec ./bin/setup-channels "$@"', 'sh', ...setupArgs.slice(0, 5), join(directory, 'unwritable'), ...setupArgs.slice(6)]);
+  const unwritable = await cli('sh', ['-c', 'ulimit -f 0 && exec ./bin/setup-channels "$@"', 'sh', ...setupArgs.slice(0, 5), join(directory, 'unwritable'), ...setupArgs.slice(6)], { env });
   assert.equal(unwritable.stderr, 'Setup failed: Setup could not finish. Check destination permissions and available disk space, then retry.\n',
     'A supplied key that cannot be saved is not reported as a key Photon created');
   await assert.rejects(stat(join(directory, 'unwritable')), { code: 'ENOENT' });
-  const env = { ...process.env, PHOTON_API_URL: api.url };
+  assert.equal(api.calls, 0, 'Setup with a supplied key contacts no service');
   const args = ['bin/poki-photon.mjs', '--config-dir', configDir];
   const check = await cli(process.execPath, [...args, '--check'], { env });
   assert.equal(check.code, 0, check.stderr);
@@ -175,6 +175,17 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   const several = await setup(join(directory, 'several'));
   assert.equal(several.code, 1);
   assert.match(several.stderr, /Add projectId to the answers file:\n1\. Poki tasks [^\n]*\n2\. Second project/);
+  api.projects.pop();
+  for (const [fault, problem] of [['projects', /did not list the projects of Example org \(HTTP 500\)/], ['redirect', /did not list your organizations \(HTTP 307\)/]]) {
+    api.accountFault = fault;
+    api.login = { pending: 0, polls: 0 };
+    const result = await setup(join(directory, fault));
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, problem);
+  }
+  api.accountFault = null;
+  api.projects.push(second);
+  assert.deepEqual(api.redirected, [], 'The sign-in is not sent to a redirect target');
   assert.deepEqual([await readdir(directory), api.keys], [['answers.json'], []], 'A sign-in that cannot finish creates no key and writes nothing');
 
   api.projects.pop();
