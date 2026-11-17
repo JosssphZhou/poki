@@ -161,7 +161,10 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   const api = await makePhoton();
   t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); await rm(browser, { recursive: true, force: true }); });
   await writeFile(join(browser, 'open'), '#!/bin/sh\nprintf "%s\\n" "$1" >> "$POKI_OPENED"\n', { mode: 0o755 });
-  const env = { ...process.env, PHOTON_API_URL: api.url, BROWSER: join(browser, 'open'), POKI_OPENED: join(browser, 'opened') };
+  await mkdir(join(browser, 'bin'));
+  await writeFile(join(browser, 'bin/node'), '#!/bin/sh\ntouch "$POKI_NODE_RAN"\nexit 1\n', { mode: 0o755 });
+  const env = { ...process.env, PHOTON_API_URL: api.url, BROWSER: join(browser, 'open'), POKI_OPENED: join(browser, 'opened'),
+    PATH: `${join(browser, 'bin')}:${process.env.PATH}`, POKI_NODE_RAN: join(browser, 'node-ran') };
   delete env.CI;
   const terminal = (args, input, extra = {}) => {
     const child = run('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',
@@ -253,7 +256,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   const unassigned = await setup(named, false, ['--project-name', ' earlier PROJECT ']);
   assert.equal(unassigned.code, 0, unassigned.stderr);
   assert.match(unassigned.stdout, /Using your Photon project "Earlier project" \(Example org, pho_prj_0{25}2\)\./);
-  assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: This API key cannot assign shared lines[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
+  assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: Photon rejected the assignment \(HTTP 403, INSUFFICIENT_SCOPE\)[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
   assert.equal((await connection(named)).projectId, earlier.projectId);
   api.assignError = null;
   const bare = join(directory, 'bare');
@@ -261,8 +264,9 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   for (const name of ['setup-channels', 'poki-photon.mjs']) await writeFile(join(bare, 'bin', name), await readFile(join(root, 'bin', name)), { mode: 0o755 });
   const uninstalled = await cli(join(bare, 'bin/setup-channels'), ['--channel', 'imessage', '--provider', 'photon', '--config-dir', join(bare, 'photon'), '--answers', answers], { env });
   assert.equal(uninstalled.code, 0, uninstalled.stderr);
-  assert.match(uninstalled.stdout, /Setup could not assign a shared iMessage line: Poki Agent's packages are not installed \(Cannot find module '[^']*photon-source\.mjs'\)\. Run npm ci --prefix agent from the repository root first\.\nFinish setup yourself/,
-    'A checkout without the agent packages keeps the configuration and names what to install');
+  assert.match(uninstalled.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent/,
+    'Setup assigns the line without the agent packages, and prints the number of a line the sender already has');
+  assert.equal(api.assignments.length, 1, 'A sender that already has a line in the project gets no second assignment');
   const unloaded = await cli(process.execPath, [join(bare, 'bin/poki-photon.mjs'), '--config-dir', join(bare, 'photon')], { env });
   assert.equal(unloaded.code, 1);
   assert.match(unloaded.stderr, /^Poki Agent's packages are not installed \(Cannot find module '[^']*photon\.mjs'\)\. Run npm ci --prefix agent from the repository root first\.\n$/);
@@ -299,6 +303,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
     [{ organizationId: other.organizationId, name: 'Poki Agent', slug: 'poki-agent-' }, { organizationId: other.organizationId, name: 'Side line', slug: 'side-line-' }]);
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
   assert.deepEqual(await connection(chosen), { projectId: api.created[2].projectId, apiKey: api.key });
+  await assert.rejects(readFile(env.POKI_NODE_RAN), { code: 'ENOENT' }, 'Setup never runs Node.js');
   const output = JSON.stringify([denied, unplaced, unsaved, signedIn, check, unassigned, uninstalled, unloaded, stranger, team, interactive]);
   assert.ok(!output.includes(api.key) && !output.includes(api.account) && !output.includes('local-device-code'));
   await evidence('photon-sign-in-setup.json', { denied, unplaced, unsaved, signedIn, check, unassigned, uninstalled, unloaded, stranger, team, interactive, keys: api.keys, created: api.created });

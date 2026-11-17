@@ -204,7 +204,7 @@ def photon(method, path, token=None, body=None):
         except ValueError:
             return error.code, {}
     except (OSError, ValueError):
-        raise ValueError('Cannot reach Photon. Check the network and run setup again.') from None
+        raise ValueError('Cannot reach Photon. Check the network and try again.') from None
 
 
 def photon_sign_in(open_browser):
@@ -283,6 +283,25 @@ def photon_project(token, wanted, name, organization, interactive):
         if status == 200:
             result = latest
     return project
+
+
+def photon_assign(project, key, sender):
+    path = f'/v1/projects/{project}/platforms/imessage/assignments'
+    status, result = photon('POST', path, key, {'handle': sender})
+    if status == 409 and result.get('code') == 'ASSIGNMENT_EXISTS':
+        page = ''
+        while page is not None:
+            status, result = photon('GET', path + (f'?pageToken={quote(page)}' if page else ''), key)
+            if status != 200:
+                break
+            for assignment in result['assignments']:
+                if assignment['handle'] == sender:
+                    return assignment['assignedPhoneNumber']
+            page = result.get('nextPageToken')
+        raise ValueError('This sender already has a shared line. Find its number in the Photon dashboard under iMessage.')
+    if status != 201:
+        raise ValueError(f"Photon rejected the assignment ({rejection(status, result)}). Check the plan's shared iMessage capacity.")
+    return result['assignedPhoneNumber']
 
 
 def configure_photon(args):
@@ -365,18 +384,14 @@ def configure_photon(args):
     print(f'Private Photon channel configuration: {config_dir}')
     assigned = False
     if key_id:
-        node = shutil.which('node')
         try:
-            result = node and subprocess.run([node, str(Path(__file__).resolve().parent / 'poki-photon.mjs'), '--config-dir', str(config_dir), '--assign'],
-                                             capture_output=True, text=True, timeout=120)
-        except (OSError, subprocess.TimeoutExpired):
-            result = None
-        assigned = bool(result) and result.returncode == 0
-        if assigned:
-            print(result.stdout.strip())
-        else:
-            reason = result.stderr.strip().splitlines() if result else []
-            print('Setup could not assign a shared iMessage line' + (f': {reason[0]}' if len(reason) == 1 else '.'))
+            number = photon_assign(data['projectId'], data['apiKey'], data['sender'])
+            print(f"Shared line assigned. From {data['sender']}, send an iMessage to {number} to start.")
+            assigned = True
+        except ValueError as error:
+            print(f'Setup could not assign a shared iMessage line: {error}')
+        except (KeyError, TypeError, AttributeError):
+            print('Setup could not assign a shared iMessage line: Photon answered in an unexpected form.')
     print(PHOTON_ASSIGNED_STEPS if assigned else PHOTON_NEXT_STEPS)
 
 
