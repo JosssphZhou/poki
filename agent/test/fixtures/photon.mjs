@@ -25,6 +25,7 @@ export async function makePhoton() {
       .end(JSON.stringify({ type: `https://photon.codes/docs/problems/${code.toLowerCase().replaceAll('_', '-')}`, title: code, status, code }));
     fixture.calls += 1;
     if (/^Python-urllib/.test(req.headers['user-agent'] ?? '')) { problem({ status: 403, code: 'ACCESS_DENIED' }); return; }
+    if (fixture.keyFault === 'moved' && req.method === 'GET' && url.pathname.endsWith('/messages')) { res.writeHead(307, { location: `${fixture.url}/elsewhere` }).end(); return; }
     if (url.pathname === '/elsewhere') { fixture.redirected.push(req.headers.authorization); send(200, { organizations: [] }); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : null;
@@ -66,7 +67,8 @@ export async function makePhoton() {
       return;
     }
     if (req.headers.authorization !== `Bearer ${fixture.key}`) { problem({ status: 401, code: 'NOT_AUTHENTICATED' }); return; }
-    if (url.pathname === `/v1/projects/${project}/messages` && req.method === 'GET') {
+    const listed = url.pathname.match(/^\/v1\/projects\/(pho_prj_[0-9a-z]{26})\/messages$/)?.[1];
+    if (req.method === 'GET' && (listed === project || fixture.keys.some(key => key.project === listed))) {
       if (fixture.keyFault === 'refused') problem({ status: 403, code: 'FORBIDDEN' });
       else if (fixture.keyFault === 'dropped') req.socket.destroy();
       else send(200, { items: [] });

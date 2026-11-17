@@ -191,7 +191,8 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   api.projects.pop();
   const unsaved = {};
   for (const [fault, target, problem, outcome] of [
-    ['refused', 'refused', /refused the API key it had just created \(HTTP 403\)/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['refused', 'refused', /did not accept the API key it had just created \(HTTP 403\)/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['moved', 'moved', /did not accept the API key it had just created \(HTTP 307\)/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
     ['dropped', 'dropped', /Cannot reach Photon/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
     ['no secret', 'malformed', /unexpected form/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
     [null, 'answers.json/inside', /Setup could not finish/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
@@ -206,7 +207,8 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
     assert.match(result.stderr, outcome);
   }
   api.keyFault = null;
-  assert.deepEqual([await readdir(directory), api.keys.length, api.revoked.length], [['answers.json'], 6, 5], 'A key that cannot be saved is revoked and leaves nothing behind');
+  assert.deepEqual([await readdir(directory), api.keys.length, api.revoked.length], [['answers.json'], 7, 6], 'A key that cannot be saved is revoked and leaves nothing behind');
+  assert.deepEqual(api.redirected, [], 'The new key is not sent to a redirect target');
   api.keys.length = 0;
 
   api.login = { pending: 2, polls: 0 };
