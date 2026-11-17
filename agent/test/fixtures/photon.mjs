@@ -81,7 +81,7 @@ export async function makePhoton() {
     space: group ? space(3, 'group') : sender === 1 ? fixture.space : space(2, 'direct'), sentBy: people[sender], receivedBy: agent,
     content, status: 'received', timestamps: { receivedAt: new Date().toISOString() } });
   fixture.fail = index => fixture.event('message.failed', { id: fixture.ids[index], space: fixture.space, sentBy: agent, content: fixture.sent[index].content,
-    status: 'failed', failure: { code: 'recipient_unreachable', message: 'The recipient could not be reached.' }, timestamps: {} });
+    status: 'failed', failure: { code: 'recipient_unreachable', message: 'The recipient could not be reached.' }, timestamps: { failedAt: new Date().toISOString() } });
   fixture.drop = () => { for (const socket of subscribers) socket.conn.close(); };
   fixture.kick = () => { for (const socket of subscribers) socket.disconnect(); };
 
