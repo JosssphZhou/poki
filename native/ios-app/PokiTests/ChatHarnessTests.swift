@@ -19,6 +19,7 @@ final class ChatHarnessTests: XCTestCase {
 
     override func setUp() async throws {
         for key in Self.settings { saved[key] = UserDefaults.standard.object(forKey: key) }
+        await SessionStore.shared.waitUntilLoaded()
     }
 
     override func tearDown() async throws {
@@ -60,6 +61,20 @@ final class ChatHarnessTests: XCTestCase {
         let receipt = try XCTUnwrap(chat.savedCalls.first { $0.name == "hide_live_activity" })
         XCTAssertTrue(receipt.ok, receipt.answer)
         XCTAssertTrue(receipt.answer.contains("until this task ends and Poki is opened again"))
+    }
+
+    func testExistingConversationUsesTheNewCustomEndpointForTheSameModel() async throws {
+        let done = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done."])
+        let first = try FakeCompletions(replies: [done, FakeCompletions.text("First endpoint.")])
+        let second = try FakeCompletions(replies: [done, FakeCompletions.text("Second endpoint.")])
+        let chat = chat(on: first)
+        _ = await chat.runDelegated("First request")
+        XCTAssertEqual(first.requests.count, 2)
+
+        ModelKeys.customURL = "http://127.0.0.1:\(second.port)/v1"
+        _ = await chat.runDelegated("Second request")
+        XCTAssertEqual(first.requests.count, 2)
+        XCTAssertEqual(second.requests.count, 2)
     }
 
     func testSplitViewTaskWaitsForOriginalPairAndResumesFromFreshReads() async throws {
