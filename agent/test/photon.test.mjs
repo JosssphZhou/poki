@@ -110,14 +110,14 @@ test('Photon takes a backlog of any size in one subscription without losing or r
   await source.acknowledge(first);
   source.close();
 
-  noise();
-  const second = fixture.add('Sent while the worker was stopped');
+  const stopped = ['Second task', 'Third task', 'Fourth task'].map(text => { noise(); return { id: fixture.add(text), text }; });
   const last = noise();
   source = start();
   await source.open();
-  assert.deepEqual(await read(source, last), [{ id: second, text: 'Sent while the worker was stopped' }]);
-  await source.acknowledge(second);
-  assert.deepEqual(await read(source, last), []);
+  while (source.lastQueued < last && !source.failure) await sleep(5);
+  const taken = [];
+  for await (const message of source.read()) { taken.push(message); await source.acknowledge(message.id); }
+  assert.deepEqual(taken, stopped, 'Tasks sent while the worker was stopped arrive once each, in order');
   assert.deepEqual(fixture.subscriptions, [0, first], 'The replayed backlog arrives in one subscription');
   source.close();
   source = start();
