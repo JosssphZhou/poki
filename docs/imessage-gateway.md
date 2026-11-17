@@ -14,6 +14,8 @@ From the repository root, run:
 
 Choose `imessage` to install, or press Enter for `none`. Choosing `none` makes no network requests and writes no files. The explicit equivalents are `./bin/setup-channels --channel imessage` and `./bin/setup-channels --channel none`.
 
+In a terminal, `imessage` then describes the two ways Poki can reach iMessage and asks which one to use: BlueBubbles, which this page covers and which Enter selects, or [Photon](photon-channel.md). `--provider bluebubbles` or `--provider photon` answers that question on the command line. With `--answers`, or without a terminal, setup uses BlueBubbles unless you pass `--provider photon`.
+
 The installer asks for the local server URL, the single allowed sender, the Poki device name or ID, the exact direct chat GUID, and a server password. Password input is hidden. Choose a password now and set the same one in BlueBubbles when completing its setup. For a self-chat, the GUID can be `any;-;<sender>` or `iMessage;-;<sender>`; use the exact value for that conversation. See the [existing channel guide](../agent/README.md#configure-imessage-through-bluebubbles) for sender scoping and self-chat behavior.
 
 The command downloads the architecture-specific ZIP from the [official 1.9.12 release](https://github.com/BlueBubblesApp/bluebubbles-server/releases/tag/v1.9.12), verifies the pinned SHA-256 digest before extraction, and checks the app version. It installs `~/Applications/BlueBubbles.app` and creates `~/.config/poki-agent/imessage/`:

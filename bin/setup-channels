@@ -12,7 +12,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from urllib.parse import urlsplit
+import time
+import urllib.error
+import urllib.request
+from urllib.parse import quote, urlsplit
+import uuid
 
 
 VERSION = '1.9.12'
@@ -31,7 +35,19 @@ NEXT_STEPS = '''Finish setup yourself (the installer does not open apps or send 
    Follow any remaining onboarding prompts in BlueBubbles yourself.
 4. Private API and disabling SIP are not required for Poki's plain-text channel.
    See docs/imessage-gateway.md before checking or starting the channel.'''
-PHOTON_NEXT_STEPS = '''Finish setup yourself (nothing was sent to Photon and no worker was started):
+PROVIDERS = '''How should Poki reach iMessage?
+
+1. BlueBubbles (default)
+   Runs on this Mac and uses your own Messages account. Task text and replies
+   stay on your machine. Setup installs BlueBubbles Server; you sign in to
+   Messages and keep both running. macOS only.
+
+2. Photon
+   Photon hosts the iMessage line, so you run only the Poki worker, on macOS
+   or Linux. You text a number Photon assigns to you. Task text and replies
+   pass through Photon's servers. Setup signs you in to Photon in a browser.
+'''
+PHOTON_NEXT_STEPS = '''Finish setup yourself (no message was sent and no worker was started):
 1. Run node bin/poki-photon.mjs --assign to map the sender to a shared Photon
    iMessage line, or assign it in the Photon dashboard under iMessage.
 2. From the allowed sender, send an iMessage to the assigned number. A shared
@@ -150,6 +166,103 @@ def install(args):
     print(NEXT_STEPS)
 
 
+def photon(method, path, token=None, body=None):
+    base = os.environ.get('PHOTON_API_URL', 'https://api.photon.codes').rstrip('/')
+    if base != 'https://api.photon.codes':
+        url = urlsplit(base)
+        if (url.scheme != 'http' or url.hostname not in ['localhost', '127.0.0.1', '::1']
+                or url.username or url.password or url.path or url.query or url.fragment):
+            raise ValueError('PHOTON_API_URL must be the Photon API or a loopback HTTP development server.')
+    headers = {'accept': 'application/json', 'user-agent': 'poki-setup-channels'}
+    if token:
+        headers['authorization'] = 'Bearer ' + token
+    if body is not None:
+        headers.update({'content-type': 'application/json', 'idempotency-key': str(uuid.uuid4())})
+    request = urllib.request.Request(base + path, method=method, headers=headers,
+                                     data=None if body is None else json.dumps(body).encode())
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            return error.code, json.load(error)
+        except ValueError:
+            return error.code, {}
+    except (OSError, ValueError):
+        raise ValueError('Cannot reach Photon. Check the network and run setup again.') from None
+
+
+def photon_sign_in():
+    status, grant = photon('POST', '/v1/auth/device/code', body={})
+    if status != 200:
+        raise ValueError(f'Photon did not start the sign-in (HTTP {status}). Run setup again later.')
+    print(f"Sign in to Photon to continue. Open this link in a browser:\n  {grant['verification_uri_complete']}\n"
+          f"and confirm the code {grant['user_code']}. Waiting for your approval...", flush=True)
+    wait = grant['interval']
+    deadline = time.monotonic() + grant['expires_in']
+    while time.monotonic() < deadline:
+        time.sleep(wait)
+        status, result = photon('POST', '/v1/auth/device/token', body={
+            'grant_type': 'urn:ietf:params:oauth:grant-type:device_code', 'device_code': grant['device_code']})
+        if status == 200:
+            print(f"Signed in to Photon as {result['user']['email']}.", flush=True)
+            return result['access_token']
+        if status == 429 or result.get('error') == 'slow_down':
+            wait += 5
+        elif result.get('error') != 'authorization_pending':
+            raise ValueError(f"The Photon sign-in did not complete ({result.get('error') or f'HTTP {status}'}). Nothing was changed; run setup again.")
+    raise ValueError('The Photon sign-in code expired before it was approved. Nothing was changed; run setup again.')
+
+
+def photon_project(token, wanted, interactive):
+    status, result = photon('GET', '/v1/organizations', token)
+    if status != 200:
+        raise ValueError(f'Photon did not list your organizations (HTTP {status}).')
+    projects = []
+    for organization in result['organizations']:
+        page = ''
+        while page is not None:
+            status, result = photon('GET', f"/v1/organizations/{organization['organizationId']}/projects"
+                                    + (f'?pageToken={quote(page)}' if page else ''), token)
+            if status != 200:
+                break
+            projects += [(project['projectId'], f"{project['name']} ({organization['name']}, {project['projectId']})")
+                         for project in result['projects']]
+            page = result.get('nextPageToken')
+    if not projects:
+        raise ValueError('This Photon account has no project it can read. Create one at https://photon.codes/docs/beta/get-started/project and run setup again.')
+    if wanted:
+        if wanted not in [project for project, _ in projects]:
+            raise ValueError('This Photon account cannot read that project ID.')
+        return wanted
+    if len(projects) == 1:
+        print(f'Using your Photon project {projects[0][1]}.')
+        return projects[0][0]
+    listing = '\n'.join(f'{number}. {label}' for number, (_, label) in enumerate(projects, 1))
+    if not interactive:
+        raise ValueError('This Photon account has several projects. Add projectId to the answers file:\n' + listing)
+    print('Your Photon projects:\n' + listing)
+    choice = ask('Project number')
+    if not choice.isdigit() or not 0 < int(choice) <= len(projects):
+        raise ValueError('Choose one of the listed project numbers.')
+    return projects[int(choice) - 1][0]
+
+
+def photon_key(token, project):
+    name = ('Poki Agent on ' + platform.node())[:128] if platform.node() else 'Poki Agent'
+    status, result = photon('POST', f'/v1/projects/{project}/api-keys', token,
+                            {'name': name, 'permissions': ['project:read', 'project:write', 'platforms:read', 'platforms:write']})
+    if status not in [200, 201]:
+        raise ValueError(f'Photon did not create a project API key (HTTP {status}). Your account may not manage keys in that project.')
+    key_id, secret = result['apiKey']['apiKeyId'], result['secret']
+    key = secret if secret.startswith('pho_sk_') else f'{key_id}_{secret}'
+    status, _ = photon('GET', f'/v1/projects/{project}/messages?pageSize=1', key)
+    if status in [401, 403]:
+        raise ValueError(f'Photon created the API key {key_id} but then refused it (HTTP {status}). Revoke it in the Photon dashboard.')
+    print(f'Created the Photon project API key "{name}" ({key_id}) with project and platform read and write permissions.')
+    return key_id, key
+
+
 def configure_photon(args):
     config_dir = Path(args.config_dir).expanduser().absolute()
     if os.path.lexists(config_dir):
@@ -164,21 +277,34 @@ def configure_photon(args):
             raise ValueError('Cannot read the private answers file as JSON.') from None
     else:
         if not sys.stdin.isatty():
-            raise ValueError('Use a terminal for hidden key input, or pass --answers with a private JSON file.')
+            raise ValueError('Use a terminal to answer the setup questions, or pass --answers with a private JSON file.')
         data = {'sender': ask('Allowed iMessage sender (email, or phone number with country code)'),
-                'device': ask('Poki device name or ID'),
-                'projectId': ask('Photon project ID (pho_prj_...)')}
-        data['apiKey'] = getpass.getpass('Photon project API key (hidden): ')
+                'device': ask('Poki device name or ID')}
     if not isinstance(data, dict):
         raise ValueError('Answers must be a JSON object.')
-    for field in ['sender', 'device', 'projectId', 'apiKey']:
+    fields = ['sender', 'device']
+    if 'apiKey' in data:
+        fields += ['projectId', 'apiKey']
+    elif 'projectId' in data:
+        fields += ['projectId']
+    for field in fields:
         if not isinstance(data.get(field), str) or not data[field].strip():
             raise ValueError(f'Missing {field} in setup answers.')
         data[field] = data[field].strip()
-    if not re.fullmatch(r'pho_prj_[0-9a-z]{26}', data['projectId']):
+    if 'projectId' in data and not re.fullmatch(r'pho_prj_[0-9a-z]{26}', data['projectId']):
         raise ValueError('Use the Photon Beta project ID: pho_prj_ followed by 26 lowercase letters or digits.')
-    config_dir.mkdir(parents=True, mode=0o700)
+    created = None
+    if 'apiKey' not in data:
+        try:
+            token = photon_sign_in()
+            data['projectId'] = photon_project(token, data.get('projectId'), not args.answers)
+            created, data['apiKey'] = photon_key(token, data['projectId'])
+        except (KeyError, TypeError, AttributeError):
+            raise ValueError('Photon answered in an unexpected form. Nothing was saved; run setup again later.') from None
+    made = False
     try:
+        config_dir.mkdir(parents=True, mode=0o700)
+        made = True
         for name, value in [('photon.json', {'sender': data['sender'], 'device': data['device'], 'auth': 'chatgpt'}),
                             ('connection.json', {'projectId': data['projectId'], 'apiKey': data['apiKey']})]:
             with (config_dir / name).open('x') as stream:
@@ -186,7 +312,10 @@ def configure_photon(args):
                 json.dump(value, stream, indent=2)
                 stream.write('\n')
     except BaseException:
-        shutil.rmtree(config_dir)
+        if made:
+            shutil.rmtree(config_dir)
+        if created:
+            print(f'The new Photon API key {created} was not saved. Revoke it in the Photon dashboard.', file=sys.stderr)
         raise
     print(f'Private Photon channel configuration: {config_dir}')
     print(PHOTON_NEXT_STEPS)
@@ -194,24 +323,33 @@ def configure_photon(args):
 
 def main():
     parser = argparse.ArgumentParser(description='Optionally install the pinned BlueBubbles gateway and configure Poki iMessage, or configure the Photon iMessage channel.')
-    parser.add_argument('--channel', choices=['none', 'imessage', 'photon'], help='Omit to choose interactively; default is none.')
+    parser.add_argument('--channel', choices=['none', 'imessage'], help='Omit to choose interactively; default is none.')
+    parser.add_argument('--provider', choices=['bluebubbles', 'photon'], help='How the imessage channel reaches iMessage. Omit to choose in a terminal; default is bluebubbles.')
     parser.add_argument('--app-dir', default='~/Applications', help='Application destination directory; existing apps are never replaced.')
-    parser.add_argument('--config-dir', help='New private configuration directory; default is ~/.config/poki-agent/<channel>.')
-    parser.add_argument('--answers', help='Private JSON file for unattended setup: url, password, sender, chatGuid and device for imessage; sender, device, projectId and apiKey for photon.')
+    parser.add_argument('--config-dir', help='New private configuration directory; default is ~/.config/poki-agent/imessage for BlueBubbles and ~/.config/poki-agent/photon for Photon.')
+    parser.add_argument('--answers', help='Private JSON file for unattended setup: url, password, sender, chatGuid and device for BlueBubbles; sender and device for Photon, plus projectId and apiKey to skip the browser sign-in.')
     parser.add_argument('--archive', help='Use an already downloaded official ZIP; the pinned checksum is still required.')
     args = parser.parse_args()
     channel = args.channel
     if channel is None:
-        channel = ask('Optional messaging channel: none, imessage or photon', 'none').lower()
-    args.config_dir = args.config_dir or '~/.config/poki-agent/' + channel
+        channel = ask('Optional messaging channel: none or imessage', 'none').lower()
     if channel == 'none':
         print('Skipped iMessage. No gateway downloaded or installed; existing Poki setup is unchanged.')
     elif channel == 'imessage':
-        install(args)
-    elif channel == 'photon':
-        configure_photon(args)
+        provider = args.provider
+        if provider is None and not args.answers and sys.stdin.isatty():
+            print(PROVIDERS)
+            provider = {'1': 'bluebubbles', '2': 'photon'}.get(ask('Choose 1 or 2', '1'))
+            if provider is None:
+                raise ValueError('Choose 1 for BlueBubbles or 2 for Photon.')
+        if provider == 'photon':
+            args.config_dir = args.config_dir or '~/.config/poki-agent/photon'
+            configure_photon(args)
+        else:
+            args.config_dir = args.config_dir or '~/.config/poki-agent/imessage'
+            install(args)
     else:
-        raise ValueError('Choose none, imessage or photon.')
+        raise ValueError('Choose none or imessage.')
 
 
 if __name__ == '__main__':

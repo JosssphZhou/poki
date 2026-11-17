@@ -13,19 +13,50 @@ export async function makePhoton() {
   const space = (number, kind) => ({ id: id('spc', number), projectId: project, platform: 'imessage', kind, participantIds: [agent.id], details: {}, metadata: {} });
   const subscribers = new Set();
   let seq = 0;
-  Object.assign(fixture, { project, agent, space: space(1, 'direct'), key: 'pho_sk_local-photon-test-secret',
-    events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [], read: [], typing: [] });
+  const keyId = id('sk', 1), organization = id('org', 1);
+  Object.assign(fixture, { project, agent, space: space(1, 'direct'), key: `${keyId}_local-photon-test-secret`, account: 'local-photon-account-token',
+    events: [], sent: [], ids: [], requests: [], subscriptions: [], assignments: [], read: [], typing: [],
+    login: { pending: 0, polls: 0 }, projects: [{ projectId: project, name: 'Poki tasks' }], keys: [] });
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const send = (status, data) => res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(data));
     const problem = ({ status, code }) => res.writeHead(status, { 'content-type': 'application/problem+json' })
       .end(JSON.stringify({ type: `https://photon.codes/docs/problems/${code.toLowerCase().replaceAll('_', '-')}`, title: code, status, code }));
-    if (req.headers.authorization !== `Bearer ${fixture.key}`) { problem({ status: 401, code: 'NOT_AUTHENTICATED' }); return; }
+    if (/^Python-urllib/.test(req.headers['user-agent'] ?? '')) { problem({ status: 403, code: 'ACCESS_DENIED' }); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : null;
-    fixture.requests.push({ method: req.method, path: url.pathname, key: req.headers['idempotency-key'], body });
     const now = new Date().toISOString();
+    if (url.pathname === '/v1/auth/device/code' && req.method === 'POST') {
+      send(200, { device_code: 'local-device-code', user_code: 'WXYZ-1234', verification_uri: `${fixture.url}/device`,
+        verification_uri_complete: `${fixture.url}/device?user_code=WXYZ-1234`, expires_in: 300, interval: 0.01 });
+      return;
+    }
+    if (url.pathname === '/v1/auth/device/token' && req.method === 'POST') {
+      fixture.login.polls += 1;
+      if (body.grant_type !== 'urn:ietf:params:oauth:grant-type:device_code' || body.device_code !== 'local-device-code') send(400, { error: 'invalid_grant' });
+      else if (fixture.login.denied) send(400, { error: 'access_denied' });
+      else if (fixture.login.polls <= fixture.login.pending) send(400, { error: 'authorization_pending' });
+      else send(200, { access_token: fixture.account, refresh_token: 'local-refresh-token', expires_in: 300,
+        user: { id: 'user_1', email: 'person@example.test', first_name: null, last_name: null } });
+      return;
+    }
+    if (req.headers.authorization === `Bearer ${fixture.account}`) {
+      const created = url.pathname.match(/^\/v1\/projects\/(pho_prj_[0-9a-z]{26})\/api-keys$/)?.[1];
+      if (url.pathname === '/v1/organizations' && req.method === 'GET') {
+        send(200, { organizations: [{ organizationId: organization, name: 'Example org' }], ownedOrganizationIds: [organization], acquisitionQuestionnaireExempt: true });
+      } else if (url.pathname === `/v1/organizations/${organization}/projects` && req.method === 'GET') {
+        send(200, { projects: fixture.projects.map(item => ({ ...item, organizationId: organization })) });
+      } else if (created && req.method === 'POST' && req.headers['idempotency-key']) {
+        fixture.keys.push({ project: created, ...body });
+        send(201, { apiKey: { apiKeyId: keyId, projectId: created, name: body.name, permissions: body.permissions, expiresAt: null, revokedAt: null },
+          secret: fixture.fullSecret ? fixture.key : fixture.key.slice(keyId.length + 1) });
+      } else problem({ status: 404, code: 'NOT_FOUND' });
+      return;
+    }
+    if (req.headers.authorization !== `Bearer ${fixture.key}`) { problem({ status: 401, code: 'NOT_AUTHENTICATED' }); return; }
+    if (url.pathname === `/v1/projects/${project}/messages` && req.method === 'GET') { send(200, { items: [] }); return; }
+    fixture.requests.push({ method: req.method, path: url.pathname, key: req.headers['idempotency-key'], body });
     if (url.pathname === `/v1/projects/${project}/messages` && req.method === 'POST') {
       if (fixture.sendError) {
         const error = fixture.sendError;

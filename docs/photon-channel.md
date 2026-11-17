@@ -20,7 +20,7 @@ Photon filters one-time passcodes on iMessage lines, so do not rely on this chan
 ## Requirements
 
 - Node.js 24 or later, Python 3.11 or newer for the setup command, and the [Poki Agent prerequisites](../agent/README.md), including `npm ci --prefix agent` and model login.
-- A Photon Beta project and a project API key with `project:read` and `project:write`. Follow Photon's [project setup](https://photon.codes/docs/beta/get-started/project). Add `platforms:write` and `platforms:read` only if Poki should assign the shared line for you.
+- A Photon account with a Photon Beta project. Follow Photon's [project setup](https://photon.codes/docs/beta/get-started/project) to create one. Setup signs you in and creates the project API key, so you need no key beforehand.
 - A plan with shared iMessage capacity. See Photon's [plans](https://photon.codes/docs/beta/plans-and-billing).
 - One iMessage identity you send from: a phone number with country code, such as `+14155550123`, or an Apple Account email. On iPhone, **Settings → Apps → Messages → Send & Receive** shows it. A number and an email are different senders.
 
@@ -29,18 +29,31 @@ Photon filters one-time passcodes on iMessage lines, so do not rely on this chan
 From the repository root, run:
 
 ```sh
-./bin/setup-channels --channel photon
+./bin/setup-channels --channel imessage
 ```
 
-The command asks for the allowed sender, the Poki device name or ID, the Photon project ID (`pho_prj_...`) and the API key. Key input is hidden. It creates `~/.config/poki-agent/photon/`:
+Setup describes the two ways Poki can reach iMessage, BlueBubbles and Photon, and asks which one to use. Choose Photon, or skip the question with `--provider photon`. It then asks for the allowed sender and the Poki device name or ID, and signs you in to Photon:
+
+1. It prints a link and a code. Open the link in a browser on any device, check the code and approve. This is Photon's device login, the one `photon login` uses, so setup never sees your password.
+2. It lists the projects your account can read and asks which one to use. With a single project it uses that one.
+3. It creates a project API key named `Poki Agent on <this computer's name>` in that project and stores it. The key has `project:read` and `project:write` for the worker, and `platforms:read` and `platforms:write` so that `--assign` below can map your sender to a line. It does not expire. Revoke it under the project's API keys in the Photon dashboard when you stop using this channel.
+
+The sign-in is used for these steps only and is not stored. The worker runs on the project key.
+
+Setup creates `~/.config/poki-agent/photon/`:
 
 - `photon.json`: sender, device and ChatGPT authentication selection.
 - `connection.json`: project ID and API key. Keep this file private.
 - `state/`: created by the channel later for its cursor and task records.
 
-The directory has mode `700` and both JSON files have mode `600`. The command contacts no service, prints no key and starts no worker. An existing destination causes an error and is left unchanged. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
+The directory has mode `700` and both JSON files have mode `600`. Setup prints no key, sends no message and starts no worker. An existing destination causes an error before any sign-in and is left unchanged. If the sign-in is denied or its code expires, no key is created and nothing is written. Use `--config-dir /path/to/clean/photon` for another destination, and pass the same option to the launcher below.
 
-For unattended setup, use `--answers /path/to/private-answers.json` with mode `600` and the fields `sender`, `device`, `projectId` and `apiKey`. Keep it outside the repository and remove it afterwards. Do not put the key in command arguments, shell history, screenshots or logs.
+For setup without questions, use `--provider photon --answers /path/to/private-answers.json` with mode `600`:
+
+- With `sender` and `device` only, setup still signs in. It prints the link and waits, so an agent that runs setup for you can pass the link on. Add `projectId` when the account has more than one project.
+- With `sender`, `device`, `projectId` and `apiKey`, setup contacts no service and stores the key you supply. That key needs `project:read` and `project:write`, plus `platforms:read` and `platforms:write` if Poki should assign the shared line.
+
+Keep the answers file outside the repository and remove it afterwards. Do not put a key in command arguments, shell history, screenshots or logs.
 
 ## Assign a shared line
 
@@ -88,6 +101,6 @@ A dropped connection reconnects on its own and resumes after the last event rece
 
 ## Verification scope
 
-The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators and private configuration. They send no real messages.
+The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators, the choice between BlueBubbles and Photon, the device sign-in, project choice, key creation and private configuration. They send no real messages.
 
-Receipt and delivery through the live Photon service, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.
+The browser sign-in against the live Photon service, receipt and delivery through it, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.

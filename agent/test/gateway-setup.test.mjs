@@ -107,10 +107,10 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   const answers = join(directory, 'answers.json');
   await writeFile(answers, JSON.stringify({ sender: ' allowed@example.test ', device: 'synthetic-device\n',
     projectId: ` ${api.project}`, apiKey: `${api.key}\n` }), { mode: 0o600 });
-  const setupArgs = ['--channel', 'photon', '--config-dir', configDir, '--answers', answers];
+  const setupArgs = ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', answers];
   const mistyped = join(directory, 'mistyped.json');
   await writeFile(mistyped, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', projectId: 'pho_prj_abc', apiKey: api.key }), { mode: 0o600 });
-  const rejected = await cli('./bin/setup-channels', ['--channel', 'photon', '--config-dir', configDir, '--answers', mistyped]);
+  const rejected = await cli('./bin/setup-channels', ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', mistyped]);
   assert.equal(rejected.code, 1);
   assert.match(rejected.stderr, /26 lowercase letters or digits/);
   await assert.rejects(stat(configDir), { code: 'ENOENT' }, 'A mistyped project ID writes nothing');
@@ -121,7 +121,7 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   assert.deepEqual(JSON.parse(await readFile(join(configDir, 'photon.json'), 'utf8')),
     { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
   assert.deepEqual(JSON.parse(await readFile(join(configDir, 'connection.json'), 'utf8')), { projectId: api.project, apiKey: api.key });
-  assert.equal(api.requests.length, 0, 'Setup contacts no service');
+  assert.deepEqual([api.requests.length, api.login.polls], [0, 0], 'Setup with a supplied key contacts no service');
   const existing = await cli('./bin/setup-channels', setupArgs);
   assert.equal(existing.code, 1);
   assert.match(existing.stderr, /already exists/);
@@ -149,4 +149,60 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   assert.equal(api.sent.length, 0);
   assert.ok(!JSON.stringify([rejected, setup, existing, check, assign, forbidden, permissions]).includes(api.key));
   await evidence('photon-setup-and-launcher.json', { setup, existing, check, assign, forbidden, permissions, requests: api.requests });
+});
+
+test('Photon setup describes both iMessage routes, signs in with a device code and stores the project key it creates', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'poki-photon-login-'));
+  const api = await makePhoton();
+  t.after(async () => { await api.close(); await rm(directory, { recursive: true, force: true }); });
+  const env = { ...process.env, PHOTON_API_URL: api.url };
+  const answers = join(directory, 'answers.json');
+  await writeFile(answers, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device' }), { mode: 0o600 });
+  const setup = configDir => cli('./bin/setup-channels', ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', answers], { env });
+  const second = { projectId: `pho_prj_${'0'.repeat(25)}2`, name: 'Second project' };
+
+  api.login.denied = true;
+  const denied = await setup(join(directory, 'denied'));
+  assert.equal(denied.code, 1);
+  assert.match(denied.stderr, /sign-in did not complete \(access_denied\)/);
+  api.login = { pending: 0, polls: 0 };
+  api.projects.push(second);
+  const several = await setup(join(directory, 'several'));
+  assert.equal(several.code, 1);
+  assert.match(several.stderr, /Add projectId to the answers file:\n1\. Poki tasks [^\n]*\n2\. Second project/);
+  assert.deepEqual([await readdir(directory), api.keys], [['answers.json'], []], 'A sign-in that cannot finish creates no key and writes nothing');
+
+  api.projects.pop();
+  api.login = { pending: 2, polls: 0 };
+  const configDir = join(directory, 'photon');
+  const signedIn = await setup(configDir);
+  assert.equal(signedIn.code, 0, signedIn.stderr);
+  assert.ok(signedIn.stdout.includes(`${api.url}/device?user_code=WXYZ-1234`) && signedIn.stdout.includes('confirm the code WXYZ-1234'));
+  assert.equal(api.login.polls, 3, 'Setup keeps asking while the sign-in is pending');
+  assert.deepEqual(api.keys.map(({ project, permissions }) => ({ project, permissions })),
+    [{ project: api.project, permissions: ['project:read', 'project:write', 'platforms:read', 'platforms:write'] }]);
+  assert.match(api.keys[0].name, /^Poki Agent/);
+  assert.equal((await stat(configDir)).mode & 0o777, 0o700);
+  for (const name of ['photon.json', 'connection.json']) assert.equal((await stat(join(configDir, name))).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(await readFile(join(configDir, 'connection.json'), 'utf8')), { projectId: api.project, apiKey: api.key });
+  const check = await cli(process.execPath, ['bin/poki-photon.mjs', '--config-dir', configDir, '--check'], { env });
+  assert.equal(check.code, 0, check.stderr);
+  assert.match(check.stdout, /authentication and read check succeeded/);
+
+  api.projects.push(second);
+  api.fullSecret = true;
+  api.login = { pending: 0, polls: 0 };
+  const chosen = join(directory, 'chosen');
+  const terminal = run('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',
+    './bin/setup-channels', '--channel', 'imessage', '--config-dir', chosen], { cwd: root, env });
+  terminal.child.stdin.end('2\nallowed@example.test\nsynthetic-device\n2\n');
+  const interactive = await terminal.then(result => ({ code: 0, ...result }), error => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }));
+  assert.equal(interactive.code, 0, interactive.stdout);
+  assert.match(interactive.stdout, /1\. BlueBubbles \(default\)[^]*stay on your machine[^]*2\. Photon[^]*pass through Photon's servers/);
+  assert.match(interactive.stdout, /Your Photon projects:\s+1\. Poki tasks [^\n]*\s+2\. Second project/);
+  assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
+  assert.deepEqual(JSON.parse(await readFile(join(chosen, 'connection.json'), 'utf8')), { projectId: second.projectId, apiKey: api.key });
+  const output = JSON.stringify([denied, several, signedIn, check, interactive]);
+  assert.ok(!output.includes(api.key) && !output.includes(api.account) && !output.includes('local-device-code'));
+  await evidence('photon-sign-in-setup.json', { denied, several, signedIn, check, interactive, keys: api.keys });
 });
