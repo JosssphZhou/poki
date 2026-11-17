@@ -98,6 +98,33 @@ test('Photon limits tasks and replies to one sender, skips history and resumes f
   }
 });
 
+test('Photon takes a backlog of any size in one subscription without losing or repeating a task', { timeout: 20000 }, async t => {
+  const { fixture, start } = await prepare(t);
+  const noise = () => { let last; for (let index = 0; index < 150; index += 1) last = fixture.add('Private other task', { sender: 2 }); return last; };
+  let source = start();
+  await source.open();
+  noise();
+  const first = fixture.add('First task');
+  assert.deepEqual(await read(source, noise()), [{ id: first, text: 'First task' }], 'A burst before the first read keeps its task');
+  assert.deepEqual(fixture.subscriptions, [0], 'A burst does not force a reconnect');
+  await source.acknowledge(first);
+  source.close();
+
+  noise();
+  const second = fixture.add('Sent while the worker was stopped');
+  const last = noise();
+  source = start();
+  await source.open();
+  assert.deepEqual(await read(source, last), [{ id: second, text: 'Sent while the worker was stopped' }]);
+  await source.acknowledge(second);
+  assert.deepEqual(await read(source, last), []);
+  assert.deepEqual(fixture.subscriptions, [0, first], 'The replayed backlog arrives in one subscription');
+  source.close();
+  source = start();
+  await source.open();
+  assert.equal(fixture.subscriptions.at(-1), last, 'The cursor moves past the whole backlog');
+});
+
 test('Photon marks the sender\'s messages read and shows typing from the opening to the final reply', async t => {
   const { fixture, start } = await prepare(t);
   t.mock.timers.enable({ apis: ['setInterval'] });

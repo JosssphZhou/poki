@@ -55,6 +55,7 @@ export class PhotonSource {
     this.queue = [];
     this.sent = new Set();
     this.lastQueued = 0;
+    this.skipped = 0;
     this.presence = Promise.resolve();
     this.unavailable = new Set();
   }
@@ -95,14 +96,10 @@ export class PhotonSource {
         const seq = metadata?.seq;
         if (!Number.isSafeInteger(seq) || seq < 0) { stop('Photon returned an invalid event cursor.'); return; }
         if (seq <= this.lastQueued) return;
-        if (this.queue.length >= 128) {
-          this.queue = [];
-          this.lastQueued = this.state.cursor ?? 0;
-          socket.io.engine.close();
-          return;
-        }
         this.lastQueued = seq;
-        this.queue.push({ seq, event });
+        const message = this.message(event);
+        if (message) this.queue.push({ seq, id: event.data.object.id, message });
+        else this.skipped = seq;
       });
       socket.connect();
     });
@@ -130,19 +127,17 @@ export class PhotonSource {
 
   async *read() {
     if (this.failure) throw this.failure;
-    let skipped = 0, yielded = 0;
+    let yielded = 0;
     while (this.queue.length) {
-      const { seq, event } = this.queue.shift();
-      const message = this.message(event);
-      if (!message) { skipped = seq; continue; }
+      const { seq, id, message } = this.queue.shift();
       this.signal('read receipts', () => this.photon.projects.markMessageRead({
-        path: { id: this.project, messageId: event.data.object.id }, headers: { 'idempotency-key': randomUUID() },
+        path: { id: this.project, messageId: id }, headers: { 'idempotency-key': randomUUID() },
       }));
       yielded = seq;
       yield { id: seq, ...message };
     }
     const cursor = this.state.cursor ?? 0;
-    if (skipped > cursor && cursor >= yielded) await this.state.save(skipped);
+    if (this.skipped > cursor && cursor >= yielded) await this.state.save(this.skipped);
   }
 
   acknowledge(id) { return this.state.save(id); }
