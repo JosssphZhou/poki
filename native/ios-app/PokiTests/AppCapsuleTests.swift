@@ -32,6 +32,22 @@ final class AppCapsuleTests: XCTestCase {
         }
     }
 
+    func testNetEaseCloudMusicRecognizesCommonChineseShortNames() {
+        let music = "com.netease.cloudmusic"
+        for name in ["网易云", "網易雲", "网易云音乐", "網易雲音樂"] {
+            let request = "打开\(name)播放我的歌单"
+            XCTAssertEqual(AppIconStore.bundleID(name), music, name)
+            XCTAssertEqual(AppIconStore.bundleIDs(namedIn: request), [music], request)
+            XCTAssertEqual(apps(request), [music], request)
+            XCTAssertEqual(joined(request), request)
+            let capsuleLabels = CapsuleText.segments(request).compactMap { segment -> String? in
+                if case .app(_, let words) = segment { return words }
+                return nil
+            }
+            XCTAssertEqual(capsuleLabels, [name], request)
+        }
+    }
+
     func testTypedNamesBecomeCapsulesWhereTheyNameAnApp() {
         XCTAssertEqual(apps("帮我在拼多多和京东比一下价格"), ["com.xunmeng.pinduoduo", "com.360buy.jdmobile"])
         XCTAssertEqual(apps("打开百度地图导航回家"), ["com.baidu.map"], "the longest name wins")
