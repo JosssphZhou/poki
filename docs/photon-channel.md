@@ -51,7 +51,7 @@ The directory has mode `700` and both JSON files have mode `600`. Setup prints n
 
 For setup without questions, use `--provider photon --answers /path/to/private-answers.json` with mode `600`:
 
-- With `sender` and `device` only, setup still signs in. It prints the link without opening it and waits, so an agent that runs setup for you can pass the link on. Add `projectId` to use one project by its ID, or `organizationId` to say where a new project goes when the account belongs to several organizations.
+- With `sender` and `device` only, setup still signs in. It prints the link without opening it and waits, so an agent that runs setup for you can pass the link on. Add `projectId` to use one project by its ID, or `organizationId` when the account belongs to several organizations: setup then looks for the project in that organization only and creates it there.
 - With `sender`, `device`, `projectId` and `apiKey`, setup contacts no service and stores the key you supply. That key needs `project:read` and `project:write`, plus `platforms:read` and `platforms:write` if Poki should assign the shared line.
 
 Keep the answers file outside the repository and remove it afterwards. Do not put a key in command arguments, shell history, screenshots or logs.

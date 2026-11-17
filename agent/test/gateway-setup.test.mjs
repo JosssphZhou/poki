@@ -259,13 +259,13 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
 
   api.organizations.push(other);
   await writeFile(placed, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', organizationId: `pho_org_${'0'.repeat(25)}9` }), { mode: 0o600 });
-  const stranger = await setup(join(directory, 'stranger'), false, ['--project-name', 'Team line'], placed);
+  const stranger = await setup(join(directory, 'stranger'), false, [], placed);
   assert.equal(stranger.code, 1);
   assert.match(stranger.stderr, /does not belong to that organization ID/);
   await writeFile(placed, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', organizationId: other.organizationId }));
-  const team = await setup(join(directory, 'team'), false, ['--project-name', 'Team line'], placed);
+  const team = await setup(join(directory, 'team'), false, [], placed);
   assert.equal(team.code, 0, team.stderr);
-  assert.match(team.stdout, /Created the Photon project "Team line" \(Other org, pho_prj_0{23}101\)\.[^]*Shared line assigned\./);
+  assert.match(team.stdout, /Created the Photon project "Poki Agent" \(Other org, pho_prj_0{23}101\)\.[^]*Shared line assigned\./, 'An organizationId answer keeps the search and the new project to that organization');
   assert.deepEqual(await connection(join(directory, 'team')), { projectId: api.created[1].projectId, apiKey: api.key });
 
   api.fullSecret = true;
@@ -286,7 +286,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.match(interactive.stdout, /Your Photon organizations:\s+1\. Example org [^\n]*\s+2\. Other org [^]*Created the Photon project "Side line" \(Other org, pho_prj_0{23}102\)\./);
   assert.match(interactive.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\./);
   assert.deepEqual(api.created.slice(1).map(({ organizationId, name, slug }) => ({ organizationId, name, slug: slug.slice(0, -8) })),
-    [{ organizationId: other.organizationId, name: 'Team line', slug: 'team-line-' }, { organizationId: other.organizationId, name: 'Side line', slug: 'side-line-' }]);
+    [{ organizationId: other.organizationId, name: 'Poki Agent', slug: 'poki-agent-' }, { organizationId: other.organizationId, name: 'Side line', slug: 'side-line-' }]);
   assert.deepEqual(JSON.parse(await readFile(join(chosen, 'photon.json'), 'utf8')), { sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt' });
   assert.deepEqual(await connection(chosen), { projectId: api.created[2].projectId, apiKey: api.key });
   const output = JSON.stringify([denied, unplaced, unsaved, signedIn, check, unassigned, stranger, team, interactive]);

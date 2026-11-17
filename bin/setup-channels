@@ -240,7 +240,10 @@ def photon_project(token, wanted, name, organization, interactive):
     status, result = photon('GET', '/v1/organizations', token)
     if status != 200:
         raise ValueError(f'Photon did not list your organizations (HTTP {status}).')
-    organizations = result['organizations']
+    organizations = [item for item in result['organizations'] if not organization or item['organizationId'] == organization]
+    if not organizations:
+        raise ValueError('This Photon account does not belong to that organization ID.' if organization else
+                         'This Photon account belongs to no organization. Create one in the Photon dashboard and run setup again.')
     for item in organizations:
         page = ''
         while page is not None:
@@ -255,11 +258,6 @@ def photon_project(token, wanted, name, organization, interactive):
             page = result.get('nextPageToken')
     if wanted:
         raise ValueError('This Photon account cannot read that project ID.')
-    if organization:
-        organizations = [item for item in organizations if item['organizationId'] == organization]
-    if not organizations:
-        raise ValueError('This Photon account does not belong to that organization ID.' if organization else
-                         'This Photon account belongs to no organization. Create one in the Photon dashboard and run setup again.')
     if len(organizations) > 1:
         listing = '\n'.join(f"{number}. {item['name']} ({item['organizationId']})" for number, item in enumerate(organizations, 1))
         if not interactive:
@@ -389,7 +387,7 @@ def main():
     parser.add_argument('--no-browser', action='store_true', help='Print the Photon sign-in link without opening it. Setup opens it only in a terminal on a computer with a desktop, and never when CI is set.')
     parser.add_argument('--app-dir', default='~/Applications', help='Application destination directory; existing apps are never replaced.')
     parser.add_argument('--config-dir', help='New private configuration directory; default is ~/.config/poki-agent/imessage for BlueBubbles and ~/.config/poki-agent/photon for Photon.')
-    parser.add_argument('--answers', help='Private JSON file for unattended setup: url, password, sender, chatGuid and device for BlueBubbles; sender and device for Photon, optionally organizationId or projectId, or projectId and apiKey to skip the browser sign-in.')
+    parser.add_argument('--answers', help='Private JSON file for unattended setup: url, password, sender, chatGuid and device for BlueBubbles; sender and device for Photon, optionally projectId, or organizationId to keep to one organization, or projectId and apiKey to skip the browser sign-in.')
     parser.add_argument('--archive', help='Use an already downloaded official ZIP; the pinned checksum is still required.')
     args = parser.parse_args()
     channel = args.channel
