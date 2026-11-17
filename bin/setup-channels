@@ -304,9 +304,9 @@ def configure_photon(args):
                 raise ValueError('Photon answered in an unexpected form. Nothing was saved; run setup again later.') from None
         config_dir.mkdir(parents=True, mode=0o700)
         made = True
-        for name, value in [('photon.json', {'sender': data['sender'], 'device': data['device'], 'auth': 'chatgpt'}),
-                            ('connection.json', {'projectId': data['projectId'], 'apiKey': data['apiKey']})]:
-            with (config_dir / name).open('x') as stream:
+        for filename, value in [('photon.json', {'sender': data['sender'], 'device': data['device'], 'auth': 'chatgpt'}),
+                                ('connection.json', {'projectId': data['projectId'], 'apiKey': data['apiKey']})]:
+            with (config_dir / filename).open('x') as stream:
                 os.fchmod(stream.fileno(), 0o600)
                 json.dump(value, stream, indent=2)
                 stream.write('\n')

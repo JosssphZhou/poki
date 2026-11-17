@@ -125,6 +125,10 @@ test('Photon setup writes private configuration, and its launcher checks and ass
   const existing = await cli('./bin/setup-channels', setupArgs);
   assert.equal(existing.code, 1);
   assert.match(existing.stderr, /already exists/);
+  const unwritable = await cli('sh', ['-c', 'ulimit -f 0 && exec ./bin/setup-channels "$@"', 'sh', ...setupArgs.slice(0, 5), join(directory, 'unwritable'), ...setupArgs.slice(6)]);
+  assert.equal(unwritable.stderr, 'Setup failed: Setup could not finish. Check destination permissions and available disk space, then retry.\n',
+    'A supplied key that cannot be saved is not reported as a key Photon created');
+  await assert.rejects(stat(join(directory, 'unwritable')), { code: 'ENOENT' });
   const env = { ...process.env, PHOTON_API_URL: api.url };
   const args = ['bin/poki-photon.mjs', '--config-dir', configDir];
   const check = await cli(process.execPath, [...args, '--check'], { env });
@@ -158,7 +162,8 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   const env = { ...process.env, PHOTON_API_URL: api.url };
   const answers = join(directory, 'answers.json');
   await writeFile(answers, JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device' }), { mode: 0o600 });
-  const setup = configDir => cli('./bin/setup-channels', ['--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', answers], { env });
+  const setup = (configDir, fileLimit) => cli('sh', ['-c', `${fileLimit ? 'ulimit -f 0 && ' : ''}exec ./bin/setup-channels "$@"`, 'sh',
+    '--channel', 'imessage', '--provider', 'photon', '--config-dir', configDir, '--answers', answers], { env });
   const second = { projectId: `pho_prj_${'0'.repeat(25)}2`, name: 'Second project' };
 
   api.login.denied = true;
@@ -175,21 +180,22 @@ test('Photon setup describes both iMessage routes, signs in with a device code a
   api.projects.pop();
   const unsaved = {};
   for (const [fault, target, problem, outcome] of [
-    ['refused', 'refused', /refused the API key it had just created \(HTTP 403\)/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
-    ['dropped', 'dropped', /Cannot reach Photon/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
-    ['no secret', 'malformed', /unexpected form/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
-    [null, 'answers.json/inside', /Setup could not finish/, /\(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['refused', 'refused', /refused the API key it had just created \(HTTP 403\)/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['dropped', 'dropped', /Cannot reach Photon/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    ['no secret', 'malformed', /unexpected form/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    [null, 'answers.json/inside', /Setup could not finish/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
+    [null, 'unwritable', /Setup could not finish/, /The new Photon API key "Poki Agent[^"]*" \(pho_sk_0{25}1\) was not saved\. Setup revoked it\./],
     ['no revoke', 'answers.json/inside', /Setup could not finish/, /\(pho_sk_0{25}1\) was not saved\. It is still active: revoke it/],
   ]) {
     api.keyFault = fault;
     api.login = { pending: 0, polls: 0 };
-    const result = unsaved[`${fault} ${target}`] = await setup(join(directory, target));
+    const result = unsaved[`${fault} ${target}`] = await setup(join(directory, target), target === 'unwritable');
     assert.equal(result.code, 1);
     assert.match(result.stderr, problem);
     assert.match(result.stderr, outcome);
   }
   api.keyFault = null;
-  assert.deepEqual([await readdir(directory), api.keys.length, api.revoked.length], [['answers.json'], 5, 4], 'A key that cannot be saved is revoked and leaves nothing behind');
+  assert.deepEqual([await readdir(directory), api.keys.length, api.revoked.length], [['answers.json'], 6, 5], 'A key that cannot be saved is revoked and leaves nothing behind');
   api.keys.length = 0;
 
   api.login = { pending: 2, polls: 0 };
