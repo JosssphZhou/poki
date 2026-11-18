@@ -4,15 +4,15 @@ import XCTest
 
 @MainActor
 final class DailyTaskTests: XCTestCase {
-    func testColdLaunchTapWaitsUntilActiveAndSubmitsExactlyOnce() async throws {
+    func testClaimIsPersistedBeforeSubmissionAndSurvivesReopening() async throws {
         try withSchedule { file, plan in
             let app = DailyTask(file: file)
             let delivery = delivery(plan, on: 18)
             var submitted: [String] = []
             app.request(delivery, at: time(18), calendar: utc)
-            let pending = try XCTUnwrap(app.pending.first)
+            let pending = try XCTUnwrap(app.pending.first?.delivery)
             XCTAssertEqual(app.run(pending, ready: false, at: time(18), calendar: utc) { submitted.append($0) }, .waiting)
-            XCTAssertEqual(app.pending, [delivery])
+            XCTAssertEqual(app.pending.map(\.delivery), [delivery])
             XCTAssertTrue(submitted.isEmpty)
 
             XCTAssertEqual(app.run(pending, ready: true, at: time(18), calendar: utc) {
@@ -32,32 +32,7 @@ final class DailyTaskTests: XCTestCase {
         }
     }
 
-    func testForegroundCanSubmitAndTapDoesNotReplayIt() async throws {
-        try withSchedule { file, plan in
-            let app = DailyTask(file: file)
-            let delivery = delivery(plan, on: 18)
-            var submitted: [String] = []
-            XCTAssertEqual(app.run(delivery, ready: true, at: time(18), calendar: utc) { submitted.append($0) }, .submitted)
-            app.request(delivery, at: time(18), calendar: utc)
-            XCTAssertTrue(app.pending.isEmpty)
-            XCTAssertEqual(submitted, [plan.prompt])
-        }
-    }
-
-    func testOpeningPokiWithoutATapDoesNotQueueAnOccurrence() async throws {
-        try withSchedule { file, plan in
-            let app = DailyTask(file: file)
-            let delivery = delivery(plan, on: 18)
-            XCTAssertTrue(app.pending.isEmpty)
-            XCTAssertEqual(app.run(delivery, ready: false, at: time(18), calendar: utc) { _ in
-                XCTFail("A foreground delivery that cannot run must only present the notification")
-            }, .waiting)
-            XCTAssertTrue(app.pending.isEmpty)
-            XCTAssertTrue(DailyTask(file: file).pending.isEmpty)
-        }
-    }
-
-    func testOnlyLatestDueDayCanRunAndTomorrowCanRunAgain() async throws {
+    func testOnlyLatestDueOccurrenceCanRunAndTomorrowCanRunAgain() async throws {
         try withSchedule { file, plan in
             let app = DailyTask(file: file)
             let yesterday = delivery(plan, on: 17)
@@ -104,11 +79,11 @@ final class DailyTaskTests: XCTestCase {
             app.request(b, at: time(18), calendar: utc)
             app.request(a, at: time(18), calendar: utc)
             app.request(b, at: time(18), calendar: utc)
-            XCTAssertEqual(app.pending, [b, a])
+            XCTAssertEqual(app.pending.map(\.delivery), [b, a])
             XCTAssertEqual(app.run(b, ready: true, at: time(18), calendar: utc) { submitted.append($0) }, .submitted)
-            XCTAssertEqual(app.pending, [a])
+            XCTAssertEqual(app.pending.map(\.delivery), [a])
             XCTAssertEqual(app.run(a, ready: false, at: time(18), calendar: utc) { submitted.append($0) }, .waiting)
-            XCTAssertEqual(app.pending, [a])
+            XCTAssertEqual(app.pending.map(\.delivery), [a])
             XCTAssertEqual(app.run(a, ready: true, at: time(18), calendar: utc) { submitted.append($0) }, .submitted)
             XCTAssertEqual(submitted, [second.prompt, first.prompt])
 
@@ -118,7 +93,7 @@ final class DailyTaskTests: XCTestCase {
         }
     }
 
-    func testEditingKeepsTodaysClaimAndRemovingLeavesOthersWaiting() async throws {
+    func testEditingKeepsTheDueClaimAndRemovingLeavesOthersWaiting() async throws {
         try withSchedule { file, first in
             let app = DailyTask(file: file)
             let second = DailyTask.Plan(prompt: "Check the date.", hour: 9, minute: 0)
@@ -130,9 +105,9 @@ final class DailyTaskTests: XCTestCase {
             let edited = DailyTask.Plan(id: first.id, prompt: "Read the build number.", hour: 9, minute: 0)
             try app.save(edited, replacing: first.noticeID)
             app.request(delivery(edited, on: 18), at: time(18), calendar: utc)
-            XCTAssertEqual(app.pending, [secondDelivery])
+            XCTAssertEqual(app.pending.map(\.delivery), [secondDelivery])
             try app.remove(first.id)
-            XCTAssertEqual(app.pending, [secondDelivery])
+            XCTAssertEqual(app.pending.map(\.delivery), [secondDelivery])
             XCTAssertEqual(DailyTask(file: file).plans, [second])
         }
     }
@@ -148,6 +123,7 @@ final class DailyTaskTests: XCTestCase {
     }
 
     func testAtCapacityEditingIsAllowedButAddingDoesNotReplaceAnyTask() async throws {
+        XCTAssertEqual(DailyTask.capacity, 20)
         try withSchedule { file, first in
             let app = DailyTask(file: file)
             for index in 1..<DailyTask.capacity {
@@ -163,24 +139,6 @@ final class DailyTaskTests: XCTestCase {
         }
     }
 
-    func testMigratingPreservesOldNotificationIdentifierAndDayClaim() async throws {
-        try withSchedule { file, plan in
-            let legacy: [String: Any] = [
-                "plan": ["id": plan.id.uuidString, "prompt": plan.prompt, "hour": 9, "minute": 0],
-                "lastDay": 20261118
-            ]
-            try JSONSerialization.data(withJSONObject: legacy).write(to: file)
-            let app = DailyTask(file: file)
-            let migrated = try XCTUnwrap(app.plans.first)
-            XCTAssertEqual(migrated.id, plan.id)
-            XCTAssertEqual(migrated.noticeID, plan.id)
-            app.request(delivery(migrated, on: 18), at: time(18), calendar: utc)
-            XCTAssertTrue(app.pending.isEmpty)
-            app.request(delivery(migrated, on: 19), at: time(19), calendar: utc)
-            XCTAssertEqual(app.pending, [delivery(migrated, on: 19)])
-        }
-    }
-
     func testPersistenceFailureDoesNotSubmit() async throws {
         try withSchedule { file, plan in
             let app = DailyTask(file: file)
@@ -192,70 +150,18 @@ final class DailyTaskTests: XCTestCase {
         }
     }
 
-    func testClockStartsTwoTasksAtTheirDueTimeAndDoesNotRepeatATick() async throws {
-        let first = DailyTask.Plan(prompt: "Read the date.", hour: 9, minute: 0)
-        let second = DailyTask.Plan(prompt: "Read the version.", hour: 9, minute: 0)
-        let due = time(18)
-        let clock = DailyTaskClock(now: due.addingTimeInterval(-1))
-        let tasks = [first, second]
-        XCTAssertEqual(clock.advance(to: due, plans: tasks, calendar: utc),
-                       [delivery(first, on: 18), delivery(second, on: 18)])
-        XCTAssertTrue(clock.advance(to: due.addingTimeInterval(1), plans: tasks, calendar: utc).isEmpty)
-    }
-
-    func testClockDoesNotBackfillAfterColdLaunchOrSuspension() async throws {
-        let plan = DailyTask.Plan(prompt: "Read the date.", hour: 9, minute: 0)
-        let due = time(18)
-        let cold = DailyTaskClock(now: due.addingTimeInterval(1))
-        XCTAssertTrue(cold.advance(to: due.addingTimeInterval(2), plans: [plan], calendar: utc).isEmpty)
-        let suspended = DailyTaskClock(now: due.addingTimeInterval(-1))
-        XCTAssertTrue(suspended.advance(to: due.addingTimeInterval(15), plans: [plan], calendar: utc).isEmpty)
-    }
-
-    func testClockLeavesLockedOccurrenceForNotificationInsteadOfRunningOnUnlock() async throws {
+    func testWestwardTravelDoesNotSkipTheNextLocalDueInstant() async throws {
         try withSchedule { file, plan in
-            let app = DailyTask(file: file)
-            let due = time(18)
-            let clock = DailyTaskClock(now: due.addingTimeInterval(-1))
-            let task = try XCTUnwrap(clock.advance(to: due, plans: app.plans, calendar: utc).first)
-            XCTAssertEqual(app.run(task, ready: false, at: due, calendar: utc) { _ in XCTFail("Phone is locked") }, .waiting)
-            XCTAssertTrue(clock.advance(to: due.addingTimeInterval(5), plans: app.plans, calendar: utc).isEmpty)
-            XCTAssertTrue(app.pending.isEmpty)
-            XCTAssertTrue(app.shouldRemind(task, at: due.addingTimeInterval(10), calendar: utc))
-            app.request(task, at: due.addingTimeInterval(11), calendar: utc)
-            XCTAssertEqual(app.run(task, ready: true, at: due.addingTimeInterval(11), calendar: utc) { _ in }, .submitted)
-        }
-    }
-
-    func testBackgroundAutomaticStartAndNotificationTapShareDurableClaim() async throws {
-        try withSchedule { file, plan in
-            let app = DailyTask(file: file)
-            let due = time(18)
-            let clock = DailyTaskClock(now: due.addingTimeInterval(-1))
-            let task = try XCTUnwrap(clock.advance(to: due, plans: app.plans, calendar: utc).first)
-            var submissions = 0
-            XCTAssertEqual(app.run(task, ready: true, at: due, calendar: utc) { _ in submissions += 1 }, .submitted)
-            let fallback = DailyTask.Delivery(id: task.id, date: due.addingTimeInterval(10))
-            let restarted = DailyTask(file: file)
-            XCTAssertTrue(!restarted.shouldRemind(fallback, at: fallback.date, calendar: utc))
-            restarted.request(fallback, at: fallback.date, calendar: utc)
-            XCTAssertTrue(restarted.pending.isEmpty)
-            XCTAssertEqual(submissions, 1)
-        }
-    }
-
-    func testReminderRemainsRepeatingWhileSuccessfulOccurrenceIsSuppressed() async throws {
-        try withSchedule { file, plan in
-            let app = DailyTask(file: file)
-            let due = time(18)
-            XCTAssertEqual(DailyTask.reminderSecond(for: plan, at: due, calendar: utc), 10)
-            _ = app.run(delivery(plan, on: 18), ready: true, at: due, calendar: utc) { _ in }
-            let claimed = try XCTUnwrap(app.plans.first)
-            XCTAssertEqual(DailyTask.reminderSecond(for: claimed, at: due.addingTimeInterval(1), calendar: utc), 0,
-                           "At second 1, the second-0 repeating reminder next fires tomorrow, not today")
-            XCTAssertEqual(DailyTask.reminderSecond(for: claimed, at: due.addingTimeInterval(11), calendar: utc), 10,
-                           "After the grace window, put tomorrow back at second 10")
-            XCTAssertEqual(DailyTask.reminderSecond(for: claimed, at: time(19), calendar: utc), 10)
+            let tasks = DailyTask(file: file)
+            var tokyo = utc; tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+            var losAngeles = utc; losAngeles.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+            let day = DateComponents(year: 2026, month: 11, day: 18, hour: 9)
+            let first = tokyo.date(from: day)!, next = losAngeles.date(from: day)!
+            XCTAssertTrue(next > first)
+            XCTAssertEqual(tasks.run(.init(id: plan.noticeID, date: first), ready: true, at: first, calendar: tokyo) { _ in }, .submitted)
+            let reopened = DailyTask(file: file)
+            XCTAssertEqual(reopened.run(.init(id: plan.noticeID, date: next), ready: true, at: next, calendar: losAngeles) { _ in }, .submitted)
+            XCTAssertEqual(reopened.run(.init(id: plan.noticeID, date: next), ready: true, at: next, calendar: losAngeles) { _ in }, .ignored)
         }
     }
 

@@ -37,40 +37,51 @@ Open **Settings › Daily Tasks** and tap **Add Daily Task**. Each task has its 
 and time in the iPhone's local time. Tap a task in the list to edit or delete it. Give reminders
 distinct names if they are due together; the name can appear on the Lock Screen, but the
 instructions do not.
-Poki keeps up to 60 daily tasks so other reminders still have room.
+Poki keeps up to 20 daily tasks, reserving notification capacity for other reminders.
 
-Keep Poki on, choose a model, and allow notifications. While Poki's process is running,
-tasks start when the iPhone is unlocked and Poki is idle, even on the Home Screen or in another
-app. The scheduler uses Poki's existing background lifetime; it does not add a new keep-alive.
-If the phone is locked, Poki is busy, or its process was suspended or terminated, iOS posts
-that task's reminder. Reminders have a ten-second grace period so a successful automatic
-start can suppress that occurrence without cancelling future daily reminders.
-Tap a reminder or its **Run Task** action and unlock if asked.
-Tapped reminders wait their turn if Poki is already working; they do not replace one another.
-Simply unlocking after a missed occurrence starts nothing. If you swipe Poki away, a reminder
-tap must open it again; iOS cannot guarantee a timed cold launch. For each task, only its
-latest due occurrence can run, once. The usual approvals still apply. A first phone automation
-after a restart may still require opening Poki and answering iOS's own passcode prompt.
+Keep Poki on, choose a model, and allow notifications. Tasks start automatically only while Poki
+is in the foreground, the iPhone is unlocked, and Poki is idle. Tasks due together queue before
+starting the first one; queued automatic tasks can start only while Poki remains in the foreground.
+Automatic runs use at least Balanced approvals, even when optional approvals
+are off or the chosen sensitivity is Permissive. Stricter choices remain stricter, and the saved
+approval preference is unchanged. Starting a daily task always makes a new conversation, including
+when its instructions begin with “continue” or “继续”.
 
-To verify on a signed physical iPhone:
+If the phone is locked, Poki is busy, or another app is in front, iOS posts that task's reminder.
+Reminders have a ten-second grace period so a successful automatic start can suppress that
+occurrence without cancelling future daily reminders. If Poki was suspended or terminated,
+iOS still owns the repeating reminder; it cannot guarantee a timed cold launch.
+Tap a reminder or its **Run Task** action and unlock if asked. Tapped tasks wait in order.
+Simply unlocking or opening Poki after a missed occurrence starts nothing without a tap.
 
-1. With Lock Screen notifications enabled, save two distinctly named read-only tasks for the
-   next minute, for example “Open Settings and read the iOS version” and “Open Settings and read
-   the build number.” Swipe Poki away in the app switcher, then lock the iPhone.
-2. Confirm both reminders appear. Tap one and unlock. Without another tap in Poki, expect one
-   new conversation. Tap the second reminder while the first is running; the second task should
-   start only after the first finishes. Expect one result per task and exactly two
-   `[daily-task] scheduled task submitted` lines in Diagnostics.
-3. Return to Poki and relaunch it again; neither task should run again. Separately keep Poki on,
-   leave it with the Home gesture (do not swipe it away), and keep the phone unlocked on the Home
-   Screen or in Settings. A new occurrence must start without a tap and leave no reminder banner.
-   Repeat while locked: it must only remind, and unlocking alone must not start it. Edit
-   or delete one schedule and confirm the other reminder still works.
+Each occurrence is claimed on disk before submission, by its absolute due time rather than a
+calendar-day number. Duplicate taps and relaunches cannot resubmit it, while travelling west still
+allows the next local due time even if the calendar date repeats. Editing preserves the previous
+claim; changing the time can create a different future occurrence. The usual approvals apply to
+manual notification starts. Interrupted submissions are not automatically retried.
+After a reboot, the first phone automation may still require opening Poki and answering iOS's own
+passcode prompt.
 
-`PokiTests/DailyTaskTests` covers independent claims across launches, taps waiting in order,
-editing without losing a claim, and preserving data from the single-task format. The Lock Screen
-launch, background lifetime, lock-state detection and notification suppression need the device
-checks above.
+To verify on a signed physical iPhone, create a **new** read-only task for each case:
+
+1. Keep Poki in the foreground and idle. A task due in the next minute must start without a tap;
+   two tasks due together must run sequentially, not replace one another. Confirm exactly one
+   `[daily-task] scheduled task submitted` line per task in Diagnostics.
+2. Keep the phone unlocked on the Home Screen or in Settings at the due time. It must only
+   remind. Return to Poki without tapping the reminder: the missed task must not start.
+3. Swipe Poki away, lock the phone, and wait for its reminder. Tap it and unlock; one conversation
+   must start, and reopening Poki or tapping a duplicate must not run the same occurrence again.
+4. With a Permissive/Never Ask saved preference, observe an automatic run's sensitive-step approval
+   at Balanced or stricter, then confirm the saved preference is unchanged after completion/Stop.
+   Edit/delete one task and confirm the other reminders remain. Deny notifications and check that
+   failed reminder registration does not retry or log every second.
+
+`DailyTaskTests`, `DailyTaskSchedulerTests`, `DailyTaskRemindersTests`, and
+`AutomaticTaskApprovalsTests` cover durable claims, injected foreground/lock/clock observations,
+queueing, real repeating request construction, in-flight changes, authorization and retry backoff.
+`ChatHarnessTests` drives continuation-prefix and automatic-approval lifetime checks through the
+real send path with a local scripted model. Device checks establish iOS notification delivery,
+lock-screen launch, and system approval presentation.
 
 ## Layout
 

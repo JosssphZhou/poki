@@ -288,15 +288,15 @@ struct RootView: View {
                 model.startSigner()
                 model.signer.maintain()
                 Task { await model.verifyPairing() }
-                runTappedDailyTask()
+                runPendingDailyTasks()
             } else if phase == .background {
                 model.wentToBackground()
             }
         }
-        .onChange(of: DailyTask.shared.pending, initial: true) { runTappedDailyTask() }
+        .onChange(of: DailyTask.shared.pending, initial: true) { runPendingDailyTasks() }
         .onChange(of: DailyTask.shared.plans) { DailyTaskNotice.schedulesChanged() }
-        .onChange(of: DailyTaskNotice.canStart(app: model, chat: chat)) { runTappedDailyTask() }
-        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in runTappedDailyTask() }
+        .onChange(of: DailyTaskNotice.canStart(app: model, chat: chat)) { runPendingDailyTasks() }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in runPendingDailyTasks() }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
         // the setup step, or the Activity Log for a problem; `poki://voice` brings the chat to the front.
         .onOpenURL { url in open(link: url) }
@@ -371,18 +371,12 @@ struct RootView: View {
         }
     }
 
-    private func runTappedDailyTask() {
+    private func runPendingDailyTasks() {
         guard scenePhase == .active else { return }
-        for delivery in DailyTask.shared.pending {
-            switch DailyTaskNotice.run(delivery, app: model, chat: chat) {
-            case .ignored: continue
-            case .waiting: return
-            case .submitted:
-                detailsOpen = false
-                statusOpen = false
-                show(.chat)
-                return
-            }
+        if DailyTaskNotice.runPending() {
+            detailsOpen = false
+            statusOpen = false
+            show(.chat)
         }
     }
 

@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Automatic daily tasks use at least Balanced approvals without changing your saved settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动执行每日任务时至少使用均衡审批，不会更改你保存的设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動執行每日任務時至少使用均衡審批，不會更改你儲存的設定。"
+          }
+        }
+      }
+    },
     "Delete a daily task before adding another." : {
       "localizations" : {
         "zh-Hans" : {
@@ -22,7 +38,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "运行任务"
+            "value" : "执行任务"
           }
         },
         "zh-Hant" : {
@@ -54,13 +70,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点按运行定时任务。"
+            "value" : "点按执行每日任务。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點一下以執行排程任務。"
+            "value" : "點一下以執行每日任務。"
           }
         }
       }
@@ -70,7 +86,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每日运行时间"
+            "value" : "每日执行时间"
           }
         },
         "zh-Hant" : {
@@ -81,18 +97,18 @@
         }
       }
     },
-    "With Poki on in the background, tasks start when your iPhone is unlocked and Poki is idle. Otherwise, tap the reminder." : {
+    "Tasks start automatically only while Poki is open and idle. Otherwise, tap the reminder." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在后台运行时，iPhone 已解锁且 Poki 空闲就会自动执行任务。否则，点按提醒即可运行。"
+            "value" : "仅当 Poki 位于前台且空闲时，才会自动执行每日任务。否则，点按提醒即可执行。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 在背景執行時，iPhone 已解鎖且 Poki 閒置就會自動執行任務。否則，點一下提醒即可執行。"
+            "value" : "僅當 Poki 位於前景且閒置時，才會自動執行每日任務。否則，點一下提醒即可執行。"
           }
         }
       }
@@ -102,13 +118,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存定时任务"
+            "value" : "保存每日任务"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儲存排程任務"
+            "value" : "儲存每日任務"
           }
         }
       }
@@ -134,13 +150,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允许通知后，Poki 在后台也能提醒你。"
+            "value" : "允许通知后，Poki 不在前台时也能提醒你。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "允許通知後，Poki 在背景也能提醒你。"
+            "value" : "允許通知後，Poki 不在前景時也能提醒你。"
           }
         }
       }
@@ -150,13 +166,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法更新定时任务"
+            "value" : "无法更新每日任务"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法更新排程任務"
+            "value" : "無法更新每日任務"
           }
         }
       }
@@ -278,13 +294,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "删除定时任务"
+            "value" : "删除每日任务"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除排程任務"
+            "value" : "刪除每日任務"
           }
         }
       }

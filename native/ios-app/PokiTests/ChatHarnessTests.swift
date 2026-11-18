@@ -45,6 +45,53 @@ final class ChatHarnessTests: XCTestCase {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
     }
 
+    func testDailyTaskContinuePrefixesReachTheModelAsNewTasks() async throws {
+        for text in ["继续 Read the date.", "continue reading the date."] {
+            let server = try FakeCompletions(replies: [FakeCompletions.text("Scheduled task finished.")])
+            let chat = chat(on: server, kind: .poki)
+            defer { if chat.running { chat.stop() } }
+            let previous = chat.sessionID
+            chat.sendDailyTask(text, automatically: false)
+            let deadline = ContinuousClock.now + .seconds(10)
+            while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(50)) }
+            XCTAssertFalse(chat.running)
+            XCTAssertNotEqual(chat.sessionID, previous)
+            XCTAssertFalse(chat.entries.contains { $0.continuationChoices != nil || $0.continuedTask != nil })
+            XCTAssertEqual(said(chat).last, "Scheduled task finished.")
+            XCTAssertTrue(server.requests.contains { Self.json($0).contains(text) })
+        }
+    }
+
+    func testAutomaticSendKeepsApprovalFloorUntilCancellationWithoutChangingPreferences() async throws {
+        let defaults = UserDefaults.standard
+        let mode = defaults.object(forKey: ApprovalClassifier.modeKey)
+        let level = defaults.object(forKey: ApprovalClassifier.levelKey)
+        defer {
+            defaults.set(mode, forKey: ApprovalClassifier.modeKey)
+            defaults.set(level, forKey: ApprovalClassifier.levelKey)
+        }
+        defaults.set(ApprovalMode.off.rawValue, forKey: ApprovalClassifier.modeKey)
+        defaults.set(ApprovalLevel.permissive.rawValue, forKey: ApprovalClassifier.levelKey)
+        let server = try FakeCompletions(replies: [], holdAfter: 0)
+        let chat = chat(on: server, kind: .poki)
+        defer { if chat.running { chat.stop() } }
+        chat.sendDailyTask("Read the date.", automatically: true)
+        let startedBy = ContinuousClock.now + .seconds(10)
+        while server.requests.isEmpty, ContinuousClock.now < startedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(server.requests.isEmpty)
+        XCTAssertEqual(ApprovalClassifier.effectiveMode, .confirm)
+        XCTAssertEqual(ApprovalClassifier.effectiveLevel, .balanced)
+        XCTAssertEqual(ApprovalClassifier.mode, .off, "The saved owner choice is not overwritten")
+        // Even a preference change during the run must not lower its floor.
+        defaults.set(ApprovalMode.off.rawValue, forKey: ApprovalClassifier.modeKey)
+        XCTAssertEqual(ApprovalClassifier.effectiveMode, .confirm)
+        chat.stop()
+        let endedBy = ContinuousClock.now + .seconds(10)
+        while ApprovalClassifier.effectiveMode != .off, ContinuousClock.now < endedBy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(ApprovalClassifier.effectiveMode, .off)
+        XCTAssertEqual(ApprovalClassifier.effectiveLevel, .permissive)
+    }
+
     func testExistingConversationUsesTheNewCustomEndpointForTheSameModel() async throws {
         let done = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done."])
         let first = try FakeCompletions(replies: [done, FakeCompletions.text("First endpoint.")])

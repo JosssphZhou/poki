@@ -40,10 +40,13 @@ struct DailyTaskSettings: View {
                     }
                 }
             } footer: {
-                if !tasks.pending.isEmpty {
-                    Text("Tasks are waiting. Turn on Poki and make sure it has a model and is idle.")
-                } else {
-                    Text("With Poki on in the background, tasks start when your iPhone is unlocked and Poki is idle. Otherwise, tap the reminder.")
+                VStack(alignment: .leading, spacing: 6) {
+                    if !tasks.pending.isEmpty {
+                        Text("Tasks are waiting. Turn on Poki and make sure it has a model and is idle.")
+                    } else {
+                        Text("Tasks start automatically only while Poki is open and idle. Otherwise, tap the reminder.")
+                    }
+                    Text("Automatic daily tasks use at least Balanced approvals without changing your saved settings.")
                 }
             }
         }

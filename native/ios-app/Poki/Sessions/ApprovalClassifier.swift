@@ -27,6 +27,12 @@ enum ApprovalClassifier {
     /// The saved choice; before there was one, what 752's two switches did (`ApprovalChoice.resolve`).
     nonisolated static var mode: Mode { ApprovalChoice.resolve(UserDefaults.standard.object(forKey:)).mode }
 
+    nonisolated private static var effectiveChoice: (mode: Mode, level: Level) {
+        AutomaticTaskApprovals.shared.effective(ApprovalChoice.resolve(UserDefaults.standard.object(forKey:)))
+    }
+    nonisolated static var effectiveMode: Mode { effectiveChoice.mode }
+    nonisolated static var effectiveLevel: Level { effectiveChoice.level }
+
     /// A chat model with a key: without one there is nobody to ask.
     static var hasModel: Bool {
         let provider = ModelKeys.selectedProvider
@@ -50,13 +56,13 @@ enum ApprovalClassifier {
 
     static func route(_ approval: PendingApproval, voiceOn: Bool) -> Route {
         if let known = routes[approval.id] { return known }
-        let mode = Self.mode
+        let mode = effectiveMode
         let own = AskPoki.chat?.running == true || voiceOn
         let reply = mode == .reply && own
         let route: Route
         if requiresOwner(approval) { route = .owner }
         else if mode == .off { route = .allow }
-        else if own, hasModel, reply || Level.saved != .everything { route = .model(reply: reply) }
+        else if own, hasModel, reply || effectiveLevel != .everything { route = .model(reply: reply) }
         else { route = .owner }
         if routes.count > 200 { routes.removeAll(); handed.removeAll() }
         routes[approval.id] = route

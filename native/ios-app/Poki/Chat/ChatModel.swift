@@ -325,6 +325,12 @@ final class ChatModel {
 
     func send(_ text: String, inSplitView: Bool = false) { send(text, again: false, inSplitView: inSplitView) }
 
+    /// A schedule is always a new task, even when its instructions begin with "continue" or "继续".
+    func sendDailyTask(_ text: String, automatically: Bool) {
+        newConversation()
+        send(text, again: false, dailyTask: true, automatic: automatically)
+    }
+
     /// A message with photos or PDFs from the plus menu: the model reads their pictures with the words.
     /// The words may be left out.
     func send(_ text: String, attachments: [ChatAttachment]) {
@@ -384,9 +390,10 @@ final class ChatModel {
         let images: [Data]
         let namedApps: [String]
         let engine: Engine
+        let automatic: Bool
     }
 
-    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [], inSplitView: Bool = false, chooseWorkspace: Bool = false) {
+    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [], inSplitView: Bool = false, chooseWorkspace: Bool = false, dailyTask: Bool = false, automatic: Bool = false) {
         if let message = app.signer.installMessage {
             add(.note(.problem(message)))
             return
@@ -403,7 +410,7 @@ final class ChatModel {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("Poki is working on a task for \(busy). Try again when it’s done.")))))
             return
         }
-        let isContinuation = kind == .poki && thumbnails.isEmpty && lastImages.isEmpty
+        let isContinuation = !dailyTask && kind == .poki && thumbnails.isEmpty && lastImages.isEmpty
             && (ChatContinuation.isRequest(text) || entries.last?.continuationChoices != nil)
         if kind == .poki, !store.isInitialReady || (isContinuation && !store.isLoaded) {
             running = true
@@ -430,7 +437,7 @@ final class ChatModel {
                 }
                 self.lastImages = capturedImages
                 guard let prepared = self.prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
-                                                      inSplitView: inSplitView, chooseWorkspace: chooseWorkspace) else {
+                                                      inSplitView: inSplitView, chooseWorkspace: chooseWorkspace, dailyTask: dailyTask, automatic: automatic) else {
                     self.running = false
                     self.awaitingModel = false
                     return
@@ -440,7 +447,7 @@ final class ChatModel {
             return
         }
         guard let prepared = prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
-                                         inSplitView: inSplitView, chooseWorkspace: chooseWorkspace) else { return }
+                                         inSplitView: inSplitView, chooseWorkspace: chooseWorkspace, dailyTask: dailyTask, automatic: automatic) else { return }
         running = true
         awaitingModel = true
         stopAsked = false
@@ -456,9 +463,9 @@ final class ChatModel {
     }
 
     private func prepareSend(_ text: String, again: Bool, thumbnails: [Data], documents: [ChatTextDocument],
-                             inSplitView: Bool, chooseWorkspace: Bool) -> PreparedSend? {
+                             inSplitView: Bool, chooseWorkspace: Bool, dailyTask: Bool, automatic: Bool) -> PreparedSend? {
         var resumedTask: String?
-        if kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
+        if !dailyTask, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
             switch ChatContinuation.resolve(text, current: sessionID, choices: entries.last?.continuationChoices,
                                             sessions: store.sessions) {
             case .newTask: break
@@ -536,7 +543,7 @@ final class ChatModel {
             guard let client else { return nil }
             return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
                                 resumedTask: resumedTask, inSplitView: inSplitView, images: images, namedApps: namedApps,
-                                engine: .direct(client, instructions))
+                                engine: .direct(client, instructions), automatic: automatic)
         }
         guard let piModel = provider.piModel(model) else {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("pi has no model \(model) for \(provider.name).")))))
@@ -544,10 +551,12 @@ final class ChatModel {
         }
         return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
                             resumedTask: resumedTask, inSplitView: inSplitView, images: images, namedApps: namedApps,
-                            engine: .pi(piModel))
+                            engine: .pi(piModel), automatic: automatic)
     }
 
     private func executePreparedSend(_ prepared: PreparedSend, token: Int) async {
+        let automaticRun = prepared.automatic ? AutomaticTaskApprovals.shared.begin() : nil
+        defer { if let automaticRun { AutomaticTaskApprovals.shared.end(automaticRun) } }
         switch prepared.engine {
         case .direct(let client, let instructions):
             client.say(prepared.message)
@@ -1191,7 +1200,7 @@ final class ChatModel {
             note.state = approved == true ? .allowed : approved == false ? .refused : .expired
             note.byModel = ApprovalClassifier.modelAnswered(id)
             note.reason = note.byModel ? (ApprovalClassifier.verdicts[id]?.reason ?? "") : ""
-            note.reply = note.byModel && ApprovalClassifier.mode == .reply
+            note.reply = note.byModel && ApprovalClassifier.effectiveMode == .reply
             note.answered = Date()
             asked = nil
             setNote(.approval(note))
