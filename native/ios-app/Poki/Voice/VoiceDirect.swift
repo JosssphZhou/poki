@@ -58,8 +58,11 @@ enum VoiceDirect {
     private static let doDescription: String = Harness.phoneTools.first { $0.name == "do" }?.description
         ?? "Run actions on the iPhone in order, then read the screen once. Actions: {launch: \"bundle id\"} (any installed app); {tap: n} or {tap: [x, y]}; {type: \"text\", ref?: n} (taps n first, then types); {key: \"return\"}; {scroll_to: \"text\"}; {swipe: \"up\"|\"down\"|\"left\"|\"right\"}; {button: \"home\"}; {wait_until: \"text\"}; {wait: ms}; {back: true}. The answer says what each action did and what is new on screen."
 
-    /// A one-minute Realtime key from OpenAI, made with the owner's API key (sent only to OpenAI).
-    static func token(apiKey: String) async throws -> VoiceBridge.Token {
+    /// Realtime exchanges the owner's key for a short-lived secret. Live authenticates its session directly.
+    static func token(apiKey: String, model: String = VoiceDirect.model) async throws -> VoiceBridge.Token {
+        if VoiceAPI(model: model) == .live {
+            return VoiceBridge.Token(value: apiKey, model: model, local_tools: ["ask_poki"])
+        }
         let session: [String: Any] = [
             "type": "realtime", "model": model, "instructions": instructions, "output_modalities": ["audio"],
             "audio": [
@@ -85,6 +88,21 @@ enum VoiceDirect {
         }
         return VoiceBridge.Token(value: value, model: model, local_tools: ["get_ios_version", "look", "do"])
     }
+
+    static var liveSession: [String: Any] { [
+        "model": "gpt-live-1",
+        "audio": ["output": ["voice": "marin"]],
+        "delegation": ["type": "client"],
+        "instructions": """
+        You are Poki, a voice assistant on the user's iPhone. You listen and speak; Poki's agent does all work on the phone.
+        Speak briefly, in the language of the user's latest turn. Before they speak, use \(deviceLanguage).
+        Backchannel policy: Rarely, with a brief acknowledgement at most.
+        Interruption policy: Yield when the user interrupts and listen to their correction. Backend work keeps running.
+        Delegation policy: Delegate every request to operate the phone, read its screen, or check a fact about it to Poki's agent. It uses the owner's selected text model, the phone's tools and the normal approval flow. Never attempt phone actions yourself or invent a result.
+        Do not delegate greetings or requests to repeat a result you already have. Do not repeat a task already running or completed.
+        Relay each backend result briefly and accurately, including failure, refusal or uncertainty. Never claim success before receiving the result. Only the owner can approve an action on the phone.
+        """,
+    ] }
 }
 
 /// Hold to dictate, let go to send to Poki's chat, hear the answer: voice for models without Realtime.
