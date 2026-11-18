@@ -3,7 +3,8 @@
 # iOS simulator. The bundle is injected into Poki at launch (libXCTestBundleInject) instead of going
 # through `xcodebuild test`, whose runner connection hangs on some Xcode and simulator pairs, and under
 # which Poki's in-process reads are refused ("Not authorized for performing UI testing actions").
-# POKI_APP_TESTS_SECONDS limits the run (default 300); POKI_APP_TESTS_LOG keeps the full output there.
+# POKI_APP_TESTS_SECONDS limits the run (default 300); POKI_APP_TESTS_LOG keeps the full output there;
+# POKI_APP_TESTS_SHOTS takes a screenshot into that folder once a minute while the tests run.
 set -euo pipefail
 UDID="$1"
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,7 +24,14 @@ xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1 || true
 
 # PokiTests read the English text, as on CI's simulator, whatever language this Mac's simulator uses.
 LOG="${POKI_APP_TESTS_LOG:-$(mktemp)}"
-trap '[ -n "${POKI_APP_TESTS_LOG:-}" ] || rm -f "$LOG"; xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1 || true' EXIT
+SHOOTER=""
+if [ -n "${POKI_APP_TESTS_SHOTS:-}" ]; then
+  # A system prompt over Poki (a permission, say) leaves it inactive for every test after it.
+  mkdir -p "$POKI_APP_TESTS_SHOTS"
+  ( while sleep 60; do xcrun simctl io "$UDID" screenshot --type=jpeg "$POKI_APP_TESTS_SHOTS/$(date +%H%M%S).jpg" >/dev/null 2>&1 || true; done ) &
+  SHOOTER=$!
+fi
+trap 'if [ -n "$SHOOTER" ]; then kill "$SHOOTER" 2>/dev/null || true; fi; [ -n "${POKI_APP_TESTS_LOG:-}" ] || rm -f "$LOG"; xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1 || true' EXIT
 # GNU timeout where there is one (coreutils), else perl's alarm, which every Mac has.
 limit() { if command -v timeout >/dev/null; then timeout "$@"; else perl -e 'alarm shift; exec @ARGV' "$@"; fi; }
 launch_status=0

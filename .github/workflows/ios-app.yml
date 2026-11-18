@@ -373,6 +373,7 @@ jobs:
         env:
           POKI_APP_TESTS_SECONDS: '1200'
           POKI_APP_TESTS_LOG: build/tests.log
+          POKI_APP_TESTS_SHOTS: build/test-shots
         run: native/ios-app/scripts/app-tests.sh "$UDID" "$PWD/build/sim-tests"
 
       - uses: actions/upload-artifact@v4
@@ -397,3 +398,4 @@ jobs:
           path: |
             build/app-*.log
             build/tests.log
+            build/test-shots/
