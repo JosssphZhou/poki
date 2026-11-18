@@ -5,14 +5,35 @@ import { z } from 'zod';
 import { version } from './build-info.mjs';
 
 const catalog = JSON.parse(readFileSync(new URL('./data/tools.json', import.meta.url), 'utf8'));
-const defaultTools = new Set([
-  'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
-  'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
-  'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
-  'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
-  'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
-]);
-const instructions = 'When the request already says what to do on the device, use batch_commands for launch_app and steps whose targets are already known; use fill without field for a single visible input, and use exact observed labels when a selector is needed; it is usually the only device call needed. Tapping steps wait for their target, and the reply ends with the visible text. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease. Single-step tools remain for exploring an unknown screen.';
+export const defaultTools = cua.tools;
+const mergedReplacements = {
+  take_screenshot: 'look (returns the current screenshot and numbered elements; do also returns a screenshot after acting)',
+  list_elements: 'look (or look with {"full": true} to list every element)',
+  get_foreground_app: 'look (reports the foreground app on the first line)',
+  observe_device: 'look (captures the element tree, OCR fallback, and screenshot together)',
+  tap: 'do with {"actions": [{"tap": <element_number_or_[x,y]>}]}',
+  tap_text: 'do with {"actions": [{"tap_text": "<text>"}]} (or call look first and use {"tap": <element_number>})',
+  double_tap: 'do with {"actions": [{"double_tap": <element_number_or_[x,y]>}]}',
+  long_press: 'do with {"actions": [{"long_press": <element_number_or_[x,y]>}]}',
+  swipe: 'do with {"actions": [{"swipe": "up" | "down" | "left" | "right"}]} (or {"drag": [x1, y1, x2, y2]})',
+  scroll: 'do with {"actions": [{"swipe": {"direction": "up" | "down" | "left" | "right", "in": <element_number>}}]}',
+  scroll_to: 'do with {"actions": [{"scroll_to": "<text>"}]}',
+  drag: 'do with {"actions": [{"drag": {"from": [x1, y1], "to": [x2, y2], "ms": 800, "hold_ms": 600}}]}',
+  pinch: 'do with {"actions": [{"pinch": {"x": <x>, "y": <y>, "scale": <scale>}}]}',
+  type_text: 'do with {"actions": [{"type": "<text>", "clear": false}]}',
+  fill: 'do with {"actions": [{"type": "<text>", "ref": <element_number>, "clear": true}]}',
+  press_key: 'do with {"actions": [{"key": "return" | "delete" | "tab" | "space" | "escape"}]}',
+  press_button: 'do with {"actions": [{"button": "home" | "lock" | "volume_up" | "volume_down"}]}',
+  go_back: 'do with {"actions": [{"back": true}]}',
+  launch_app: 'do with {"actions": [{"launch": "<bundle_id>"}]} (call list_apps first if you need the bundle_id)',
+  open_url: 'do with {"actions": [{"open_url": "<url>"}]}',
+  handle_alert: 'look to read the alert buttons, then do with {"actions": [{"tap": <element_number>}]}',
+  wait_for: 'do with {"actions": [{"wait_until": {"text": "<text>", "gone": false, "ms": 5000}}]}',
+  wait: 'do with {"actions": [{"wait": <milliseconds>}]}',
+  request_human_action: 'do with {"actions": [{"handoff": {"kind": "other", "text": "<reason>"}}]}',
+  batch_commands: 'do with {"actions": [...]} (runs up to 20 actions in order and reads the screen once at the end)',
+};
+const devToolsInstructions = 'When the request already says what to do on the device, use do (or batch_commands in the developer catalog) for multi-step operations. With one device available, skip list_devices and select_device; use them when a call reports several devices. Consecutive calls do not require an explicit device lease.';
 const readOnly = new Set(['observe_device','list_devices', 'get_device_info', 'take_screenshot', 'get_foreground_app', 'list_elements', 'list_apps', 'get_clipboard', 'list_crashes', 'get_crash', 'wait_for', 'wait']);
 const guidance = {
   acquire_device: 'Only needed to keep other sessions off a device across several calls. One batch_commands call already runs without interruption, so a single-call task needs no lease. If you take one, keep the returned lease_id, renew before expiry, then release.',
@@ -72,23 +93,43 @@ definitions.push(['disconnect_device', 'Close the selected remote device connect
 definitions.push(['reconnect_device', 'Re-establish the selected RemotePairing tunnel. Does not replay input. A new session may require Wi-Fi when iOS closes its remote pairing listener.', z.object({ device: z.string().optional() }), false]);
 definitions.push(['poki_mcp_status', 'Report Poki MCP version, current Git commit, native bridge build time, tool count, connected-device count, selected device, approval mode for this session, and any available Poki update with release notes and the update command.', z.object({}), true]);
 
-// The computer-use profile (POKI_TOOL_PROFILE=cua, cua.mjs): look and do, plus device and status tools.
 for (const [name, description, schema, readOnlyHint] of cua.definitions) definitions.push([name, description, z.fromJSONSchema(schema), readOnlyHint]);
-const profile = (env = process.env) => env.POKI_TOOL_PROFILE ?? 'default';
-const listedFor = name => (name === 'cua' ? cua.tools : defaultTools);
 
-export function createServer(call) {
-  const computerUse = profile() === 'cua', listed = listedFor(profile());
-  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: computerUse ? cua.instructions : instructions });
+export function isDevToolsEnabled({ env = process.env, argv = process.argv, inherited = false } = {}) {
+  if (argv.includes('--dev-tools')) return true;
+  const devEnv = env.POKI_MCP_DEV_TOOLS?.trim().toLowerCase();
+  if (devEnv === '1' || devEnv === 'true') return true;
+  if (devEnv === '0' || devEnv === 'false') return false;
+  const legacy = env.POKI_MCP_TOOLS?.trim().toLowerCase();
+  if (legacy === 'all' || legacy === 'dev') return true;
+  if (legacy === 'default') return false;
+  if (inherited) return true;
+  return false;
+}
+
+export function disabledToolMessage(name) {
+  const replacement = mergedReplacements[name];
+  if (replacement) {
+    return `Tool "${name}" has been merged into ${replacement}. Start Poki MCP with --dev-tools or set POKI_MCP_DEV_TOOLS=1 to call legacy tools directly.`;
+  }
+  return `Tool "${name}" is in the developer tool group and is disabled by default. Start Poki MCP with --dev-tools or set POKI_MCP_DEV_TOOLS=1 to enable developer tools.`;
+}
+
+const anyObjectSchema = z.object({}).passthrough();
+
+export function createServer(call, { devTools = isDevToolsEnabled() } = {}) {
+  const server = new McpServer({ name: 'poki-mcp', version }, { instructions: devTools ? devToolsInstructions : cua.instructions });
   for (const [name, description, inputSchema, readOnlyHint] of definitions) {
-    server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint } }, async (args, extra) => {
+    const enabled = devTools || defaultTools.has(name);
+    server.registerTool(name, { description, inputSchema: enabled ? inputSchema : anyObjectSchema, annotations: { readOnlyHint } }, async (args, extra) => {
+      if (!enabled) return { isError: true, content: [{ type: 'text', text: disabledToolMessage(name) }] };
       try { return await call(name, args, { signal: extra.mcpReq?.signal ?? extra.signal, requestId: extra.mcpReq?._meta?.['poki/request_id'] }); }
       catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; }
     });
   }
-  if (process.env.POKI_MCP_TOOLS !== 'all') {
+  if (!devTools) {
     server.server.setRequestHandler('tools/list', () => ({
-      tools: definitions.filter(([name]) => listed.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
+      tools: definitions.filter(([name]) => defaultTools.has(name)).map(([name, description, inputSchema, readOnlyHint]) => ({
         name, description, inputSchema: z.toJSONSchema(inputSchema, { io: 'input', target: 'draft-2020-12' }),
         annotations: { readOnlyHint },
       })),

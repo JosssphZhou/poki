@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 import sharp from 'sharp';
 import { readScreen } from '../src/interaction.mjs';
 

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import { createServer } from './tools.mjs';
+import { createServer, isDevToolsEnabled } from './tools.mjs';
 import { endpointFile } from './config.mjs';
 import { randomUUID } from 'node:crypto';
 import { version } from './build-info.mjs';
@@ -11,14 +11,16 @@ const readEndpoint = async () => {
   const entry = await readFile(endpointFile, 'utf8').then(JSON.parse).catch(() => { throw notRunning(); });
   const url = new URL(entry.url);
   if (!entry.enabled || url.hostname !== '127.0.0.1' || url.protocol !== 'http:' || url.pathname !== '/mcp') throw new Error('Invalid local MCP endpoint');
-  return { url, token: entry.token };
+  return { url, token: entry.token, devTools: Boolean(entry.devTools) };
 };
 let endpoint = await readEndpoint();
+const devTools = () => isDevToolsEnabled({ inherited: endpoint.devTools });
 const session = process.env.POKI_MCP_SESSION ?? randomUUID();
 const send = (path, init) => {
   const headers = new Headers(init?.headers);
   headers.set('Authorization', `Bearer ${endpoint.token}`);
   headers.set('x-poki-mcp-session', session);
+  if (devTools()) headers.set('x-poki-dev-tools', '1');
   return fetch(new URL(path, endpoint.url), { ...init, headers });
 };
 const refused = error => error.cause?.code === 'ECONNREFUSED';
@@ -58,7 +60,7 @@ const server = createServer(async (name, args, extra) => {
     extra.signal.throwIfAborted();
     return await remote.callTool({ name, arguments: args, _meta: { 'poki/request_id': id } }, { timeout: 3700000, signal: extra.signal });
   } finally { extra.signal.removeEventListener('abort', cancel); }
-});
+}, { devTools: devTools() });
 const transport = new StdioServerTransport();
 await server.connect(transport);
 let stopping;

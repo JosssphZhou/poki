@@ -1,40 +1,18 @@
-// The computer-use profile (POKI_TOOL_PROFILE=cua).
+// Default phone-agent tools: look and do.
 //
-// Modeled on how desktop computer-use tools work: one call does some actions and then reads the
+// Modeled on Poki's on-device agent: one call does some actions and then reads the
 // screen once. The answer is facts only: the numbered elements of that one read (marked new when
 // they were not in the previous read), the app in front, timings, and a screenshot as visual
 // confirmation. There is no verdict, no expectation engine and no live video; the model looks at
 // the facts and decides what happened. Refs are numbers from the latest read and are replaced by
 // the next one.
-//
-//   look {full?}            read the screen now
-//   do {actions: [...]}     run actions in order, then read the screen
-//
-// An action is one of
-//   {tap: ref} | {tap: [x, y]}                 touch an element's centre, or a point in screen points
-//   {type: "text", ref?, clear?}               tap ref first if given, then type the whole text as key
-//                                              presses; text a keyboard cannot type is pasted, with the
-//                                              clipboard saved and put back (never over one that can't be)
-//   {key: "return" | "delete" | ...}           one key
-//   {swipe: "up"} | {swipe: {direction, in?: n, distance?: "short" | "long"}}   direction is the finger's
-//   {scroll_to: "text"} | {scroll_to: {text | ref, in?, direction?, max_swipes?: 6}}   swipes until it is on screen
-//   {long_press: n | [x, y] | {ref | x, y, ms?: 600}}
-//   {drag: {from: n | [x, y], to: n | [x, y], ms?: 400}} | {drag: [x1, y1, x2, y2]}   in screen points
-//   {pinch: {ref | x, y, scale}}
-//   {button: "home" | "lock"}                  a hardware button
-//   {launch: "bundle id"}                      bring an app to the front
-//   {wait: ms}                                 pause
-// When accessibility returns nothing, the elements come from OCR of the screenshot, in the same shape.
-// When it names only part of the screen, the screenshot's text it did not name is added after its elements.
-// Each action is reported as sent, not_sent or unknown (it may have been delivered); an unknown one is
-// never sent again by us, and nothing after a failed action is sent. Element numbers not in the latest
-// read are refused before anything is sent. Actions and the wait after them get at most
-// POKI_CUA_ACTION_CAP_MS (4000). A locked or dark phone, or Poki's own app in front, stops dispatching.
 import sharp from 'sharp';
 import { pause, stopped } from './work.mjs';
 import { wdaContext } from './cua-wda.mjs';
 import { platformTool } from './platform.mjs';
 import { leavesUnnamedBand, textOutside } from './ocr-supplement.mjs';
+import { askHuman } from './human.mjs';
+import { matching } from './interaction.mjs';
 
 const settleAfterMs = { tap: 450, type: 250, key: 300, swipe: 600, drag: 600, button: 700, launch: 900, wait: 0 };
 const imageWidth = 300, lineLimit = 120;
@@ -47,9 +25,75 @@ const labelOf = element => [element.label ?? element.text, element.value].filter
 const box = element => element.frame ?? element;
 const keyOf = element => `${roleName(element)}|${labelOf(element)}`;
 
-function state(ctx) {
-  ctx.cua ??= { refs: new Map(), previous: new Set() };
+function state(ctx, deviceId) {
+  if (deviceId && ctx.cua?.deviceId && ctx.cua.deviceId !== deviceId) ctx.cua = undefined;
+  ctx.cua ??= { deviceId, refs: new Map(), previous: new Set(), originApp: undefined };
+  if (deviceId) ctx.cua.deviceId = deviceId;
   return ctx.cua;
+}
+
+const SENSITIVE_PAYMENTS = ['pay', 'payment', 'buy', 'purchase', 'subscribe', 'checkout', 'place order', 'transfer', 'send money', 'confirm payment', 'apple pay', '支付', '付款', '购买', '订阅', '转账', '确认支付', '下单', '購買', '訂閱', '轉賬', '轉帳', '確認支付', '下單'];
+const SENSITIVE_DELETIONS = ['delete', 'remove', 'erase', 'reset', 'delete all', '删除', '移除', '抹掉', '清空', '还原', '刪除', '還原'];
+const SENSITIVE_CALLING = ['call', '拨打', '呼叫', '撥打'];
+const SENSITIVE_SENDING = ['send', 'post', 'reply', '发送', '回复', '发布', '發送', '回覆', '發布'];
+const GUARDED_APPS = new Set(['com.apple.Passbook']);
+const CALLING_APPS = new Set(['com.apple.mobilephone', 'com.apple.facetime']);
+const MESSAGING_APPS = new Set(['com.apple.MobileSMS', 'com.apple.mobilemail', 'com.tencent.xin', 'net.whatsapp.WhatsApp', 'ph.telegra.Telegraph', 'com.burbn.instagram', 'com.atebits.Tweetie2', 'com.facebook.Messenger', 'com.hammerandchisel.discord', 'com.tinyspeck.chatlyio']);
+
+function matchesWord(text, words, role = 'Other') {
+  const lowered = String(text ?? '').toLowerCase();
+  if (!lowered) return undefined;
+  const short = lowered.trim().split(/\s+/).length <= 4;
+  const boundary = ch => !ch || !/[\p{L}\p{N}]/u.test(ch);
+  for (const word of words) {
+    const w = word.toLowerCase();
+    if (!w) continue;
+    if ([...w].some(ch => ch.codePointAt(0) > 0x2e80)) {
+      if (lowered.includes(w)) return word;
+      continue;
+    }
+    let from = 0;
+    for (;;) {
+      const idx = lowered.indexOf(w, from);
+      if (idx < 0) break;
+      const before = idx === 0 ? '' : lowered[idx - 1];
+      const after = idx + w.length >= lowered.length ? '' : lowered[idx + w.length];
+      const opens = !/[\p{L}\p{N}]/u.test(lowered.slice(0, idx));
+      if (boundary(before) && boundary(after) && (role === 'Button' || opens || short)) return word;
+      from = idx + w.length;
+    }
+  }
+  return undefined;
+}
+
+function sensitiveReason(element, { typing = false, appBundle = '', secureOnScreen = false } = {}) {
+  if (appBundle && GUARDED_APPS.has(appBundle)) return `input in ${appBundle}`;
+  const isSecure = element && /secure/i.test(roleName(element));
+  if (typing) return isSecure || (!element && secureOnScreen) ? 'typing into a password field' : undefined;
+  if (!element) return appBundle && CALLING_APPS.has(appBundle) ? `a call in ${appBundle}` : undefined;
+  const role = roleName(element);
+  const texts = [labelOf(element), element.identifier ?? ''];
+  const find = words => texts.map(t => matchesWord(t, words, role)).find(Boolean);
+  const payment = find(SENSITIVE_PAYMENTS);
+  if (payment) return `payment ("${payment}")`;
+  const deletion = find(SENSITIVE_DELETIONS);
+  if (deletion) return `deletion ("${deletion}")`;
+  if (appBundle && CALLING_APPS.has(appBundle)) return `a call in ${appBundle}`;
+  const call = find(SENSITIVE_CALLING);
+  if (call) return `call ("${call}")`;
+  if (appBundle && MESSAGING_APPS.has(appBundle)) {
+    const sendWord = find(SENSITIVE_SENDING);
+    if (sendWord) return `sending a message ("${sendWord}")`;
+  }
+  return undefined;
+}
+
+async function requireApproval(ctx, promptText, budget, { alwaysAsk = false } = {}) {
+  if (!alwaysAsk && process.env.POKI_MCP_APPROVAL_MODE === 'allow') return;
+  const askedAt = performance.now();
+  const result = await askHuman(promptText, alwaysAsk ? 300 : 120);
+  budget.until += performance.now() - askedAt;
+  if (!result.completed) throw new NotSent(`approval ${result.status}; nothing was sent`);
 }
 
 // Elements worth listing: on screen, not the application root, with something to say.
@@ -146,7 +190,7 @@ function pointOf(ctx, target) {
 function refsIn(action) {
   const refs = [];
   const add = value => { if (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))) refs.push(Number(value)); else if (value && typeof value === 'object' && !Array.isArray(value) && value.ref !== undefined) refs.push(Number(value.ref)); };
-  for (const key of ['tap', 'long_press', 'pinch']) if (key in action) add(action[key]);
+  for (const key of ['tap', 'double_tap', 'long_press', 'pinch']) if (key in action) add(action[key]);
   if (action.ref !== undefined) add(action.ref);
   if (action.in !== undefined) add(action.in);
   if (action.drag && !Array.isArray(action.drag)) { add(action.drag.from); add(action.drag.to); }
@@ -251,10 +295,112 @@ async function scrollTo(ctx, spec, size, until) {
   return found ? `${swipes} swipes, found at [${[box(found).x, box(found).y].map(Math.round).join(',')}]` : `${swipes} swipes, not found${swipes >= max ? ` within ${max} swipes` : ''}`;
 }
 
-async function perform(ctx, action, size, until) {
-  if ('tap' in action) { const p = pointOf(ctx, action.tap); await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 }); return ['tap', `tap ${JSON.stringify(action.tap)}`]; }
+function targetElement(ctx, spec, point) {
+  const memory = state(ctx);
+  if (typeof spec === 'number' || (typeof spec === 'string' && /^\d+$/.test(spec))) return elementOf(ctx, spec);
+  if (spec && typeof spec === 'object' && !Array.isArray(spec) && spec.ref !== undefined) return elementOf(ctx, spec.ref);
+  if (!point) return undefined;
+  return [...memory.refs.values()].filter(e => {
+    const f = box(e);
+    return point.x >= f.x && point.x <= f.x + f.width && point.y >= f.y && point.y <= f.y + f.height;
+  }).at(-1);
+}
+
+async function deviceLabel(ctx) {
+  const target = await ctx.target?.().catch(() => undefined);
+  return target?.name ?? target?.id ?? 'selected device';
+}
+
+async function guardAction(ctx, element, budget, options = {}) {
+  const memory = state(ctx);
+  const secureOnScreen = [...memory.refs.values()].some(e => /secure/i.test(roleName(e)));
+  const reason = sensitiveReason(element, { ...options, appBundle: memory.lastForeground?.bundle_id ?? '', secureOnScreen });
+  if (!reason) return;
+  await requireApproval(ctx, `是否允许执行敏感操作（${reason}）？\n设备：${await deviceLabel(ctx)}`, budget);
+}
+
+async function tapByText(ctx, spec, budget) {
+  const wanted = typeof spec === 'string' ? { text: spec } : spec ?? {};
+  const query = String(wanted.text ?? '').trim();
+  if (!query) throw new NotSent('tap_text takes non-empty text');
+  const limit = Math.min(budget.until, performance.now() + 3000);
+  let lastElements = [...state(ctx).refs.values()];
+  for (let attempt = 0; ; attempt++) {
+    if (attempt > 0 || !lastElements.length) {
+      const seen = await read(ctx);
+      lastElements = seen.elements;
+      state(ctx).lastForeground = seen.foreground;
+    }
+    const found = matching(lastElements.map(e => ({ ...e, visible: true })), query, Boolean(wanted.exact));
+    if (found.length === 1) {
+      await guardAction(ctx, found[0], budget);
+      const p = centre(found[0]);
+      await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 });
+      return `tap_text ${JSON.stringify(query)}`;
+    }
+    if (found.length > 1) throw new NotSent(`${found.length} elements match ${JSON.stringify(query)}; call look and tap by element number`);
+    if (performance.now() + 250 >= limit) throw new NotSent(`no visible element matches ${JSON.stringify(query)}`);
+    await pause(200);
+  }
+}
+
+async function waitUntil(ctx, spec, budget) {
+  const target = typeof spec === 'string' ? { text: spec } : spec ?? {};
+  const waitMs = Math.min(10000, Math.max(200, Number(target.ms ?? 3000)));
+  if (performance.now() + waitMs > budget.until) budget.until = performance.now() + waitMs + 500;
+  const deadlineAt = Math.min(budget.until - 200, performance.now() + waitMs);
+  const started = performance.now();
+  let previousKey;
+  while (performance.now() < deadlineAt) {
+    const seen = await read(ctx);
+    state(ctx).lastForeground = seen.foreground;
+    if (target.settled) {
+      const currentKey = seen.elements.map(e => `${keyOf(e)}@${Math.round(box(e).x)},${Math.round(box(e).y)}`).join(';');
+      if (previousKey !== undefined && currentKey === previousKey) return `settled in ${Math.round(performance.now() - started)} ms`;
+      previousKey = currentKey;
+    } else {
+      const query = String(target.text ?? '').trim();
+      if (!query) throw new NotSent('wait_until takes text or settled: true');
+      const found = matching(seen.elements.map(e => ({ ...e, visible: true })), query, false);
+      if (target.gone ? found.length === 0 : found.length > 0) return `${target.gone ? 'gone' : 'found'} in ${Math.round(performance.now() - started)} ms`;
+    }
+    await pause(Math.min(250, Math.max(50, deadlineAt - performance.now())));
+  }
+  throw new NotSent(`wait_until timed out after ${Math.round(performance.now() - started)} ms`);
+}
+
+async function navigateBack(ctx, size, budget) {
+  const elements = [...state(ctx).refs.values()];
+  const backControls = elements.filter(e => /^(back|返回|上一页|上一頁)$/i.test(e.label ?? e.text ?? '') && box(e).x < size.width / 2);
+  if (backControls.length === 1) {
+    await guardAction(ctx, backControls[0], budget);
+    const p = centre(backControls[0]);
+    await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 });
+    return 'back';
+  }
+  await send(ctx, { op: 'drag', x1: 1, y1: Math.round(size.height / 2), x2: Math.round(size.width * 0.8), y2: Math.round(size.height / 2), duration_ms: 400, hold_ms: 0 });
+  return 'back';
+}
+
+async function perform(ctx, action, size, budget) {
+  if ('tap' in action) {
+    const p = pointOf(ctx, action.tap);
+    await guardAction(ctx, targetElement(ctx, action.tap, p), budget);
+    await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 });
+    return ['tap', `tap ${JSON.stringify(action.tap)}`];
+  }
+  if ('double_tap' in action) {
+    const p = pointOf(ctx, action.double_tap);
+    await guardAction(ctx, targetElement(ctx, action.double_tap, p), budget);
+    await send(ctx, { op: 'double_tap', x: p.x, y: p.y, duration_ms: 50 });
+    return ['tap', `double_tap ${JSON.stringify(action.double_tap)}`];
+  }
+  if ('tap_text' in action) return ['tap', await tapByText(ctx, action.tap_text, budget)];
   if ('type' in action) {
-    if (action.ref !== undefined) { const p = pointOf(ctx, action.ref); await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 }); await pause(250); }
+    const p = action.ref !== undefined ? pointOf(ctx, action.ref) : undefined;
+    const target = action.ref !== undefined ? targetElement(ctx, action.ref, p) : undefined;
+    await guardAction(ctx, target, budget, { typing: true });
+    if (p) { await send(ctx, { op: 'tap', x: p.x, y: p.y, duration_ms: 50 }); await pause(250); }
     const how = await typeText(ctx, String(action.type), Boolean(action.clear));
     return ['type', `type ${JSON.stringify(action.type)} (${how})`];
   }
@@ -264,16 +410,18 @@ async function perform(ctx, action, size, until) {
     const path = swipePath(areaOf(ctx, spec.in ?? action.in, size), spec.direction, spec.distance);
     await send(ctx, { op: 'drag', ...path, duration_ms: 300 }); return ['swipe', `swipe ${spec.direction}${spec.in ?? action.in ? ` in ${spec.in ?? action.in}` : ''}`];
   }
-  if ('scroll_to' in action) return ['scroll_to', `scroll_to ${JSON.stringify(action.scroll_to)}: ${await scrollTo(ctx, action.scroll_to, size, until)}`];
+  if ('scroll_to' in action) return ['scroll_to', `scroll_to ${JSON.stringify(action.scroll_to)}: ${await scrollTo(ctx, action.scroll_to, size, budget.until)}`];
   if ('long_press' in action) {
     const spec = action.long_press, p = pointOf(ctx, spec), ms = Math.min(5000, Math.max(100, spec?.ms ?? action.ms ?? 600));
+    await guardAction(ctx, targetElement(ctx, spec, p), budget);
     await send(ctx, { op: 'long_press', x: p.x, y: p.y, duration_ms: ms }); return ['long_press', `long_press ${JSON.stringify(spec)} ${ms} ms`];
   }
   if ('drag' in action) {
     const spec = action.drag;
     const [from, to] = Array.isArray(spec) ? [{ x: spec[0], y: spec[1] }, { x: spec[2], y: spec[3] }] : [pointOf(ctx, spec.from), pointOf(ctx, spec.to)];
     const ms = Math.min(3000, Math.max(100, spec.ms ?? 400));
-    await send(ctx, { op: 'drag', x1: Number(from.x), y1: Number(from.y), x2: Number(to.x), y2: Number(to.y), duration_ms: ms, hold_ms: Array.isArray(spec) ? 0 : 300 });
+    const holdMs = Array.isArray(spec) ? 0 : Math.min(3000, Math.max(0, spec.hold_ms ?? 300));
+    await send(ctx, { op: 'drag', x1: Number(from.x), y1: Number(from.y), x2: Number(to.x), y2: Number(to.y), duration_ms: ms, hold_ms: holdMs });
     return ['drag', `drag ${JSON.stringify(spec)}`];
   }
   if ('pinch' in action) {
@@ -282,14 +430,38 @@ async function perform(ctx, action, size, until) {
     await send(ctx, { op: 'pinch', x: p.x, y: p.y, start_distance: start, end_distance: start * scale, duration_ms: 500 }); return ['pinch', `pinch ${JSON.stringify(spec)} x${scale}`];
   }
   if ('button' in action) { await send(ctx, { op: 'button', button: String(action.button) }); return ['button', `button ${action.button}`]; }
+  if ('back' in action) {
+    if (!action.back) throw new NotSent('back takes true');
+    return ['swipe', await navigateBack(ctx, size, budget)];
+  }
   if ('launch' in action) {
     // {launch: "id"} brings the app to the front as it was; {launch: {bundle, fresh: true}} starts it anew.
     const spec = typeof action.launch === 'string' ? { bundle: action.launch } : action.launch ?? {};
-    if (!spec.bundle) throw new NotSent('launch takes a bundle id');
+    if (!spec.bundle && !spec.name) throw new NotSent('launch takes a bundle id');
+    if (!spec.bundle && spec.name) {
+      await platformTool(ctx, 'launch_app', { name: String(spec.name), fresh: Boolean(spec.fresh) });
+      return ['launch', `launch ${spec.name}${spec.fresh ? ' (fresh)' : ''}`];
+    }
     // A simulator has no bridge op for it; launch_app starts it with simctl and waits for its interface.
     if ((await ctx.target()).kind === 'simulator') await platformTool(ctx, 'launch_app', { bundle_id: String(spec.bundle), fresh: Boolean(spec.fresh) });
     else await ctx.bridge({ op: 'launch_app', bundle_id: String(spec.bundle), ...(spec.fresh ? { terminate_existing: true } : {}) });
     return ['launch', `launch ${spec.bundle}${spec.fresh ? ' (fresh)' : ''}`];
+  }
+  if ('open_url' in action) {
+    const url = typeof action.open_url === 'string' ? action.open_url : action.open_url?.url;
+    if (typeof url !== 'string' || !url.trim()) throw new NotSent('open_url takes a URL string');
+    await requireApproval(ctx, `是否允许打开链接？\n设备：${await deviceLabel(ctx)}\n${url}`, budget);
+    if (ctx.wda) await ctx.bridge({ op: 'open_url', url });
+    else await platformTool(ctx, 'open_url', { url });
+    return ['launch', `open_url ${url}`];
+  }
+  if ('wait_until' in action) return ['wait', `wait_until ${JSON.stringify(action.wait_until)}: ${await waitUntil(ctx, action.wait_until, budget)}`];
+  if ('handoff' in action) {
+    const spec = typeof action.handoff === 'string' ? { kind: 'other', text: action.handoff } : action.handoff ?? {};
+    const reason = String(spec.text ?? '').trim();
+    if (!reason) throw new NotSent('handoff takes {kind, text}');
+    await requireApproval(ctx, reason, budget, { alwaysAsk: true });
+    return ['wait', `handoff (${spec.kind ?? 'other'}): confirmed`];
   }
   if ('wait' in action) { await pause(Math.min(Number(action.wait) || 0, 3000)); return ['wait', `wait ${action.wait} ms`]; }
   throw new NotSent(`Unknown action ${JSON.stringify(action)}`);
@@ -319,6 +491,23 @@ function holdReason(memory) {
   return undefined;
 }
 
+async function returnToOrigin(ctx, origin, currentBundle) {
+  if (!origin) return 'finish: task completed';
+  if (currentBundle === origin) return `finish: ${origin} is already in front`;
+  try {
+    if (origin === 'com.apple.springboard') {
+      await ctx.input({ op: 'button', button: 'home' });
+      return 'finish: returned to Home Screen';
+    }
+    if ((await ctx.target()).kind === 'simulator') await platformTool(ctx, 'launch_app', { bundle_id: origin, fresh: false });
+    else await ctx.bridge({ op: 'launch_app', bundle_id: origin });
+    return `finish: returned to ${origin}`;
+  } catch (error) {
+    if (stopped(error)) throw error;
+    return `finish: could not return to ${origin} (${error.message})`;
+  }
+}
+
 async function readAndReply(ctx, options) {
   const memory = state(ctx);
   let seen;
@@ -330,7 +519,22 @@ async function readAndReply(ctx, options) {
     return { isError: true, content: [{ type: 'text', text: [`read: failed: ${error.message}`, ...actions.map(a => `did: ${a}`), ...(options.error ? [`error: ${options.error}`] : [])].join('\n') }] };
   }
   memory.lastNote = seen.note; memory.lastForeground = seen.foreground;
-  return reply(ctx, seen, options);
+  if (!memory.originApp && seen.foreground?.bundle_id && !/poki/i.test(seen.foreground.bundle_id)) {
+    memory.originApp = seen.foreground.bundle_id;
+  }
+  const result = await reply(ctx, seen, options);
+  if (options.finish && !options.error) {
+    const origin = memory.originApp;
+    memory.originApp = undefined;
+    const finishLine = await returnToOrigin(ctx, origin, seen.foreground?.bundle_id);
+    const textBlock = result.content.find(c => c.type === 'text');
+    if (textBlock) {
+      const lines = textBlock.text.split('\n');
+      lines.splice(Math.min(1, lines.length), 0, finishLine);
+      textBlock.text = lines.join('\n');
+    }
+  }
+  return result;
 }
 
 // The device the tools drive: the bridge by default, or WebDriverAgent on the phone
@@ -339,25 +543,28 @@ const backend = ctx => process.env.POKI_CUA_BACKEND === 'wda' ? wdaContext(ctx) 
 
 export async function look(ctx, args = {}) {
   ctx = backend(ctx);
+  const target = await ctx.target?.().catch(() => undefined);
+  state(ctx, target?.id);
   return readAndReply(ctx, { full: args.full });
 }
 
 export async function act(ctx, args = {}) {
   ctx = backend(ctx);
-  const memory = state(ctx), actions = args.actions ?? [], done = [];
+  const target = await ctx.target?.().catch(() => undefined);
+  const memory = state(ctx, target?.id), actions = args.actions ?? [], done = [];
   // A number that is not in the latest read is refused before anything is sent, with the list now.
   const stale = actions.flatMap(refsIn).filter(ref => !memory.refs.has(ref));
   if (stale.length) return { isError: true, ...await readAndReply(ctx, { full: true, error: `element ${[...new Set(stale)].join(', ')} is not in the latest read; nothing was sent. The current elements are below.` }) };
   let error, last;
-  const started = performance.now(), until = started + actionCapMs;
+  const started = performance.now(), budget = { until: started + actionCapMs };
   const size = ctx.size ?? await ctx.screenSize();
   for (const [index, action] of actions.entries()) {
     const held = holdReason(memory);
     if (held) { error = `stopped before action ${index + 1}: ${held}; nothing more was sent`; break; }
-    if (until - performance.now() < 300) { error = `stopped before action ${index + 1}: the ${actionCapMs} ms action time ran out; nothing more was sent`; break; }
+    if (budget.until - performance.now() < 300) { error = `stopped before action ${index + 1}: the ${actionCapMs} ms action time ran out; nothing more was sent`; break; }
     const began = performance.now();
     try {
-      const [kind, text] = await perform(ctx, action, size, until);
+      const [kind, text] = await perform(ctx, action, size, budget);
       last = kind;
       done.push(`${text} (sent, ${Math.round(performance.now() - began)} ms)`);
     } catch (e) {
@@ -369,13 +576,13 @@ export async function act(ctx, args = {}) {
       break;
     }
   }
-  if (last) done.push(`waited ${await quiet(ctx, last, Math.max(0, until - performance.now()))}`);
-  return { ...(error ? { isError: true } : {}), ...await readAndReply(ctx, { full: args.full, actions: done, error }) };
+  if (last) done.push(`waited ${await quiet(ctx, last, Math.max(0, budget.until - performance.now()))}`);
+  return { ...(error ? { isError: true } : {}), ...await readAndReply(ctx, { full: args.full, finish: args.finish, actions: done, error }) };
 }
 
 export const definitions = [
-  ['look', 'Read the screen now: the app in front, the numbered elements (role, label = value, [x,y,w,h] in screen points; + marks elements new since the last read), and a screenshot. full=true lists every element. Numbers refer to this read only.', { type: 'object', properties: { full: { type: 'boolean' } }, additionalProperties: false }, true],
-  ['do', 'Run actions in order, then read the screen once and return the same facts as look, with a screenshot. Actions: {tap: n} or {tap: [x, y]}; {type: "text", ref?: n, clear?} (taps n first, then types the text as key presses; text the keyboard cannot type is pasted with your clipboard saved and put back); {key: "return"|"delete"|...}; {swipe: "up"|"down"|"left"|"right"} or {swipe: {direction, in?: n, distance?: "short"|"long"}} (direction is where the finger moves); {scroll_to: "text"} or {scroll_to: {text or ref, in?: n, direction?: "down", max_swipes?: 6}} (swipes until it is fully on screen); {long_press: n or [x, y] or {ref, ms?}}; {drag: {from: n or [x, y], to: n or [x, y], ms?}}; {pinch: {ref or x, y, scale}}; {button: "home"|"lock"}; {launch: "bundle id"} or {launch: {bundle, fresh: true}} (fresh ends the app first); {wait: ms}. Points are in the same screen points as the element frames. Each action is reported as sent, not_sent or unknown; it stops at the first action that fails and never re-sends one that may have been delivered. Several known steps can go in one call; you judge the result from the elements and the screenshot.', { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' }, minItems: 0, maxItems: 20 }, full: { type: 'boolean' } }, required: ['actions'], additionalProperties: false }, false],
+  ['look', 'Read the screen now: the app in front, the numbered elements (role, label = value, [x,y,w,h] in screen points; + marks elements new since the last read), and a screenshot. full=true lists every element. Optional device selects an attached device by id or name. Numbers refer to this read only.', { type: 'object', properties: { full: { type: 'boolean' }, device: { type: 'string' } }, additionalProperties: false }, true],
+  ['do', 'Run actions in order, then read the screen once and return the same facts as look, with a screenshot. Actions: {tap: n} or {tap: [x, y]}; {double_tap: n or [x, y]}; {tap_text: "text"}; {type: "text", ref?: n, clear?} (taps n first, then types the text as key presses; text the keyboard cannot type is pasted with your clipboard saved and put back); {key: "return"|"delete"|"tab"|"space"|"escape"|...}; {swipe: "up"|"down"|"left"|"right"} or {swipe: {direction, in?: n, distance?: "short"|"long"}} (direction is where the finger moves); {scroll_to: "text"} or {scroll_to: {text or ref, in?: n, direction?: "down", max_swipes?: 6}} (swipes until it is fully on screen); {long_press: n or [x, y] or {ref, ms?}}; {drag: {from: n or [x, y], to: n or [x, y], ms?, hold_ms?}} or {drag: [x1, y1, x2, y2]}; {pinch: {ref or x, y, scale}}; {button: "home"|"lock"|"volume_up"|"volume_down"}; {back: true}; {launch: "bundle id"} or {launch: {bundle, fresh: true}} (use list_apps if you need the bundle id); {open_url: "https://..."}; {wait_until: "text"} or {wait_until: {text, gone?, ms?}} or {wait_until: {settled: true, ms?}}; {wait: ms}; {handoff: {kind, text}}. Set finish=true on the final do call of a task (actions may be empty) to return to the app where the task started. Sensitive actions (payments, deletions, calls, message sends, password entry, and open_url) ask for local approval unless preapproved. Each action is reported as sent, not_sent or unknown; execution stops at the first failed action and never re-sends an unknown one.', { type: 'object', properties: { actions: { type: 'array', items: { type: 'object' }, minItems: 0, maxItems: 20 }, full: { type: 'boolean' }, finish: { type: 'boolean' }, device: { type: 'string' } }, required: ['actions'], additionalProperties: false }, false],
 ];
 export const tools = new Set(['look', 'do', 'list_apps', 'list_devices', 'select_device', 'poki_mcp_status']);
-export const instructions = 'look reads the screen; do runs actions and then reads it. Both return the numbered elements and a screenshot. Use the numbers from the latest answer. Decide what happened from the elements and the picture.';
+export const instructions = 'look reads the screen; do runs actions in order and then reads the screen once. Both return numbered elements and a screenshot. Use element numbers from the latest answer, call list_apps when you need an app bundle id for launch, and set finish=true on your final do call when the task is complete. With one device attached, skip list_devices and select_device.';

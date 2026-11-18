@@ -424,7 +424,7 @@ async function prepare({ udids, fixture }) {
     const daemon = await startDaemon(here, stateDir, shims, udid);
     try {
       const client = new Client({ name: 'eval-prepare', version: '1' });
-      await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, 'src/stdio.mjs')], env: { ...process.env, POKI_MCP_STATE_DIR: stateDir } }));
+      await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, 'src/stdio.mjs'), '--dev-tools'], env: { ...process.env, POKI_MCP_STATE_DIR: stateDir } }));
       const started = await client.callTool({ name: 'start_simulator', arguments: { simulator: udid } }, { timeout: 300000 });
       if (started.isError) throw new Error(`start_simulator failed: ${JSON.stringify(started.content)}`);
       await client.close();

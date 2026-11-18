@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { readFile, mkdir, writeFile, readdir, stat } from 'node:fs/promises';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 
 test('old element refs cannot be reinterpreted by a later element list',async t=>{
  const f=await fixture(t);const first=value(await f.call('list_elements'));

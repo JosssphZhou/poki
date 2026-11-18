@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fixture } from './fixture.mjs';
+import { devFixture as fixture } from './fixture.mjs';
 
 test('Remote screen capture survives observation cancellation and daemon restart after new connections are refused', async t => {
   const f = await fixture(t, { beforeStart: async dir => {

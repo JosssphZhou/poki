@@ -19,7 +19,7 @@ const model = spawn('python3', [join(dirname(fileURLToPath(import.meta.url)), 'm
   '--log', join(directory, 'model-requests.jsonl')], { stdio: 'ignore' });
 
 function call(name, args = {}) {
-  const raw = execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), name,
+  const raw = execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), '--dev-tools', name,
     JSON.stringify({ device, ...args })], { encoding: 'utf8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe'] });
   return JSON.parse(raw);
 }

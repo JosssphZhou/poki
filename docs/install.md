@@ -97,7 +97,7 @@ Install https://github.com/JosssphZhou/poki following its root AGENTS.md, includ
 
 [AGENTS.md](../AGENTS.md) covers prerequisites, source setup, the background daemon, registration in your own client, skill installation, iPhone pairing, Poki Agent, optional iMessage, and verification. It names each user-only stop, including Xcode setup, Trust This Computer, Developer Mode, UI Automation, and model login.
 
-The default MCP `tools/list` exposes the tools for phone tasks. `poki_mcp_status.total_tools` reports the size of the complete catalog. Set `POKI_MCP_TOOLS=all` in the client's environment and reconnect to discover the complete catalog. Read and report the actual values. Neither count proves that the phone is ready.
+The default MCP `tools/list` exposes six phone-agent tools (`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, and `list_apps`). `poki_mcp_status` reports `default_tools` (6) and `total_tools` (63). Pass `--dev-tools` to `src/stdio.mjs` or set `POKI_MCP_DEV_TOOLS=1` in the client's environment and reconnect to enable the developer tool group (`POKI_MCP_TOOLS=all` also works). Read and report the actual values. Neither count proves that the phone is ready.
 
 ## 3. Verify from the Terminal
 
@@ -106,12 +106,12 @@ Each stdio MCP client gets its own session, keeping its `select_device` choice u
 ```sh
 node bin/call.mjs poki_mcp_status
 node bin/call.mjs list_devices
-node bin/call.mjs start_simulator '{"model":"iPhone 18 Pro"}'
-node bin/call.mjs take_screenshot '{"device":"YOUR_DEVICE_NAME_OR_ID"}'
-node bin/call.mjs list_elements '{"device":"YOUR_DEVICE_NAME_OR_ID","source":"accessibility"}'
+node bin/call.mjs --dev-tools start_simulator '{"model":"iPhone 18 Pro"}'
+node bin/call.mjs look '{"device":"YOUR_DEVICE_NAME_OR_ID"}'
+node bin/call.mjs do '{"device":"YOUR_DEVICE_NAME_OR_ID","actions":[{"launch":"com.apple.Preferences"}]}'
 ```
 
-`list_devices` with `{"include_all_simulators":true}` lists the models that `start_simulator` can create. `start_simulator` names a new simulator `Poki MCP <model>`.
+`list_devices` with `{"include_all_simulators":true}` lists the models that `start_simulator` (in `--dev-tools`) can create. `start_simulator` names a new simulator `Poki MCP <model>`.
 
 To use a physical iPhone, first pair it with your Mac over USB. After that, keep both devices on the same local network with the phone unlocked. See [Physical iPhone setup](physical-iphone.md).
 

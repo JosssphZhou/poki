@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 
 test('POKI_MCP_DEVICE picks the device when several match, and an explicit device still wins', async t => {
   const f = await fixture(t, { extraEnv: () => ({ POKI_MCP_DEVICE: 'fixture-phone-2' }) });

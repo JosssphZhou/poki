@@ -5,7 +5,7 @@ import { fixture, value } from './fixture.mjs';
 const text = result => result.content.find(item => item.type === 'text')?.text ?? '';
 
 test('CUA cannot use a screen element number from iPhone A after switching to iPhone B', { timeout: 35000 }, async t => {
-  const f = await fixture(t, { toolsProfile: 'cua' });
+  const f = await fixture(t);
   await f.set({ twoPhones: true, label: 'Ready' });
   assert.equal(value(await f.call('select_device', { device: 'fixture-phone' })).selected, 'fixture-phone');
   const onA = await f.call('look');

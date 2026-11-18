@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 const input = () => ({ phone: { keyboard: true, rows: [{ id: 'o2', placeholder: '地址和搜索栏', value: '', up: 70, down: 130, editing: true }] }, label: 'Ready' });
 const summary = result => JSON.parse(result.content.at(-1).text);
 

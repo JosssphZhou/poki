@@ -17,7 +17,7 @@ For LAN-only use, see [LAN addresses that change with DHCP](#lan-addresses-that-
    ```
 
    This verifies a RemotePairing record over the existing trusted USB connection. The pairing key remains in the private state directory. Ordinary operations never trigger a new pairing flow.
-4. Start Poki with the same state directory. Call `take_screenshot` with the selected device ID while Wi-Fi is connected. Confirm the actual screen before disconnecting USB.
+4. Start Poki with the same state directory. Call `look` (or `--dev-tools take_screenshot`) with the selected device ID while Wi-Fi is connected. Confirm the actual screen before disconnecting USB.
 5. Disconnect Wi-Fi from Control Center, leaving the Wi-Fi setting enabled, Tailscale connected, and the phone unlocked. Verify the phone is using cellular data.
 
 The configured device uses RemotePairing even when a USB connection is present, so testing does not silently fall back to USB.

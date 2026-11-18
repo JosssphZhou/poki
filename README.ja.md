@@ -300,7 +300,7 @@ Issue や Pull Request を寄せてくださった皆さまに感謝いたしま
 
 ## その他のツール
 
-[Poki MCP](docs/poki-mcp.md) はパソコンのエージェントを iPhone や iOS シミュレータに接続する従来のツールで、現在は更新を停止しています。
+[Poki MCP](docs/poki-mcp.md) はパソコンのエージェントを iPhone や iOS シミュレータに接続する従来のツールで、既定では 6 つの操作ツール（`look`、`do`、`poki_mcp_status`、`list_devices`、`select_device`、`list_apps`）を公開し、`--dev-tools` で開発者向けツール群を有効化できます（[ツールの仕様](docs/tools.md)を参照）。現在は更新を停止しています。
 
 [Poki Agent](docs/poki-mcp.md#try-a-task-with-poki-agent) は iMessage と Telegram に対応したターミナルのエージェントです。設定と使い方はリンク先のガイドにあります。
 

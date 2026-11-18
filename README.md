@@ -300,7 +300,7 @@ Thanks to everyone who opened an issue or pull request. Your feedback and fixes 
 
 ## Other tools
 
-[Poki MCP](docs/poki-mcp.md) connects a computer's agent to an iPhone or the iOS Simulator; this earlier tool is no longer updated.
+[Poki MCP](docs/poki-mcp.md) connects a computer's agent to an iPhone or the iOS Simulator with six default phone-agent tools (`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, and `list_apps`) and an optional `--dev-tools` developer group; see [Tool behavior](docs/tools.md). This earlier tool is no longer updated.
 
 [Poki Agent](docs/poki-mcp.md#try-a-task-with-poki-agent) is the terminal agent with iMessage and Telegram channels; setup and usage remain in the linked guide.
 

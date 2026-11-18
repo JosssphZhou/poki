@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 
 test('consecutive local MCP observations retain the native helper process', async t => {
   const f = await fixture(t, { beforeStart: async dir => {

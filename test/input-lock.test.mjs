@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { Coordination } from '../src/coordination.mjs';
 import { inputLockFromEnv, deviceKey } from '../src/input-lock.mjs';
-import { fixture } from './fixture.mjs';
+import { devFixture as fixture } from './fixture.mjs';
 
 const lockOn = (env = {}) => inputLockFromEnv({ POKI_INPUT_LOCK: '1', POKI_INPUT_LOCK_WAIT_MS: '1000', ...env });
 

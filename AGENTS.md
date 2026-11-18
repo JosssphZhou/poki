@@ -35,7 +35,7 @@ Follow these steps for the selected path. At each **STOP**, tell the user what t
    node bin/call.mjs list_devices
    ```
 
-   Report the version, commit, `total_tools`, and whether the intended device appears. The default MCP `tools/list` exposes the tools for phone tasks. `total_tools` counts the complete catalog, including tools callable without default discovery. `POKI_MCP_TOOLS=all` exposes the complete list. Verify current output instead of treating either count as proof that installation works. For the Poki Agent path, run `poki status` after login. After authorization for a phone task, use `poki "<user task>"` and verify its actual result. With multiple devices, pass `--device '<device UUID>'`. Report any untested pairing, login, channel, or phone operation explicitly.
+   Report the version, commit, `default_tools`, `total_tools`, and whether the intended device appears. The default MCP `tools/list` exposes six phone-agent tools (`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, and `list_apps`). `total_tools` counts the full 63-tool catalog enabled by `--dev-tools` or `POKI_MCP_DEV_TOOLS=1` (`POKI_MCP_TOOLS=all` also works). Verify current output instead of treating either count as proof that installation works. For the Poki Agent path, run `poki status` after login. After authorization for a phone task, use `poki "<user task>"` and verify its actual result. With multiple devices, pass `--device '<device UUID>'`. Report any untested pairing, login, channel, or phone operation explicitly.
 
 ## Update
 

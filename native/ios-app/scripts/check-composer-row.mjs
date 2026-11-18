@@ -10,7 +10,7 @@ assert(device.startsWith('ESP-735 '), 'Use the dedicated ESP-735 simulator');
 const directory = resolve(output);
 mkdirSync(directory, { recursive: true });
 function call(name, args = {}) {
-  return JSON.parse(execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), name,
+  return JSON.parse(execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), '--dev-tools', name,
     JSON.stringify({ device, ...args })], { encoding: 'utf8', timeout: 120000 }));
 }
 function composer() {

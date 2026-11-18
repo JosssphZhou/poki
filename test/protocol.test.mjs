@@ -14,7 +14,7 @@ import { fixture, value } from './fixture.mjs';
 test('fill asks for a daemon restart after native or JavaScript updates and recovers after restart', async t => {
   for (const updated of ['native', 'JavaScript']) await t.test(updated, async t => {
     let currentInteraction;
-    const f = await fixture(t, { beforeStart: async dir => {
+    const f = await fixture(t, { devTools: true, beforeStart: async dir => {
       const file = join(dir, 'src/interaction.mjs');
       currentInteraction = await readFile(file, 'utf8');
       const legacy = currentInteraction.replace('target: { object_id, role: here.role ?? here.type, label, placeholder, value }', 'x: 30, y: 50');
@@ -61,7 +61,7 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
     assert.equal((await fetch(endpoint.url, { method: 'POST', headers: { Authorization: `Bearer ${endpoint.token}`, 'Content-Type': 'application/json' }, body: '{}' })).status, 400);
     assert.equal(client.getServerVersion().name, 'poki-mcp');
     assert.equal(client.getServerVersion().version, '0.1.1');
-    assert.match(client.getInstructions(), /batch_commands/);
+    assert.match(client.getInstructions(), /look.*do/);
     const httpClient = new Client({ name: 'discovery-contract', version: '1' });
     try {
       await httpClient.connect(new StreamableHTTPClientTransport(new URL(endpoint.url), { requestInit: { headers: { Authorization: `Bearer ${endpoint.token}`, 'x-poki-mcp-session': 'discovery-contract' } } }));
@@ -69,12 +69,8 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
         const { tools } = await transportClient.listTools();
         t.diagnostic(`default tools/list: ${tools.length} tools, ${JSON.stringify({ tools }).length} characters`);
         assert.deepEqual(tools.map(tool => tool.name).sort(), [
-          'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
-          'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
-          'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
-          'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',
-          'scroll_to', 'terminate_app', 'pinch', 'list_apps', 'get_clipboard',
-        ].sort());
+          'do', 'list_apps', 'list_devices', 'look', 'poki_mcp_status', 'select_device',
+        ]);
         const status = await transportClient.callTool({ name: 'poki_mcp_status', arguments: {} });
         assert.ok(!status.isError);
         const statusValue = JSON.parse(status.content[0].text);
@@ -83,7 +79,9 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
         assert.equal(statusValue.implementation, 'Poki MCP 0.1.1');
         assert.equal(statusValue.commit, 'unknown', 'A packaged copy outside Git must report unknown');
         assert.equal(statusValue.native_build, (await stat(join(f.dir, 'build/poki-native'))).mtime.toISOString());
-        assert.equal(value(await transportClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0);
+        const hiddenWait = await transportClient.callTool({ name: 'wait', arguments: { seconds: 0 } });
+        assert.equal(hiddenWait.isError, true);
+        assert.match(hiddenWait.content[0].text, /merged into do/);
       }
     } finally { await httpClient.close(); }
     const fullClient = await f.connect('all');
@@ -94,17 +92,18 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
     }
     t.diagnostic(`all tools/list: ${full.tools.length} tools, ${JSON.stringify(full).length} characters`);
     assert.ok(!(await client.callTool({ name: 'select_device', arguments: { device: 'fixture-phone' } })).isError);
-    const screen = value(await client.callTool({ name: 'list_elements', arguments: {} }));
+    assert.ok(!(await fullClient.callTool({ name: 'select_device', arguments: { device: 'fixture-phone' } })).isError);
+    const screen = value(await fullClient.callTool({ name: 'list_elements', arguments: {} }));
     assert.equal(screen.elements[0].label, 'First');
-    assert.ok(!(await client.callTool({ name: 'tap', arguments: { ref: screen.elements[0].ref } })).isError);
-    assert.equal(value(await client.callTool({ name: 'list_elements', arguments: {} })).elements[0].label, 'First');
+    assert.ok(!(await fullClient.callTool({ name: 'tap', arguments: { ref: screen.elements[0].ref } })).isError);
+    assert.equal(value(await fullClient.callTool({ name: 'list_elements', arguments: {} })).elements[0].label, 'First');
     const invalid = await client.callTool({ name: 'select_device', arguments: { device: 'contract-test-absent-device' } });
     assert.equal(invalid.isError, true);
     assert.match(invalid.content[0].text, /not connected/);
-    const unicode = await client.callTool({ name: 'type_text', arguments: { text: '中文', device: 'contract-test-absent-device' } });
+    const unicode = await fullClient.callTool({ name: 'type_text', arguments: { text: '中文', device: 'contract-test-absent-device' } });
     assert.equal(unicode.isError, true);
     assert.match(unicode.content[0].text, /not connected/);
-    const batch = await client.callTool({ name: 'batch_commands', arguments: { commands: Array.from({ length: 30 }, () => ({ tool: 'wait', arguments: { seconds: 0 } })) } });
+    const batch = await fullClient.callTool({ name: 'batch_commands', arguments: { commands: Array.from({ length: 30 }, () => ({ tool: 'wait', arguments: { seconds: 0 } })) } });
     assert.ok(!batch.isError);
     assert.equal(batch.content.filter(c => c.type === 'text' && c.text.includes('"waited"')).length, 30);
     const batchSteps = result => result.content.flatMap(block => {
@@ -115,17 +114,17 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
     const steps = batchSteps(batch);
     assert.equal(steps.length, 30);
     assert.ok(steps.every(step => Number.isFinite(step.elapsed_ms) && step.elapsed_ms >= 0));
-    const stopped = await client.callTool({ name: 'batch_commands', arguments: { commands: [{ tool: 'missing_tool' }, { tool: 'wait', arguments: { seconds: 0 } }] } });
+    const stopped = await fullClient.callTool({ name: 'batch_commands', arguments: { commands: [{ tool: 'missing_tool' }, { tool: 'wait', arguments: { seconds: 0 } }] } });
     assert.equal(stopped.isError, true);
     assert.equal(stopped.content.filter(c => c.type === 'text' && c.text.includes('"waited"')).length, 0);
     const stoppedSteps = batchSteps(stopped);
     assert.equal(stoppedSteps.length, 1);
     assert.equal(stoppedSteps[0].isError, true);
     assert.ok(Number.isFinite(stoppedSteps[0].elapsed_ms) && stoppedSteps[0].elapsed_ms >= 0);
-    const emptySubmit = await client.callTool({ name: 'type_text', arguments: { text: '', submit: true } });
+    const emptySubmit = await fullClient.callTool({ name: 'type_text', arguments: { text: '', submit: true } });
     assert.equal(emptySubmit.isError, true);
     assert.match(emptySubmit.content[0].text, /press_key/);
-    const continued = await client.callTool({ name: 'batch_commands', arguments: { stop_on_error: false, commands: [{ tool: 'wait', arguments: { seconds: 0 } }, { tool: 'missing_tool' }, { tool: 'batch_commands', arguments: { commands: [] } }, { tool: 'wait', arguments: { seconds: 0 } }] } });
+    const continued = await fullClient.callTool({ name: 'batch_commands', arguments: { stop_on_error: false, commands: [{ tool: 'wait', arguments: { seconds: 0 } }, { tool: 'missing_tool' }, { tool: 'batch_commands', arguments: { commands: [] } }, { tool: 'wait', arguments: { seconds: 0 } }] } });
     assert.equal(continued.isError, true);
     assert.equal(continued.content.filter(c => c.type === 'text' && c.text.includes('"waited"')).length, 2);
     const continuedSteps = batchSteps(continued);
@@ -147,9 +146,10 @@ test('an all-profile HTTP service still lets each stdio client choose its own li
   assert.equal(full.tools.length, 63);
   assert.deepEqual(await f.a.listTools(), full);
   const defaultClient = await f.connect('');
-  assert.equal((await defaultClient.listTools()).tools.length, 29);
+  assert.equal((await defaultClient.listTools()).tools.length, 6);
   assert.deepEqual(await httpClient.listTools(), full);
-  assert.equal(value(await defaultClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0);
+  assert.equal((await defaultClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).isError, true);
+  assert.equal(value(await httpClient.callTool({ name: 'wait', arguments: { seconds: 0 } })).waited, 0);
 });
 
 test('Poki Agent opens its own MCP with the complete catalog even when the parent uses the default profile', { timeout: 20000 }, async t => {
@@ -184,7 +184,7 @@ test('screenshot coordinates preserve HID corners and reject out-of-frame input'
 
 const endpointFile = f => join(f.dir, 'state/mcp.json');
 const endpointOf = async f => JSON.parse(await readFile(endpointFile(f), 'utf8'));
-const probe = f => f.call('wait', { seconds: 0 });
+const probe = f => f.call('poki_mcp_status', {});
 
 for (const samePort of [true, false]) {
   test(`a connected client keeps working when the service restarts on ${samePort ? 'the same port' : 'another port'} with a new token`, { timeout: 30000 }, async t => {
@@ -240,14 +240,14 @@ test('a token the service still rejects after the re-read is reported without pr
   await f.startDaemon(before.port);
   const endpoint = await endpointOf(f);
   await writeFile(endpointFile(f), JSON.stringify({ ...endpoint, token: wrong }));
-  const result = await client.callTool({ name: 'wait', arguments: { seconds: 0 } });
+  const result = await client.callTool({ name: 'poki_mcp_status', arguments: {} });
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /rejected/);
   for (const text of [result.content[0].text, stderr]) for (const token of [before.token, endpoint.token, wrong]) assert.ok(!text.includes(token));
 });
 
 test('a call cut off by a restart is not sent again, because the phone may already have acted', { timeout: 30000 }, async t => {
-  const f = await fixture(t);
+  const f = await fixture(t, { devTools: true });
   await f.set({ block: 'key' });
   const pending = f.call('press_key', { key: 'return' });
   await f.until(log => log.includes('"op":"key"'));

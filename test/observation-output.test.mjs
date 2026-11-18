@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, value } from './fixture.mjs';
+import { devFixture, fixture, value } from './fixture.mjs';
 
 test('observe_device omits PNG only when requested', async t => {
-  const f = await fixture(t);
+  const f = await devFixture(t);
   const defaultResult = await f.call('observe_device', { source: 'ocr' });
   const compactResult = await f.call('observe_device', { source: 'ocr', include_image: false });
   assert.ok(!defaultResult.isError);
@@ -21,7 +21,7 @@ test('observe_device omits PNG only when requested', async t => {
   assert.equal(screenshots.length, 2, 'Internal capture still occurs for structured-only responses');
 });
 test('missing prompt OCR remains explicit without an image attachment', async t => {
-  const f = await fixture(t);
+  const f = await devFixture(t);
   await f.set({ ocrUnavailable: true });
   const result = await f.call('observe_device', { include_image: false });
   assert.ok(!result.isError);
@@ -31,7 +31,7 @@ test('missing prompt OCR remains explicit without an image attachment', async t 
   assert.ok(!result.content.some(item => item.type === 'image'));
 });
 test('observe_device rejects non-boolean include_image', async t => {
-  const f = await fixture(t);
+  const f = await devFixture(t);
   const result = await f.call('observe_device', { include_image: 'false' });
   assert.equal(result.isError, true);
 });
@@ -44,12 +44,12 @@ test('a tree that names only the top of the screen gets the screenshot text it l
   const header = [['StaticText', '力矩扳手', 10, 4, 80, 16], ['Button', '综合', 0, 24, 25, 16], ['Button', '视频', 25, 24, 25, 16], ['Button', '直播', 50, 24, 25, 16], ['Button', '用户', 75, 24, 25, 16]];
   const products = [['2-20Nm 预置扭力扳手', 5, 60, 90, 14], ['¥89', 5, 78, 30, 14], ['加入购物车', 50, 96, 45, 16]];
   const state = { elements: header.map(e => named(...e)), ocrElements: [...header.map(([, ...e]) => seen(...e)), ...products.map(e => seen(...e))] };
-  const f = await fixture(t);
+  const f = await devFixture(t);
   await f.set(state);
   const listed = value(await f.call('list_elements'));
   assert.deepEqual(listed.elements.map(e => [e.label, e.source]), [...header.map(e => [e[1], undefined]), ...products.map(e => [e[0], 'ocr'])]);
   assert.equal(value(await f.call('list_elements', { source: 'accessibility' })).elements.length, 5);
-  const cua = await fixture(t, { toolsProfile: 'cua' });
+  const cua = await fixture(t);
   await cua.set(state);
   const looked = (await cua.call('look')).content[0].text;
   assert.match(looked, /, accessibility \+ ocr\)/);

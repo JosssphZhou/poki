@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
 import { Devices } from '../src/device.mjs';
 import { join } from 'node:path';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 
 // A phone over a network tunnel takes seconds per accessibility read; the fixture's delay stands in for it.
 test('a tap on a phone with slow accessibility reads still ends with the screen', { timeout: 30000 }, async t => {

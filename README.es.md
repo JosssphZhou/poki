@@ -300,7 +300,7 @@ Gracias a todas las personas que han abierto un issue o un pull request; sus rep
 
 ## Otras herramientas
 
-[Poki MCP](docs/poki-mcp.md) conecta el agente de un ordenador a un iPhone o al simulador de iOS; esta herramienta anterior ya no se actualiza.
+[Poki MCP](docs/poki-mcp.md) conecta el agente de un ordenador a un iPhone o al simulador de iOS con seis herramientas predeterminadas (`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device` y `list_apps`) y un grupo opcional para desarrolladores mediante `--dev-tools` (consulta [Comportamiento de herramientas](docs/tools.md)); esta herramienta anterior ya no se actualiza.
 
 [Poki Agent](docs/poki-mcp.md#try-a-task-with-poki-agent) es el agente de terminal con canales de iMessage y Telegram. La guía enlazada conserva las instrucciones de instalación y uso.
 

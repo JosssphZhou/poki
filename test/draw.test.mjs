@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 
 const path = (...points) => points.map(([x, y, time_ms]) => ({ x, y, time_ms }));
 const messageOf = result => result.content.find(c => c.type === 'text').text;

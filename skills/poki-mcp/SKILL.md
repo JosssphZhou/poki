@@ -10,11 +10,19 @@ For installation or updates of the standalone iPhone app, read [install-poki](..
 
 ## Tool discovery
 
-The default `tools/list` contains the tools for device selection, screen reads, app launch, touch, text input, navigation, prompts, and batches. For tools outside that list, read `docs/tools.md` in the Poki checkout used by your registered MCP server. This skill can be copied into a client skill directory.
+The default `tools/list` exposes six phone-agent tools that match Poki on the iPhone: `look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, and `list_apps`. `look` reads the screen and returns numbered elements plus a screenshot. `do` runs an ordered `actions` list (`tap`, `double_tap`, `tap_text`, `type`, `key`, `swipe`, `scroll_to`, `long_press`, `drag`, `pinch`, `button`, `back`, `launch`, `open_url`, `wait`, `wait_until`, `handoff`) and reads the screen once at the end; pass `finish: true` on the final action step to return to the app where the task started. Calling an unexposed legacy tool in default mode returns an error naming the `look` or `do` replacement, or explaining how to enable the developer tool group.
 
-Set `POKI_MCP_TOOLS=all` in the MCP client's process environment and reconnect to list the complete catalog. Tools absent from the default list still accept direct calls. Device actions can run inside `batch_commands`; lease management calls must stay outside a batch. Consecutive calls do not require `acquire_device`. Poki Agent selects the complete catalog for its own MCP process and retains its own tool allowlist.
+Pass `--dev-tools` to `src/stdio.mjs` or set `POKI_MCP_DEV_TOOLS=1` in the MCP client's process environment (`POKI_MCP_TOOLS=all` also works) and reconnect to unlock the full 63-tool developer catalog, including simulator management, screen recording, Xcode builds, location and appearance simulation, crash reports, `batch_commands`, `fill`, and `run_code`. Read `docs/tools.md` in the Poki checkout for the full catalog. Consecutive calls do not require `acquire_device`. Poki Agent selects the complete catalog for its own MCP process and retains its own tool allowlist.
 
-`run_code` is in the complete catalog, not the default list. It runs an async JavaScript function that calls device tools with `await tools.<name>(args)`, so the code reads a result and decides the next step in one call instead of a model round trip per step. Prefer it when a task is predictable but depends on what each step returns, such as scrolling until a row appears and then reading its value. A tool error throws and the code can catch it; an action that reports `sent=false` or an unknown outcome stops the script, as a batch stops. The sandbox has no require, file system, network, process or timers.
+## Typing, navigation, and prompts in default mode
+
+- **Typing**: In `do`, pass `{ type: "text", ref: 3, clear: true }` to tap element `3` and enter text, or follow `{ type: ... }` with `{ key: "return" }` to submit. On a physical iPhone, typing sends hardware key presses and falls back to clipboard paste only when needed while saving and restoring the user's clipboard.
+- **Home and back**: Use `{ button: "home" }` inside `do` to go to the iPhone Home screen (`{ key: "home" }` sends a keyboard Home key). Use `{ back: true }` to tap a visible back control or swipe from the leading edge.
+- **Prompts and approvals**: Sensitive actions in `do` (payments, deletions, calling, sending messages, guarded apps such as Wallet or App Store, password fields, `open_url`, and `{ handoff: { kind, text } }`) trigger a local macOS approval dialog unless preapproved (`handoff` always asks). Read the returned screen after any prompt or handoff to confirm the dialog closed.
+
+## Developer catalog notes (`--dev-tools` / `POKI_MCP_DEV_TOOLS=1`)
+
+`run_code` is in the developer catalog. It runs an async JavaScript function that calls device tools with `await tools.<name>(args)`, so the code reads a result and decides the next step in one call instead of a model round trip per step. Prefer it when a task is predictable but depends on what each step returns, such as scrolling until a row appears and then reading its value. A tool error throws and the code can catch it; an action that reports `sent=false` or an unknown outcome stops the script, as a batch stops. The sandbox has no require, file system, network, process or timers.
 
 The examples below record earlier physical-iPhone checks. They are not a guarantee for every iOS version or app. Verify the current screen after each task.
 

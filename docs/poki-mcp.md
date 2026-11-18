@@ -8,7 +8,7 @@ Poki MCP is the earlier way to use Poki: an agent on your Mac, such as Claude Co
 Install https://github.com/JosssphZhou/poki following its root AGENTS.md, including the MCP skill, and stop whenever you need me to act.
 ```
 
-**Poki MCP.** Already using Claude Code, Codex, or another MCP client? Connect Poki MCP and use your own subscription. No extra model account needed.
+**Poki MCP.** Already using Claude Code, Codex, or another MCP client? Connect Poki MCP and use your own subscription. No extra model account needed. By default it exposes six phone-agent tools (`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, and `list_apps`). Pass `--dev-tools` or set `POKI_MCP_DEV_TOOLS=1` when you also need simulator lifecycle, screen recording, Xcode builds, location or appearance simulation, and crash diagnostics; see [Tool behavior](tools.md).
 
 Start the server and keep it running:
 

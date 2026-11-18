@@ -116,7 +116,7 @@ const runners = {
 class Mcp {
   async connect() {
     this.client = new Client({ name: 'poki-voice-bridge', version: '0.1.0' });
-    await this.client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, 'src/stdio.mjs')], env: { ...process.env, POKI_MCP_SESSION: 'voice-bridge' } }));
+    await this.client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, 'src/stdio.mjs'), '--dev-tools'], env: { ...process.env, POKI_MCP_SESSION: 'voice-bridge' } }));
   }
   async call(name, args) {
     const result = await this.client.callTool({ name, arguments: device ? { device, ...args } : args }, { timeout: 60000 });

@@ -38,7 +38,7 @@ const find = async name => {
 };
 const awaitText = text => call('wait_for', { text, timeout_seconds: 5 });
 try {
-  await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, 'src/stdio.mjs')], env: { ...process.env, POKI_MCP_SESSION: `fixture-${Date.now()}` } }));
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(root, 'src/stdio.mjs'), '--dev-tools'], env: { ...process.env, POKI_MCP_SESSION: `fixture-${Date.now()}` } }));
   const listing = await call('list_devices');
   assert.ok(listing.devices.some(d => d.id === device && d.kind === 'simulator' && d.name === 'Poki MCP QA'), 'Only operate the dedicated QA simulator');
   await call('select_device');

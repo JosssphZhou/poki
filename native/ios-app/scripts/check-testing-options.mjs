@@ -20,7 +20,7 @@ function call(name, args = {}) {
   const tries = ['list_elements', 'save_screenshot'].includes(name) ? 3 : 1;
   for (let attempt = 1; ; attempt++) {
     try {
-      return JSON.parse(execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), name,
+      return JSON.parse(execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), '--dev-tools', name,
         JSON.stringify({ device, ...args })], { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] }));
     } catch (error) {
       if (attempt >= tries) throw new Error(`${name} failed: ${String(error.stderr || error.message).trim().split('\n').at(-1)}`);

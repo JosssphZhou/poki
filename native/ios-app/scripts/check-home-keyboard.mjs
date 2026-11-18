@@ -10,7 +10,7 @@ assert(device.startsWith('ESP-447 '), 'Use the dedicated ESP-447 simulator');
 const directory = resolve(output);
 mkdirSync(directory, { recursive: true });
 function call(name, args = {}) {
-  const raw = execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), name,
+  const raw = execFileSync(process.execPath, [join(clientRoot, 'bin/call.mjs'), '--dev-tools', name,
     JSON.stringify({ device, ...args })], { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
   return JSON.parse(raw);
 }

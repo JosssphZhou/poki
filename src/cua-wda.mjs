@@ -114,6 +114,10 @@ export function wdaContext(ctx, url = process.env.POKI_WDA_URL) {
         await wda.call('POST', '/wda/apps/launch', { bundleId: request.bundle_id });
         return { bundle_id: request.bundle_id };
       }
+      if (request.op === 'open_url') {
+        await wda.call('POST', '/url', { url: request.url });
+        return { url: request.url };
+      }
       throw new Error(`${request.op} is not available on the WebDriverAgent backend`);
     },
     // Inputs answer like the bridge's: sent, or isError with outcome not_sent or unknown.
@@ -133,6 +137,7 @@ export function wdaContext(ctx, url = process.env.POKI_WDA_URL) {
 async function send(wda, request, size) {
   switch (request.op) {
     case 'tap': return wda.call('POST', '/wda/tap', { x: request.x, y: request.y });
+    case 'double_tap': return wda.call('POST', '/wda/doubleTap', { x: request.x, y: request.y });
     case 'long_press': return wda.call('POST', '/wda/touchAndHold', { x: request.x, y: request.y, duration: (request.duration_ms ?? 600) / 1000 });
     case 'drag': return wda.call('POST', '/wda/dragfromtoforduration', { fromX: request.x1, fromY: request.y1, toX: request.x2, toY: request.y2, duration: Math.max(0.05, (request.hold_ms ?? 0) / 1000) }, 15000);
     case 'pinch': {

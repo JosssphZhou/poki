@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture, value } from './fixture.mjs';
+import { devFixture as fixture, value } from './fixture.mjs';
 
 const summaryOf = result => JSON.parse(result.content.find(block => block.type === 'text').text);
 const runCode = (f, code, extra = {}) => f.call('run_code', { code, ...extra });

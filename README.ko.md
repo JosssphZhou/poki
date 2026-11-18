@@ -300,7 +300,7 @@ Issue나 Pull Request를 남겨 주신 모든 분께 감사드리며, 여러분�
 
 ## 기타 도구
 
-[Poki MCP](docs/poki-mcp.md)는 컴퓨터의 에이전트를 iPhone이나 iOS 시뮬레이터에 연결하는 이전 도구이며, 현재는 업데이트하지 않습니다.
+[Poki MCP](docs/poki-mcp.md)는 컴퓨터의 에이전트를 iPhone이나 iOS 시뮬레이터에 연결하는 이전 도구로, 기본으로 6개 도구(`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, `list_apps`)를 노출하며 `--dev-tools`로 개발자 도구 그룹을 켤 수 있습니다([도구 안내](docs/tools.md) 참고). 현재는 업데이트하지 않습니다.
 
 [Poki Agent](docs/poki-mcp.md#try-a-task-with-poki-agent)는 iMessage와 Telegram 채널을 지원하는 터미널 에이전트입니다. 설치와 사용법은 링크된 가이드에 있습니다.
 

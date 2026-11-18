@@ -300,7 +300,7 @@ iPhone App 使用你自備的模型帳號，電腦上編碼代理程式的訂閱
 
 ## 其他工具
 
-[Poki MCP](docs/poki-mcp.md) 將電腦上的代理程式連接到 iPhone 或 iOS 模擬器，這項早期工具已停止更新。
+[Poki MCP](docs/poki-mcp.md) 將電腦上的代理程式連接到 iPhone 或 iOS 模擬器，預設提供 6 個與手機端一致的工具（`look`、`do`、`poki_mcp_status`、`list_devices`、`select_device`、`list_apps`），並可透過 `--dev-tools` 開啟開發者工具組，詳見 [工具說明](docs/tools.md)；這項早期工具已停止更新。
 
 [Poki Agent](docs/poki-mcp.md#try-a-task-with-poki-agent) 是支援 iMessage 和 Telegram 的終端機代理程式，安裝與使用方式請見連結中的指南。
 

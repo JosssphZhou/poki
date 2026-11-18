@@ -300,7 +300,7 @@ iPhone App 使用你自备的模型账号，电脑上编码智能体的订阅不
 
 ## 其他工具
 
-[Poki MCP](docs/poki-mcp.md) 将电脑上的智能体连接到 iPhone 或 iOS 模拟器，这个早期工具已停止更新。
+[Poki MCP](docs/poki-mcp.md) 将电脑上的智能体连接到 iPhone 或 iOS 模拟器，默认提供 6 个与手机端一致的工具（`look`、`do`、`poki_mcp_status`、`list_devices`、`select_device`、`list_apps`），并可通过 `--dev-tools` 打开开发者工具组，详见 [工具说明](docs/tools.md)；这个早期工具已停止更新。
 
 [Poki Agent](docs/poki-mcp.md#try-a-task-with-poki-agent) 是支持 iMessage 和 Telegram 渠道的终端智能体，安装和使用方式见链接中的指南。
 

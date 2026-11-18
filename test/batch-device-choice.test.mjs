@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fixture } from './fixture.mjs';
+import { devFixture as fixture } from './fixture.mjs';
 
 test('A batch with no device and two phones reports the device choice instead of crashing in the read-back', async t => {
   const f = await fixture(t);

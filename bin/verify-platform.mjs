@@ -31,7 +31,7 @@ async function call(name,args={}) {
   try{return JSON.parse(result.content.find(c=>c.type==='text').text);}catch{return result;}
 }
 try {
-  await client.connect(new StdioClientTransport({command:process.execPath,args:[join(root,'src/stdio.mjs')],env:{...process.env,POKI_MCP_SESSION:`platform-${Date.now()}`}}));
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[join(root,'src/stdio.mjs'),'--dev-tools'],env:{...process.env,POKI_MCP_SESSION:`platform-${Date.now()}`}}));
   const devices=await call('list_devices',{include_all_simulators:true});
   assert.ok(devices.devices.some(d=>d.id===device&&d.kind==='simulator'&&d.name==='Poki MCP QA'));
   await call('start_simulator',{simulator:device});

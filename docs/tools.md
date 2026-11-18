@@ -1,76 +1,89 @@
 # Tool behavior and conventions
 
-**Poki MCP** is a local macOS MCP server that lets AI clients inspect and control an iPhone or iOS Simulator. By default it lists the tools for phone tasks, and it can expose a complete catalog for screenshots, accessibility and Vision OCR inspection, touch and keyboard input, application management, screen recording, and diagnostics.
+**Poki MCP** is a local macOS MCP server that lets AI clients inspect and control an iPhone or iOS Simulator. By default it exposes six phone-agent tools (`look`, `do`, `poki_mcp_status`, `list_devices`, `select_device`, and `list_apps`) that match the tool surface of Poki on the iPhone. Passing `--dev-tools` or setting `POKI_MCP_DEV_TOOLS=1` enables the developer tool group for simulator lifecycle, screen recording, app builds and installation, location and appearance simulation, crash diagnostics, and scripted batches.
 
-- **Screen & UI Inspection**: Capture screenshots (`take_screenshot`, `save_screenshot`) and inspect UI hierarchies via Accessibility or Vision OCR (`list_elements`).
-- **Touch & Keyboard Input**: Send taps, swipes, hardware keys, and Unicode text across simulators and paired physical devices.
-- **App & Device Lifecycle**: Manage applications, open URLs, inspect containers, record video, and run diagnostic checks.
+- **Screen & UI Inspection**: Read numbered Accessibility and Vision OCR elements together with a screenshot via `look` (plus `observe_device`, `list_elements`, `take_screenshot`, and `save_screenshot` in `--dev-tools`).
+- **Actions & Approvals**: Run ordered touch, text, gesture, launch, URL, wait, and human-handoff actions in one `do` call with local macOS approval prompts on sensitive steps.
+- **Developer Lifecycle (`--dev-tools`)**: Boot simulators, record H.264 video, build and install apps, simulate location or appearance, inspect containers and crash logs, and run `batch_commands` or `run_code`.
 - **Local Daemon Architecture**: Runs a local service (`127.0.0.1:47825` by default) with serialized device execution, per-client session isolation, and interactive local approval gates for sensitive actions. Loopback only unless `POKI_BIND_HOST` names another address, and `POKI_HOST_ALLOW` then lists the `Host` names it answers to; `127.0.0.1` is always served, because local clients read that endpoint from `mcp.json`.
 
-Tool names and input validation schemas live in [`src/data/tools.json`](../src/data/tools.json) with remote connection maintenance definitions in [`src/tools.mjs`](../src/tools.mjs). MCP serves them through `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, and separate counts for device, observation, management, and total tools.
+Tool definitions live in [`src/cua.mjs`](../src/cua.mjs), [`src/data/tools.json`](../src/data/tools.json), and [`src/tools.mjs`](../src/tools.mjs). MCP serves them through `tools/list`. `poki_mcp_status` returns the selected device, available device count, approval mode, `default_tools` (6), and counts for device, observation, management, and `total_tools` (63).
 
 ## MCP tool profiles
 
-The default `tools/list` response contains the tools for phone tasks. Tool names, arguments, and execution behavior are unchanged.
+### Default profile: six phone-agent tools
+
+By default `tools/list` returns six tools:
 
 | Use | Default tools |
 | --- | --- |
 | Service and devices | `poki_mcp_status`, `list_devices`, `select_device` |
-| Read the screen | `list_elements`, `take_screenshot`, `get_foreground_app` |
-| Apps and URLs | `list_apps`, `launch_app`, `terminate_app`, `open_url` |
-| Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
-| Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
+| Installed apps | `list_apps` |
+| Read the screen | `look` |
+| Act on the screen | `do` |
 
-The runtime default list is defined in `src/tools.mjs`. The complete catalog includes simulator management, app installation, recording, location, appearance, drawing with `touch_path` and `draw_strokes`, and device leases.
+`look` reads the screen without acting, numbers visible elements for the next call, marks newly appeared items, lists items that disappeared since the previous read, and attaches a screenshot.
 
-### Complete catalog
+`do` runs an ordered `actions` array, waits briefly after the final step, and reads the screen once:
 
-`POKI_MCP_TOOLS=all` makes `tools/list` return the complete catalog. Any other value, including an unset or empty value, selects the default list.
+| Action in `do` | Accepted forms | Replaces legacy tool |
+| --- | --- | --- |
+| `tap` | `n` or `[x, y]` | `tap`, `handle_alert` |
+| `double_tap` | `n` or `[x, y]` | `double_tap` |
+| `tap_text` | `"label"` or `{ text, exact }` | `tap_text` |
+| `type` | `"text"` with optional `ref`, `clear` | `type_text`, `fill` |
+| `key` | `"return"`, `"backspace"`, `"escape"`, `"tab"`, `"space"` | `press_key`, `hide_keyboard` |
+| `swipe` | `"up" \| "down" \| "left" \| "right"` or `{ direction, in, distance }` | `swipe`, `scroll` |
+| `scroll_to` | `"text"` or `{ text, ref, in, direction, max_swipes }` | `scroll_to` |
+| `long_press` | `n`, `[x, y]`, or `{ ref, x, y, ms }` | `long_press` |
+| `drag` | `{ from, to, ms, hold_ms }` or `[x1, y1, x2, y2]` | `drag` |
+| `pinch` | `n`, `[x, y]`, or `{ ref, x, y, scale }` | `pinch` |
+| `button` | `"home"`, `"lock"`, `"volume_up"`, `"volume_down"`, `"action"` | `press_button`, `system_gesture` |
+| `back` | `true` (taps a leading back control or swipes from the left edge) | `go_back` |
+| `launch` | `"bundle.id"` or `{ bundle, name, fresh }` | `launch_app` |
+| `open_url` | `"https://..."` | `open_url` |
+| `wait` | `{ ms }` | `wait` |
+| `wait_until` | `"text"` or `{ text, gone, settled, ms }` | `wait_for` |
+| `handoff` | `{ kind, text }` | `request_human_action` |
 
-For a stdio client, the variable belongs to the MCP process environment. This client configuration enables the complete catalog:
+Passing `finish: true` on the final `do` call returns to the app where the task began.
+
+In default mode, calling any of the 57 unexposed tool names returns `isError: true` with a migration message: the 25 merged tools name their `look` or `do` replacement syntax, and the 32 developer tools explain how to enable the developer tool group.
+
+### Developer tool group (`--dev-tools` / `POKI_MCP_DEV_TOOLS=1`)
+
+Passing `--dev-tools` or setting `POKI_MCP_DEV_TOOLS=1` makes `tools/list` return all 63 tools (the 6 default tools, the 25 standalone action/observation tools, and the 32 developer tools). `POKI_MCP_TOOLS=all` remains supported as a compatibility alias.
+
+For a stdio client, pass `--dev-tools` in `args` or set `POKI_MCP_DEV_TOOLS=1` in `env`:
 
 ```json
 {
   "mcpServers": {
-    "poki": {
+    "poki-mcp": {
       "command": "node",
-      "args": ["/absolute/path/to/poki-mcp/src/stdio.mjs"],
-      "env": {
-        "POKI_MCP_TOOLS": "all"
-      }
+      "args": ["/absolute/path/to/poki/src/stdio.mjs", "--dev-tools"]
     }
   }
 }
 ```
 
-The client needs to reconnect after a configuration change. Each stdio client has its own profile, independent of the daemon's profile.
+The client needs to reconnect after a configuration change. Each stdio client chooses its own profile, or inherits the daemon's `--dev-tools` / `POKI_MCP_DEV_TOOLS=1` setting when neither flag nor environment variable is set on the client. Direct HTTP clients receive the daemon's profile (`npm start -- --dev-tools` or `POKI_MCP_DEV_TOOLS=1 npm start`).
 
-Direct HTTP clients receive the daemon's profile. Starting the daemon with `POKI_MCP_TOOLS=all npm start` enables the complete catalog for those clients.
+### Device selection and Poki Agent
 
-### Calls and device selection
-
-Profiles affect discovery only. Every tool remains callable by name through `tools/call`, including tools absent from `tools/list`. The same applies to steps inside `batch_commands`. Argument validation, approvals, cancellation, and device arbitration still apply.
-
-Consecutive device calls do not require `acquire_device`. With one available device, calls select it automatically. With multiple devices, `list_devices` and `select_device` identify the target. An explicit lease remains available for sessions that need exclusive access across several calls. Another session's lease can still block access.
+Consecutive device calls do not require `acquire_device`. With one available device, calls select it automatically. With multiple devices, `list_devices` and `select_device` identify the target (or pass `device` per call). In `--dev-tools` mode, an explicit lease (`acquire_device`) remains available for sessions that need exclusive access across several calls.
 
 Poki Agent starts its own stdio process with `POKI_MCP_TOOLS=all`. Its existing tool allowlist determines which tools reach its model.
 
-### Computer-use profile: look and do
+### Execution details for `look` and `do`
 
-`POKI_TOOL_PROFILE=cua` lists only `look`, `do`, `list_apps`, `list_devices`, `select_device` and `poki_mcp_status`, with short server instructions. It works the way desktop computer-use tools do: `do` runs a list of actions in order (tap by element number or point, type, key, swipe, scroll_to, long_press, drag, pinch, button, launch, wait), waits a short fixed time after the last one, and reads the screen once; `look` reads it without acting. Each answer lists the screen's elements with numbers for the next call, marks the ones that are new since the previous read, names what disappeared, and attaches a screenshot. There is no verdict: the model decides what happened from the elements and the picture.
-
-- Each action is reported as `sent`, `not_sent` or `unknown`. Nothing after a failed action is sent, and an `unknown` action is never sent again. Element numbers that are not in the latest read are refused before anything is sent.
-- `look` and `do` work on a physical iPhone through the native bridge, on a booted simulator, and on a phone running WebDriverAgent (see below). A physical iPhone needs the bridge built from this version by `./bin/setup`, because typing uses its `type_keys` and `pasteboard` operations.
+- Each action in `do` is reported as `sent`, `not_sent` or `unknown`. Nothing after a failed action is sent, and an `unknown` action is never sent again. Element numbers belong to the device they were read from; switching devices or citing an element number absent from the latest read refuses the action before anything is sent.
+- `look` and `do` work on a physical iPhone through the native bridge, on a booted simulator, and on a phone running WebDriverAgent. A physical iPhone needs the bridge built from this version by `./bin/setup`, because typing uses its `type_keys` and `pasteboard` operations.
 - On a physical iPhone, typing uses hardware key presses (the bridge's `type_keys`). Only text the keyboard cannot type is pasted, and then the user's clipboard is saved first and put back afterwards; a clipboard that cannot be read back exactly is never pasted over. Key presses that fail part way are reported `unknown` and are never followed by a paste, with or without `clear`.
 - On a simulator, `launch` starts the app with `simctl` the way `launch_app` does, and `type` uses the simulator's own `type_text`: key presses, and for text the keyboard cannot type a paste through the simulator's pasteboard, which keeps that text afterwards.
-- Accessibility gets `POKI_CUA_TREE_MS` (default 2500 ms) per read; after that the screenshot's OCR answers instead. When accessibility names nothing across a third of the screen's height, the screenshot's text it did not name is listed after its elements, and the read says `accessibility + ocr`. Actions and the wait after them get at most `POKI_CUA_ACTION_CAP_MS` (default 4000 ms).
+- Accessibility gets `POKI_CUA_TREE_MS` (default 2500 ms) per read; after that the screenshot's OCR answers instead. When accessibility names nothing across a third of the screen's height, the screenshot's text it did not name is listed after its elements, and the read says `accessibility + ocr`. Actions and the wait after them get at most `POKI_CUA_ACTION_CAP_MS` (default 4000 ms), excluding time spent waiting on a human approval dialog or `wait_until`.
 - A locked or dark phone, or Poki's own app in front, stops the actions.
-- `POKI_CUA_BACKEND=wda` with `POKI_WDA_URL=http://<phone>:8100` reads and acts through a
-  WebDriverAgent runner deliberately launched for network access by the Mac instead of the bridge.
-  That WDA must use a reachable, non-loopback `USE_IP`; Poki's standalone iOS launcher always binds
-  its own runner to `127.0.0.1`. `look` and `do` answer the same way on either backend.
-
-The complete catalog (`POKI_MCP_TOOLS=all`) includes `look` and `do` too.
+- `POKI_CUA_BACKEND=wda` with `POKI_WDA_URL=http://<phone>:8100` reads and acts through a WebDriverAgent runner deliberately launched for network access by the Mac instead of the bridge. That WDA must use a reachable, non-loopback `USE_IP`; Poki's standalone iOS launcher always binds its own runner to `127.0.0.1`. `look` and `do` answer the same way on either backend.
 
 ### One daemon, several clients
 
@@ -83,18 +96,19 @@ The complete catalog (`POKI_MCP_TOOLS=all`) includes `look` and `do` too.
 Ask your agent for the task you want done:
 
 ```text
-Start an iPhone simulator, open Settings, and tell me the iOS version.
+Open Settings on the iPhone simulator and tell me the iOS version.
 ```
 
-Three tools handle most interactions:
+In the default profile, `look` and `do` handle phone tasks:
 
-- `batch_commands` runs a known multi-step task in a single call and returns the visible on-screen text at the end, saving a screenshot round trip.
-- `fill` focuses an input field, replaces its text, and verifies the new value.
-- `tap_text` looks for five seconds. If the target is not found, it aborts without tapping and returns what is currently on screen. A screen accessibility cannot read gets a few more seconds for screen text recognition to answer, because that read has already started; nothing new begins after the five seconds.
+- `look` captures the current screen and numbers visible elements.
+- `do` runs an ordered `actions` list (`launch`, `tap`, `tap_text`, `type`, `swipe`, `scroll_to`, `back`, `wait_until`, `open_url`, `handoff`, and more) and returns the updated screen in one round trip.
 
-Installing apps, opening URLs, and reading the clipboard trigger a macOS approval dialog on your Mac. See [Approval & Clipboard Behavior](#approval--clipboard-behavior).
+When `--dev-tools` or `POKI_MCP_DEV_TOOLS=1` is enabled, standalone tools such as `batch_commands`, `fill`, `tap_text`, and `run_code` are also available directly.
 
-## Optional action verification
+Sensitive actions in `do` (payments, deletions, calling, sending messages, guarded apps, password entry, `open_url`, and `handoff`), as well as developer operations such as installing apps and reading the clipboard, trigger a macOS approval dialog on your Mac. See [Approval & Clipboard Behavior](#approval--clipboard-behavior).
+
+## Optional action verification (`--dev-tools`)
 
 `tap`, `tap_text`, `swipe`, `scroll`, and `go_back` accept `verify: false`. These calls omit the reads that compare the screen before and after an action. Their results include `verified: false` and do not confirm that the app accepted the input. Omitting `verify`, or setting it to `true`, keeps the default verification.
 
@@ -108,16 +122,20 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 
 ## All MCP tools
 
+The 6 default tools are marked **(default)**. The remaining 57 tools require `--dev-tools` or `POKI_MCP_DEV_TOOLS=1` (25 standalone tools merged into `look`/`do`, plus 32 developer tools).
+
 | Group | Tool | What it does |
 | --- | --- | --- |
-| Devices | `list_devices` | Find attached iOS devices and booted or previously used simulators. |
+| Default agent | `look` | **(default)** Read the screen and return numbered elements, new/gone diffs, and a screenshot. |
+| Default agent | `do` | **(default)** Run an ordered list of actions (`tap`, `double_tap`, `tap_text`, `type`, `key`, `swipe`, `scroll_to`, `long_press`, `drag`, `pinch`, `button`, `back`, `launch`, `open_url`, `wait`, `wait_until`, `handoff`), read the screen once, and optionally return to the starting app (`finish: true`). |
+| Devices | `list_devices` | **(default)** Find attached iOS devices and booted or previously used simulators. |
 | Devices | `start_simulator` | Boot an existing simulator by id or name, or create one from an available model. |
 | Devices | `shut_down_simulator` | Shut down the selected simulator. |
 | Devices | `reconnect_device` | Attempt a replacement RemotePairing tunnel while preserving a working tunnel if replacement fails. Does not replay input. |
 | Devices | `disconnect_device` | Close the selected RemotePairing helper and tunnel. |
-| Devices | `select_device` | Select one connected device by id or unambiguous name for this MCP session. |
+| Devices | `select_device` | **(default)** Select one connected device by id or unambiguous name for this MCP session. |
 | Devices | `get_device_info` | Read device identity, capture dimensions in logical points, and optionally platform settings. |
-| Devices | `poki_mcp_status` | Report tool counts, connected-device count, selected device, and approval mode. |
+| Devices | `poki_mcp_status` | **(default)** Report tool counts, connected-device count, selected device, and approval mode. |
 | Coordination | `acquire_device` | Exclusively occupy one device across tool calls in this MCP session. |
 | Coordination | `renew_device` | Extend this session’s active device lease by 1–600 seconds (default 120). |
 | Coordination | `release_device` | Release this session’s device lease after cancelling accepted work and awaiting recording/location cleanup. |
@@ -158,7 +176,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | System | `clear_location` | Stop the location simulation owned by this service for the selected device. |
 | System | `handle_alert` | Choose a visible alert button by text or accept/dismiss action, looking for five seconds; recognition already running on an unreadable screen may finish after that. |
 | System | `request_human_action` | Show a macOS dialog asking the user to complete a step on the device. |
-| Apps | `list_apps` | List installed applications, excluding system apps unless include_system=true. |
+| Apps | `list_apps` | **(default)** List installed applications, excluding system apps unless include_system=true. |
 | Apps | `launch_app` | Launch an application by bundle_id or unambiguous name. |
 | Apps | `terminate_app` | Stop an application identified by bundle_id on the selected device. |
 | Apps | `install_app` | Install an application from a local path. |
@@ -172,7 +190,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Batches | `batch_commands` | Do a whole known task in one call: launch the app, tap, fill, scroll, go back and answer alerts, each {tool, arguments}. |
 | Batches | `run_code` | Run an async JavaScript function on an isolated worker, calling device tools with `await tools.<name>(args)`, so the code loops, filters and decides each next step from the results in one call instead of a model round trip per step. |
 
-`run_code` is in the complete catalog, not the default `tools/list`, so it is reached by name or after `POKI_MCP_TOOLS=all`. The sandbox exposes only `tools`, `input` and `console`: no require, file system, network, process or timers. A tool error throws and the code can catch it; an action receipt with `sent=false` or an unknown outcome stops the script and returns the steps already run, as `batch_commands` does; cancellation and timeout also stop it and cancel the device call in progress. The result lists every tool call with its name, elapsed time and receipt. Default limits are 120 seconds and 60 tool calls, set with `timeout_seconds` and `max_tool_calls`. Use it for predictable multi-step work such as scrolling until something appears and then reading it; use a single tool for a one-step action, and return to the model when the next step needs visual judgement.
+`run_code` is in the developer catalog (`--dev-tools` or `POKI_MCP_DEV_TOOLS=1`, or `POKI_MCP_TOOLS=all`), not the default `tools/list`. The sandbox exposes only `tools`, `input` and `console`: no require, file system, network, process or timers. A tool error throws and the code can catch it; an action receipt with `sent=false` or an unknown outcome stops the script and returns the steps already run, as `batch_commands` does; cancellation and timeout also stop it and cancel the device call in progress. The result lists every tool call with its name, elapsed time and receipt. Default limits are 120 seconds and 60 tool calls, set with `timeout_seconds` and `max_tool_calls`. Use it for predictable multi-step work such as scrolling until something appears and then reading it; use a single tool for a one-step action, and return to the model when the next step needs visual judgement.
 
 ## Agent skills
 
@@ -232,8 +250,8 @@ Tool responses include `_meta.timing.stages` with queue, capture, AX, OCR, input
 
 ## Approval & Clipboard Behavior
 
-- **Local approval dialog**: Installing or uninstalling apps, building and running projects, opening URLs, downloading app containers, and reading or writing the clipboard trigger a local macOS approval dialog by default.
-- Setting `POKI_MCP_APPROVAL_MODE=allow` bypasses this local daemon prompt for preapproved workflows, but it **never** auto-completes iOS/macOS system authorization dialogs or makes `request_human_action` succeed automatically.
+- **Local approval dialog**: In `do`, sensitive steps (payments, deletions, calling, sending messages, guarded apps such as Wallet or App Store, password entry, `open_url`, and `handoff`) trigger a local macOS approval dialog by default. In `--dev-tools` mode, installing or uninstalling apps, building and running projects, opening URLs, downloading app containers, and reading or writing the clipboard also trigger this dialog.
+- Setting `POKI_MCP_APPROVAL_MODE=allow` bypasses this local daemon prompt for preapproved workflows, except for `handoff` and `request_human_action` (which always require the person's confirmation), and it **never** auto-completes iOS/macOS system authorization dialogs.
 - **Unicode paste & clipboard restoration**:
   - Unicode text entry may use the device clipboard. On physical devices, Poki MCP attempts to save and restore a complete clipboard snapshot; if full restoration is not possible, the response explicitly reports restoration as unavailable.
   - The snapshot is held only in memory for the duration of that single operation and cannot be restored by a subsequent tool call after a human handoff.
