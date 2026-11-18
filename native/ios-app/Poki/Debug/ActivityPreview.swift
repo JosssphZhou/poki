@@ -208,10 +208,27 @@ struct ActivityPreview: View {
         var voiceApproval = approval
         voiceApproval.voice = .listening
 
-        let all = [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
+        let base = [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
                    ("plan", plan), ("plannext", planNext), ("plandone", planDone),
                    ("ready", ready), ("waking", waking), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup), ("voice", voice),
                    ("voiceworking", voiceWorking), ("voiceapproval", voiceApproval)]
+        #if DEBUG
+        // `-pokiActivityDemo approvalprotected` and the like: one sample per approval question, to see each
+        // on a real Dynamic Island. Debug builds only; their names are not in the preview's list titles.
+        func approvalAsking(_ reason: String) -> PokiState {
+            var state = approval
+            state.approval = PendingApproval(id: "a", app: messages, summary: "", reason: reason, expires: now.addingTimeInterval(25))
+            return state
+        }
+        let all = Array(base[..<4]) + [
+            ("approvalprotected", approvalAsking("input in Wallet")),
+            ("approvalpassword", approvalAsking("typing into a password field")),
+            ("approvalpayment", approvalAsking("a payment (\"pay\")")),
+            ("approvaldeleting", approvalAsking("deleting a note (\"delete\")")),
+        ] + Array(base[4...])
+        #else
+        let all = base
+        #endif
         // `-pokiActivityCaller "Claude Code"`: every sample as an outside agent's, to see where its badge goes.
         guard let caller = UserDefaults.standard.string(forKey: "pokiActivityCaller") else { return all }
         return all.map { name, state in var state = state; state.caller = caller; return (name, state) }
@@ -310,7 +327,7 @@ private struct IslandExpandedFrame: View {
             .frame(height: ActivityMetrics.systemCameraRow, alignment: .top)
             IslandBottom(face: face).dynamicTypeSize(...ActivityMetrics.largestType)
         }
-        .frame(width: 374)
+        .frame(width: ActivityMetrics.islandWidth)
         .clipShape(RoundedRectangle(cornerRadius: ActivityMetrics.islandClipCorner).inset(by: ActivityMetrics.islandClip))
         .background(.black, in: shape)
         .clipShape(shape)
@@ -400,6 +417,14 @@ enum DemoActivity {
             Task { @MainActor in await DemoActivity.alert() }
         }, "nz.zheha.poki.demo-alert" as CFString, nil, .deliverImmediately)
         current = (activity, state)
+        #if DEBUG
+        // `-pokiActivityAlertAfter 6`: send the alert by itself that many seconds later, which a phone
+        // cannot be told to do from outside (the simulator takes `notifyutil`). Debug builds only.
+        if let after = UserDefaults.standard.object(forKey: "pokiActivityAlertAfter") as? Double ?? Double(UserDefaults.standard.string(forKey: "pokiActivityAlertAfter") ?? "") {
+            try? await Task.sleep(for: .seconds(after))
+            await alert()
+        }
+        #endif
         try? await Task.sleep(for: .seconds(28))
     }
 

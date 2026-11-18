@@ -2,7 +2,9 @@
 // transition are taken from leepokai/Codync (commit 848070d, apps/ios/Kit/Sources/CodyncKit/Design/
 // Motion.swift and ActivityCards.swift), Copyright 2026 Po Kai Lee, Apache License 2.0. See
 // THIRD_PARTY_NOTICES.md.
+import CoreText
 import SwiftUI
+import UIKit
 
 /// Poki's brand colours, used by the app's screens.
 enum Brand {
@@ -159,21 +161,38 @@ struct ActivityTheme {
         let lang = AppLocalization.language
         return lang.hasPrefix("en")
     }
-    private static func font(_ name: String, _ weight: Font.Weight, _ size: CGFloat) -> Font {
-        usesGeist ? .custom(name, size: size) : .system(size: size, weight: weight)
+    /// Whether Geist can draw every character of `text`. The interface language alone does not say:
+    /// a step the agent words in Chinese, or an app named in Chinese, reaches an English interface,
+    /// and a line Geist cannot draw whole is laid out in Geist's metrics and drawn in a fallback
+    /// font's, so its end is cut off.
+    static func geistDraws(_ text: String) -> Bool {
+        guard let geist = UIFont(name: "Geist-Medium", size: 13) else { return false }
+        let font = geist as CTFont
+        for scalar in text.unicodeScalars {
+            guard scalar.value < 0x10000 else { return false }
+            var character = UniChar(scalar.value)
+            var glyph = CGGlyph(0)
+            if !CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) { return false }
+        }
+        return true
+    }
+    /// Geist where the interface is English and Geist can draw `text`; the system font otherwise.
+    private static func font(_ name: String, _ weight: Font.Weight, _ size: CGFloat, for text: String = "") -> Font {
+        usesGeist && geistDraws(text) ? .custom(name, size: size) : .system(size: size, weight: weight)
     }
     /// Which step this is, over the title ("Step 2 of 5"), and the app beside it.
-    var kicker: Font { Self.font("Geist-SemiBold", .semibold, 13) }
-    var place: Font { Self.font("Geist-Medium", .medium, 13) }
+    func kicker(for text: String) -> Font { Self.font("Geist-SemiBold", .semibold, 13, for: text) }
+    var place: Font { place(for: "") }
+    func place(for text: String) -> Font { Self.font("Geist-Medium", .medium, 13, for: text) }
     /// A question or a thing to do: 20 points, bold.
-    var title: Font { Self.font("Geist-Bold", .bold, 20) }
+    func title(for text: String) -> Font { Self.font("Geist-Bold", .bold, 20, for: text) }
     /// What the step under way does, and a finished run's title: 19 points, semibold.
-    var step: Font { Self.font("Geist-SemiBold", .semibold, 19) }
+    func step(for text: String) -> Font { Self.font("Geist-SemiBold", .semibold, 19, for: text) }
     /// What Poki is up to on a short Lock Screen card ("Poki's asleep", "Poki's done"): the card's main
     /// line, large enough to read at a glance on the Lock Screen (ESP-467).
-    var status: Font { Self.font("Geist-Bold", .bold, 24) }
-    var titleTracking: CGFloat { Self.usesGeist ? -0.2 : 0 }
-    var subtitle: Font { Self.font("Geist-Medium", .medium, 13) }
+    func status(for text: String) -> Font { Self.font("Geist-Bold", .bold, 24, for: text) }
+    func titleTracking(for text: String) -> CGFloat { Self.usesGeist && Self.geistDraws(text) ? -0.2 : 0 }
+    func subtitle(for text: String) -> Font { Self.font("Geist-Medium", .medium, 13, for: text) }
     var button: Font { Self.font("Geist-SemiBold", .semibold, 15) }
     /// The compact island's top line (what the task is doing), or its count when nothing is said.
     var compact: Font { Self.font("Geist-SemiBold", .semibold, 13) }

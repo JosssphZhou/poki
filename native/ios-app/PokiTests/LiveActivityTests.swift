@@ -1,5 +1,6 @@
 import ActivityKit
 import Darwin
+import SwiftUI
 import UIKit
 import UserNotifications
 import XCTest
@@ -219,6 +220,50 @@ final class LiveActivityTests: XCTestCase {
         var state = PokiState(phase: .approval, headline: "Allow this step?", thumbnailVersion: 0)
         state.approval = PendingApproval(id: "a", app: "Messages", summary: "Tap “Send”", reason: "sending a message (\"send\")", expires: .now.addingTimeInterval(60))
         XCTAssertTrue(state.face.compact.says("Allow?"))
+    }
+
+    /// On the expanded island the approval's one question has a column of its own (the island's 374 points
+    /// less the bear's side and 24), and the title shrinks to 0.8 at most. A question that does not fit it
+    /// at that size is cut off ("Allow a step in a protected a..."). Every question, in every language, fits.
+    func testEveryApprovalQuestionFitsTheIslandsTitleInEveryLanguage() throws {
+        let reasons = [
+            "a payment (\"pay\")", "deleting a note (\"delete\")", "sending a message (\"send\")", "a call (\"call\")",
+            "typing into a password field", "input in Wallet", "multiple sensitive actions: action 1: input in Wallet", "something else",
+        ]
+        let geist = try XCTUnwrap(UIFont(name: "Geist-Bold", size: 20))
+        for language in ["en", "zh-Hans", "zh-Hant"] {
+            AppLocalization.shared.preference = language
+            let english = language == "en"
+            let attributes: [NSAttributedString.Key: Any] = [.font: english ? geist : UIFont.systemFont(ofSize: 20, weight: .bold), .kern: english ? -0.2 : 0]
+            for reason in reasons {
+                var state = PokiState(phase: .approval, headline: "Allow this step?", thumbnailVersion: 0)
+                state.approval = PendingApproval(id: "a", app: "Wallet", summary: "", reason: reason, expires: .now.addingTimeInterval(60))
+                let face = state.face
+                let width = (face.content as NSString).size(withAttributes: attributes).width
+                XCTAssertLessThanOrEqual(width * 0.8, 374 - ActivityMetrics.sizes(face).islandLeft - 24,
+                                         "\(language): \(face.content) is \(width) points wide")
+            }
+        }
+    }
+
+    /// Geist has no Chinese. In an English interface a step the agent words in Chinese is drawn in the
+    /// system font, as the Chinese interface draws it; in Geist's metrics with a fallback font's glyphs
+    /// its end is cut off. Compared by drawing the expanded island's title both ways: the Chinese line
+    /// looks the same in either interface, and English words still differ (Geist against the system font),
+    /// so the two drawings are not blank or equal by accident.
+    func testAChineseLineInAnEnglishInterfaceIsDrawnInTheSystemFont() throws {
+        func island(_ title: String, in language: String) throws -> Data {
+            AppLocalization.shared.preference = language
+            var state = PokiState(phase: .done, headline: "Finished", thumbnailVersion: 0)
+            state.plan = .init(steps: ["Step"], current: 1, title: title)
+            let renderer = ImageRenderer(content: IslandBottom(face: state.face).frame(width: 374).background(.black))
+            renderer.scale = 2
+            return try XCTUnwrap(renderer.uiImage?.pngData())
+        }
+        let chinese = "打开微信里的设置页面"
+        XCTAssertEqual(try island(chinese, in: "zh-Hans"), try island(chinese, in: "zh-Hans"), "The drawing is the same every time")
+        XCTAssertEqual(try island(chinese, in: "en"), try island(chinese, in: "zh-Hans"), "A Chinese line is in the system font in either interface")
+        XCTAssertNotEqual(try island("Open Messages", in: "en"), try island("Open Messages", in: "zh-Hans"), "English words keep Geist in an English interface")
     }
 
     private static var runningSession: RunningSession?

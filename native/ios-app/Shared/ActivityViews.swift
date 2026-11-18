@@ -37,6 +37,15 @@ enum ActivityMetrics {
     /// iPhone, island 374 wide); not yet on a phone. So the bear stands on that line and not on the
     /// edge, and a control near a corner keeps clear of the corner's curve.
     static let islandClip: CGFloat = 12.33
+    /// The expanded island's width on a 402-point iPhone, and the room the words keep to its right edge.
+    /// The title's column is what is left of the width after the bear's side (`Sizes.islandLeft`).
+    static let islandWidth: CGFloat = 374
+    static let islandWordsTrailing: CGFloat = 24
+    /// A title shrinks to this much of its size before its end is cut off.
+    static let titleMinimumScale: CGFloat = 0.8
+    static func islandTitleWidth(_ face: ActivityFace) -> CGFloat {
+        islandWidth - sizes(face).islandLeft - islandWordsTrailing
+    }
     static let islandClipCorner: CGFloat = 36
     static let compactHeight: CGFloat = 36.67
     /// What the system cuts off the compact island's and the minimal circle's edge: the bear stays
@@ -344,7 +353,7 @@ struct IslandBottom: View {
                 Spacer(minLength: 0)
                 Control(face: face, surface: .island)
             }
-            .padding(.trailing, 24)
+            .padding(.trailing, ActivityMetrics.islandWordsTrailing)
             .padding(.bottom, bottom)
         }
     }
@@ -567,7 +576,7 @@ private struct Kicker: View {
     var body: some View {
         HStack(spacing: 7) {
             if let kicker = face.kicker {
-                Text(kicker).font(theme.kicker).foregroundStyle(palette.accent)
+                Text(kicker).font(theme.kicker(for: kicker)).foregroundStyle(palette.accent)
                     .contentTransition(.numericText())
                     .layoutPriority(1)
             }
@@ -602,9 +611,10 @@ private struct Title: View {
             // 24 bold for Poki's state on a short Lock Screen card.
             let stepLike = face.size == .working || face.size == .low
             Text(face.content)
-                .font(large ? theme.status : stepLike ? theme.step : theme.title).tracking(theme.titleTracking)
+                .font(large ? theme.status(for: face.content) : stepLike ? theme.step(for: face.content) : theme.title(for: face.content))
+                .tracking(theme.titleTracking(for: face.content))
                 .foregroundStyle(palette.text.opacity(face.stale ? 0.72 : 1))
-                .lineLimit(1).minimumScaleFactor(large ? 0.65 : 0.8)
+                .lineLimit(1).minimumScaleFactor(large ? 0.65 : ActivityMetrics.titleMinimumScale)
                 .contentTransition(.interpolate)
                 .frame(height: large ? 30 : stepLike ? 24 : 25, alignment: .leading)
         }
@@ -621,7 +631,7 @@ private struct Subtitle: View {
         if let subtitle = face.subtitle {
             let lines = max(lines ?? 1, face.subtitleLines)
             Text(subtitle)
-                .font(theme.subtitle)
+                .font(theme.subtitle(for: subtitle))
                 .foregroundStyle(palette.reason)
                 .lineLimit(lines)
                 .lineSpacing(lines > 1 ? 1 : 0)
@@ -649,7 +659,7 @@ private struct MetaCluster: View {
             case .none:
                 EmptyView()
             case .text(let text):
-                Text(text).font(theme.place).foregroundStyle(palette.quiet)
+                Text(text).font(theme.place(for: text)).foregroundStyle(palette.quiet)
                     .lineLimit(1).minimumScaleFactor(0.8)
             case .countdown(let until):
                 TimerText(range: Countdown.range(until), down: true, colour: palette.approval, width: timer)

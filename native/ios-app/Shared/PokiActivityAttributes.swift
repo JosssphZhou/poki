@@ -142,7 +142,7 @@ struct PendingApproval: Codable, Hashable {
         if reason.hasPrefix("sending") { return String(activity: "Allow sending a message?") }
         if reason.hasPrefix("a call") { return String(activity: "Allow a call?") }
         if reason.hasPrefix("typing into a password") { return String(activity: "Allow typing a password?") }
-        if reason.hasPrefix("input in") { return String(activity: "Allow a step in a protected app?") }
+        if reason.hasPrefix("input in") { return String(activity: "Allow a protected step?") }
         return String(activity: "Allow this step?")
     }
 }
