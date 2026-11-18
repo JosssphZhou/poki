@@ -548,7 +548,8 @@ struct HomePage<Footer: View>: View {
             // In a scrollable layout, reserve the actual space so large text stays reachable.
             .padding(.top, scrolls && !writing ? inset : 24)
             .offset(y: scrolls || writing ? 0 : inset - 24)
-            .animation(reduceMotion ? nil : HomeMotion.lift, value: writing)
+            // With Reduce Motion the greeting settles on a short ease, with no bounce.
+            .animation(reduceMotion ? .easeOut(duration: 0.2) : HomeMotion.lift, value: writing)
             .opacity(home ? 1 : 0)
             .offset(y: home || reduceMotion ? 0 : -rise)
             .animation(HomeMotion.flight(reduceMotion), value: home)

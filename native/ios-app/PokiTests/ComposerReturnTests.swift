@@ -103,6 +103,27 @@ final class ComposerReturnTests: XCTestCase {
         XCTAssertEqual(draft.sent, [])
     }
 
+    func testTheComposerDismissLineTracksFocus() throws {
+        guard #available(iOS 26.0, *) else { return }
+        let (field, draft) = try composer(focused: false, bottomBar: true)
+        let root = try XCTUnwrap(window?.rootViewController?.view)
+        let guide = root.keyboardLayoutGuide
+        XCTAssertEqual(field.keyboardDismissMode, .none)
+        XCTAssertEqual(guide.keyboardDismissPadding, 0, accuracy: 0.5)
+
+        draft.focused = true
+        settle { field.isFirstResponder }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(field.keyboardDismissMode, .interactive)
+        XCTAssertGreaterThan(guide.keyboardDismissPadding, 40)
+
+        draft.focused = false
+        settle { !field.isFirstResponder }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(field.keyboardDismissMode, .none)
+        XCTAssertEqual(guide.keyboardDismissPadding, 0, accuracy: 0.5)
+    }
+
     private func pressReturn(_ field: CapsuleTextView) throws -> Bool {
         try XCTUnwrap(field.delegate?.textView?(field, shouldChangeTextIn: field.selectedRange, replacementText: "\n"))
     }
@@ -112,20 +133,24 @@ final class ComposerReturnTests: XCTestCase {
         field.delegate?.textViewDidChange?(field)
     }
 
-    private func composer() throws -> (CapsuleTextView, Draft) {
-        let draft = Draft()
+    private func composer(focused: Bool = true, bottomBar: Bool = false) throws -> (CapsuleTextView, Draft) {
+        let draft = Draft(focused: focused)
         self.draft = draft
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 393, height: 200)
-        window.rootViewController = UIHostingController(rootView: Host(draft: draft).environment(app))
+        window.frame = bottomBar ? scene.screen.bounds : CGRect(x: 0, y: 0, width: 393, height: 200)
+        window.rootViewController = UIHostingController(rootView: Host(draft: draft, bottomBar: bottomBar).environment(app))
         window.makeKeyAndVisible()
         self.window = window
         settle { Self.textView(in: window) != nil }
         let field = try XCTUnwrap(Self.textView(in: window))
-        field.becomeFirstResponder()
-        settle { field.isFirstResponder }
+        if focused {
+            field.becomeFirstResponder()
+            settle { field.isFirstResponder }
+        } else {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
         return (field, draft)
     }
 
@@ -143,17 +168,30 @@ final class ComposerReturnTests: XCTestCase {
 
     private final class Draft: ObservableObject {
         @Published var text = ""
-        @Published var focused = true
+        @Published var focused: Bool
         @Published var typeSize: DynamicTypeSize = .large
         var sent: [String] = []
+
+        init(focused: Bool = true) { self.focused = focused }
     }
 
     private struct Host: View {
         @ObservedObject var draft: Draft
+        var bottomBar = false
         var body: some View {
-            ComposerInputView(input: $draft.text, focused: $draft.focused, running: false,
-                              send: { text, _ in draft.sent.append(text) }, stop: {}, openVoice: {})
-                .dynamicTypeSize(draft.typeSize)
+            if bottomBar {
+                Color.clear
+                    .bottomBar(softEdge: true) {
+                        ComposerInputView(input: $draft.text, focused: $draft.focused, running: false,
+                                          send: { text, _ in draft.sent.append(text) }, stop: {}, openVoice: {})
+                            .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
+                    }
+                    .dynamicTypeSize(draft.typeSize)
+            } else {
+                ComposerInputView(input: $draft.text, focused: $draft.focused, running: false,
+                                  send: { text, _ in draft.sent.append(text) }, stop: {}, openVoice: {})
+                    .dynamicTypeSize(draft.typeSize)
+            }
         }
     }
 }

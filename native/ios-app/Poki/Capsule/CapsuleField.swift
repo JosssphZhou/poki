@@ -13,8 +13,11 @@ struct CapsuleField: UIViewRepresentable {
     /// Whether the message is scrolled away from its first line, for a swipe down on the field: that
     /// swipe scrolls the message back, it does not put the keyboard away.
     var scroll: CapsuleScroll? = nil
+    /// How far the field top sits below the top edge of the composer sheet.
+    var above: CGFloat = 0
     /// An upright swipe on the field itself, true for up. The text view's own drag wins over a SwiftUI
-    /// gesture around it while it has the keyboard, so the field reads the swipe itself as well.
+    /// gesture around it while it has the keyboard, so the field reads the swipe itself as well. From
+    /// iOS 26 a drag down takes the keyboard with the finger and this is not called for it.
     var onSwipe: ((Bool) -> Void)? = nil
     /// Return: the keyboard's Send key, as on the current field.
     var onSubmit: () -> Void
@@ -40,8 +43,20 @@ struct CapsuleField: UIViewRepresentable {
         swipe.delegate = context.coordinator
         swipe.cancelsTouchesInView = false
         view.addGestureRecognizer(swipe)
+        // From iOS 26 a drag down on the field takes the keyboard down under the finger: the system's
+        // interactive dismissal, which the bar the field sits in follows from that version on. Before
+        // it the bar stayed where it was until the keyboard had gone (FB13296535), so there the swipe
+        // puts the keyboard away as the finger lifts. A message that fits is nothing to scroll, and the
+        // text view would not take the drag: it is told to.
+        if #available(iOS 26.0, *) {
+            view.keyboardDismissMode = context.coordinator.mode(view)
+            view.alwaysBounceVertical = true
+        }
+        context.coordinator.watch(view)
         return view
     }
+
+    static func dismantleUIView(_ view: CapsuleTextView, coordinator: Coordinator) { coordinator.clear() }
 
     func updateUIView(_ view: CapsuleTextView, context: Context) {
         context.coordinator.parent = self
@@ -50,6 +65,7 @@ struct CapsuleField: UIViewRepresentable {
         // A write from outside (a recommendation, dictation, Send emptying the field): render it whole,
         // caret at the end.
         if view.plainText != text { view.setPlain(text) }
+        DispatchQueue.main.async { [coordinator = context.coordinator] in coordinator.rest(view) }
         if focused, !view.isFirstResponder {
             DispatchQueue.main.async { view.becomeFirstResponder() }
         } else if !focused, view.isFirstResponder {
@@ -71,6 +87,18 @@ struct CapsuleField: UIViewRepresentable {
         var parent: CapsuleField
         /// The message was scrolled away from its first line when the swipe began.
         private var startedScrolled = false
+        /// This swipe has already asked for the keyboard.
+        private var raised = false
+        /// The keyboard's top in the root view when the swipe began (iOS 26), for telling at its end
+        /// whether the keyboard went with the finger.
+        private var keyboardTop: CGFloat?
+        /// Where the finger came down, in the window. A pan is seen some points later, and its own
+        /// count of the way starts short of them.
+        private var touchDown: CGPoint?
+        /// A swipe on the field is under way: interactive dismissal stays as the swipe began until it ends.
+        private var dragging = false
+        private weak var lined: UIView?
+        private weak var field: UITextView?
 
         init(parent: CapsuleField) { self.parent = parent }
 
@@ -92,15 +120,97 @@ struct CapsuleField: UIViewRepresentable {
 
         @objc func swiped(_ pan: UIPanGestureRecognizer) {
             guard let view = pan.view as? UITextView else { return }
+            let (move, speed) = (pan.translation(in: view), pan.velocity(in: view))
+            let upright = abs(move.y) > abs(move.x) * 1.5
             switch pan.state {
-            case .began: startedScrolled = Self.scrolledDown(view)
-            case .ended:
-                let (move, speed) = (pan.translation(in: view), pan.velocity(in: view))
-                guard abs(move.y) > abs(move.x) * 1.5 else { return }
-                if move.y < -24 || speed.y < -600 { parent.onSwipe?(true) }
-                if move.y > 24 || speed.y > 600, !startedScrolled { parent.onSwipe?(false) }
+            case .began:
+                startedScrolled = Self.scrolledDown(view)
+                raised = false
+                dragging = true
+                follow(pan, on: view)
+            case .changed:
+                // Up brings the keyboard while the finger is still moving, not when it lifts.
+                if !raised, upright, move.y < -12 {
+                    raised = true
+                    parent.onSwipe?(true)
+                }
+            case .ended, .cancelled:
+                let followed = keyboardFollowed(view)
+                guard pan.state == .ended, upright else { return }
+                if !raised, move.y < -24 || speed.y < -600 { parent.onSwipe?(true) }
+                // A keyboard that went with the finger is the system's to settle, down or back up, on
+                // the finger's speed. One that stayed is put away as the finger lifts.
+                if move.y > 24 || speed.y > 600, !startedScrolled, !followed { parent.onSwipe?(false) }
             default: break
             }
+        }
+
+        /// As a swipe on the field begins (iOS 26). The system starts taking the keyboard down where a
+        /// drag meets it; `keyboardDismissPadding` on the root view's keyboard guide moves that line up
+        /// (WWDC23, Keep up with the keyboard; the root view's guide as in atlou/KeyboardAccessory, MIT),
+        /// here to where the finger came down, so the keyboard and the bar over it are under the finger
+        /// from the moment the drag is seen. A message scrolled away from its first line scrolls back
+        /// instead, and the keyboard stays. So does a keyboard this swipe brings up: one that was down
+        /// as the swipe began is not taken back down to the finger once it is up.
+        private func follow(_ pan: UIPanGestureRecognizer, on view: UITextView) {
+            keyboardTop = nil
+            guard #available(iOS 26.0, *), let root = view.window?.rootViewController?.view else { return }
+            let guide = root.keyboardLayoutGuide
+            let start = touchDown.map { root.convert($0, from: nil).y } ?? pan.location(in: root).y
+            let stays = startedScrolled || !view.isFirstResponder
+            view.keyboardDismissMode = stays ? .none : .interactive
+            if !stays {
+                guide.keyboardDismissPadding = max(0, guide.layoutFrame.minY - start)
+                lined = root
+            }
+            keyboardTop = guide.layoutFrame.minY
+        }
+
+        func mode(_ view: UITextView) -> UIScrollView.KeyboardDismissMode {
+            view.isFirstResponder ? .interactive : .none
+        }
+
+        func watch(_ view: CapsuleTextView) {
+            field = view
+            view.onLayout = { [weak self, weak view] in if let view { self?.rest(view) } }
+            NotificationCenter.default.addObserver(self, selector: #selector(keyboardShown), name: UIResponder.keyboardDidShowNotification, object: nil)
+        }
+
+        @objc private func keyboardShown() { if let field { rest(field) } }
+
+        /// Between swipes on iOS 26, keep the window keyboard dismissal line on the top edge of the
+        /// composer sheet while this field holds focus, as Messages does (WWDC23, Keep up with the
+        /// keyboard). Clear the shared window guide when focus leaves this field.
+        func rest(_ view: UITextView) {
+            guard #available(iOS 26.0, *), !dragging else { return }
+            guard view.isFirstResponder, let root = view.window?.rootViewController?.view else { return clear() }
+            let guide = root.keyboardLayoutGuide
+            let line = max(0, guide.layoutFrame.minY - view.convert(view.bounds, to: root).minY + parent.above)
+            if abs(guide.keyboardDismissPadding - line) > 0.5 { guide.keyboardDismissPadding = line }
+            lined = root
+        }
+
+        func clear() {
+            guard #available(iOS 17.0, *) else { return }
+            lined?.keyboardLayoutGuide.keyboardDismissPadding = 0
+            lined = nil
+        }
+
+        /// As the swipe ends: whether the keyboard left its place under it.
+        private func keyboardFollowed(_ view: UITextView) -> Bool {
+            dragging = false
+            DispatchQueue.main.async { [self] in
+                guard !dragging else { return }
+                if #available(iOS 26.0, *) { view.keyboardDismissMode = mode(view) }
+                rest(view)
+            }
+            guard let keyboardTop, let root = view.window?.rootViewController?.view else { return false }
+            return root.keyboardLayoutGuide.layoutFrame.minY > keyboardTop + 1
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            touchDown = touch.location(in: nil)
+            return true
         }
 
         /// Alongside the text view's own scrolling and selection.
@@ -109,6 +219,13 @@ struct CapsuleField: UIViewRepresentable {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             parent.scroll?.scrolledDown = Self.scrolledDown(scrollView)
+            // Under a finger the message does not pull past its first line, and one that fits stays on
+            // it: the drag moves the keyboard and the bar, and the words keep their place in the field.
+            guard #available(iOS 26.0, *), scrollView.isTracking else { return }
+            let top = -scrollView.adjustedContentInset.top
+            let fits = scrollView.contentSize.height <= scrollView.bounds.height + 1
+            let held = fits ? top : max(scrollView.contentOffset.y, top)
+            if abs(held - scrollView.contentOffset.y) > 0.01 { scrollView.contentOffset.y = held }
         }
 
         /// Away from the first line of a message taller than the field. A message that fits can sit a
@@ -117,8 +234,16 @@ struct CapsuleField: UIViewRepresentable {
             view.contentSize.height > view.bounds.height + 1 && view.contentOffset.y + view.adjustedContentInset.top > 1
         }
 
-        func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { parent.focused = true } }
-        func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            if !parent.focused { parent.focused = true }
+            if #available(iOS 26.0, *), !dragging { textView.keyboardDismissMode = mode(textView) }
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            if parent.focused { parent.focused = false }
+            if #available(iOS 26.0, *), !dragging { textView.keyboardDismissMode = mode(textView) }
+            clear()
+        }
     }
 }
 
@@ -161,6 +286,13 @@ final class CapsuleTextView: UITextView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("Not implemented") }
+
+    var onLayout: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?()
+    }
 
     override var keyCommands: [UIKeyCommand]? {
         let newline = UIKeyCommand(input: "\r", modifierFlags: .shift, action: #selector(insertLineBreak))

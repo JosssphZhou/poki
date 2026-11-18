@@ -134,6 +134,8 @@ struct ChatView: View {
             .allowsHitTesting(home)
             .accessibilityHidden(!home)
         }
+        .contentShape(.rect)
+        .gesture(TapGesture().onEnded { writing = false }, isEnabled: writing)
         .opacity(bare ? 0 : 1)
         // The conversation passes under the top bar's floating controls through the system's soft
         // scroll edge (`topBar`), with no line under them.
@@ -1245,8 +1247,13 @@ struct ComposerInputView: View {
     /// A file Poki can't read, said for a moment over the message field.
     @State private var problem: String?
     @State private var fieldScroll = CapsuleScroll()
-    /// A swipe down that started on a message scrolled away from its first line: it scrolls the message.
-    @State private var swipeScrolls: Bool?
+    /// As a swipe on the bar began: whether the message was scrolled away from its first line (a swipe
+    /// down then scrolls it back) and whether the field had the keyboard. A swipe that brings the keyboard
+    /// never puts it away: the bar rises with the keyboard, so in the bar's own space the end of that
+    /// swipe reads as a move down.
+    @State private var swipeStart: (scrolled: Bool, focused: Bool)?
+    @State private var fieldTop: CGFloat = 8
+    private static let sheet = "composer.sheet"
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1306,8 +1313,9 @@ struct ComposerInputView: View {
                     ComposerLayout(expansion: expanded ? 1 : 0, spacing: controlSpacing) {
                         plus
                         // An app's name in the message shows as its capsule (ESP-377); the text itself stays plain.
-                        CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll,
+                        CapsuleField(text: $input, focused: $focused, maxLines: 6, maxHeight: min(200, fieldHeight), scroll: fieldScroll, above: fieldTop,
                                      onSwipe: { up in if up { focused = true } else if focused { focused = false } }, onSubmit: submit)
+                            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.sheet)).minY }) { fieldTop = $0 }
                             .overlay(alignment: .topLeading) {
                                 if input.isEmpty {
                                     Text(dictation.on ? "Listening…" : attachments.isEmpty ? "Message Poki" : "Add a message")
@@ -1328,6 +1336,7 @@ struct ComposerInputView: View {
                 }
             }
             .padding(controlInset)
+            .coordinateSpace(.named(Self.sheet))
             .contentShape(.rect)
             .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
             .glassSurface(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), fallback: .bar)
@@ -1431,17 +1440,23 @@ struct ComposerInputView: View {
     /// page and in the chat. Only a mostly upright drag of some length counts,
     /// so a tap on plus or Send stays a tap and a sideways drag does nothing. It lives on the field
     /// alone, so the conversation above scrolls as before; a swipe down on a long message scrolled
-    /// away from its first line scrolls it back instead.
+    /// away from its first line scrolls it back instead. Up brings the keyboard while the finger is
+    /// still moving, not when it lifts. From iOS 26 a drag down that starts on the message itself
+    /// takes the keyboard and this bar down under the finger (`CapsuleField`).
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 12)
-            .onChanged { _ in if swipeScrolls == nil { swipeScrolls = fieldScroll.scrolledDown } }
+            .onChanged { drag in
+                if swipeStart == nil { swipeStart = (fieldScroll.scrolledDown, focused) }
+                let (dx, dy) = (drag.translation.width, drag.translation.height)
+                if dy < -12, abs(dy) > abs(dx) * 1.5, !focused { focused = true }
+            }
             .onEnded { drag in
-                let scrolled = swipeScrolls ?? false
-                swipeScrolls = nil
+                let start = swipeStart ?? (false, focused)
+                swipeStart = nil
                 let (dx, dy) = (drag.translation.width, drag.predictedEndTranslation.height)
                 guard abs(drag.translation.height) > abs(dx) * 1.5 else { return }
                 if dy < -36, !focused { focused = true }
-                if dy > 36, focused, !scrolled { focused = false }
+                if dy > 36, focused, start.focused, !start.scrolled { focused = false }
             }
     }
 
