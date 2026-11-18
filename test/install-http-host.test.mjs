@@ -47,23 +47,47 @@ function installer(state, args, env = {}) {
 }
 
 test('host validation matches the signer', () => {
-    for (const good of ['gateway.example.com', '203.0.113.9', '2001:db8:12::34', 'my-mac.local']) {
+    for (const good of [
+        'gateway.example.com',
+        '203.0.113.9',
+        '2001:db8:12::34',
+        '::ffff:203.0.113.9',
+        'my-mac.local',
+        'xn--bcher-kva.example',
+        'devbox',
+    ]) {
         assert.equal(isHttpHost(good), true, `accept ${good}`);
     }
-    for (const bad of ['', 'http://gateway.example.com', 'gateway.example.com:3425', 'gateway.example.com:', 'gateway.example.com:abc',
-        '192.168.1.0/24', '2001:db8:12::/48', 'gateway.example.com/v1',
-        'user@gateway.example.com', 'gateway.example.com?x=1', 'gateway.example.com#f', 'gateway.example.com/v1/v2', 'has space']) {
+    for (const bad of [
+        '', '.', 'http://gateway.example.com', 'gateway.example.com:3425', 'gateway.example.com:', 'gateway.example.com:abc',
+        'gateway.example.com:80:80', '[2001:db8:12::34]', '[2001:db8:12::34]:3425', 'fe80::1%en0', ':::',
+        '192.168.1.0/24', '2001:db8:12::/48', '999.999.999.999', '127.1', '01.2.3.4', '3405803785', '203.0.113.9.',
+        '.example.com', 'example..com', 'example.com..', '-bad.example.com', 'bad-.example.com', '*.example.com',
+        '203.0.113.9,evil.com', '${POKI_HTTP_ENDPOINT_HOST}', 'Gateway.Example.COM',
+        'gateway.example.com/v1', 'user@gateway.example.com', 'gateway.example.com?x=1', 'gateway.example.com#f',
+        'gateway.example.com/v1/v2', 'has space',
+    ]) {
         assert.equal(isHttpHost(bad), false, `reject ${bad}`);
     }
-    assert.deepEqual(normalizeHttpHosts([' 203.0.113.9 ', 'Gateway.Example.COM.']), ['203.0.113.9', 'gateway.example.com']);
+    assert.deepEqual(
+        normalizeHttpHosts([' 203.0.113.9 ', 'Gateway.Example.COM.', '2001:0DB8:0012:0:0:0:0:0034', '2001:db8:12::34', '::ffff:cb00:7109']),
+        ['203.0.113.9', 'gateway.example.com', '2001:db8:12::34', '::ffff:203.0.113.9'],
+    );
 });
 
 test('a malformed --allow-http-host is refused before the bridge starts', async t => {
     const state = await stateDir(t);
-    const result = await installer(state, ['--allow-http-host', 'http://gateway.example.com']);
+    const result = await installer(state, ['--allow-http-host', '[2001:db8:12::34]:3425']);
     assert.equal(result.code, 2, result.stderr);
     assert.match(result.stderr, /--allow-http-host takes a DNS name/);
     assert.equal(result.events.length, 0, 'no install events');
+
+    const updateBad = await installer(state, ['--update-only', '--allow-http-host', 'http://gateway.example.com']);
+    assert.equal(updateBad.code, 2, updateBad.stderr);
+    assert.equal(updateBad.events.length, 1);
+    assert.equal(updateBad.events[0].event, 'update_result');
+    assert.equal(updateBad.events[0].ok, false);
+    assert.equal(updateBad.events[0].code, 'update_options_conflict');
 });
 
 test('--update-only keeps the opt-in, because a renewal re-signs a fresh IPA', async t => {
@@ -74,15 +98,15 @@ test('--update-only keeps the opt-in, because a renewal re-signs a fresh IPA', a
     assert.deepEqual(JSON.parse(await readFile(envLog, 'utf8')), { http_host: '203.0.113.9' });
 });
 
-test('the named host reaches the signing bridge, and no opt-in leaves it unset', async t => {
-    for (const [args, expected] of [
-        [['--allow-http-host', '203.0.113.9', '--allow-http-host', 'Gateway.Example.COM.'], '203.0.113.9,gateway.example.com'],
-        [[], null],
+test('the named host reaches the signing bridge, and no opt-in clears any ambient env var', async t => {
+    for (const [args, extraEnv, expected] of [
+        [['--allow-http-host', '203.0.113.9', '--allow-http-host', 'Gateway.Example.COM.', '--allow-http-host', '2001:0DB8:0012:0:0:0:0:0034'], {}, '203.0.113.9,gateway.example.com,2001:db8:12::34'],
+        [[], { POKI_HTTP_ENDPOINT_HOST: 'stale.example.com' }, null],
     ]) {
-        await t.test(expected === null ? 'no flag' : 'two hosts', async t => {
+        await t.test(expected === null ? 'no flag clears ambient env' : 'normalized hosts', async t => {
             const state = await stateDir(t);
             const envLog = join(state, 'bridge-env.json');
-            const result = await installer(state, args, { POKI_FAKE_ENV_LOG: envLog });
+            const result = await installer(state, args, { POKI_FAKE_ENV_LOG: envLog, ...extraEnv });
             assert.equal(result.code, 0, result.stderr);
             assert.deepEqual(JSON.parse(await readFile(envLog, 'utf8')), { http_host: expected });
         });

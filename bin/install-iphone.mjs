@@ -113,17 +113,24 @@ if (opts['update-only'] && !opts.help &&
   process.exit(2);
 }
 
-// Explicit opt-in: name the one host that may serve the Custom Endpoint over plain HTTP.
-// The signing bridge inherits this and injects a single NSExceptionDomains entry into the
-// signed IPA. A malformed value is rejected here so a stray host cannot widen ATS.
+// Explicit opt-in: name the host(s) that may serve the Custom Endpoint over plain HTTP.
+// The signing bridge inherits this and injects one NSExceptionDomains entry per host into the
+// signed IPA. Ambient POKI_HTTP_ENDPOINT_HOST is cleared when the flag is absent so an inherited
+// shell variable cannot silently widen ATS.
 const httpHosts = normalizeHttpHosts(opts['allow-http-host'] ?? []);
-for (const host of httpHosts) {
-  if (!isHttpHost(host)) {
-    console.error(`--allow-http-host takes a DNS name or IP literal, without a scheme, port, path, mask or userinfo: ${host}`);
-    process.exit(2);
+if (!opts.help) {
+  for (const host of httpHosts) {
+    if (!isHttpHost(host)) {
+      if (opts['update-only']) {
+        updateResult(false, 'update_options_conflict', '--allow-http-host takes a DNS name or IP literal, without a scheme, port, brackets, zone, mask or userinfo.');
+      }
+      console.error(`--allow-http-host takes a DNS name or IP literal, without a scheme, port, path, mask or userinfo: ${host}`);
+      process.exit(2);
+    }
   }
 }
 if (httpHosts.length) process.env.POKI_HTTP_ENDPOINT_HOST = httpHosts.join(',');
+else delete process.env.POKI_HTTP_ENDPOINT_HOST;
 
 const dryRun = opts['dry-run'];
 const state = resolve(opts.state ?? join(defaultStateDir(), dryRun ? 'dry-run' : ''));

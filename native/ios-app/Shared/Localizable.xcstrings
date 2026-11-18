@@ -15879,18 +15879,18 @@
         }
       }
     },
-    "This build has no plain-HTTP exception for this host. It needs POKI_HTTP_ENDPOINT_HOST set to this host when Poki is built." : {
+    "This build has no plain-HTTP exception for this host. Install Poki with --allow-http-host set to this host, or build with POKI_HTTP_ENDPOINT_HOST." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此构建没有为该主机开放明文 HTTP。构建 Poki 时需要把 POKI_HTTP_ENDPOINT_HOST 设为该主机。"
+            "value" : "此构建没有为该主机开放明文 HTTP。安装 Poki 时请用 --allow-http-host 指定该主机，或在构建时设置 POKI_HTTP_ENDPOINT_HOST。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此建置沒有為該主機開放明文 HTTP。建置 Poki 時需要把 POKI_HTTP_ENDPOINT_HOST 設為該主機。"
+            "value" : "此建置沒有為該主機開放明文 HTTP。安裝 Poki 時請以 --allow-http-host 指定該主機，或在建置時設定 POKI_HTTP_ENDPOINT_HOST。"
           }
         }
       }

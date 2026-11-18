@@ -11,5 +11,5 @@ targets:
       properties:
         NSAppTransportSecurity:
           NSExceptionDomains:
-            ${POKI_HTTP_ENDPOINT_HOST}:
+            "${POKI_HTTP_ENDPOINT_HOST}":
               NSExceptionAllowsInsecureHTTPLoads: true

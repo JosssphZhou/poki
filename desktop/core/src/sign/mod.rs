@@ -56,26 +56,69 @@ pub fn team_app_group(team: &str) -> String { format!("{}.{}", crate::POKI_APP_G
 
 /// The hosts the owner explicitly allowed for plain-HTTP Custom Endpoints. Poki Setup sets
 /// POKI_HTTP_ENDPOINT_HOST from --allow-http-host. An entry is a DNS name or an IP literal in the
-/// form NSExceptionDomains expects: lowercase, no scheme, port, path, userinfo or trailing dot.
-/// A CIDR mask is not one host, so it is rejected rather than written as a key that never matches.
-/// Empty and malformed entries are ignored, so a stray value cannot widen ATS.
+/// form NSExceptionDomains expects: lowercase ASCII, canonical IPv6, no scheme, port, brackets,
+/// zone ID, CIDR prefix (subnet-wide on iOS 17+), path, userinfo or trailing dot. Empty and
+/// malformed entries are ignored, so a stray value cannot widen ATS or write a dead key.
 pub fn http_endpoint_hosts() -> Vec<String> {
     let Ok(raw) = std::env::var("POKI_HTTP_ENDPOINT_HOST") else { return vec![] };
-    raw.split(',')
-        .map(|s| s.trim().to_lowercase().trim_end_matches('.').to_string())
-        .filter(|s| is_exception_host(s))
-        .collect()
+    let mut hosts = Vec::new();
+    for entry in raw.split(',').filter_map(normalize_exception_host) {
+        if !hosts.contains(&entry) {
+            hosts.push(entry);
+        }
+    }
+    hosts
+}
+
+fn normalize_exception_host(raw: &str) -> Option<String> {
+    let mut value = raw.trim().to_ascii_lowercase();
+    if value.ends_with('.') && !value.ends_with("..") {
+        let without_root = &value[..value.len() - 1];
+        if is_dns_host(without_root) {
+            value.pop();
+        }
+    }
+    if !is_exception_host(&value) {
+        return None;
+    }
+    if value.contains(':') {
+        return value.parse::<std::net::Ipv6Addr>().ok().map(|ip| ip.to_string());
+    }
+    Some(value)
+}
+
+fn is_dns_host(value: &str) -> bool {
+    if value.is_empty() || value.len() > 253 {
+        return false;
+    }
+    let labels: Vec<&str> = value.split('.').collect();
+    if labels.last().is_some_and(|last| !last.is_empty() && last.bytes().all(|b| b.is_ascii_digit())) {
+        return false;
+    }
+    labels.into_iter().all(|label| {
+        let bytes = label.as_bytes();
+        !bytes.is_empty()
+            && bytes.len() <= 63
+            && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+            && (bytes[bytes.len() - 1].is_ascii_lowercase() || bytes[bytes.len() - 1].is_ascii_digit())
+            && bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+    })
 }
 
 fn is_exception_host(value: &str) -> bool {
-    if value.is_empty() || value.contains("://") || value.contains('@')
-        || value.contains('?') || value.contains('#')
-        || value.chars().any(char::is_whitespace) { return false; }
-    // No path or CIDR mask: an NSExceptionDomains key names one host and matches it literally.
-    if value.contains('/') { return false; }
-    // "host:port" is not a host. One colon can never be a host: IPv6 literals have at least two.
-    if value.matches(':').count() == 1 { return false; }
-    true
+    if value.is_empty()
+        || !value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b':' | b'-'))
+    {
+        return false;
+    }
+    if value.contains(':') {
+        return value.bytes().all(|b| (b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) || matches!(b, b':' | b'.'))
+            && value.parse::<std::net::Ipv6Addr>().is_ok();
+    }
+    if value.parse::<std::net::Ipv4Addr>().is_ok() {
+        return true;
+    }
+    is_dns_host(value)
 }
 
 /// Adds one NSExceptionDomains entry per named host to the main app's Info.plist. Every other host
@@ -332,20 +375,72 @@ mod tests {
         assert_eq!(team_bundle_id("nz.zheha.poki.ABC123.widgets", "ABC123"), "nz.zheha.poki.ABC123.widgets");
     }
 
-    /// Only a DNS name or an IP literal can be an NSExceptionDomains key.
+    /// Only a canonical DNS name or IP literal can be an NSExceptionDomains key.
     #[test]
     fn http_exception_hosts_are_validated() {
-        for good in ["gateway.example.com", "203.0.113.9", "2001:db8:12::34", "my-mac.local"] {
+        for good in [
+            "gateway.example.com",
+            "203.0.113.9",
+            "2001:db8:12::34",
+            "::ffff:203.0.113.9",
+            "my-mac.local",
+            "xn--bcher-kva.example",
+            "devbox",
+        ] {
             assert!(is_exception_host(good), "should accept {good}");
         }
-        for bad in ["", "http://gateway.example.com", "gateway.example.com:3425",
-                    "gateway.example.com:", "gateway.example.com:abc",
-                    "192.168.1.0/24", "2001:db8:12::/48",
-                    "gateway.example.com/v1", "user@gateway.example.com",
-                    "gateway.example.com?x=1", "gateway.example.com#f",
-                    "gateway.example.com/v1/v2", "has space", "gateway.example.com/abc"] {
+        for bad in [
+            "",
+            ".",
+            "http://gateway.example.com",
+            "gateway.example.com:3425",
+            "gateway.example.com:",
+            "gateway.example.com:abc",
+            "gateway.example.com:80:80",
+            "[2001:db8:12::34]",
+            "[2001:db8:12::34]:3425",
+            "fe80::1%en0",
+            ":::",
+            "192.168.1.0/24",
+            "2001:db8:12::/48",
+            "999.999.999.999",
+            "127.1",
+            "01.2.3.4",
+            "3405803785",
+            "203.0.113.9.",
+            ".example.com",
+            "example..com",
+            "example.com..",
+            "-bad.example.com",
+            "bad-.example.com",
+            "*.example.com",
+            "203.0.113.9,evil.com",
+            "${POKI_HTTP_ENDPOINT_HOST}",
+            "Gateway.Example.COM",
+            "gateway.example.com/v1",
+            "user@gateway.example.com",
+            "gateway.example.com?x=1",
+            "gateway.example.com#f",
+            "gateway.example.com/v1/v2",
+            "has space",
+            "gateway.example.com/abc",
+        ] {
             assert!(!is_exception_host(bad), "should reject {bad}");
         }
+        assert_eq!(
+            normalize_exception_host(" 2001:0DB8:0012:0:0:0:0:0034 "),
+            Some("2001:db8:12::34".into())
+        );
+        assert_eq!(
+            normalize_exception_host("::ffff:cb00:7109"),
+            Some("::ffff:203.0.113.9".into())
+        );
+        assert_eq!(
+            normalize_exception_host(" Gateway.Example.COM. "),
+            Some("gateway.example.com".into())
+        );
+        assert_eq!(normalize_exception_host("Gateway.Example.COM.."), None);
+        assert_eq!(normalize_exception_host("203.0.113.9."), None);
     }
 
     /// The injected dictionary grants insecure loads to exactly the named hosts. It keeps
