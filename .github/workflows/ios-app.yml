@@ -34,6 +34,7 @@ jobs:
       - name: Field check
         run: POKI_CHECK_OUT=out/field native/ios-app/scripts/inprocess-sim/check.sh
       - name: Field check on iPad
+        if: ${{ !cancelled() }}
         run: POKI_CHECK_IPAD=1 POKI_CHECK_OUT=out/field-ipad native/ios-app/scripts/inprocess-sim/check.sh
       # Each check runs even when one before it failed, so one run shows every failure.
       - name: Apps check
@@ -177,11 +178,11 @@ jobs:
             build/sessions-after.png
             build/*.ips
 
-  # About 100 minutes on a slow runner: two cold Release builds (about 35), PokiCore (about 15), the
-  # simulator checks (about 25) and the app unit tests.
+  # Up to 110 minutes on a slow runner: two cold Release builds (about 35), PokiCore (about 15), the
+  # simulator checks (up to 40) and the app unit tests.
   app:
     runs-on: macos-latest
-    timeout-minutes: 130
+    timeout-minutes: 160
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ inputs.ref }}" }
@@ -271,7 +272,7 @@ jobs:
       # The app on the iOS Simulator: it launches, stays up, and draws its first screen. The launcher
       # cannot reach a simulator's developer services, so this checks the shell, not automation.
       - name: Simulator smoke test
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: |
           set -euo pipefail
           xcodebuild build \
@@ -338,6 +339,8 @@ jobs:
             done
           done
           # The same screens on an iPad (regular width), where Poki sits in a window beside the app it drives.
+          # One simulator at a time: with the iPhone still up, each iPad screen took 4 minutes on the runner.
+          xcrun simctl shutdown "$UDID" || true
           PADTYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys;d=[x for x in json.load(sys.stdin)["devicetypes"] if x["name"].startswith("iPad Pro") and "11" in x["name"]];print(d[-1]["identifier"])')
           PAD=$(xcrun simctl create poki-pad "$PADTYPE" "$RUNTIME")
           xcrun simctl boot "$PAD" && xcrun simctl bootstatus "$PAD" -b
@@ -351,6 +354,8 @@ jobs:
             grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the $screen screen (iPad)"; crashed=1; }
           done
           xcrun simctl shutdown "$PAD" || true; xcrun simctl delete "$PAD" || true
+          # The iPhone again, for the app unit tests.
+          xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b > /dev/null
           ls shots
           # No crash anywhere on the way: any Poki crash report fails the build.
           if ls ~/Library/Logs/DiagnosticReports/Poki* > /dev/null 2>&1; then
@@ -362,14 +367,16 @@ jobs:
       # The app's own logic against a fake launcher: tunnel loss named to the agent, pairing
       # refusal and acceptance, the agent's view of the runner.
       - name: App unit tests (simulator)
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: |
           set -o pipefail
           xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build/sim \
-            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/tests.log | grep -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* " 
+            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/tests.log | grep -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* " || true
           # The reasons xcodebuild gives under "Testing failed:" are indented lines the filter drops.
-          grep -q "TEST SUCCEEDED" build/tests.log || { sed -n '/Testing failed:/,$p' build/tests.log | head -40; exit 1; }
+          grep -q "TEST SUCCEEDED" build/tests.log && exit 0
+          if grep -q "Testing failed:" build/tests.log; then sed -n '/Testing failed:/,$p' build/tests.log | head -40; else tail -40 build/tests.log; fi
+          exit 1
 
       - uses: actions/upload-artifact@v4
         with:

@@ -174,7 +174,16 @@ static NSDictionary *Apps(NSString *fixture) {
     NSString *text = [args stringForKey:@"text"] ?: @"ESP173 读屏";
     double delay = [args doubleForKey:@"delay"];
     dispatch_async(dispatch_queue_create("check", DISPATCH_QUEUE_SERIAL), ^{
+        // A prepare that gives up waiting (session_timeout, 10.8 s on a slow CI simulator) leaves the
+        // open running and the next one waits for it, as Poki asks again when a call finds the open
+        // still going: up to four more.
         NSDictionary *prepare = [PKInProcess.shared prepare];
+        int retries = 0;
+        while (retries < 4 && ![prepare[@"ok"] boolValue] && [prepare[@"code"] isEqual:@"session_timeout"]) {
+            retries++;
+            prepare = [PKInProcess.shared prepare];
+        }
+        if (retries) { prepare = [prepare mutableCopy]; ((NSMutableDictionary *)prepare)[@"timeouts_before"] = @(retries); }
         if (delay > 0) [NSThread sleepForTimeInterval:delay];
         NSMutableDictionary *out = [([mode isEqualToString:@"apps"] ? Apps([args stringForKey:@"fixture"] ?: @"local.pokimcp.fixture") : Run(mode, tag, text)) mutableCopy];
         out[@"prepare"] = prepare;
