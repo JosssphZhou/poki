@@ -1,6 +1,6 @@
 # Optional iMessage channel through Photon
 
-Poki can receive iMessage tasks through [Photon](https://photon.codes/docs/beta/photon) instead of BlueBubbles. Photon hosts the iMessage line, so this channel needs no Mac running Messages, no Apple Account sign-in and no macOS permissions. Install it only if you want it. The normal `./bin/setup` build, the [BlueBubbles channel](imessage-gateway.md) and Telegram do not use Photon.
+Poki can receive iMessage tasks through [Photon](https://photon.codes/docs/beta/photon) instead of BlueBubbles. Photon hosts the iMessage line, so this channel needs no Messages sign-in, no BlueBubbles Server and no macOS permissions for them. Poki Agent itself still runs on your Mac: Photon replaces only the way messages reach it. Install it only if you want it. The normal `./bin/setup` build, the [BlueBubbles channel](imessage-gateway.md) and Telegram do not use Photon.
 
 This channel uses Photon Beta (2.0): the API at `https://api.photon.codes`, the `@photon-ai/api` client and the Socket.IO event stream. Photon describes Beta as a preview and its contract can change. The worker pins the event contract dated `2026-07-01`.
 
@@ -20,7 +20,7 @@ Photon filters one-time passcodes on iMessage lines, so do not rely on this chan
 ## Requirements
 
 - Python 3.11 or newer for the setup command, which needs nothing else on the computer.
-- For the worker: Node.js 24 or later and the [Poki Agent prerequisites](../agent/README.md), including `npm ci --prefix agent` and model login. The launcher names a missing one when you start it.
+- For the worker: a working [Poki Agent](../agent/README.md) on the same computer. That means the `./bin/setup` build, which needs macOS with the full Xcode, a paired iPhone, Node.js 24 or later, `npm ci --prefix agent` and model login. Setup says so at the start when the build is missing, and the launcher names what is missing when you start it.
 - A Photon account. Setup signs you in, prepares the Photon Beta project and creates its API key, so you need no project or key beforehand.
 - A plan with shared iMessage capacity. See Photon's [plans](https://photon.codes/docs/beta/plans-and-billing).
 - One iMessage identity you send from: a phone number with country code, such as `+14155550123`, or an Apple Account email. On iPhone, **Settings → Apps → Messages → Send & Receive** shows it. A number and an email are different senders.

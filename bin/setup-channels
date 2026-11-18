@@ -44,23 +44,26 @@ PROVIDERS = '''How should Poki reach iMessage?
    Messages and keep both running. macOS only.
 
 2. Photon
-   Photon hosts the iMessage line, so you run only the Poki worker, on macOS
-   or Linux. You text a number Photon assigns to you. Task text and replies
-   pass through Photon's servers. Setup signs you in to Photon in a browser,
-   then sets up a project and an API key for Poki in your Photon account and
-   assigns your sender a line.
+   Photon hosts the iMessage line, so you run only the Poki worker, with no
+   Messages sign-in and no BlueBubbles Server. You text a number Photon
+   assigns to you. Task text and replies pass through Photon's servers.
+   Setup signs you in to Photon in a browser, then sets up a project and an
+   API key for Poki in your Photon account and assigns your sender a line.
+   The worker still needs Poki Agent installed on this computer.
 '''
 PHOTON_ASSIGNED_STEPS = '''Next (no message was sent and no worker was started):
 1. Send that iMessage from the allowed sender. A shared line can only reply
    after the sender has messaged it.
-2. Run node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
+2. Start the worker where Poki Agent is installed and the iPhone is paired:
+   node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
    See docs/photon-channel.md before starting the channel.'''
 PHOTON_NEXT_STEPS = '''Finish setup yourself (no message was sent and no worker was started):
 1. Run node bin/poki-photon.mjs --assign to map the sender to a shared Photon
    iMessage line, or assign it in the Photon dashboard under iMessage.
 2. From the allowed sender, send an iMessage to the assigned number. A shared
    line can only reply after the sender has messaged it.
-3. Run node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
+3. Start the worker where Poki Agent is installed and the iPhone is paired:
+   node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
    See docs/photon-channel.md before starting the channel.'''
 
 
@@ -308,6 +311,10 @@ def configure_photon(args):
     config_dir = Path(args.config_dir).expanduser().absolute()
     if os.path.lexists(config_dir):
         raise ValueError('The configuration destination already exists; nothing was changed. Choose an unused directory.')
+    tools = os.environ.get('IDEVICE_TOOLS') or Path(__file__).resolve().parent.parent / '.deps/idevice/target/release/idevice-tools'
+    if not (os.path.isfile(tools) and os.access(tools, os.X_OK)):
+        print('Note: the worker cannot start on this computer yet, because Poki Agent is not built here. '
+              'Run ./bin/setup first; it needs macOS with the full Xcode. Setup continues and only prepares Photon.')
     if args.answers:
         path = Path(args.answers)
         if path.stat().st_mode & 0o077:

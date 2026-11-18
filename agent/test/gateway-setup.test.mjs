@@ -245,6 +245,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.equal((await stat(configDir)).mode & 0o777, 0o700);
   for (const name of ['photon.json', 'connection.json']) assert.equal((await stat(join(configDir, name))).mode & 0o777, 0o600);
   assert.deepEqual(await connection(configDir), { projectId: api.project, apiKey: api.key });
+  assert.match(signedIn.stdout, /^Note: the worker cannot start on this computer yet, because Poki Agent is not built here\./, 'Setup says first when this computer cannot run the worker');
   assert.match(signedIn.stdout, /Using your Photon project "Poki Agent"/, 'A project on a later page of the list is found');
   assert.equal(api.created.length, 1, 'A project on a later page of the list is not created again');
   assert.match(signedIn.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent and no worker was started\):\n1\. Send that iMessage/);
@@ -256,7 +257,9 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
 
   api.assignError = { status: 403, code: 'INSUFFICIENT_SCOPE' };
   const named = join(directory, 'named');
-  const unassigned = await setup(named, false, ['--project-name', ' earlier PROJECT ']);
+  const unassigned = await cli('./bin/setup-channels', ['--channel', 'imessage', '--provider', 'photon', '--config-dir', named, '--answers', answers, '--project-name', ' earlier PROJECT '],
+    { env: { ...env, IDEVICE_TOOLS: process.execPath } });
+  assert.ok(!unassigned.stdout.includes('Note:'), 'A computer with the phone tools gets no note');
   assert.equal(unassigned.code, 0, unassigned.stderr);
   assert.match(unassigned.stdout, /Using your Photon project "Earlier project" \(Example org, pho_prj_0{25}2\)\./);
   assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: Photon rejected the assignment \(HTTP 403, INSUFFICIENT_SCOPE\)[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
