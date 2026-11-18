@@ -34,6 +34,7 @@ final class AppModel {
     /// Poki keeps its own signing: the Apple Account, the next build ready ahead of time, Install.
     let signer = SelfSigner()
     let voice: VoiceModel
+    var cueSounds = CueSounds(output: SystemCueOutput())
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
@@ -1627,7 +1628,7 @@ final class AppModel {
         }
     }
 
-    private func handle(_ event: ShellEvent) {
+    func handle(_ event: ShellEvent) {
         if case .approvalRequested(let approval) = event, let probe = onProbeApproval { probe(approval) }
         // Every outside agent's session and step goes into the Sessions list, on or off.
         SessionStore.shared.observe(event, approvals: approvals)
@@ -1966,7 +1967,9 @@ final class AppModel {
 
     /// Each request is answered by the owner on the Live Activity, or on a notification when there is none.
     private func askOwner(_ approval: PendingApproval) {
+        guard !approvals.contains(where: { $0.id == approval.id }) else { return }
         approvals.append(approval)
+        cueSounds.approvalPresented(approval.id)
         log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
         let caller = currentCaller
         activity.update { $0.phase = .approval; $0.approval = approval; $0.headline = "Allow this step?"; $0.caller = caller }

@@ -557,11 +557,11 @@ final class ChatModel {
         switch prepared.engine {
         case .direct(let client, let instructions):
             client.say(prepared.message)
-            began("direct", prepared.provider, prepared.model)
-            await run(client, instructions: instructions, delivered: prepared.you.id, token: token)
+            let cueID = began("direct", prepared.provider, prepared.model)
+            let outcome = await run(client, instructions: instructions, delivered: prepared.you.id, token: token)
             let current = runToken == token
             if !current { app.finishTask() }
-            logEnd("direct", outcome: nil, session: prepared.runSession, text: prepared.text, stopped: !current)
+            logEnd("direct", outcome: outcome, cueID: cueID, session: prepared.runSession, text: prepared.text, stopped: !current)
             if current { running = false; awaitingModel = false }
         case .pi(let piModel):
             var pair: [String] = []
@@ -589,7 +589,7 @@ final class ChatModel {
                 }
             }
             let splitSession = splitViewSession
-            began("pi", prepared.provider, prepared.model, splitViewSession: splitSession)
+            let cueID = began("pi", prepared.provider, prepared.model, splitViewSession: splitSession)
             if let splitSession, pair.count == 2 {
                 phoneStepUnderWay = true
                 let confirmed = await openSplitViewPair(pair, session: splitSession, token: token)
@@ -603,7 +603,7 @@ final class ChatModel {
                         let words = Self.splitViewSetupMessage(pair[0], pair[1])
                         let outcome = PiLoop.Outcome.failed(words)
                         ended(outcome, delivered: prepared.you.id)
-                        logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: false)
+                        logEnd("pi", outcome: outcome, cueID: cueID, session: prepared.runSession, text: prepared.text, stopped: false)
                         running = false
                         awaitingModel = false
                         lastOutcome = outcome
@@ -628,7 +628,7 @@ final class ChatModel {
             }
             let current = runToken == token
             if current { ended(outcome, delivered: prepared.you.id) } else if splitSession == nil { app.finishTask() }
-            logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: !current)
+            logEnd("pi", outcome: outcome, cueID: cueID, session: prepared.runSession, text: prepared.text, stopped: !current)
             guard current else { return }
             running = false
             awaitingModel = false
@@ -761,19 +761,29 @@ final class ChatModel {
     /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
 
-    private func began(_ engine: String, _ provider: ModelProvider, _ model: String, splitViewSession: String? = nil) {
+    private func began(_ engine: String, _ provider: ModelProvider, _ model: String, splitViewSession: String? = nil) -> UUID {
         taskStart = Date(); toolCalls = 0; taskResult = nil
         taskCalls.removeAll()
+        let cueID = UUID()
+        app.cueSounds.taskStarted(cueID)
         app.prepareForTask()
         app.chatTaskBegan(splitViewSession: splitViewSession)
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
+        return cueID
     }
 
-    private func logEnd(_ engine: String, outcome: PiLoop.Outcome?, session: String, text: String, stopped: Bool) {
+    private func logEnd(_ engine: String, outcome: PiLoop.Outcome, cueID: UUID, session: String, text: String, stopped: Bool) {
         let stopAsked = stopped || self.stopAsked
+        if !stopAsked {
+            switch outcome {
+            case .done: app.cueSounds.taskEnded(cueID, succeeded: taskResult?.success ?? true)
+            case .failed, .overTurns, .stuck: app.cueSounds.taskEnded(cueID, succeeded: false)
+            case .stopped: break
+            }
+        }
         let seconds = String(format: "%.1f", Date().timeIntervalSince(taskStart))
         let verdict = taskResult.map { $0.success ? "success" : "failure" } ?? "not called"
-        let ending = outcome.map { if case .failed = $0 { "failed" } else { "\($0)" } } ?? (stopAsked ? "stopped" : "ended")
+        let ending = if case .failed = outcome { "failed" } else { "\(outcome)" }
         AppLog.shared.add("chat", "task ended: \(engine), \(ending) after \(seconds) s, \(toolCalls) tool calls, finish_task \(verdict)")
         let record = TaskRecord(session: session, task: text, calls: taskCalls, result: taskResult,
                                 seconds: Date().timeIntervalSince(taskStart))
@@ -901,7 +911,7 @@ final class ChatModel {
     /// A look or do of this chat is on its way to the phone.
     private var phoneStepUnderWay = false
 
-    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID, token: Int) async {
+    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID, token: Int) async -> PiLoop.Outcome {
         // Stop has moved the token on (and said Stopped): this task writes nothing more.
         var stopped: Bool { runToken != token || Task.isCancelled }
         for _ in 0..<Self.maxTurns {
@@ -910,11 +920,11 @@ final class ChatModel {
                 turn = try await client.next(instructions: instructions, tools: Harness.tools)
             } catch {
                 client.forgetUnansweredQuestion()
-                if stopped { return }
+                if stopped { return .stopped }
                 add(.note(.problem(error.localizedDescription)))
-                return
+                return .failed(error.localizedDescription)
             }
-            if stopped { client.forgetUnansweredQuestion(); return }
+            if stopped { client.forgetUnansweredQuestion(); return .stopped }
             markDelivered(youID)
             for text in turn.texts { add(.poki(text)) }
             switch turn.ending {
@@ -926,25 +936,28 @@ final class ChatModel {
                     }
                     client.answer(call, await perform(call))
                 }
-                if stopped { return }
+                if stopped { return .stopped }
             case .again:
                 continue
             case .refused:
                 finishPlan()
-                add(.poki(AppLocalization.text(LocalizedStringResource("The model declined this request."))))
-                return
+                let words = AppLocalization.text(LocalizedStringResource("The model declined this request."))
+                add(.poki(words))
+                return .failed(words)
             case .cutOff:
                 finishPlan()
-                add(.note(.problem(AppLocalization.text(LocalizedStringResource("The answer was cut off.")))))
-                return
+                let words = AppLocalization.text(LocalizedStringResource("The answer was cut off."))
+                add(.note(.problem(words)))
+                return .failed(words)
             case .done:
                 // A reply without tools ends the turn, as a chat does: the model may be asking the owner something.
                 finishPlan()
-                return
+                return .done
             }
         }
         finishPlan()
         add(.poki(AppLocalization.text(LocalizedStringResource("I stopped after \(Self.maxTurns) steps. Tell me how to go on."))))
+        return .overTurns
     }
 
     /// The phone's tools go to PokiCore; the harness's two are answered here, as task-runner.mjs answers them.

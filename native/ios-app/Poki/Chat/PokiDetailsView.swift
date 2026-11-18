@@ -115,6 +115,10 @@ struct PokiDetailsView: View {
                         SettingsRow(title: "Notifications", symbol: "bell.badge", accessory: .leaves)
                     }
                     .accessibilityIdentifier("moreSettings.notifications")
+                    Toggle(isOn: $cueSoundsEnabled) {
+                        SettingsRow(title: "Sound Effects", symbol: "speaker.wave.2")
+                    }
+                    .accessibilityIdentifier("moreSettings.soundEffects")
                     NavigationLink(value: DetailsRoute.appearance) {
                         SettingsRow(title: "Appearance", symbol: "circle.lefthalf.filled", value: AppLocalization.text(appearance.title))
                     }
@@ -240,6 +244,7 @@ struct PokiDetailsView: View {
     /// The version is the page's last line, so the row only speaks up when an update waits.
     private var updatesValue: String? { updateWaits ? AppLocalization.text(LocalizedStringResource("Update Available")) : nil }
 
+    @AppStorage(CueSounds.enabledKey) private var cueSoundsEnabled = true
     @AppStorage(Appearance.key) private var appearanceChoice = Appearance.automatic.rawValue
     private var appearance: Appearance { Appearance(rawValue: appearanceChoice) ?? .automatic }
 }

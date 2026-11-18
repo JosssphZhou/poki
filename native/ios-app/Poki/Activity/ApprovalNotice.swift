@@ -46,7 +46,6 @@ enum ApprovalNotice {
         content.title = approval.question
         content.categoryIdentifier = approval.offersStopAsking ? optionalCategory : category
         content.userInfo = ["approval": approval.id]
-        content.sound = .default
         content.interruptionLevel = .timeSensitive
         content.threadIdentifier = "approvals"
         let request = UNNotificationRequest(identifier: "approval-\(approval.id)", content: content, trigger: nil)

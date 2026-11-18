@@ -36,6 +36,10 @@ targets:
     platform: iOS
     sources:
       - path: Poki
+        excludes:
+          - Resources/CueSounds/README.md
+          - Resources/CueSounds/LICENSE-AUDIO.txt
+          - Resources/CueSounds/*.mp3
       - path: Shared
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift
