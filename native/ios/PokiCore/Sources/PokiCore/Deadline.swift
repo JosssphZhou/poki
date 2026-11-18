@@ -27,7 +27,12 @@ final class ResumeOnce<T>: @unchecked Sendable {
 /// Runs `operation` and answers after at most `seconds`, whatever the operation does. The operation
 /// runs in a task of its own and is cancelled at the deadline, but never waited for: an operation
 /// that ignores cancellation cannot hold the caller (a task group would wait for it).
+/// A caller that is already cancelled starts nothing: the operation's task would not be cancelled
+/// with it (the handler below has fired by then, with no task to cancel), and would run to its end
+/// behind a caller that had stopped (seen with Stop in the chat: a `do` stopped while the runner
+/// was starting sent all its actions once the runner was up).
 func withDeadline<T: Sendable>(_ seconds: Double, _ what: String, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    try Task.checkCancellation()
     let holder = LockedBox<(ResumeOnce<T>, Task<Void, Never>)?>(nil)
     return try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
@@ -36,6 +41,8 @@ func withDeadline<T: Sendable>(_ seconds: Double, _ what: String, _ operation: @
                 do { once.resume(.success(try await operation())) } catch { once.resume(.failure(error)) }
             }
             holder.value = (once, work)
+            // Cancelled between the check above and here: the handler found nothing to cancel.
+            if Task.isCancelled, once.resume(.failure(CancellationError())) { work.cancel() }
             Task {
                 try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1e9))
                 if once.resume(.failure(DeadlineExceeded(what: what, seconds: seconds))) { work.cancel() }

@@ -311,6 +311,9 @@ final class AppModel {
     /// Approvals the chat model is checking, or that needed nobody; `approvals` are the owner's.
     private var checking: [PendingApproval] = []
     func addShellObserver(_ observer: @escaping (ShellEvent) -> Void) { shellObservers.append(observer) }
+    /// Told when the owner taps Stop on the Live Activity: each chat ends the task it runs.
+    private var stopObservers: [() -> Void] = []
+    func addStopObserver(_ observer: @escaping () -> Void) { stopObservers.append(observer) }
     /// A Debug probe drives PokiCore on the simulator without a runner session (the chat's end-to-end check).
     private(set) var probeDriven = false
     /// The app's MCP tools (ask_poki), set by AskPoki.
@@ -1241,6 +1244,16 @@ final class AppModel {
         #endif
     }
 
+    /// Stop on the Live Activity or the Lock Screen. The owner means the work, not only the runner:
+    /// a task Poki's own chat is running ends too, as Pause in the app does. With the runner alone
+    /// stood by, the chat's model went on and its next step started the runner again.
+    func stopFromLiveActivity() {
+        // The same tap as an Allow just before it (see pauseRunner) stops nothing.
+        let afterApproval = lastApprovalAnswered.map { Date().timeIntervalSince($0) < 4 } ?? false
+        if !afterApproval { for observer in stopObservers { observer() } }
+        pauseRunner(reason: "Stopped from the Live Activity")
+    }
+
     /// Stops the runner, and with it iOS's automation banner, while the relay stays connected; the
     /// next agent request starts it again. From the Stop runner button, the Live Activity, or idle.
     func pauseRunner(reason: String = "Stopped", byOwner: Bool = true) {
@@ -2009,7 +2022,7 @@ final class AppModel {
         CFNotificationCenterAddObserver(center, observer, { _, observer, _, _, _ in
             guard let observer else { return }
             let model = Unmanaged<AppModel>.fromOpaque(observer).takeUnretainedValue()
-            Task { @MainActor in model.pauseRunner(reason: "Stopped from the Live Activity") }
+            Task { @MainActor in model.stopFromLiveActivity() }
         }, ApprovalMailbox.stopRunner as CFString, nil, .deliverImmediately)
         CFNotificationCenterAddObserver(center, observer, { _, observer, _, _, _ in
             guard let observer else { return }

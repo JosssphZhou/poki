@@ -761,11 +761,14 @@ final class Computer: @unchecked Sendable {
         var restarted = false
         if case .starting = state { restarted = true }
         let waitUntil = min(now() + config.runnerWait, until - config.readTimeout - 1)
-        while case .starting = state, now() < waitUntil {
+        // A caller that stopped is not waited for: its sleeps end at once, so the wait would spin
+        // until the runner was up and then send the actions of a call nobody is waiting on.
+        while case .starting = state, now() < waitUntil, !Task.isCancelled {
             await sleep(seconds: 0.25)
             state = host.currentRunner
         }
         if restarted { runner.forgetRunner() }
+        if Task.isCancelled { return Self.stopped("while the runner was starting") }
         guard !state.isRunning else { return nil }
         let why = runner.lastRestart.value.map { "runner: \($0)\n" } ?? ""
         // A runner that is starting (the first start after a restart can wait for the owner's
@@ -775,6 +778,12 @@ final class Computer: @unchecked Sendable {
             return ToolResult(text: "runner: \(state.describe)\nNothing was sent. Fix it on the phone, then call look again.", jpeg: nil, isError: true)
         }
         return ToolResult(text: "\(why)runner: \(state.describe)\nNothing was sent. It is still starting (the first start after a restart can wait for the owner to enter their password on the phone, which the phone asks them for); call look or status again every few seconds, and go on with the task when it answers with the screen.", jpeg: nil, isError: false, waitingForOwner: true)
+    }
+
+    /// The answer of a call whose caller stopped before anything of it was sent (Stop in the chat, or
+    /// the relay's cancel). Nobody reads it: the caller was answered when it stopped.
+    static func stopped(_ when: String) -> ToolResult {
+        ToolResult(text: "cancelled: the caller stopped \(when); nothing was sent.", jpeg: nil, isError: true)
     }
 
     // MARK: do
@@ -810,7 +819,9 @@ final class Computer: @unchecked Sendable {
     }
 
     func act(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
-        restartNote(await actNow(actions: actions, full: full, finish: finish, session: session, answerBy: answerBy))
+        // A cancelled read cannot confirm where earlier actions left the screen, on any exit path.
+        defer { if Task.isCancelled { refs = [:] } }
+        return restartNote(await actNow(actions: actions, full: full, finish: finish, session: session, answerBy: answerBy))
     }
 
     func actNow(actions: [JSON], full: Bool, finish: Bool = false, session: String? = nil, answerBy: Double? = nil) async -> ToolResult {
@@ -867,6 +878,9 @@ final class Computer: @unchecked Sendable {
         if landsInPoki(actions) {
             return ToolResult(text: "not_sent: \(CoreConfig.ownAppRefusal). Nothing was sent. Leave Poki first ({button: \"home\"} or {launch: \"bundle id\"}).", jpeg: nil, isError: true)
         }
+
+        // The caller stopped during the checks above: nothing is sent, and the owner is asked nothing.
+        if Task.isCancelled { return Self.stopped("before the actions") }
 
         // A number that is not in the latest read is refused before anything is sent.
         let stale = Set(actions.flatMap(Self.refs(in:))).filter { refs[$0] == nil }.sorted()
@@ -978,6 +992,11 @@ final class Computer: @unchecked Sendable {
         did += moreDid
         error = moreError
         lastKind = moreKind ?? lastKind
+        // The caller stopped: its answer goes nowhere, so the screen is not read, and no app is brought
+        // back or opened again for it.
+        if Task.isCancelled {
+            return ToolResult(text: (did.map { "did: \($0)" } + ["cancelled: the caller stopped; \(error ?? "nothing more was sent")."]).joined(separator: "\n"), jpeg: nil, isError: true)
+        }
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
             if pause > 0.01 {
@@ -1234,6 +1253,11 @@ final class Computer: @unchecked Sendable {
             if moved, let held = await pressNow(action, after: changed, approved: approved[index], until: until - config.readTimeout - 0.5) {
                 did.append("\(action.serialized()) (not_sent)")
                 error = "action \(index + 1) was not sent: \(held)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
+                break
+            }
+            // The caller stopped (Stop in the chat cancels the call): the actions left are not sent.
+            if Task.isCancelled {
+                error = "cancelled before action \(index + 1); nothing more was sent"
                 break
             }
             let cap = actionCap(action)
