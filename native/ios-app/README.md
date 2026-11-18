@@ -31,6 +31,38 @@ For a pair of apps that's already open, you can also use the **Send Task to Poki
 Shortcuts with **Use Split View** turned on. Both ways use Poki's usual approvals and leave the two
 apps open when the task finishes.
 
+## Daily Tasks
+
+Open **Settings › Daily Tasks** and tap **Add Daily Task**. Each task has its own instructions
+and time in the iPhone's local time. Tap a task in the list to edit or delete it. Give reminders
+distinct names if they are due together; the name can appear on the Lock Screen, but the
+instructions do not.
+Poki keeps up to 60 daily tasks so other reminders still have room.
+
+Keep Poki on, choose a model, and allow notifications. If Poki is in front and idle at the
+scheduled time, it starts a new conversation for the task. If Poki is busy or isn't open,
+iOS posts that task's reminder. Tap a reminder or its **Run Task** action and unlock if asked.
+Tapped reminders wait their turn if Poki is already working; they do not replace one another.
+Simply unlocking the phone starts nothing. For each task, only its latest due occurrence can
+run, once. The usual approvals still apply.
+
+To verify on a signed physical iPhone:
+
+1. With Lock Screen notifications enabled, save two distinctly named read-only tasks for the
+   next minute, for example “Open Settings and read the iOS version” and “Open Settings and read
+   the build number.” Swipe Poki away in the app switcher, then lock the iPhone.
+2. Confirm both reminders appear. Tap one and unlock. Without another tap in Poki, expect one
+   new conversation. Tap the second reminder while the first is running; the second task should
+   start only after the first finishes. Expect one result per task and exactly two
+   `[daily-task] scheduled task submitted` lines in Diagnostics.
+3. Return to Poki and relaunch it again; neither task should run again. Separately leave Poki
+   open and idle for a new occurrence and confirm the first task starts without a tap. Edit
+   or delete one schedule and confirm the other reminder still works.
+
+`PokiTests/DailyTaskTests` covers independent claims across launches, taps waiting in order,
+editing without losing a claim, and preserving data from the single-task format. The Lock Screen
+launch needs the device check above.
+
 ## Layout
 
 | Path | What |

@@ -121,6 +121,11 @@ final class LanguageTests: XCTestCase {
         XCTAssertEqual(allow.title, "允許")
         XCTAssertTrue(allow.options.contains(.authenticationRequired))
         XCTAssertTrue(actions.first { $0.identifier == ApprovalNotice.deny }?.options.contains(.destructive) == true)
+        let daily = try XCTUnwrap(categories.first { $0.identifier == DailyTaskNotice.categoryID })
+        let run = try XCTUnwrap(daily.actions.first { $0.identifier == DailyTaskNotice.runID })
+        XCTAssertEqual(run.title, "執行任務")
+        XCTAssertTrue(run.options.contains(.authenticationRequired))
+        XCTAssertTrue(run.options.contains(.foreground))
     }
 
     func testLanguageRefreshPreservesApprovalAndActivityState() throws {

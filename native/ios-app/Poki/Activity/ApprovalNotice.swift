@@ -29,7 +29,7 @@ enum ApprovalNotice {
         let optional = UNNotificationCategory(identifier: optionalCategory, actions: [allowAction, denyAction, stopAction], intentIdentifiers: [],
                                               options: [.hiddenPreviewsShowTitle])
         let center = UNUserNotificationCenter.current()
-        center.setNotificationCategories([approvals, optional])
+        center.setNotificationCategories([approvals, optional, DailyTaskNotice.category])
         center.delegate = ApprovalNoticeDelegate.shared
     }
 
@@ -60,7 +60,7 @@ enum ApprovalNotice {
     }
 }
 
-/// Answers from the notification's buttons go the same way as the Live Activity's (ApprovalIntentBridge).
+/// The app's notification delegate. Approval answers go through the same bridge as the Live Activity.
 final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     static let shared = ApprovalNoticeDelegate()
 
@@ -68,6 +68,14 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         DispatchQueue.main.async {
             defer { completionHandler() }
+            if let delivery = DailyTaskNotice.delivery(response.notification) {
+                switch response.actionIdentifier {
+                case DailyTaskNotice.runID, UNNotificationDefaultActionIdentifier:
+                    DailyTask.shared.request(delivery)
+                default: break
+                }
+                return
+            }
             guard let id = response.notification.request.content.userInfo["approval"] as? String else { return }
             let action = response.actionIdentifier
             guard [ApprovalNotice.allow, ApprovalNotice.deny, ApprovalNotice.stopAsking].contains(action) else { return }
@@ -76,9 +84,15 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
         }
     }
 
-    /// While Poki is open the banner still shows, so the buttons are there too.
+    /// Approval banners still show in Poki. A daily task only shows a banner when it can't run yet.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
+        guard let delivery = DailyTaskNotice.delivery(notification) else { return [.banner, .sound, .list] }
+        return await MainActor.run { () -> UNNotificationPresentationOptions in
+            switch DailyTaskNotice.runIfInFront(delivery) {
+            case .ignored, .submitted: return []
+            case .waiting: return [.banner, .sound, .list]
+            }
+        }
     }
 }
 

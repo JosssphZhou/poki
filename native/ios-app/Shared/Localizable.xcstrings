@@ -1,6 +1,326 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Delete a daily task before adding another." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先删除一条每日任务，再添加新任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先刪除一則每日任務，再新增任務。"
+          }
+        }
+      }
+    },
+    "Run Task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行任務"
+          }
+        }
+      }
+    },
+    "Daily Task Ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任务已到时间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任務已到時間"
+          }
+        }
+      }
+    },
+    "Tap to run your scheduled task." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按运行定时任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點一下以執行排程任務。"
+          }
+        }
+      }
+    },
+    "Every day at" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日运行时间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日執行時間"
+          }
+        }
+      }
+    },
+    "Poki runs at that time if it’s open and idle. Otherwise, tap the reminder to run the task." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到点时，如果 Poki 在前台且空闲，就会直接运行。否则，点按提醒即可运行任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到時間時，如果 Poki 在前景且閒置，就會直接執行。否則，點一下提醒即可執行任務。"
+          }
+        }
+      }
+    },
+    "Save Schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存定时任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存排程任務"
+          }
+        }
+      }
+    },
+    "Open Notification Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开通知设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟通知設定"
+          }
+        }
+      }
+    },
+    "Allow notifications so Poki can remind you when it isn’t open." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许通知后，Poki 在后台也能提醒你。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許通知後，Poki 在背景也能提醒你。"
+          }
+        }
+      }
+    },
+    "Couldn’t update the schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法更新定时任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法更新排程任務"
+          }
+        }
+      }
+    },
+    "Daily Tasks" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任務"
+          }
+        }
+      }
+    },
+    "Add Daily Task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增每日任務"
+          }
+        }
+      }
+    },
+    "Edit Daily Task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯每日任務"
+          }
+        }
+      }
+    },
+    "No daily tasks yet." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有每日任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有每日任務。"
+          }
+        }
+      }
+    },
+    "Tasks are waiting. Turn on Poki and make sure it has a model and is idle." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有任务等待运行。请开启 Poki、配置模型，并等当前任务结束。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有任務等待執行。請開啟 Poki、設定模型，並等目前任務結束。"
+          }
+        }
+      }
+    },
+    "Reminder name (optional)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒名称（选填）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒名稱（選填）"
+          }
+        }
+      }
+    },
+    "The name can appear on the Lock Screen. The instructions stay private." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称可能显示在锁屏上，任务指令不会显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名稱可能顯示在鎖定畫面上，任務指令不會顯示。"
+          }
+        }
+      }
+    },
+    "Delete Schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除定时任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除排程任務"
+          }
+        }
+      }
+    },
+    "Delete this daily task?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除这条每日任务？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除這則每日任務？"
+          }
+        }
+      }
+    },
+    "Try again from Daily Tasks." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请返回“每日任务”重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請返回「每日任務」再試一次。"
+          }
+        }
+      }
+    },
     "Sign in to your Apple Account to update here. Or update with Set up Poki or Renew in Poki Setup on your Mac." : {
       "localizations" : {
         "zh-Hans" : {

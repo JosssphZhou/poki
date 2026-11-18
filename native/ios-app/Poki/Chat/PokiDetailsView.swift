@@ -4,7 +4,7 @@ import SwiftUI
 // Settings (ESP-469; before it Poki's profile, ESP-326 board "09 Poki") opens from the bottom of the
 // conversations. It replaced the earlier details screen and its "More Settings" layer. Every part of Poki a
 // person looks for by name is a row of its own on this page (Connection, Models, Dictation & Mute,
-// Approvals, Agents, Memory, Archived Conversations, Signing & Updates, Notifications, Appearance, Language), and
+// Approvals, Daily Tasks, Agents, Memory, Archived Conversations, Signing & Updates, Notifications, Appearance, Language), and
 // what only a few need is on one page, Advanced, by where it came from. Nothing has two ways in: the
 // approval method is changed on Poki's card in the chat only. The rows are PokiSettingsKit's.
 
@@ -78,6 +78,10 @@ struct PokiDetailsView: View {
                         SettingsRow(title: "Approvals", symbol: "checkmark.shield", value: model.approvalMode.title)
                     }
                     .accessibilityIdentifier("moreSettings.approvals")
+                    NavigationLink(value: DetailsRoute.dailyTask) {
+                        SettingsRow(title: "Daily Tasks", symbol: "calendar.badge.clock")
+                    }
+                    .accessibilityIdentifier("details.dailyTask")
                 }
 
                 // Who else uses it, and what it keeps.
@@ -176,6 +180,8 @@ struct PokiDetailsView: View {
                         .navigationBarTitleDisplayMode(.inline)
                 case .approvals:
                     ApprovalsSettingsView()
+                case .dailyTask:
+                    DailyTaskSettings()
                 case .appearance:
                     AppearanceView()
                 case .interfaceSize:
@@ -233,7 +239,7 @@ struct PokiDetailsView: View {
 }
 
 enum DetailsRoute: Hashable {
-    case model, history, conversations, voice, connection, advanced, agents, updates, approvals, appearance, language, interfaceSize
+    case model, history, conversations, voice, connection, advanced, agents, updates, approvals, dailyTask, appearance, language, interfaceSize
     /// Models, with the OpenAI key's form open (or Live Voice, when the key is there but turned off):
     /// where Talk with Poki without a key leads.
     case voiceKey
