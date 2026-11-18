@@ -62,7 +62,7 @@ Keep the answers file outside the repository and remove it afterwards. Do not pu
 A shared line serves one sender. Setup maps your sender to a line and prints its number. Run this yourself when setup could not, when you supplied your own key, or to see the number again:
 
 ```sh
-node bin/poki-photon.mjs --assign
+node bin/poki-imessage.mjs --provider photon --assign
 ```
 
 This prints the assigned number. It uses one shared iMessage assignment from the project's plan. If the sender already has a line, the command prints that line's number instead of creating another. If the key lacks `platforms:write`, assign the sender in the Photon dashboard under **iMessage** instead, as described in Photon's [iMessage guide](https://photon.codes/docs/beta/get-started/imessage).
@@ -72,20 +72,22 @@ Then, from the allowed sender, start a new direct iMessage conversation with the
 ## Check, then start
 
 ```sh
-node bin/poki-photon.mjs --check
+node bin/poki-imessage.mjs --check
 ```
 
-This loads the key privately, authenticates and subscribes to the project's event stream. It sends no message, saves no cursor and starts no phone task. A successful check confirms the project ID, the key and its `project:read` permission. It does not confirm `project:write`, the assignment or message delivery.
+This is the launcher that also starts the [BlueBubbles channel](imessage-gateway.md). It starts the provider that is set up on this computer. If both BlueBubbles and Photon are set up, it asks in a terminal which one to start, and `--provider photon` skips the question. Without a terminal, for example under a service manager, it does not ask and starts BlueBubbles unless you pass `--provider photon`.
+
+The check loads the key privately, authenticates and subscribes to the project's event stream. It sends no message, saves no cursor and starts no phone task. A successful check confirms the project ID, the key and its `project:read` permission. It does not confirm `project:write`, the assignment or message delivery.
 
 Once Poki's MCP service, the selected device and model access are ready, start the channel explicitly:
 
 ```sh
-node bin/poki-photon.mjs
+node bin/poki-imessage.mjs
 ```
 
 Keep this process running. Do not run two workers for the same configuration directory, and stop the worker with Ctrl-C before moving or removing its private configuration.
 
-To supply credentials through the environment instead, export `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` and run `poki photon --config <private JSON file>`, as described in the [agent guide](../agent/README.md#configure-imessage-through-photon).
+To supply credentials through the environment instead, export `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` and run `poki imessage --provider photon --config <private JSON file>`, as described in the [agent guide](../agent/README.md#configure-imessage-through-photon).
 
 ## What the worker does
 
@@ -103,6 +105,6 @@ A dropped connection reconnects on its own and resumes after the last event rece
 
 ## Verification scope
 
-The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators, the choice between BlueBubbles and Photon, the device sign-in, finding or creating the project, key creation, the line assignment during setup and private configuration. They send no real messages.
+The channel is covered by synthetic tests run on Linux with Node.js 24: `agent/test/fixtures/photon.mjs` serves a local Photon REST and Socket.IO API, and the tests drive the real adapter, launcher, setup command and message worker against it. They cover sender scoping, skipped history, cursor resume after a restart and a dropped connection, replayed events, the reply payload, idempotent retry, rejected replies, read receipts, typing indicators, the choice between BlueBubbles and Photon in setup and at start, the device sign-in, finding or creating the project, key creation, the line assignment during setup and private configuration. They send no real messages.
 
 The browser sign-in, project creation and line assignment against the live Photon service, receipt and delivery through it, Photon's retention and rate limits, and a task on a physical iPhone need a separate authorized run. The synthetic results do not prove them.

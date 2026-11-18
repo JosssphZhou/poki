@@ -57,6 +57,8 @@ node bin/poki-imessage.mjs --check
 
 This loads the password privately, authenticates and reads only the configured conversation. It sends no reply and starts no phone task. A successful check confirms the gateway connection and scoped read, not phone automation or message delivery.
 
+If you have also set up [Photon](photon-channel.md), the launcher asks in a terminal which provider to start, and `--provider bluebubbles` skips the question. Without a terminal it does not ask and starts BlueBubbles.
+
 Once you have prepared Poki's MCP service, the selected device and model access, start the channel explicitly:
 
 ```sh

@@ -130,7 +130,7 @@ test('Photon setup writes private configuration, and its launcher checks and ass
     'A supplied key that cannot be saved is not reported as a key Photon created');
   await assert.rejects(stat(join(directory, 'unwritable')), { code: 'ENOENT' });
   assert.equal(api.calls, 0, 'Setup with a supplied key contacts no service');
-  const args = ['bin/poki-photon.mjs', '--config-dir', configDir];
+  const args = ['bin/poki-imessage.mjs', '--config-dir', configDir];
   const check = await cli(process.execPath, [...args, '--check'], { env });
   assert.equal(check.code, 0, check.stderr);
   assert.match(check.stdout, /authentication and read check succeeded/);
@@ -251,7 +251,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.match(signedIn.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent and no worker was started\):\n1\. Send that iMessage/);
   assert.ok(!signedIn.stdout.includes('--assign'), 'Setup that assigned the line does not ask for the assignment again');
   assert.deepEqual(api.assignments.map(({ projectId, handle }) => ({ projectId, handle })), [{ projectId: api.project, handle: 'allowed@example.test' }]);
-  const check = await cli(process.execPath, ['bin/poki-photon.mjs', '--config-dir', configDir, '--check'], { env });
+  const check = await cli(process.execPath, ['bin/poki-imessage.mjs', '--provider', 'photon', '--config-dir', configDir, '--check'], { env });
   assert.equal(check.code, 0, check.stderr);
   assert.match(check.stdout, /authentication and read check succeeded/);
 
@@ -262,19 +262,20 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   assert.ok(!unassigned.stdout.includes('Note:'), 'A computer with the phone tools gets no note');
   assert.equal(unassigned.code, 0, unassigned.stderr);
   assert.match(unassigned.stdout, /Using your Photon project "Earlier project" \(Example org, pho_prj_0{25}2\)\./);
-  assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: Photon rejected the assignment \(HTTP 403, INSUFFICIENT_SCOPE\)[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-photon\.mjs --assign/);
+  assert.match(unassigned.stdout, /Setup could not assign a shared iMessage line: Photon rejected the assignment \(HTTP 403, INSUFFICIENT_SCOPE\)[^\n]*\nFinish setup yourself[^]*1\. Run node bin\/poki-imessage\.mjs --provider photon --assign/);
   assert.equal((await connection(named)).projectId, earlier.projectId);
   api.assignError = null;
   api.assignments.unshift({ projectId: api.project, handle: 'other@example.test', assignedPhoneNumber: '+14155550199' });
   const bare = join(directory, 'bare');
   await mkdir(join(bare, 'bin'), { recursive: true });
-  for (const name of ['setup-channels', 'poki-photon.mjs']) await writeFile(join(bare, 'bin', name), await readFile(join(root, 'bin', name)), { mode: 0o755 });
+  await mkdir(join(bare, 'agent'));
+  for (const name of ['bin/setup-channels', 'bin/poki-imessage.mjs', 'agent/imessage-provider.mjs']) await writeFile(join(bare, name), await readFile(join(root, name)), { mode: 0o755 });
   const uninstalled = await cli(join(bare, 'bin/setup-channels'), ['--channel', 'imessage', '--provider', 'photon', '--config-dir', join(bare, 'photon'), '--answers', answers], { env });
   assert.equal(uninstalled.code, 0, uninstalled.stderr);
   assert.match(uninstalled.stdout, /Shared line assigned\. From allowed@example\.test, send an iMessage to \+14155550188 to start\.\nNext \(no message was sent/,
     'Setup assigns the line without the agent packages, and prints the number of a line the sender already has, from a later page of the list');
   assert.equal(api.assignments.length, 2, 'A sender that already has a line in the project gets no second assignment');
-  const unloaded = await cli(process.execPath, [join(bare, 'bin/poki-photon.mjs'), '--config-dir', join(bare, 'photon')], { env });
+  const unloaded = await cli(process.execPath, [join(bare, 'bin/poki-imessage.mjs'), '--config-dir', join(bare, 'photon')], { env });
   assert.equal(unloaded.code, 1);
   assert.match(unloaded.stderr, /^Poki Agent's packages are not installed \(Cannot find module '[^']*photon\.mjs'\)\. Run npm ci --prefix agent from the repository root first\.\n$/);
 
@@ -314,4 +315,80 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   const output = JSON.stringify([denied, unplaced, unsaved, signedIn, check, unassigned, uninstalled, unloaded, stranger, team, interactive]);
   assert.ok(!output.includes(api.key) && !output.includes(api.account) && !output.includes('local-device-code'));
   await evidence('photon-sign-in-setup.json', { denied, unplaced, unsaved, signedIn, check, unassigned, uninstalled, unloaded, stranger, team, interactive, keys: api.keys, created: api.created });
+});
+
+test('Launcher starts the iMessage provider that is set up and asks in a terminal when both are', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'poki-provider-home-'));
+  const messages = await makeMessages();
+  const photon = await makePhoton();
+  t.after(async () => { await messages.close(); await photon.close(); await rm(home, { recursive: true, force: true }); });
+  const env = { ...process.env, HOME: home, PHOTON_API_URL: photon.url };
+  for (const name of ['BLUEBUBBLES_URL', 'BLUEBUBBLES_PASSWORD', 'PHOTON_PROJECT_ID', 'PHOTON_API_KEY']) delete env[name];
+  const save = async (name, settings, connection) => {
+    const directory = join(home, '.config/poki-agent', name);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    await writeFile(join(directory, `${name}.json`), JSON.stringify({ sender: 'allowed@example.test', device: 'synthetic-device', auth: 'chatgpt', ...settings }), { mode: 0o600 });
+    await writeFile(join(directory, 'connection.json'), JSON.stringify(connection), { mode: 0o600 });
+  };
+  const launch = (...args) => cli(process.execPath, ['bin/poki-imessage.mjs', ...args], { env });
+  const terminal = input => {
+    const child = run('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',
+      process.execPath, 'bin/poki-imessage.mjs', '--check'], { cwd: root, env });
+    child.child.stdin.end(input);
+    return child.then(result => ({ code: 0, ...result }), error => ({ code: error.code, stdout: error.stdout, stderr: error.stderr }));
+  };
+  const reached = () => [messages.requests.length, photon.subscriptions.length];
+  const succeeded = name => `${name}: authentication and read check succeeded. No tasks or replies sent.\n`;
+
+  const none = await launch('--check');
+  assert.equal(none.code, 1);
+  assert.equal(none.stderr, 'Cannot load private iMessage settings. Check the configuration directory, JSON fields and file permissions.\n');
+
+  await save('photon', {}, { projectId: photon.project, apiKey: photon.key });
+  const only = await launch('--check');
+  assert.equal(only.code, 0, only.stderr);
+  assert.deepEqual([only.stdout, only.stderr], [succeeded('photon'), ''], 'With only Photon set up, the launcher starts it without a question');
+
+  await save('imessage', { chatGuid: 'iMessage;-;allowed@example.test' }, { url: messages.url, password: messages.password });
+  const unattended = await launch('--check');
+  assert.equal(unattended.code, 0, unattended.stderr);
+  assert.deepEqual([unattended.stdout, unattended.stderr], [succeeded('bluebubbles'),
+    'BlueBubbles and Photon are both configured for iMessage. Starting BlueBubbles; pass --provider photon to start Photon.\n']);
+  assert.deepEqual(reached(), [2, 1], 'Without a terminal, a BlueBubbles start stays BlueBubbles when Photon is added');
+  const named = await launch('--provider', 'photon', '--check');
+  assert.deepEqual([named.stdout, named.stderr], [succeeded('photon'), '']);
+  const kept = await launch('--provider', 'bluebubbles', '--check');
+  assert.deepEqual([kept.stdout, kept.stderr], [succeeded('bluebubbles'), '']);
+  assert.deepEqual(reached(), [4, 2]);
+
+  const second = await terminal('2\n');
+  assert.equal(second.code, 0, second.stdout);
+  assert.match(second.stdout, /BlueBubbles and Photon are both configured for iMessage\.\r?\n  1\. BlueBubbles\r?\n  2\. Photon\r?\nChoose 1 or 2 \[1\]: [^]*photon: authentication and read check succeeded/);
+  assert.deepEqual(reached(), [4, 3]);
+  const entered = await terminal('\n');
+  assert.match(entered.stdout, /Choose 1 or 2 \[1\]: [^]*bluebubbles: authentication and read check succeeded/);
+  assert.deepEqual(reached(), [6, 3]);
+  const other = await terminal('3\n');
+  assert.equal(other.code, 1, other.stdout);
+  assert.match(other.stdout, /Choose 1 for BlueBubbles or 2 for Photon\./);
+  const unknown = await launch('--provider', 'signal', '--check');
+  assert.equal(unknown.code, 1);
+  assert.equal(unknown.stderr, 'Choose --provider bluebubbles or --provider photon.\n');
+  assert.deepEqual(reached(), [6, 3], 'An answer or a name that is no provider starts nothing');
+
+  const assign = await launch('--assign');
+  assert.equal(assign.code, 0, assign.stderr);
+  assert.ok(assign.stdout.includes(`From allowed@example.test, send an iMessage to ${photon.agent.handle}`), '--assign goes to Photon without a question');
+  const misplaced = await launch('--provider', 'bluebubbles', '--assign');
+  assert.equal(misplaced.code, 1);
+  assert.equal(misplaced.stderr, '--assign maps a sender to a Photon line. Use it with --provider photon.\n');
+  assert.equal(photon.assignments.length, 1);
+  await save('photon', {}, { projectId: photon.project, apiKey: '' });
+  const keyless = await launch('--provider', 'photon', '--check');
+  assert.equal(keyless.code, 1);
+  assert.equal(keyless.stderr, none.stderr, 'A connection file without a key is refused before the worker loads');
+  assert.deepEqual(reached(), [6, 3]);
+  const results = [none, only, unattended, named, kept, second, entered, other, unknown, assign, misplaced, keyless];
+  assert.ok(!results.some(result => JSON.stringify(result).includes(photon.key) || JSON.stringify(result).includes(messages.password)));
+  await evidence('provider-choice.json', { none, only, unattended, named, kept, second, entered, other, unknown, assign, misplaced, keyless });
 });

@@ -55,15 +55,18 @@ PHOTON_ASSIGNED_STEPS = '''Next (no message was sent and no worker was started):
 1. Send that iMessage from the allowed sender. A shared line can only reply
    after the sender has messaged it.
 2. Start the worker where Poki Agent is installed and the iPhone is paired:
-   node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
+   node bin/poki-imessage.mjs --check, then node bin/poki-imessage.mjs.
+   If BlueBubbles is set up too, the command asks which one to start.
    See docs/photon-channel.md before starting the channel.'''
 PHOTON_NEXT_STEPS = '''Finish setup yourself (no message was sent and no worker was started):
-1. Run node bin/poki-photon.mjs --assign to map the sender to a shared Photon
-   iMessage line, or assign it in the Photon dashboard under iMessage.
+1. Run node bin/poki-imessage.mjs --provider photon --assign to map the sender
+   to a shared Photon iMessage line, or assign it in the Photon dashboard
+   under iMessage.
 2. From the allowed sender, send an iMessage to the assigned number. A shared
    line can only reply after the sender has messaged it.
 3. Start the worker where Poki Agent is installed and the iPhone is paired:
-   node bin/poki-photon.mjs --check, then node bin/poki-photon.mjs.
+   node bin/poki-imessage.mjs --check, then node bin/poki-imessage.mjs.
+   If BlueBubbles is set up too, the command asks which one to start.
    See docs/photon-channel.md before starting the channel.'''
 
 

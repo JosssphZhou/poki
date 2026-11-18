@@ -73,7 +73,7 @@ poki "Search esp32 in Chrome and summarize the top result"
 
 Gets faster with use: Poki Agent remembers past tasks and runs them faster on repeat.
 
-**Channels:** After configuring an authorized channel, start it with `poki imessage`, [`poki photon`](photon-channel.md) or [`poki telegram`](../agent/README.md#telegram). See [Poki Agent](../agent/README.md) for setup.
+**Channels:** After configuring an authorized channel, start it with `poki imessage` (BlueBubbles or [Photon](photon-channel.md)) or [`poki telegram`](../agent/README.md#telegram). See [Poki Agent](../agent/README.md) for setup.
 
 **MCP clients:** Claude Code, Codex, and any client supporting `mcpServers` JSON.
 
