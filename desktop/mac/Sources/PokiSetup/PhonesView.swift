@@ -34,7 +34,7 @@ struct PhonesView: View {
                 Image(systemName: deviceSymbol(model.phones.first(where: { $0.id == r.udid })?.facts?.productType, name: r.phoneName)).font(.system(size: 28, weight: .light)).foregroundStyle(Color.pokiBlue).frame(width: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.phoneName).font(.headline)
-                    Text("iOS \(r.ios) · Poki \(r.version) (\(r.build))").font(.callout).foregroundStyle(.secondary)
+                    Text("iOS \(r.ios), Poki \(r.version) (\(r.build))").font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 ExpiryBadge(record: r)

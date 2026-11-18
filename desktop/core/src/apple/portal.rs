@@ -138,7 +138,7 @@ impl<'a> Portal<'a> {
             out.push(Team { team_id: st(t, "teamId"), name: st(t, "name"), kind, is_free });
         }
         if out.is_empty() {
-            return Err(Error::msg("This Apple ID has no developer team. Open Xcode or developer.apple.com once with it to accept Apple's agreement, then try again."));
+            return Err(Error::msg("This Apple Account has no developer team. Open Xcode or developer.apple.com once with it to accept Apple's agreement, then try again."));
         }
         Ok(out)
     }
@@ -313,8 +313,8 @@ impl<'a> Portal<'a> {
 
 fn portal_error(code: i64, text: String) -> Error {
     let t = match code {
-        7460 => "This team has registered its limit of devices. Remove one at developer.apple.com, or use another Apple ID.".to_string(),
-        3250 | 7250 => "A free Apple ID can only sign three apps at a time, and Apple counts Poki's extensions. Remove another sideloaded app from your developer account and try again.".to_string(),
+        7460 => "This team has registered its limit of devices. Remove one at developer.apple.com, or use another Apple Account.".to_string(),
+        3250 | 7250 => "A free Apple Account can only sign three apps at a time, and Apple counts Poki's extensions. Remove another sideloaded app from your developer account and try again.".to_string(),
         9100 | 7460_0 => text,
         35 => "Apple's developer agreement has changed. Open developer.apple.com once, accept it, then try again.".to_string(),
         _ if text.is_empty() => format!("The developer portal refused the request (code {code})."),

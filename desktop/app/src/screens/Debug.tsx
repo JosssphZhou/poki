@@ -41,16 +41,16 @@ export default function Debug() {
           <select className="input" style={{ width: 220 }} value={udid} onChange={(e) => setUdid(e.target.value)}>{rows.map((r) => <option key={r.phone.udid} value={r.phone.udid}>{r.facts?.name ?? r.phone.udid}</option>)}</select>
           <input className="input grow" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("Filter")} />
           <Capsule onClick={toggle} disabled={!udid}>{running ? t("Stop") : t("Start")}</Capsule>
-          <Capsule kind="ghost" onClick={() => setLines([])}>Clear</Capsule>
+          <Capsule kind="ghost" onClick={() => setLines([])}>{t("Clear")}</Capsule>
         </div>
         <div className="log" ref={box} style={{ marginTop: 12 }}>{lines.join("\n")}</div>
       </Card>
       <Card>
         <div className="row">
           <Capsule kind="ghost" onClick={bundle}>{t("Save support bundle…")}</Capsule>
-          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); setMsg(null); try { await api.mountDdi(udid); setMsg("Developer disk image mounted."); } catch (e) { setError(failureText(e)); } }}>{t("Mount developer disk image")}</Capsule>
-          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.pair(udid); setMsg("Paired."); } catch (e) { setError(failureText(e)); } }}>{t("Pair")}</Capsule>
-          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.devmode(udid); setMsg("Developer Mode is on."); } catch (e) { setError(failureText(e)); } }}>{t("Developer Mode")}: {t("Turn on")}</Capsule>
+          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); setMsg(null); try { await api.mountDdi(udid); setMsg(t("Developer disk image mounted.")); } catch (e) { setError(failureText(e)); } }}>{t("Mount developer disk image")}</Capsule>
+          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.pair(udid); setMsg(t("Paired.")); } catch (e) { setError(failureText(e)); } }}>{t("Pair")}</Capsule>
+          <Capsule kind="ghost" disabled={!udid} onClick={async () => { setError(null); try { await api.devmode(udid); setMsg(t("Developer Mode is on.")); } catch (e) { setError(failureText(e)); } }}>{t("Developer Mode")}: {t("Turn on")}</Capsule>
         </div>
         {msg && <p className="muted small" style={{ margin: "10px 0 0", userSelect: "text" }}>{msg}</p>}
       </Card>

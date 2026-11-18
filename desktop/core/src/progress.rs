@@ -33,7 +33,7 @@ impl Reporter {
             Progress::Part { fraction, detail, .. } => {
                 if let Some(d) = detail { eprintln!("  {:>3}% {d}", (fraction * 100.0) as u32) }
             }
-            Progress::Note { text, .. } => eprintln!("  · {text}"),
+            Progress::Note { text, .. } => eprintln!("  - {text}"),
             Progress::Waiting { text, .. } => eprintln!("  ⏸ {text}"),
             Progress::Done { detail, .. } => eprintln!("  ✓ {}", detail.unwrap_or_default()),
         }))

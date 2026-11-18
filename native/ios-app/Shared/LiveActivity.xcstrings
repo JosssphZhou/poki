@@ -687,7 +687,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "开发者 › 启用 UI 自動化"
+            "value" : "开发者 › 启用 UI 自动化"
           }
         },
         "en" : {
@@ -1116,13 +1116,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pair again in Poki Setup."
+            "value" : "Pair again in Setup."
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在設定精靈中重配"
+            "value" : "在初始設定中重配"
           }
         }
       }
@@ -1191,7 +1191,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開代理或在設定精靈重配"
+            "value" : "開代理或在初始設定重配"
           }
         }
       }
@@ -1437,7 +1437,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要回環連線"
+            "value" : "需要迴環連線"
           }
         }
       }
@@ -1563,7 +1563,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在設定精靈下載最新映像"
+            "value" : "在初始設定下載最新映像"
           }
         }
       }
@@ -1637,7 +1637,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配对此手机"
+            "value" : "配对此 iPhone"
           }
         },
         "en" : {
@@ -1649,7 +1649,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配對此手機"
+            "value" : "配對此 iPhone"
           }
         }
       }
@@ -2415,7 +2415,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "傳送資訊？"
+            "value" : "傳送訊息？"
           }
         }
       }
@@ -2541,7 +2541,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定精靈"
+            "value" : "初始設定"
           }
         },
         "en" : {
@@ -2924,7 +2924,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在通知智慧體"
+            "value" : "正在通知代理程式"
           }
         }
       }
@@ -2970,7 +2970,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智慧體已繼續"
+            "value" : "代理程式已繼續"
           }
         }
       }
@@ -3422,7 +3422,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用同款签名工具与账户安装"
+            "value" : "用相同签名工具与 Apple 账户安装"
           }
         },
         "en" : {
@@ -3434,7 +3434,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用同款簽名工具與帳號安裝"
+            "value" : "用相同簽名工具與 Apple 帳號安裝"
           }
         }
       }
@@ -3577,7 +3577,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Required after restart or 8h; agent waits."
+            "value" : "Required after restart or 8h. Agent waits."
           }
         }
       }
@@ -3600,7 +3600,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Required once after restart; agent waits."
+            "value" : "Required once after restart. Agent waits."
           }
         }
       }
@@ -3722,7 +3722,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輸鎖屏密碼啟動 Runner"
+            "value" : "輸密碼啟動 Runner"
           }
         },
         "en" : {
@@ -3744,7 +3744,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輸鎖屏密碼允許自動化"
+            "value" : "輸密碼允許自動化"
           }
         },
         "en" : {
@@ -3766,7 +3766,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "螢幕需輸鎖屏密碼"
+            "value" : "螢幕需輸入密碼"
           }
         },
         "en" : {
@@ -3959,7 +3959,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "傳送資訊"
+            "value" : "傳送訊息"
           }
         }
       }

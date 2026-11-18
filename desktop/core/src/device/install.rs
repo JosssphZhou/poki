@@ -28,7 +28,7 @@ pub async fn install_profiles(phone: &Phone, profiles: &[Vec<u8>], reporter: &Re
     for (i, p) in profiles.iter().enumerate() {
         within(60, "installing a provisioning profile", misagent.install(p.clone()))
             .await?
-            .map_err(|e| Error::device(format!("The iPhone refused a provisioning profile: {e}. On a free team the phone must be registered on the Apple ID; sign in again.")))?;
+            .map_err(|e| Error::device(format!("The iPhone refused a provisioning profile: {e}. On a free team the phone must be registered on the Apple Account. Sign in again.")))?;
         tracing::info!(profile = i + 1, "profile installed");
         reporter.part("profiles", (i + 1) as f64 / profiles.len() as f64, None);
     }
@@ -69,7 +69,7 @@ pub async fn install_ipa(phone: &Phone, ipa: &Path, upgrade: bool, reporter: &Re
 fn install_error(e: idevice::IdeviceError) -> Error {
     match e {
         idevice::IdeviceError::InstallationProxy(idevice::services::installation_proxy::InstallationProxyError::OperationFailed(ref text)) if text.contains("ApplicationVerificationFailed") => Error::device(
-            "The iPhone did not accept the app's signature. Make sure this iPhone is registered on the Apple ID's team and Developer Mode is on, then try again.",
+            "The iPhone did not accept the app's signature. Make sure this iPhone is registered on the Apple Account's team and Developer Mode is on, then try again.",
         ),
         idevice::IdeviceError::InstallationProxy(idevice::services::installation_proxy::InstallationProxyError::OperationFailed(ref text)) if text.contains("MismatchedApplicationIdentifierEntitlement") => Error::device(
             "The installed Poki has a different application signing identity. Keep Poki installed to preserve its data, and update it using the original signing identity on the original computer.",

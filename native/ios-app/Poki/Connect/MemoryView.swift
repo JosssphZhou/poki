@@ -127,7 +127,8 @@ private struct RoutineRow: View {
     private var detail: String {
         let steps = AppLocalization.text(LocalizedStringResource("\(routine.steps.count) steps"))
         let runs = routine.runs == 0 ? AppLocalization.text(LocalizedStringResource("not run yet")) : AppLocalization.text(LocalizedStringResource("worked \(routine.ok) of \(routine.runs)"))
-        let base = "\(steps) · \(runs) · \(routine.savedBy)"
-        return routine.stale ? AppLocalization.text(LocalizedStringResource("Needs redoing: stopped twice in a row")) + " · " + base : base
+        let sep = AppLocalization.language.hasPrefix("zh") ? "，" : ", "
+        let base = "\(steps)\(sep)\(runs)\(sep)\(routine.savedBy)"
+        return routine.stale ? AppLocalization.text(LocalizedStringResource("Needs redoing: stopped twice in a row")) + sep + base : base
     }
 }

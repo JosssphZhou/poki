@@ -328,7 +328,7 @@ impl Signer {
                 return Ok(t.clone());
             }
         }
-        let session = self.account.session.clone().ok_or_else(|| Error::NeedsPerson("Sign in with your Apple ID first.".into()))?;
+        let session = self.account.session.clone().ok_or_else(|| Error::NeedsPerson("Sign in with your Apple Account first.".into()))?;
         let fetched = self.fetch_xcode_token(&session).await;
         // Another client may have stored the sign-in-again state while Apple answered.
         if self.sync_account() {
@@ -590,7 +590,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
             Some(lockdown_record)
         }
     };
-    reporter.done("pair", Some(format!("{} · iOS {}", facts.name, facts.ios)));
+    reporter.done("pair", Some(format!("{}, iOS {}", facts.name, facts.ios)));
 
     reporter.step("devmode", "Developer Mode");
     if facts.developer_mode != Some(true) {
@@ -601,7 +601,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     }
     reporter.done("devmode", Some("on".into()));
 
-    reporter.step("account", "Apple account");
+    reporter.step("account", "Apple Account");
     let team = signer.team().await?;
     reporter.done("account", Some(format!("{} ({})", team.name, if team.is_free { "free, 7-day signing" } else { "paid" })));
 
@@ -774,7 +774,7 @@ pub async fn renew(signer: &mut Signer, udid: &str, reporter: &Reporter) -> Resu
         }
         let facts = device::info::read(&phone).await?;
         let teams = signer.teams().await?;
-        let team = teams.into_iter().find(|t| t.team_id == rec.team_id).ok_or_else(|| Error::msg(format!("The Apple ID signed in is not on team {} any more.", rec.team_name)))?;
+        let team = teams.into_iter().find(|t| t.team_id == rec.team_id).ok_or_else(|| Error::msg(format!("The signed-in Apple Account is no longer on team {}.", rec.team_name)))?;
         // A test build is signed again while renewals keep test builds (Developer > Test Builds).
         let kept = match &rec.test_build {
             Some(b) => crate::devbuilds::for_renewal(b, reporter).await.map(|found| (found, b.clone())),

@@ -109,7 +109,7 @@ struct SigningSection: View {
             LabeledContent {
                 if let expiry = signer.expiry {
                     // The date and its countdown stay readable when the row needs more room.
-                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: " · ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
+                    (Text(expiry, format: .dateTime.month(.abbreviated).day().year()) + Text(verbatim: AppLocalization.language.hasPrefix("zh") ? "，" : ", ") + Text(expiry, style: .relative).foregroundStyle(countdownColor))
                         .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {

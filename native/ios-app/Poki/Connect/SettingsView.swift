@@ -66,8 +66,10 @@ struct SettingsHome: View {
                     BearAvatar(size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("This iPhone").font(.headline)
-                        Text(verbatim: model.identity.label.isEmpty ? "—" : "\(model.identity.label.prefix(12))…")
-                            .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel))
+                        if !model.identity.label.isEmpty {
+                            Text(verbatim: "\(model.identity.label.prefix(12))…")
+                                .font(.footnote.monospaced()).foregroundStyle(Color(.secondaryLabel))
+                        }
                     }
                     Spacer()
                     let relay = Health.relay(model)
