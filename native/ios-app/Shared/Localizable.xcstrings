@@ -246,13 +246,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有任务等待运行。请开启 Poki、配置模型，并等当前任务结束。"
+            "value" : "有每日任务等待执行。请开启 Poki、配置模型，并等当前任务结束。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有任務等待執行。請開啟 Poki、設定模型，並等目前任務結束。"
+            "value" : "有每日任務等待執行。請開啟 Poki、設定模型，並等目前任務結束。"
           }
         }
       }
