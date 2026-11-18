@@ -758,7 +758,8 @@ final class ChatModel {
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String, splitViewSession: String? = nil) {
         taskStart = Date(); toolCalls = 0; taskResult = nil
         taskCalls.removeAll()
-        app.prepareForTask()
+        // Split View needs both apps before the first model tool runs.
+        if splitViewSession != nil { app.prepareForTask() }
         app.chatTaskBegan(splitViewSession: splitViewSession)
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
     }
