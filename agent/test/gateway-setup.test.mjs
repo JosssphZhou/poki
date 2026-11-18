@@ -164,7 +164,7 @@ test('Photon setup describes both iMessage routes, signs in with a device code, 
   await mkdir(join(browser, 'bin'));
   await writeFile(join(browser, 'bin/node'), '#!/bin/sh\ntouch "$POKI_NODE_RAN"\nexit 1\n', { mode: 0o755 });
   const env = { ...process.env, PHOTON_API_URL: api.url, BROWSER: join(browser, 'open'), POKI_OPENED: join(browser, 'opened'),
-    PATH: `${join(browser, 'bin')}:${process.env.PATH}`, POKI_NODE_RAN: join(browser, 'node-ran') };
+    PATH: `${join(browser, 'bin')}:${process.env.PATH}`, POKI_NODE_RAN: join(browser, 'node-ran'), IDEVICE_TOOLS: join(browser, 'absent-tool') };
   delete env.CI;
   const terminal = (args, input, extra = {}) => {
     const child = run('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',

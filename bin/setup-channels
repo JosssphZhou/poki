@@ -311,7 +311,7 @@ def configure_photon(args):
     config_dir = Path(args.config_dir).expanduser().absolute()
     if os.path.lexists(config_dir):
         raise ValueError('The configuration destination already exists; nothing was changed. Choose an unused directory.')
-    tools = os.environ.get('IDEVICE_TOOLS') or Path(__file__).resolve().parent.parent / '.deps/idevice/target/release/idevice-tools'
+    tools = os.environ.get('IDEVICE_TOOLS', Path(__file__).resolve().parent.parent / '.deps/idevice/target/release/idevice-tools')
     if not (os.path.isfile(tools) and os.access(tools, os.X_OK)):
         print('Note: the worker cannot start on this computer yet, because Poki Agent is not built here. '
               'Run ./bin/setup first; it needs macOS with the full Xcode. Setup continues and only prepares Photon.')
