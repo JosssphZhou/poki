@@ -199,7 +199,7 @@ test('poki imessage starts the chosen provider and asks only in a terminal with 
   };
   const second = await terminal('2\n');
   assert.equal(second.code, 0, second.output);
-  assert.match(second.output, /BlueBubbles and Photon are both configured for iMessage\.\r?\n  1\. BlueBubbles\r?\n  2\. Photon\r?\nChoose 1 or 2 \[1\]: [^]*photon: authentication and read check succeeded/);
+  assert.match(second.output, /BlueBubbles and Photon are both configured for iMessage\.\r?\n\r?\n1\. BlueBubbles \(default\)\r?\n   Your own Messages account, through BlueBubbles Server on your Mac\.\r?\n\r?\n2\. Photon\r?\n   The number Photon assigned to your sender\. Task text and replies pass\r?\n   through Photon's servers\.\r?\n\r?\nChoose 1 or 2 \[1\]: [^]*photon: authentication and read check succeeded/);
   assert.deepEqual([second.bluebubbles, second.photon], [0, 1]);
   const entered = await terminal('\n');
   assert.match(entered.output, /Choose 1 or 2 \[1\]: [^]*bluebubbles: authentication and read check succeeded/);
