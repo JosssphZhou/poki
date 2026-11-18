@@ -20,7 +20,19 @@ static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
         out[@"launch_code"] = failure ?: @"";
         if (failure) return out;
     }
-    out[@"front"] = [PKInProcess.shared frontApp];
+    // check.sh launches the fixture 3 s after this app, and the read is meant for the fixture. On a
+    // slow simulator (an iPad on CI) it was not in front yet when the read came, so this app read
+    // itself. Up to 60 s for another app to come to the front; the wait is in the result.
+    NSString *me = NSBundle.mainBundle.bundleIdentifier;
+    NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
+    NSDictionary *front = [PKInProcess.shared frontApp];
+    while (([front[@"bundleId"] length] == 0 || [front[@"bundleId"] isEqualToString:me]) &&
+           NSProcessInfo.processInfo.systemUptime - waitStarted < 60) {
+        [NSThread sleepForTimeInterval:0.5];
+        front = [PKInProcess.shared frontApp];
+    }
+    out[@"front_wait_seconds"] = @(NSProcessInfo.processInfo.systemUptime - waitStarted);
+    out[@"front"] = front;
     NSString *code = nil;
     NSString *before = [PKInProcess.shared sourceXML:NULL code:&code];
     if (coverCompat && !before && [code hasSuffix:@"kAXErrorServerNotFound"]) {

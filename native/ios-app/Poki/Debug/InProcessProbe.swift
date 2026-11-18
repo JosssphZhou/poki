@@ -39,6 +39,8 @@ final class InProcessProbe: ObservableObject {
 
     let queue = DispatchQueue(label: "poki.inprocess.probe", qos: .userInitiated)
     private var record: [[String: Any]] = []
+    /// The code of the last prepare that failed ("" after one that opened).
+    private var lastPrepareCode = ""
 
     func startFromLaunchArguments(model: AppModel) {
         let defaults = UserDefaults.standard
@@ -789,7 +791,9 @@ final class InProcessProbe: ObservableObject {
             note("configured model unavailable, or no test task specified", ["step": "configured_model_unavailable", "hasUsableKey": ModelKeys.hasUsableKey])
             return
         }
-        guard await prepare() else { return }
+        // A chat that finds the open still going (session_timeout) asks for another and waits, as
+        // AppCoreHost's retry does in the app; on a slow CI simulator the first open took 13.6 s.
+        guard await prepare(retryingTimeouts: 4) else { return }
         model.inProcessReadyForProbe()
         let background = UIApplication.shared.beginBackgroundTask(withName: "Chat probe")
         defer { UIApplication.shared.endBackgroundTask(background) }
@@ -848,10 +852,22 @@ final class InProcessProbe: ObservableObject {
         }
         let ok = (result["ok"] as? Bool) == true
         let seconds = String(format: "%.3f", (result["seconds"] as? Double) ?? 0)
+        lastPrepareCode = ok ? "" : result["code"] as? String ?? ""
         note(ok ? "prepare: ready in \(seconds) s, generation \(result["generation"] ?? "?"), enable \((result["reused"] as? Bool) == true ? "reused" : "new")"
                 : "prepare: failed in \(seconds) s: \(result["code"] ?? "?") \(result["detail"] ?? "")",
              result.merging(["step": "prepare"]) { a, _ in a })
         return ok
+    }
+
+    /// prepare(), asked again up to `retries` more times while it answers session_timeout: the next
+    /// prepare waits for the same open (RecoveredNative), so a slow open is not taken for a failed one.
+    func prepare(retryingTimeouts retries: Int) async -> Bool {
+        for attempt in 0...max(0, retries) {
+            if await prepare() { return true }
+            guard attempt < retries, lastPrepareCode == "session_timeout" else { return false }
+            note("prepare: session_timeout, asking again (\(attempt + 1) of \(retries))", ["step": "prepare_retry", "attempt": attempt + 1])
+        }
+        return false
     }
 
     private func touch(_ fingers: [[PKTouchPoint]], _ what: String) async -> PKOutcome {
