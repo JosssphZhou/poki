@@ -365,18 +365,15 @@ jobs:
           [ "$crashed" = 0 ] || exit 1
 
       # The app's own logic against a fake launcher: tunnel loss named to the agent, pairing
-      # refusal and acceptance, the agent's view of the runner.
+      # refusal and acceptance, the agent's view of the runner. Run as app-tests.sh runs them on a
+      # Mac (injected into Poki, location granted): under `xcodebuild test` the in-process reads were
+      # refused and location was not granted.
       - name: App unit tests (simulator)
-        timeout-minutes: 25
-        run: |
-          set -o pipefail
-          xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
-            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build/sim \
-            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/tests.log | grep -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* " || true
-          # The reasons xcodebuild gives under "Testing failed:" are indented lines the filter drops.
-          grep -q "TEST SUCCEEDED" build/tests.log && exit 0
-          if grep -q "Testing failed:" build/tests.log; then sed -n '/Testing failed:/,$p' build/tests.log | head -40; else tail -40 build/tests.log; fi
-          exit 1
+        timeout-minutes: 30
+        env:
+          POKI_APP_TESTS_SECONDS: '1200'
+          POKI_APP_TESTS_LOG: build/tests.log
+        run: native/ios-app/scripts/app-tests.sh "$UDID" "$PWD/build/sim-tests"
 
       - uses: actions/upload-artifact@v4
         with:
