@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Local-time schedules. Only an actual foreground delivery or a tap can request a run.
+/// Local-time schedules. Automatic starts and notification taps share the same durable claim.
 @Observable @MainActor
 final class DailyTask {
     struct Plan: Codable, Equatable, Identifiable {
@@ -111,6 +111,10 @@ final class DailyTask {
         }
     }
 
+    func shouldRemind(_ delivery: Delivery, at now: Date = .now, calendar: Calendar = localCalendar) -> Bool {
+        eligible(delivery, at: now, calendar: calendar) != nil
+    }
+
     @discardableResult
     func run(_ delivery: Delivery, ready: Bool, at now: Date = .now, calendar: Calendar = localCalendar,
              submit: (String) -> Void) -> Result {
@@ -154,9 +158,39 @@ final class DailyTask {
         return (parts.year ?? 0) * 10_000 + (parts.month ?? 0) * 100 + (parts.day ?? 0)
     }
 
+    /// Give the running app ten seconds to start before iOS presents the fallback reminder.
+    /// Immediately after a successful start, second zero is already past: the repeating reminder
+    /// then points to tomorrow. After the grace window the clock can restore second ten.
+    static func reminderSecond(for plan: Plan, at now: Date, calendar: Calendar = localCalendar) -> Int {
+        guard let due = calendar.date(bySettingHour: plan.hour, minute: plan.minute, second: 0, of: now),
+              now >= due, now < due.addingTimeInterval(10),
+              plan.lastDay == dueDay(at: now, plan: plan, calendar: calendar) else { return 10 }
+        return 0
+    }
+
     nonisolated static var localCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .autoupdatingCurrent
         return calendar
+    }
+}
+
+/// Observes time only while the process actually runs. Restarting, returning from suspension or
+/// unlocking must not silently start an old occurrence that already asked the owner to tap.
+@MainActor
+final class DailyTaskClock {
+    private var checkedAt: Date
+
+    init(now: Date = .now) { checkedAt = now }
+
+    func advance(to now: Date, plans: [DailyTask.Plan], calendar: Calendar = DailyTask.localCalendar) -> [DailyTask.Delivery] {
+        let previous = checkedAt
+        checkedAt = now
+        guard now > previous, now.timeIntervalSince(previous) <= 10 else { return [] }
+        return plans.compactMap { plan in
+            guard let due = calendar.date(bySettingHour: plan.hour, minute: plan.minute, second: 0, of: now),
+                  due > previous, due <= now else { return nil }
+            return DailyTask.Delivery(id: plan.noticeID, date: due)
+        }
     }
 }

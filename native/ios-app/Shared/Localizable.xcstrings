@@ -81,18 +81,18 @@
         }
       }
     },
-    "Poki runs at that time if it’s open and idle. Otherwise, tap the reminder to run the task." : {
+    "With Poki on in the background, tasks start when your iPhone is unlocked and Poki is idle. Otherwise, tap the reminder." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "到点时，如果 Poki 在前台且空闲，就会直接运行。否则，点按提醒即可运行任务。"
+            "value" : "Poki 在后台运行时，iPhone 已解锁且 Poki 空闲就会自动执行任务。否则，点按提醒即可运行。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "到時間時，如果 Poki 在前景且閒置，就會直接執行。否則，點一下提醒即可執行任務。"
+            "value" : "Poki 在背景執行時，iPhone 已解鎖且 Poki 閒置就會自動執行任務。否則，點一下提醒即可執行。"
           }
         }
       }

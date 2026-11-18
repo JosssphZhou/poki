@@ -45,6 +45,7 @@ struct PokiApp: App {
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
         AskPoki.install(app: model, chat: chat)
+        DailyTaskNotice.schedulesChanged()
     }
 
     var body: some Scene {
@@ -293,6 +294,7 @@ struct RootView: View {
             }
         }
         .onChange(of: DailyTask.shared.pending, initial: true) { runTappedDailyTask() }
+        .onChange(of: DailyTask.shared.plans) { DailyTaskNotice.schedulesChanged() }
         .onChange(of: DailyTaskNotice.canStart(app: model, chat: chat)) { runTappedDailyTask() }
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in runTappedDailyTask() }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,

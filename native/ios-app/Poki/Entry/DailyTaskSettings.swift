@@ -43,7 +43,7 @@ struct DailyTaskSettings: View {
                 if !tasks.pending.isEmpty {
                     Text("Tasks are waiting. Turn on Poki and make sure it has a model and is idle.")
                 } else {
-                    Text("Poki runs at that time if it’s open and idle. Otherwise, tap the reminder to run the task.")
+                    Text("With Poki on in the background, tasks start when your iPhone is unlocked and Poki is idle. Otherwise, tap the reminder.")
                 }
             }
         }

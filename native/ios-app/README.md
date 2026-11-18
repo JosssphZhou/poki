@@ -39,12 +39,18 @@ distinct names if they are due together; the name can appear on the Lock Screen,
 instructions do not.
 Poki keeps up to 60 daily tasks so other reminders still have room.
 
-Keep Poki on, choose a model, and allow notifications. If Poki is in front and idle at the
-scheduled time, it starts a new conversation for the task. If Poki is busy or isn't open,
-iOS posts that task's reminder. Tap a reminder or its **Run Task** action and unlock if asked.
+Keep Poki on, choose a model, and allow notifications. While Poki's process is running,
+tasks start when the iPhone is unlocked and Poki is idle, even on the Home Screen or in another
+app. The scheduler uses Poki's existing background lifetime; it does not add a new keep-alive.
+If the phone is locked, Poki is busy, or its process was suspended or terminated, iOS posts
+that task's reminder. Reminders have a ten-second grace period so a successful automatic
+start can suppress that occurrence without cancelling future daily reminders.
+Tap a reminder or its **Run Task** action and unlock if asked.
 Tapped reminders wait their turn if Poki is already working; they do not replace one another.
-Simply unlocking the phone starts nothing. For each task, only its latest due occurrence can
-run, once. The usual approvals still apply.
+Simply unlocking after a missed occurrence starts nothing. If you swipe Poki away, a reminder
+tap must open it again; iOS cannot guarantee a timed cold launch. For each task, only its
+latest due occurrence can run, once. The usual approvals still apply. A first phone automation
+after a restart may still require opening Poki and answering iOS's own passcode prompt.
 
 To verify on a signed physical iPhone:
 
@@ -55,13 +61,16 @@ To verify on a signed physical iPhone:
    new conversation. Tap the second reminder while the first is running; the second task should
    start only after the first finishes. Expect one result per task and exactly two
    `[daily-task] scheduled task submitted` lines in Diagnostics.
-3. Return to Poki and relaunch it again; neither task should run again. Separately leave Poki
-   open and idle for a new occurrence and confirm the first task starts without a tap. Edit
+3. Return to Poki and relaunch it again; neither task should run again. Separately keep Poki on,
+   leave it with the Home gesture (do not swipe it away), and keep the phone unlocked on the Home
+   Screen or in Settings. A new occurrence must start without a tap and leave no reminder banner.
+   Repeat while locked: it must only remind, and unlocking alone must not start it. Edit
    or delete one schedule and confirm the other reminder still works.
 
 `PokiTests/DailyTaskTests` covers independent claims across launches, taps waiting in order,
 editing without losing a claim, and preserving data from the single-task format. The Lock Screen
-launch needs the device check above.
+launch, background lifetime, lock-state detection and notification suppression need the device
+checks above.
 
 ## Layout
 

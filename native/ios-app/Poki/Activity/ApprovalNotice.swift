@@ -84,14 +84,12 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
         }
     }
 
-    /// Approval banners still show in Poki. A daily task only shows a banner when it can't run yet.
+    /// The clock starts tasks at their due time. Notifications are the fallback, not another clock:
+    /// unlocking after the due time must not start a task without a tap.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         guard let delivery = DailyTaskNotice.delivery(notification) else { return [.banner, .sound, .list] }
         return await MainActor.run { () -> UNNotificationPresentationOptions in
-            switch DailyTaskNotice.runIfInFront(delivery) {
-            case .ignored, .submitted: return []
-            case .waiting: return [.banner, .sound, .list]
-            }
+            DailyTask.shared.shouldRemind(delivery) ? [.banner, .sound, .list] : []
         }
     }
 }
