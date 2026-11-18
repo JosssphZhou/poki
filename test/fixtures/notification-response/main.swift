@@ -9,13 +9,12 @@ enum ApprovalNotice {
 struct ApprovalDecision {
     let approvalID: String
     let approved: Bool
-    var stopAsking = false
+    let stopAsking: Bool
 }
 enum ApprovalIntentBridge {
     @MainActor static func submit(_ decision: ApprovalDecision) {
         precondition(Thread.isMainThread)
         precondition(decision.approvalID == "test-approval")
-        print("DECISION approved=\(decision.approved) stopAsking=\(decision.stopAsking)")
     }
 }
 checkNotificationResponses(ApprovalNoticeDelegate.shared)

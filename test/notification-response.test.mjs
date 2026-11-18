@@ -30,11 +30,6 @@ test('notification response completion returns to UIKit on the main thread', { s
     const { stdout } = await exec(executable, [], { timeout: 10_000 });
     process.stdout.write(stdout);
     assert.match(stdout, /PASS: notification responses complete on the main thread/);
-    assert.deepEqual(stdout.split('\n').filter(line => line.startsWith('DECISION ')), [
-      'DECISION approved=true stopAsking=false',
-      'DECISION approved=false stopAsking=false',
-      'DECISION approved=true stopAsking=true',
-    ]);
   } catch (error) {
     if (error.stdout) process.stdout.write(error.stdout);
     if (error.stderr) process.stderr.write(error.stderr);

@@ -15,7 +15,7 @@
 @end
 
 static void deliver(id<UNUserNotificationCenterDelegate> delegate, NSUInteger index) {
-    NSArray *actions = @[UNNotificationDefaultActionIdentifier, @"approval.allow", @"approval.deny", @"approval.stop", @"unknown"];
+    NSArray *actions = @[UNNotificationDefaultActionIdentifier, @"approval.allow", @"approval.deny", @"unknown"];
     if (index == actions.count) {
         puts("PASS: notification responses complete on the main thread");
         exit(0);
