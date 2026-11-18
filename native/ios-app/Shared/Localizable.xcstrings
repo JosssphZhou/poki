@@ -35625,6 +35625,314 @@
           }
         }
       }
+    },
+    "Poki could not prepare the microphone for live voice." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki could not prepare the microphone for live voice."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 无法为实时语音准备麦克风。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 無法為即時語音準備麥克風。"
+          }
+        }
+      }
+    },
+    "Poki could not connect to Gemini Live." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki could not connect to Gemini Live."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 无法连接 Gemini Live。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 無法連線至 Gemini Live。"
+          }
+        }
+      }
+    },
+    "Check your Gemini key in Settings › Models. Gemini rejected it." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your Gemini key in Settings › Models. Gemini rejected it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在“设置 › 模型”中检查你的 Gemini 密钥，Gemini 拒绝了该密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在「設定 › 模型」中檢查你的 Gemini 金鑰，Gemini 拒絕了該金鑰。"
+          }
+        }
+      }
+    },
+    "Gemini answered: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini answered: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 返回：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 回應：%@"
+          }
+        }
+      }
+    },
+    "Gemini answered %lld: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini answered %1$lld: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 返回 %1$lld：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 回應 %1$lld：%2$@"
+          }
+        }
+      }
+    },
+    "Your Gemini key, straight from this iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Gemini key, straight from this iPhone"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用你的 Gemini 密钥，由本机直连"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用你的 Gemini 金鑰，由本機直連"
+          }
+        }
+      }
+    },
+    "Gemini key" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 金鑰"
+          }
+        }
+      }
+    },
+    "Live voice needs an OpenAI or Gemini API key. Dictation in the message field works with this account." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Voice requires an OpenAI or Gemini API key. Message dictation works with this account."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音需要 OpenAI 或 Gemini API 密钥。输入框听写可使用此账户。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時語音需要 OpenAI 或 Gemini API 金鑰。輸入框聽寫可使用此帳號。"
+          }
+        }
+      }
+    },
+    "Live voice is a spoken conversation with Gemini Live: it listens, taps and types, and answers out loud." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Voice is a spoken conversation with Gemini Live. Poki listens, acts on screen, and replies aloud."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音通过 Gemini Live 进行语音对话，支持边听边操作并朗读回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時語音透過 Gemini Live 進行語音對話，支援邊聽邊操作並朗讀回答。"
+          }
+        }
+      }
+    },
+    "Refresh the model list under Text Chat to add the other Gemini Live models your key can use." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refresh the model list under Text Chat to add the other Gemini Live models your key can use."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“文字聊天”下刷新模型列表，以添加你的密钥可用的其他 Gemini Live 模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「文字聊天」下重新整理模型列表，以新增你的金鑰可用的其他 Gemini Live 模型。"
+          }
+        }
+      }
+    },
+    "Text chat works with every account. Live voice works with an OpenAI or Gemini API key." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text chat works with every account. Live Voice works with an OpenAI or Gemini API key."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字聊天支持所有账户。实时语音支持 OpenAI 或 Gemini API 密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字聊天支援所有帳號。即時語音支援 OpenAI 或 Gemini API 金鑰。"
+          }
+        }
+      }
+    },
+    "A live conversation uses OpenAI Realtime or Gemini Live, which needs an OpenAI or Gemini API key in Settings › Models. Dictation in the message field works with every model." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live Voice uses OpenAI Realtime or Gemini Live and requires an OpenAI or Gemini API key in Settings › Models. Message dictation works with any model."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时语音使用 OpenAI Realtime 或 Gemini Live，需在“设置 › 模型”中添加 OpenAI 或 Gemini API 密钥。输入框听写支持所有模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即時語音使用 OpenAI Realtime 或 Gemini Live，需在「設定 › 模型」中新增 OpenAI 或 Gemini API 金鑰。輸入框聽寫支援所有模型。"
+          }
+        }
+      }
+    },
+    "Talk with Poki uses Live Voice on your Gemini account. Turn it on in Settings. Dictate works without it." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talk with Poki uses Live Voice on your Gemini account. Turn it on in Settings. Dictate works without it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 对话用的是 Gemini 账户的实时语音，请在设置里打开。听写不需要它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 對話用的是 Gemini 帳戶的即時語音，請在設定裡開啟。聽寫不需要它。"
+          }
+        }
+      }
+    },
+    "Talk with Poki needs an OpenAI or Gemini API key. Add one in Settings. Dictate works without it." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Talk with Poki needs an OpenAI or Gemini API key. Add one in Settings. Dictate works without it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 对话需要 OpenAI 或 Gemini API 密钥，请在设置中添加。听写不需要它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "和 Poki 對話需要 OpenAI 或 Gemini API 金鑰，請在設定中新增。聽寫不需要它。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

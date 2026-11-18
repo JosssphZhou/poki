@@ -18,8 +18,7 @@ struct ModelSettingsView: View {
     var opensVoiceKey = false
     @State private var adding = false
     @State private var version = ModelKeys.saved
-    @State private var enteringVoiceKey = false
-    @State private var showingLiveVoice = false
+    @State private var showingLiveVoiceProvider: ModelProvider?
     @State private var openedForVoice = false
 
     var body: some View {
@@ -56,12 +55,15 @@ struct ModelSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
         .sheet(isPresented: $adding) { AddAccount() }
-        .sheet(isPresented: $enteringVoiceKey) { KeyEntry(provider: .openai) }
-        .navigationDestination(isPresented: $showingLiveVoice) { LiveVoiceFeature() }
+        .navigationDestination(item: $showingLiveVoiceProvider) { LiveVoiceFeature(provider: $0) }
         .task {
             guard opensVoiceKey, !openedForVoice else { return }
             openedForVoice = true
-            if !ModelKeys.hasKey(.openai) { enteringVoiceKey = true } else if !VoiceDirect.enabled { showingLiveVoice = true }
+            if let disabled = VoiceDirect.disabledProviderWithKey {
+                showingLiveVoiceProvider = disabled
+            } else if VoiceDirect.activeProvider == nil {
+                adding = true
+            }
         }
     }
 }
@@ -101,7 +103,7 @@ private struct InUseCard: View {
 
     @ViewBuilder private func uses(has: Bool, provider: ModelProvider, singleLine: Bool) -> some View {
         chip("Text Chat", has ? provider.name : AppLocalization.text(LocalizedStringResource("No Account")), singleLine: singleLine)
-        chip("Live Voice", VoiceDirect.apiKey != nil ? AppLocalization.text(LocalizedStringResource("OpenAI")) : AppLocalization.text(LocalizedStringResource("No Account")), singleLine: singleLine)
+        chip("Live Voice", VoiceDirect.activeProvider?.name ?? AppLocalization.text(LocalizedStringResource("No Account")), singleLine: singleLine)
         chip("Dictation", AppLocalization.text(LocalizedStringResource("On This iPhone")), singleLine: singleLine)
     }
 
@@ -131,8 +133,7 @@ enum ModelAccounts {
     }
 
     static func canChat(_ provider: ModelProvider) -> Bool { provider.wired }
-    /// Live voice is OpenAI's Realtime API: an OpenAI API key only (a ChatGPT sign-in can't open it).
-    static func canTalkLive(_ provider: ModelProvider) -> Bool { provider == .openai }
+    static func canTalkLive(_ provider: ModelProvider) -> Bool { VoiceDirect.supportedProviders.contains(provider) }
 
     static func method(_ provider: ModelProvider) -> String {
         switch provider {
@@ -146,7 +147,7 @@ enum ModelAccounts {
     static func uses(_ provider: ModelProvider) -> String {
         var out: [String] = []
         if ModelKeys.selectedProvider == provider, ModelKeys.hasUsableKey { out.append(AppLocalization.text(LocalizedStringResource("Text Chat"))) }
-        if canTalkLive(provider), VoiceDirect.apiKey != nil { out.append(AppLocalization.text(LocalizedStringResource("Live Voice"))) }
+        if VoiceDirect.activeProvider == provider { out.append(AppLocalization.text(LocalizedStringResource("Live Voice"))) }
         return out.isEmpty ? AppLocalization.text(LocalizedStringResource("Not in use")) : out.joined(separator: ", ")
     }
 }
@@ -191,9 +192,9 @@ private struct AccountDetail: View {
                     } label: { SettingsLabel("Text Chat", systemImage: "bubble.left.and.text.bubble.right") }
                 }
                 .disabled(!ModelAccounts.canChat(provider))
-                NavigationLink { LiveVoiceFeature() } label: {
+                NavigationLink { LiveVoiceFeature(provider: provider) } label: {
                     LabeledContent {
-                        Text(ModelAccounts.canTalkLive(provider) ? (VoiceDirect.enabled ? VoiceDirect.model : AppLocalization.text(LocalizedStringResource("Off"))) : AppLocalization.text(LocalizedStringResource("Not Supported")))
+                        Text(ModelAccounts.canTalkLive(provider) ? (VoiceDirect.activeProvider == provider ? ModelCatalog.voiceModel(for: provider) : AppLocalization.text(LocalizedStringResource("Off"))) : AppLocalization.text(LocalizedStringResource("Not Supported")))
                     } label: { SettingsLabel("Live Voice", systemImage: "waveform") }
                 }
                 .disabled(!ModelAccounts.canTalkLive(provider))
@@ -203,7 +204,7 @@ private struct AccountDetail: View {
                 if !ModelAccounts.canChat(provider) {
                     Text("Poki keeps this key; chatting with \(provider.name) comes in an update.")
                 } else if !ModelAccounts.canTalkLive(provider) {
-                    Text("Live voice runs on OpenAI’s Realtime API, which only an OpenAI API key can open. Dictation in the message field works with this account.")
+                    Text("Live voice needs an OpenAI or Gemini API key. Dictation in the message field works with this account.")
                 }
             }
 
@@ -277,30 +278,39 @@ private struct TextChatFeature: View {
     }
 }
 
-/// Account › Live Voice (OpenAI only): on or off, the voice model, and which voice models to offer.
 private struct LiveVoiceFeature: View {
+    var provider: ModelProvider = .openai
     @State private var version = ModelKeys.saved
 
     var body: some View {
+        let isActive = VoiceDirect.activeProvider == provider
         Form {
             Section {
-                Toggle("Use for Live Voice", isOn: Binding(get: { VoiceDirect.enabled }, set: { VoiceDirect.enabled = $0 }))
-                if VoiceDirect.enabled {
-                    Picker("Voice Model", selection: Binding(get: { ModelCatalog.voiceModel }, set: { ModelCatalog.voiceModel = $0 })) {
-                        ForEach(ModelCatalog.voiceAvailable) { Text($0.name).tag($0.id) }
+                Toggle("Use for Live Voice", isOn: Binding(get: { VoiceDirect.activeProvider == provider }, set: { VoiceDirect.setEnabled($0, for: provider) }))
+                if isActive {
+                    Picker("Voice Model", selection: Binding(get: { ModelCatalog.voiceModel(for: provider) }, set: { ModelCatalog.setVoiceModel($0, for: provider) })) {
+                        ForEach(ModelCatalog.voiceAvailable(for: provider)) { Text($0.name).tag($0.id) }
                     }
                 }
             } footer: {
-                Text("Live voice is a spoken conversation with OpenAI’s Realtime model: it listens, taps and types, and answers out loud.")
+                if provider == .gemini {
+                    Text("Live voice is a spoken conversation with Gemini Live: it listens, taps and types, and answers out loud.")
+                } else {
+                    Text("Live voice is a spoken conversation with OpenAI’s Realtime model: it listens, taps and types, and answers out loud.")
+                }
             }
             Section {
-                ForEach(ModelCatalog.voiceAll) { choice in
-                    Toggle(choice.name, isOn: Binding(get: { ModelCatalog.voiceEnabled.contains(choice.id) }, set: { ModelCatalog.setVoice(choice.id, on: $0) }))
+                ForEach(ModelCatalog.voiceAll(for: provider)) { choice in
+                    Toggle(choice.name, isOn: Binding(get: { ModelCatalog.voiceEnabled(for: provider).contains(choice.id) }, set: { ModelCatalog.setVoice(choice.id, on: $0, for: provider) }))
                 }
             } header: {
                 Text("Voice Models to Choose From")
             } footer: {
-                Text("Refresh the model list under Text Chat to add the other Realtime models your key can use.")
+                if provider == .gemini {
+                    Text("Refresh the model list under Text Chat to add the other Gemini Live models your key can use.")
+                } else {
+                    Text("Refresh the model list under Text Chat to add the other Realtime models your key can use.")
+                }
             }
         }
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
@@ -338,7 +348,7 @@ struct AddAccount: View {
                         }
                     }
                 } footer: {
-                    Text("Text chat works with every account. Live voice needs an OpenAI API key.")
+                    Text("Text chat works with every account. Live voice works with an OpenAI or Gemini API key.")
                 }
             }
             .listStyle(.insetGrouped)

@@ -17,6 +17,18 @@ struct VoiceView: View {
         if embedded { form } else { NavigationStack { form.toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { if let close { close() } else { dismiss() } } } } } }
     }
 
+    private var liveVoiceLabel: String {
+        if let provider = VoiceDirect.activeProvider {
+            return provider == .gemini
+                ? AppLocalization.text(LocalizedStringResource("Gemini key"))
+                : AppLocalization.text(LocalizedStringResource("OpenAI key"))
+        }
+        if voice.canTalkLive {
+            return AppLocalization.text(LocalizedStringResource("Voice bridge"))
+        }
+        return AppLocalization.text(LocalizedStringResource("Not Available"))
+    }
+
     private var form: some View {
         @Bindable var voice = voice
         return Form {
@@ -24,7 +36,7 @@ struct VoiceView: View {
                 // beside it for dictation). This page only says how it runs and keeps its options.
                 Section {
                     LabeledContent {
-                        Text(voice.canTalkLive ? (VoiceDirect.apiKey != nil ? AppLocalization.text(LocalizedStringResource("OpenAI key")) : AppLocalization.text(LocalizedStringResource("Voice bridge"))) : AppLocalization.text(LocalizedStringResource("Not Available")))
+                        Text(liveVoiceLabel)
                             .foregroundStyle(voice.canTalkLive ? Color.secondary : Color.orange)
                     } label: {
                         SettingsLabel("Live Voice", systemImage: "waveform")
@@ -38,7 +50,7 @@ struct VoiceView: View {
                     else if voice.canTalkLive {
                         Text("In the chat, the waveform button starts a live conversation: Poki listens, acts and answers out loud, also while you are in another app. It ends by itself 8 seconds after an answer if nobody speaks. Tap End to stop sooner. The microphone in the message field only dictates.")
                     } else {
-                        Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Settings › Models. Dictation in the message field works with every model.")
+                        Text("A live conversation uses OpenAI Realtime or Gemini Live, which needs an OpenAI or Gemini API key in Settings › Models. Dictation in the message field works with every model.")
                     }
                 }
                 ActionButtonSection()

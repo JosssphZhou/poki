@@ -96,12 +96,17 @@ final class VoiceModelTests: XCTestCase {
 
     private var savedBridge: String?
     private var savedDirect: Any?
+    private var savedGeminiDirect: Any?
+    private var savedVoiceProvider: Any?
 
     override func setUp() {
         savedBridge = UserDefaults.standard.string(forKey: "voiceBridge")
         savedDirect = UserDefaults.standard.object(forKey: "voice.openai.enabled")
-        // The token comes from the stubbed bridge, never from an OpenAI key this simulator may hold.
-        VoiceDirect.enabled = false
+        savedGeminiDirect = UserDefaults.standard.object(forKey: "voice.gemini.enabled")
+        savedVoiceProvider = UserDefaults.standard.object(forKey: "voice.provider")
+        // The token comes from the stubbed bridge, never from a key this simulator may hold.
+        VoiceDirect.setEnabled(false, for: .openai)
+        VoiceDirect.setEnabled(false, for: .gemini)
         URLProtocol.registerClass(BridgeStub.self)
     }
 
@@ -109,6 +114,8 @@ final class VoiceModelTests: XCTestCase {
         URLProtocol.unregisterClass(BridgeStub.self)
         UserDefaults.standard.set(savedBridge, forKey: "voiceBridge")
         UserDefaults.standard.set(savedDirect, forKey: "voice.openai.enabled")
+        UserDefaults.standard.set(savedGeminiDirect, forKey: "voice.gemini.enabled")
+        UserDefaults.standard.set(savedVoiceProvider, forKey: "voice.provider")
     }
 
     /// One VoiceModel with its connections (one per conversation), its time, and what Poki was told about

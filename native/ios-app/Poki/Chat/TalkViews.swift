@@ -17,7 +17,8 @@ struct VoiceKeyNotice: View {
     var close: () -> Void
 
     var body: some View {
-        let off = ModelKeys.hasKey(.openai) && !VoiceDirect.enabled
+        let disabledProvider = VoiceDirect.disabledProviderWithKey
+        let off = disabledProvider != nil
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "key.fill").font(.body.weight(.semibold)).foregroundStyle(.white)
@@ -25,8 +26,10 @@ struct VoiceKeyNotice: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(off ? LocalizedStringKey("Live Voice Is Off") : LocalizedStringKey("No Voice Key Set Up")).font(.body.weight(.semibold)).foregroundStyle(Color(.label))
-                    Text(off ? LocalizedStringKey("Talk with Poki uses Live Voice on your OpenAI account. Turn it on in Settings. Dictate works without it.")
-                             : LocalizedStringKey("Talk with Poki needs an OpenAI API key. Add one in Settings. Dictate works without it."))
+                    Text(off ? (disabledProvider == .gemini
+                                ? LocalizedStringKey("Talk with Poki uses Live Voice on your Gemini account. Turn it on in Settings. Dictate works without it.")
+                                : LocalizedStringKey("Talk with Poki uses Live Voice on your OpenAI account. Turn it on in Settings. Dictate works without it."))
+                             : LocalizedStringKey("Talk with Poki needs an OpenAI or Gemini API key. Add one in Settings. Dictate works without it."))
                         .font(.subheadline).foregroundStyle(Color(.secondaryLabel))
                         .fixedSize(horizontal: false, vertical: true)
                 }

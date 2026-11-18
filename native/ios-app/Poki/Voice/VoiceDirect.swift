@@ -11,20 +11,75 @@ import Speech
 ///   audio, holding the button dictates on this iPhone (Apple's speech recognition, on the device when
 ///   it can) and lets go to send it to Poki's chat; Poki reads the answer out loud.
 enum VoiceDirect {
-    /// The live voice model the owner picked (Accounts › OpenAI › Live Voice), GPT Realtime 2.1 by default.
-    static var model: String { ModelCatalog.voiceModel }
+    static let supportedProviders: [ModelProvider] = [.openai, .gemini]
 
-    /// The OpenAI API key on this iPhone, when there is one.
-    static var apiKey: String? { enabled ? ModelKeys.key(.openai) : nil }
+    /// The owner's switch in Accounts › <account> › Live Voice. Gemini starts off while a Mac voice bridge
+    /// is set, so a bridge that talked before keeps talking until the owner turns Gemini on.
+    static func isEnabled(_ provider: ModelProvider) -> Bool {
+        UserDefaults.standard.object(forKey: "voice.\(provider.rawValue).enabled") as? Bool ?? (provider != .gemini || VoiceBridge.saved == nil)
+    }
 
-    /// The owner's switch in Accounts › OpenAI › Live Voice (on unless turned off).
+    static func setEnabled(_ on: Bool, for provider: ModelProvider) {
+        UserDefaults.standard.set(on, forKey: "voice.\(provider.rawValue).enabled")
+        if on {
+            UserDefaults.standard.set(provider.rawValue, forKey: "voice.provider")
+        }
+        ModelKeys.saved += 1
+    }
+
+    static var activeProvider: ModelProvider? {
+        let ready = supportedProviders.filter { ModelKeys.hasKey($0) && isEnabled($0) }
+        guard !ready.isEmpty else { return nil }
+        if let preferred = UserDefaults.standard.string(forKey: "voice.provider").flatMap(ModelProvider.init(rawValue:)),
+           ready.contains(preferred) {
+            return preferred
+        }
+        return ready.first
+    }
+
+    static var disabledProviderWithKey: ModelProvider? {
+        guard activeProvider == nil else { return nil }
+        if let preferred = UserDefaults.standard.string(forKey: "voice.provider").flatMap(ModelProvider.init(rawValue:)),
+           supportedProviders.contains(preferred), ModelKeys.hasKey(preferred), !isEnabled(preferred) {
+            return preferred
+        }
+        return supportedProviders.first { ModelKeys.hasKey($0) && !isEnabled($0) }
+    }
+
+    static var model: String { ModelCatalog.voiceModel(for: activeProvider ?? .openai) }
+
+    static var apiKey: String? { activeProvider.flatMap(ModelKeys.key) }
+
     static var enabled: Bool {
-        get { UserDefaults.standard.object(forKey: "voice.openai.enabled") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "voice.openai.enabled"); ModelKeys.saved += 1 }
+        get { isEnabled(.openai) }
+        set { setEnabled(newValue, for: .openai) }
     }
 
     /// Dictation into the chat works with any model the chat can use.
     static var canDictate: Bool { ModelKeys.hasUsableKey }
+
+    static func sessionToken(for provider: ModelProvider, apiKey: String) async throws -> VoiceBridge.Token {
+        if provider == .gemini {
+            return VoiceBridge.Token(value: apiKey, model: ModelCatalog.voiceModel(for: .gemini), local_tools: ["get_ios_version", "look", "do"])
+        }
+        return try await token(apiKey: apiKey)
+    }
+
+    @MainActor
+    static func makeConnection(for provider: ModelProvider?,
+                               onEvent: @escaping @MainActor ([String: Any]) -> Void,
+                               onClosed: @escaping @MainActor (String) -> Void) -> VoiceConnection {
+        if provider == .gemini {
+            return VoiceSocketLink(adapter: geminiAdapter(), onEvent: onEvent, onClosed: onClosed)
+        }
+        return VoiceLink(onEvent: onEvent, onClosed: onClosed)
+    }
+
+    /// Gemini Live with the same instructions and tools as OpenAI Realtime.
+    @MainActor
+    static func geminiAdapter() -> GeminiVoiceAdapter {
+        GeminiVoiceAdapter(model: ModelCatalog.voiceModel(for: .gemini), instructions: instructions, tools: tools)
+    }
 
     /// This iPhone's first preferred language, named in English ("Chinese, Simplified (China mainland)"):
     /// the language to speak only before the user has spoken.
@@ -60,6 +115,7 @@ enum VoiceDirect {
 
     /// A one-minute Realtime key from OpenAI, made with the owner's API key (sent only to OpenAI).
     static func token(apiKey: String) async throws -> VoiceBridge.Token {
+        let model = ModelCatalog.voiceModel(for: .openai)
         let session: [String: Any] = [
             "type": "realtime", "model": model, "instructions": instructions, "output_modalities": ["audio"],
             "audio": [

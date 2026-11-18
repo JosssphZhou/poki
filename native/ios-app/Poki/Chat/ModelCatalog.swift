@@ -72,7 +72,16 @@ enum ModelCatalog {
             .filter { usable($0, provider) }
         if provider == .openai {
             let voice = items.compactMap { $0["id"] as? String }.filter { $0.contains("realtime") && !$0.contains("transcribe") }.sorted()
-            UserDefaults.standard.set(voice, forKey: "models.listed.voice")
+            UserDefaults.standard.set(voice, forKey: voiceListedKey(.openai))
+        }
+        if provider == .gemini {
+            let voice = items.compactMap { item -> String? in
+                guard let methods = item["supportedGenerationMethods"] as? [String],
+                      methods.contains("bidiGenerateContent"),
+                      let raw = (item["name"] as? String) ?? (item["id"] as? String) else { return nil }
+                return raw.hasPrefix("models/") ? String(raw.dropFirst(7)) : raw
+            }
+            UserDefaults.standard.set(Array(Set(voice)).sorted(), forKey: voiceListedKey(.gemini))
         }
         if provider == .openrouter {
             let reasoning = items.compactMap { item -> String? in
@@ -94,6 +103,8 @@ enum ModelCatalog {
         let lower = id.lowercased()
         let skip = ["embed", "audio", "realtime", "transcribe", "tts", "whisper", "image", "dall-e", "moderation", "search", "aqa", "imagen", "veo"]
         if skip.contains(where: lower.contains) { return false }
+        // Gemini Live models only take a live conversation, not a chat request.
+        if provider == .gemini, lower.contains("-live") { return false }
         switch provider {
         case .openai: return lower.hasPrefix("gpt-") || lower.hasPrefix("o")
         case .anthropic: return lower.hasPrefix("claude")
@@ -141,34 +152,63 @@ enum ModelCatalog {
 
     // MARK: Voice
 
-    /// Live voice models (OpenAI Realtime): the built-in one and any the key's list adds, off at first.
     static let voiceDefault = "gpt-realtime-2.1"
 
-    static var voiceAll: [ChatModelChoice] {
-        let listed = (UserDefaults.standard.stringArray(forKey: "models.listed.voice") ?? []).filter { $0 != voiceDefault }
-        return [ChatModelChoice(id: voiceDefault, name: "GPT Realtime 2.1")] + listed.map { ChatModelChoice(id: $0, name: $0) }
+    static func voiceDefault(for provider: ModelProvider) -> String {
+        provider == .gemini ? GeminiVoiceAdapter.defaultModel : voiceDefault
     }
 
-    static var voiceEnabled: Set<String> {
-        Set(UserDefaults.standard.stringArray(forKey: "models.enabled.voice") ?? [voiceDefault])
+    private static func voiceDefaultName(for provider: ModelProvider) -> String {
+        provider == .gemini ? "Gemini 3.8 Live" : "GPT Realtime 2.1"
     }
 
-    static func setVoice(_ id: String, on: Bool) {
-        var ids = voiceEnabled
+    private static func voiceListedKey(_ provider: ModelProvider) -> String {
+        provider == .openai ? "models.listed.voice" : "models.listed.voice.\(provider.rawValue)"
+    }
+
+    private static func voiceEnabledKey(_ provider: ModelProvider) -> String {
+        provider == .openai ? "models.enabled.voice" : "models.enabled.voice.\(provider.rawValue)"
+    }
+
+    private static func voiceModelKey(_ provider: ModelProvider) -> String {
+        provider == .openai ? "voice.model" : "voice.model.\(provider.rawValue)"
+    }
+
+    static func voiceAll(for provider: ModelProvider) -> [ChatModelChoice] {
+        let base = voiceDefault(for: provider)
+        let listed = (UserDefaults.standard.stringArray(forKey: voiceListedKey(provider)) ?? []).filter { $0 != base }
+        return [ChatModelChoice(id: base, name: voiceDefaultName(for: provider))] + listed.map { ChatModelChoice(id: $0, name: $0) }
+    }
+
+    static func voiceEnabled(for provider: ModelProvider) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: voiceEnabledKey(provider)) ?? [voiceDefault(for: provider)])
+    }
+
+    static func setVoice(_ id: String, on: Bool, for provider: ModelProvider) {
+        var ids = voiceEnabled(for: provider)
         if on { ids.insert(id) } else { ids.remove(id) }
-        UserDefaults.standard.set(Array(ids), forKey: "models.enabled.voice")
-        if !ids.contains(voiceModel) { voiceModel = voiceAll.first { ids.contains($0.id) }?.id ?? voiceDefault }
-        ModelKeys.saved += 1
+        UserDefaults.standard.set(Array(ids), forKey: voiceEnabledKey(provider))
+        let current = voiceModel(for: provider)
+        if !ids.contains(current) {
+            setVoiceModel(voiceAll(for: provider).first { ids.contains($0.id) }?.id ?? voiceDefault(for: provider), for: provider)
+        } else {
+            ModelKeys.saved += 1
+        }
     }
 
-    static var voiceAvailable: [ChatModelChoice] { voiceAll.filter { voiceEnabled.contains($0.id) } }
+    static func voiceAvailable(for provider: ModelProvider) -> [ChatModelChoice] {
+        let on = voiceEnabled(for: provider)
+        return voiceAll(for: provider).filter { on.contains($0.id) }
+    }
 
-    /// The live voice model.
-    static var voiceModel: String {
-        get {
-            let saved = UserDefaults.standard.string(forKey: "voice.model") ?? voiceDefault
-            return voiceEnabled.contains(saved) ? saved : voiceAvailable.first?.id ?? voiceDefault
-        }
-        set { UserDefaults.standard.set(newValue, forKey: "voice.model"); ModelKeys.saved += 1 }
+    static func voiceModel(for provider: ModelProvider) -> String {
+        let base = voiceDefault(for: provider)
+        let saved = UserDefaults.standard.string(forKey: voiceModelKey(provider)) ?? base
+        return voiceEnabled(for: provider).contains(saved) ? saved : voiceAvailable(for: provider).first?.id ?? base
+    }
+
+    static func setVoiceModel(_ id: String, for provider: ModelProvider) {
+        UserDefaults.standard.set(id, forKey: voiceModelKey(provider))
+        ModelKeys.saved += 1
     }
 }
