@@ -62,6 +62,8 @@ final class HistoryStore: @unchecked Sendable {
         CREATE INDEX IF NOT EXISTS entries_at ON entries (at);
         CREATE TABLE IF NOT EXISTS record (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS record_at ON record (at);
+        CREATE TABLE IF NOT EXISTS habit_agent_spans (id INTEGER PRIMARY KEY AUTOINCREMENT, app TEXT NOT NULL, start_at REAL NOT NULL, end_at REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS habit_agent_spans_end ON habit_agent_spans (end_at);
         CREATE TABLE IF NOT EXISTS notes (start REAL PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL);
         """
         guard sqlite3_exec(handle, schema, nil, nil, nil) == SQLITE_OK else {
@@ -234,7 +236,39 @@ final class HistoryStore: @unchecked Sendable {
             self.run("DELETE FROM entries")
             self.run("DELETE FROM notes")
             self.run("DELETE FROM record")
+            self.run("DELETE FROM habit_agent_spans")
             self.run("VACUUM")
+        }
+    }
+
+    // MARK: Habits
+
+    /// Marks `app` as driven by an agent from `start` to `end`, so uses that begin then are not taken
+    /// as the owner's own. A span that touches the last one of the same app extends it.
+    func markAgent(app: String, from start: Date, to end: Date) {
+        queue.async {
+            let (from, to) = (start.timeIntervalSince1970, end.timeIntervalSince1970)
+            self.run("UPDATE habit_agent_spans SET end_at = MAX(end_at, ?) WHERE id = (SELECT id FROM habit_agent_spans WHERE app = ? AND end_at >= ? AND start_at <= ? ORDER BY end_at DESC LIMIT 1)",
+                     [.real(to), .text(app), .real(from), .real(to)])
+            if sqlite3_changes(self.db) == 0 {
+                self.run("INSERT INTO habit_agent_spans (app, start_at, end_at) VALUES (?, ?, ?)", [.text(app), .real(from), .real(to)])
+            }
+            self.run("DELETE FROM habit_agent_spans WHERE end_at < ?", [.real(Date().timeIntervalSince1970 - 21 * 86_400)])
+        }
+    }
+
+    /// What a habit is worked out from: which app was in front and when (never the text, title or
+    /// tree), and the agent's spans. Synchronous: a few thousand small rows at most, read when a chat
+    /// task starts. Empty while the iPhone is locked.
+    func habitInputs(since start: Date) -> (observations: [ScreenHabitRawObservation], spans: [AgentAppSpan]) {
+        queue.sync {
+            let observations = self.rows("SELECT id, at, app FROM entries WHERE at >= ? ORDER BY at, id", [.real(start.timeIntervalSince1970)]) {
+                ScreenHabitRawObservation(id: sqlite3_column_int64($0, 0), at: Date(timeIntervalSince1970: sqlite3_column_double($0, 1)), bundleID: Self.string($0, 2))
+            }
+            let spans = self.rows("SELECT app, start_at, end_at FROM habit_agent_spans WHERE end_at >= ?", [.real(start.timeIntervalSince1970)]) {
+                AgentAppSpan(bundleID: Self.string($0, 0), startAt: Date(timeIntervalSince1970: sqlite3_column_double($0, 1)), endAt: Date(timeIntervalSince1970: sqlite3_column_double($0, 2)))
+            }
+            return (observations, spans)
         }
     }
 

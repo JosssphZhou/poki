@@ -17,6 +17,10 @@ struct MemoryView: View {
     @State private var exportURL: URL?
     @State private var confirmClear = false
     private let store = RoutineStore.shared
+    @ObservedObject private var capture = HistoryCapture.shared
+    @ObservedObject private var lock = HistoryLock.shared
+    @State private var habit: LearnedMusicHabit?
+    private var learning: Bool { capture.enabled && capture.learnHabits }
 
     var body: some View {
         Form {
@@ -30,6 +34,29 @@ struct MemoryView: View {
                 SettingsHeader("Routines")
             } footer: {
                 Text("An agent saves a routine after a task that worked; the next time it repeats the task in one step and stops where the screen differs. Swipe a routine to forget it.")
+            }
+
+            if learning {
+                Section {
+                    if lock.unlocked || lock.needsSetup {
+                        LearnedHabitRows(habit: habit, forget: forgetHabit)
+                    } else {
+                        NavigationLink {
+                            HistoryGate {
+                                Form { LearnedHabitRows(habit: habit, forget: forgetHabit) }
+                                    .navigationTitle(AppLocalization.text("Learned from Screen History"))
+                                    .navigationBarTitleDisplayMode(.inline)
+                            }
+                        } label: {
+                            SettingsRow(title: "Unlock to View", symbol: "lock")
+                        }
+                        .accessibilityIdentifier("memory.habits.unlock")
+                    }
+                } header: {
+                    SettingsHeader("Learned from Screen History")
+                } footer: {
+                    Text("Inferred on this iPhone from which apps you used and when. It is not a note: it is not exported, backed up or shown to connected agents. Turning off Screen History or Learn Habits forgets it.")
+                }
             }
 
             Section {
@@ -68,6 +95,10 @@ struct MemoryView: View {
         .navigationTitle(AppLocalization.text("Memory"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: reload)
+        // The model is asked when what it would read changed since it was last asked.
+        .task { await ScreenHabits.judge(); reload() }
+        .onChange(of: lock.unlocked) { _, _ in reload() }
+        .onChange(of: capture.learnHabits) { _, _ in reload() }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             switch result {
             case .success(let url):
@@ -98,8 +129,16 @@ struct MemoryView: View {
         reload()
     }
 
+    /// Forget the learned habit: uses kept so far never count again (delete and stop learning it;
+    /// learning starts over from new uses).
+    private func forgetHabit() {
+        ScreenHabits.forget()
+        reload()
+    }
+
     /// Reads the store again and writes the export to tmp for the share sheet.
     private func reload() {
+        habit = ScreenHabits.musicApp()
         routines = store.routines.sorted { $0.updated > $1.updated }
         notes = store.notes
         let tmp = FileManager.default.temporaryDirectory
@@ -129,5 +168,41 @@ private struct RoutineRow: View {
         let runs = routine.runs == 0 ? AppLocalization.text(LocalizedStringResource("not run yet")) : AppLocalization.text(LocalizedStringResource("worked \(routine.ok) of \(routine.runs)"))
         let base = "\(steps) · \(runs) · \(routine.savedBy)"
         return routine.stale ? AppLocalization.text(LocalizedStringResource("Needs redoing: stopped twice in a row")) + " · " + base : base
+    }
+}
+
+/// The habit Screen History taught Poki, marked as inferred, with what it rests on and Forget.
+private struct LearnedHabitRows: View {
+    var habit: LearnedMusicHabit?
+    var forget: () -> Void
+
+    var body: some View {
+        if let habit {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(AppLocalization.text(LocalizedStringResource("Usual music app: \(appName(habit.bundleID))"))).fontWeight(.semibold)
+                Text(detail(habit)).font(.footnote).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("memory.habits.music")
+            .swipeActions { Button("Forget", role: .destructive, action: forget) }
+            Button("Forget", role: .destructive, action: forget)
+                .accessibilityIdentifier("memory.habits.forget")
+        } else {
+            Text("Nothing learned yet").foregroundStyle(Color(.secondaryLabel))
+        }
+    }
+
+    private func appName(_ id: String) -> String {
+        AppIconStore.name(id) ?? id
+    }
+
+    /// "Inferred automatically · <the model's evidence> · 11月18日": the day it was learned, as month and day
+    /// in the app's language with the system region.
+    private func detail(_ habit: LearnedMusicHabit) -> String {
+        let day = DateFormatter()
+        day.locale = AppLocalization.locale
+        day.setLocalizedDateFormatFromTemplate("MMMd")
+        let learned = day.string(from: habit.learnedAt)
+        return AppLocalization.text(LocalizedStringResource("Inferred automatically · \(habit.evidence) · \(learned)"))
     }
 }

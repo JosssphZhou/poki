@@ -419,6 +419,7 @@ extension Computer {
         case .launch:
             guard let bundle = spec.string ?? spec["bundle"]?.string, !bundle.isEmpty else { throw ActionFailure(message: "launch takes a bundle id", delivery: .notSent) }
             let fresh = spec["fresh"]?.bool ?? false
+            noteAgentAppActivity(bundle, phase: .launching)
             // A fresh launch ends the app first, so a page it was left on cannot answer for it, and
             // starts it through XCTest's launch. Otherwise the app is activated: brought to the front
             // as it is, or started if it is not running. XCTest's launch always ends a running app
@@ -439,6 +440,7 @@ extension Computer {
                 do { _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
                 catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             }
+            noteAgentAppActivity(bundle, phase: .launching)
             return ("launch", "launch \(bundle)\(fresh ? " (fresh)" : "")\(note)")
         case .waitUntil:
             return ("wait_until", try await waitUntil(spec, until: until))

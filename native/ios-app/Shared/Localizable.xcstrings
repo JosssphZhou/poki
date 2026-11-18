@@ -1,6 +1,150 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ to %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@至%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@至%2$@"
+          }
+        }
+      }
+    },
+    "Learn Habits from Screen History" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从屏幕历史学习习惯"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從螢幕歷史學習習慣"
+          }
+        }
+      }
+    },
+    "Poki works out your usual music app on this iPhone from which apps you used and when, never from screen text, and uses it when you ask for a song without naming an app. See or forget it in Memory. Turning this off forgets it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 在此 iPhone 上根据你用过哪些 App、在什么时间用，推断你常用的音乐 App，不读取屏幕文字。你让 Poki 放歌但没说用哪个 App 时，就用它。可在“记忆”中查看或忘记；关闭后会忘记已学到的习惯。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 在此 iPhone 上根據你用過哪些 App、在什麼時間用，推斷你常用的音樂 App，不讀取螢幕文字。你讓 Poki 放歌但沒說用哪個 App 時，就用它。可在「記憶」中查看或忘記；關閉後會忘記已學到的習慣。"
+          }
+        }
+      }
+    },
+    "Unlock to View" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁后查看"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解鎖後查看"
+          }
+        }
+      }
+    },
+    "Learned from Screen History" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从屏幕历史学到的习惯"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從螢幕歷史學到的習慣"
+          }
+        }
+      }
+    },
+    "Inferred on this iPhone from which apps you used and when. It is not a note: it is not exported, backed up or shown to connected agents. Turning off Screen History or Learn Habits forgets it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此 iPhone 上根据你用过的 App 和使用时间推断。它不是备忘：不会被导出、备份，也不会提供给已连接的智能体。关闭屏幕历史或“从屏幕历史学习习惯”会忘记它。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在此 iPhone 上根據你用過的 App 和使用時間推斷。它不是備忘：不會被匯出、備份，也不會提供給已連接的智能體。關閉螢幕歷史或「從螢幕歷史學習習慣」會忘記它。"
+          }
+        }
+      }
+    },
+    "Usual music app: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常用音乐 App：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常用音樂 App：%@"
+          }
+        }
+      }
+    },
+    "Nothing learned yet" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有学到习惯"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有學到習慣"
+          }
+        }
+      }
+    },
+    "Inferred automatically · %@ · %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动推断 · %1$@ · %2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動推斷 · %1$@ · %2$@"
+          }
+        }
+      }
+    },
     "Sign in to your Apple Account to update here. Or update with Set up Poki or Renew in Poki Setup on your Mac." : {
       "localizations" : {
         "zh-Hans" : {

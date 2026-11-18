@@ -1,5 +1,11 @@
 import Foundation
 
+public enum AgentAppActivityPhase: String, Sendable {
+    case launching
+    case foregroundObserved
+    case taskEnded
+}
+
 public struct CoreConfig: Sendable {
     /// Host application version advertised in the relay hello. Hosts supply their installed build.
     public var relayAppVersion = "1.0"
@@ -49,6 +55,9 @@ public struct CoreConfig: Sendable {
     /// The agent's memory (routines and notes); nil uses `RoutineStore.shared`, the app's file.
     public var memory: RoutineStore?
     public var screenHistory: ScreenHistorySource?
+    /// Notified when an agent launches, observes in front, or finishes using a target app, so Screen
+    /// History habit learning can exclude agent-initiated app sessions.
+    public var onAgentAppActivity: (@Sendable (_ bundleID: String, _ phase: AgentAppActivityPhase, _ at: Date) -> Void)? = nil
 
     public init(runnerURL: URL = URL(string: "http://127.0.0.1:8100")!, sensitive: SensitivityRules = SensitivityRules(), approvalWait: Double = 115, toolDeadline: Double = 25, actionCap: Double = 6, readTimeout: Double = 4, busyWait: Double = 2, runnerWait: Double = 15, treeFormat: String = "xml", ownApps: [String] = ["nz.zheha.poki"], accessibilityDeadline: Double = 2, taskGap: Double = 300, humanize: Bool? = nil, screenHistory: ScreenHistorySource? = nil) {
         self.accessibilityDeadline = accessibilityDeadline

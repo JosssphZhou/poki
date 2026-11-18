@@ -8,7 +8,7 @@ import XCTest
 /// them, through the same call a run makes.
 @MainActor
 final class ScreenHistoryTests: XCTestCase {
-    private let keys = ["history.enabled", "history.listMode", "history.excluded", "history.included"]
+    private let keys = ["history.enabled", "history.listMode", "history.excluded", "history.included", "history.learnHabits", "history.habitsForgottenAt", "history.learnedMusicHabit", "history.habitJudged"]
     private var saved: [String: Any] = [:]
     private var savedLanguage = AppLocalization.system
 
@@ -20,12 +20,15 @@ final class ScreenHistoryTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: key)
         }
         HistoryCapture.shared.enabled = false
+        HistoryCapture.shared.learnHabits = false
         await HistoryStore.shared.deleteEverything()
+        UserDefaults.standard.removeObject(forKey: "history.habitsForgottenAt")
     }
 
     override func tearDown() async throws {
         await HistoryStore.shared.deleteEverything()
         HistoryCapture.shared.enabled = false
+        HistoryCapture.shared.learnHabits = false
         for key in keys {
             if let value = saved[key] { UserDefaults.standard.set(value, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
         }
@@ -35,6 +38,70 @@ final class ScreenHistoryTests: XCTestCase {
     /// A read as the launcher reports it for a screen whose text changed.
     private func read(_ app: String, _ text: [String]) -> [String: Any] {
         ["ok": true, "app": app, "title": "", "text": text, "changed": true]
+    }
+
+    /// What the model decided reaches a music request's instructions only while both switches are
+    /// on, and turning learning off forgets it for good.
+    func testTheLearnedMusicAppIsForgottenWhenLearningIsTurnedOff() async throws {
+        let ask = "放一首周杰伦的歌"
+        HistoryCapture.shared.enabled = true
+        ScreenHabits.learn(LearnedMusicHabit(bundleID: "com.netease.cloudmusic", evidence: "最近三天用了五次", learnedAt: Date()))
+        XCTAssertNil(ScreenHabits.instructions(for: ask), "learning is off until the owner turns it on")
+        HistoryCapture.shared.learnHabits = true
+        let line = try XCTUnwrap(ScreenHabits.instructions(for: ask))
+        XCTAssertTrue(line.contains("com.netease.cloudmusic") && line.contains("最近三天用了五次"))
+        XCTAssertNil(ScreenHabits.instructions(for: "打开设置把亮度调低"), "a request that is not about music gets nothing")
+
+        HistoryCapture.shared.learnHabits = false
+        HistoryCapture.shared.learnHabits = true
+        XCTAssertNil(ScreenHabits.instructions(for: ask), "turning it off forgot it")
+        XCTAssertNil(ScreenHabits.musicApp())
+    }
+
+    /// NetEase uses on three days before today (and one today with `extraToday`), learning on, and
+    /// the model's decision that NetEase is the usual app.
+    private func learnNetEase(extraToday: Bool = false) async {
+        let day = Calendar.current.startOfDay(for: Date())
+        let now = Date()
+        var uses = [(3, 9), (2, 9), (1, 9)]
+        if extraToday { uses.append((0, 1)) }
+        for (daysAgo, hour) in uses {
+            let at = min(day.addingTimeInterval(Double(-daysAgo) * 86_400 + Double(hour) * 3600), now.addingTimeInterval(-600))
+            HistoryStore.shared.add(at: at, app: "com.netease.cloudmusic", title: "", text: "")
+        }
+        _ = await HistoryStore.shared.size()
+        HistoryCapture.shared.enabled = true
+        HistoryCapture.shared.learnHabits = true
+        ScreenHabits.learn(LearnedMusicHabit(bundleID: "com.netease.cloudmusic", evidence: "常用", learnedAt: Date()))
+    }
+
+    /// A music app the owner names in the request is the one used: the learned app is not offered,
+    /// so it cannot win over the owner's choice, and a "from now on" request can be saved.
+    func testAMusicAppTheOwnerNamesIsNotOverriddenByTheLearnedOne() async throws {
+        await learnNetEase()
+        XCTAssertNotNil(ScreenHabits.instructions(for: "放一首周杰伦的歌"))
+        XCTAssertNotNil(ScreenHabits.instructions(for: "放点音乐"), "a request for music that names no app")
+        for ask in ["用QQ音乐放一首周杰伦的歌", "在 Apple Music 里放一首周杰伦的歌", "以后都用酷狗音乐放歌", "Play a Taylor Swift song on Spotify"] {
+            XCTAssertNil(ScreenHabits.instructions(for: ask), ask)
+        }
+    }
+
+    /// A saved note naming the owner's music app comes before the learned app.
+    func testASavedNoteNamingAMusicAppComesBeforeTheLearnedOne() async throws {
+        await learnNetEase()
+        // The app's copy of the store: the test bundle links its own PokiCore.
+        let note = try XCTUnwrap(ScreenHabits.memory.remember("我听歌都用 QQ音乐", by: "test"))
+        defer { _ = ScreenHabits.memory.forgetNote(note.id) }
+        XCTAssertNil(ScreenHabits.instructions(for: "放一首周杰伦的歌"))
+    }
+
+    /// Deleting part of Screen History forgets what was learned from it.
+    func testDeletingSomeHistoryForgetsTheLearnedApp() async throws {
+        await learnNetEase(extraToday: true)
+        XCTAssertNotNil(ScreenHabits.musicApp())
+        let today = Calendar.current.startOfDay(for: Date())
+        await HistoryCapture.shared.delete(from: today, to: Date())
+        XCTAssertNil(ScreenHabits.musicApp())
     }
 
     func testALeftOutAppAndTheHomeScreenLeaveNothingInTheStore() async {
@@ -327,5 +394,16 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertTrue(giantParsed.truncated)
         XCTAssertEqual(giantParsed.entries.count, 1)
         XCTAssertTrue(giantParsed.entries[0].text.contains("needle-marker"))
+
+        // A title longer than the whole result is shortened too.
+        let giantTitle = "title-marker " + String(repeating: "t", count: 5000)
+        HistoryStore.shared.add(at: now.addingTimeInterval(-5), app: "com.apple.mobilenotes", title: giantTitle, text: "Short body")
+        let titled = await app.runTool("screen_history", arguments: #"{"period":"last_hour","query":"title-marker"}"#)
+        XCTAssertFalse(titled.isError, titled.text)
+        XCTAssertLessThanOrEqual(titled.text.count, 4000)
+        let titledParsed = try decodeHistoryJSON(titled.text)
+        XCTAssertTrue(titledParsed.truncated)
+        XCTAssertEqual(titledParsed.entries.count, 1)
+        XCTAssertTrue(titledParsed.entries.first?.title?.hasPrefix("title-marker") == true)
     }
 }

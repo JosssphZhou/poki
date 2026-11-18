@@ -142,6 +142,16 @@ struct ScreenHistorySettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $capture.learnHabits) {
+                    SettingsRow(title: "Learn Habits from Screen History", symbol: "sparkles")
+                }
+                .disabled(!capture.enabled)
+                .accessibilityIdentifier("screenHistory.learnHabits")
+            } footer: {
+                Text("Poki works out your usual music app on this iPhone from which apps you used and when, never from screen text, and uses it when you ask for a song without naming an app. See or forget it in Memory. Turning this off forgets it.")
+            }
+
+            Section {
                 NavigationLink {
                     HistoryPage().settingsPage()
                 } label: {

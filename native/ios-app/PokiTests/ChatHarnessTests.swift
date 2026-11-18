@@ -24,7 +24,7 @@ final class ChatHarnessTests: XCTestCase {
 
     override func tearDown() async throws {
         for key in Self.settings { UserDefaults.standard.set(saved[key] ?? nil, forKey: key) }
-        for text in notes { _ = await app?.runTool("routines", arguments: Self.json(["action": "forget_note", "id": text])) }
+        for text in notes { _ = await app?.runTool("routines", arguments: Self.json(["action": "forget_note", "text": text])) }
         ChatModel.afterTask = nil
     }
 
@@ -415,6 +415,185 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(requests.count, 5)
         XCTAssertFalse(FakeCompletions.system(requests[0]).contains(note))
         XCTAssertTrue(FakeCompletions.system(requests[3]).contains(note), "the second task's prompt has the note the first saved")
+    }
+
+    /// Turning Screen History on between two tasks in one conversation gives the next task the
+    /// screen_history tool, and the conversation so far goes with it.
+    func testTurningOnScreenHistoryMidConversationOffersItsToolToTheNextTask() async throws {
+        let before = UserDefaults.standard.object(forKey: HistoryCapture.enabledKey)
+        HistoryCapture.shared.enabled = false
+        addTeardownBlock { @MainActor in
+            HistoryCapture.shared.enabled = false
+            UserDefaults.standard.set(before, forKey: HistoryCapture.enabledKey)
+        }
+        let server = try FakeCompletions(replies: [Self.done, FakeCompletions.text("好的。"), Self.done, FakeCompletions.text("好的。")])
+        let chat = chat(on: server)
+
+        _ = await chat.runDelegated("Open the sample settings page")
+        HistoryCapture.shared.enabled = true
+        _ = await chat.runDelegated("What did I write in Notes a moment ago?")
+
+        func offered(_ request: [String: Any]) -> [String] {
+            (request["tools"] as? [[String: Any]] ?? []).compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
+        }
+        let requests = server.requests
+        XCTAssertEqual(requests.count, 4)
+        guard requests.count == 4 else { return }
+        XCTAssertFalse(offered(requests[0]).contains("screen_history"))
+        XCTAssertTrue(offered(requests[2]).contains("screen_history"), "the task after turning it on can read Screen History")
+        let second = String(decoding: try JSONSerialization.data(withJSONObject: requests[2]), as: UTF8.self)
+        XCTAssertTrue(second.contains("Open the sample settings page"), "and still has the conversation so far")
+    }
+
+    private static let learnedLine = "The owner's usual music app"
+    private static let historyKeys = ["history.enabled", "history.learnHabits", "history.habitsForgottenAt", "history.learnedMusicHabit", "history.habitJudged"]
+
+    /// Screen History with NetEase Cloud Music used at these (days ago, hour) times, and learning on.
+    /// Undone at the end of the test.
+    private func useNetEase(_ uses: [(Int, Int)]) async {
+        let before = Self.historyKeys.map { UserDefaults.standard.object(forKey: $0) }
+        for key in Self.historyKeys { UserDefaults.standard.removeObject(forKey: key) }
+        await HistoryStore.shared.deleteEverything()
+        let day = Calendar.current.startOfDay(for: Date())
+        for (daysAgo, hour) in uses {
+            HistoryStore.shared.add(at: day.addingTimeInterval(Double(-daysAgo) * 86_400 + Double(hour) * 3600), app: "com.netease.cloudmusic", title: "", text: "每日推荐")
+        }
+        _ = await HistoryStore.shared.size()
+        HistoryCapture.shared.enabled = true
+        HistoryCapture.shared.learnHabits = true
+        addTeardownBlock { @MainActor in
+            HistoryCapture.shared.enabled = false
+            HistoryCapture.shared.learnHabits = false
+            await HistoryStore.shared.deleteEverything()
+            for (key, value) in zip(Self.historyKeys, before) { UserDefaults.standard.set(value, forKey: key) }
+        }
+    }
+
+    private static let done = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]])
+    private static let netEaseHabit = FakeCompletions.text(#"{"habit": true, "bundle_id": "com.netease.cloudmusic", "evidence": "最近三天各用了一次网易云音乐，都在晚上"}"#)
+    private static let threeUses = [(3, 21), (2, 21), (1, 21)]
+
+    /// An app used three times in the past week is offered to the model, which decides the habit
+    /// and writes the evidence the task then carries.
+    func testThreeUsesInAWeekLetTheModelDecideTheUsualMusicApp() async throws {
+        await useNetEase(Self.threeUses)
+        let server = try FakeCompletions(replies: [Self.netEaseHabit, Self.done, FakeCompletions.text("好的。")])
+        let chat = chat(on: server)
+
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+
+        let requests = server.requests
+        XCTAssertEqual(requests.count, 3, "the model is asked about the habit before the task")
+        guard requests.count == 3 else { return }
+        let asked = String(decoding: try JSONSerialization.data(withJSONObject: requests[0]), as: UTF8.self)
+        XCTAssertTrue(asked.contains("com.netease.cloudmusic"), "the model gets the music apps' use")
+        XCTAssertFalse(asked.contains("每日推荐"), "and no screen text")
+        let task = FakeCompletions.system(requests[1])
+        XCTAssertTrue(task.contains(Self.learnedLine) && task.contains("com.netease.cloudmusic"), "the task uses what the model decided")
+        XCTAssertTrue(task.contains("最近三天各用了一次网易云音乐"), "with the model's own evidence")
+    }
+
+    /// Two uses in the past week, and older ones, are not a habit: the model is not asked and the
+    /// task carries no learned app.
+    func testFewerThanThreeUsesInAWeekAreNotAHabit() async throws {
+        await useNetEase([(12, 21), (10, 21), (9, 21), (2, 21), (1, 21)])
+        // Were the model asked, it would answer that NetEase Cloud Music is the habit.
+        let server = try FakeCompletions(replies: [Self.netEaseHabit, Self.done, FakeCompletions.text("好的。")])
+        let chat = chat(on: server)
+
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+
+        XCTAssertNil(ScreenHabits.musicApp(), "nothing is learned")
+        XCTAssertFalse(server.requests.map(FakeCompletions.system).joined().contains(Self.learnedLine), "the task carries no learned app")
+    }
+
+    /// Deleting all of Screen History forgets what was learned from it: the next music request does
+    /// not use it. The owner's own "from now on, use QQ Music" is not learned from Screen History
+    /// and stays.
+    func testDeletingAllOfScreenHistoryForgetsTheLearnedAppButNotTheOwnersNote() async throws {
+        await useNetEase(Self.threeUses)
+        let server = try FakeCompletions(replies: [Self.netEaseHabit, Self.done, FakeCompletions.text("好的。"), Self.done, FakeCompletions.text("好的。")])
+        let chat = chat(on: server)
+
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+        await HistoryCapture.shared.clearEverything()
+        XCTAssertNil(ScreenHabits.musicApp(), "deleting everything forgets the learned app")
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+
+        let requests = server.requests
+        XCTAssertEqual(requests.count, 5)
+        guard requests.count == 5 else { return }
+        XCTAssertTrue(FakeCompletions.system(requests[1]).contains(Self.learnedLine), "NetEase Cloud Music was learned")
+        XCTAssertFalse(FakeCompletions.system(requests[3]).contains(Self.learnedLine), "and is not used after everything is deleted")
+
+        let choice = "以后都用QQ音乐放歌"
+        notes.append(choice)
+        XCTAssertNotNil(ScreenHabits.memory.remember(choice, by: "owner"))
+        await HistoryCapture.shared.clearEverything()
+        XCTAssertTrue(ScreenHabits.memory.notes.contains { $0.text == choice }, "the owner's own choice stays")
+    }
+
+    /// Turning Screen History off forgets what was learned: turned on again, the same reads do not
+    /// bring it back.
+    func testTurningOffScreenHistoryForgetsTheLearnedApp() async throws {
+        await useNetEase(Self.threeUses)
+        let server = try FakeCompletions(replies: [Self.netEaseHabit, Self.done, FakeCompletions.text("好的。"), Self.done, FakeCompletions.text("好的。")])
+        let chat = chat(on: server)
+
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+        HistoryCapture.shared.enabled = false
+        HistoryCapture.shared.enabled = true
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+
+        let requests = server.requests
+        XCTAssertEqual(requests.count, 5, "the model is not asked again about reads from before")
+        guard requests.count == 5 else { return }
+        XCTAssertTrue(FakeCompletions.system(requests[1]).contains(Self.learnedLine))
+        XCTAssertFalse(FakeCompletions.system(requests[3]).contains(Self.learnedLine))
+    }
+
+    /// Enough uses do not make a habit on their own: when the model says there is none, there is none.
+    func testEnoughUsesMakeNoHabitWhenTheModelSaysNone() async throws {
+        await useNetEase([(3, 9), (3, 18), (2, 9), (2, 18), (1, 9), (1, 18)])
+        let server = try FakeCompletions(replies: [FakeCompletions.text(#"{"habit": false}"#), Self.done, FakeCompletions.text("好的。")])
+        let chat = chat(on: server)
+
+        _ = await chat.runDelegated("放一首周杰伦的歌")
+
+        let requests = server.requests
+        XCTAssertEqual(requests.count, 3, "the model is asked about the habit before the task")
+        XCTAssertFalse(requests.map(FakeCompletions.system).joined().contains(Self.learnedLine))
+    }
+
+    /// With NetEase Cloud Music learned, the owner's "from now on, use X" is still saved, for an app
+    /// other than the learned one and whether Poki knows its name or not, and the saved choice keeps
+    /// the learned app out of the next music request.
+    func testTheOwnersStandingMusicChoiceIsSavedOverTheLearnedApp() async throws {
+        await useNetEase(Self.threeUses)
+        for choice in ["以后都用苹果音乐放歌", "以后都用咪咕音乐放歌"] {
+            notes.append(choice)
+            let server = try FakeCompletions(replies: [
+                Self.netEaseHabit, Self.done, FakeCompletions.text("好的。"),
+                FakeCompletions.tool("routines", ["action": "remember", "text": choice]), Self.done, FakeCompletions.text("好的。"),
+                Self.done, FakeCompletions.text("好的。"),
+            ])
+            let chat = chat(on: server)
+
+            _ = await chat.runDelegated("放一首周杰伦的歌")
+            _ = await chat.runDelegated(choice)
+            _ = await chat.runDelegated("放一首周杰伦的歌")
+
+            let requests = server.requests
+            XCTAssertEqual(requests.count, 8, choice)
+            guard requests.count == 8 else { continue }
+            XCTAssertTrue(FakeCompletions.system(requests[1]).contains(Self.learnedLine), "\(choice): NetEase Cloud Music is learned")
+            let answer = String(decoding: try JSONSerialization.data(withJSONObject: requests[4]), as: UTF8.self)
+            XCTAssertFalse(answer.contains("Not saved"), "\(choice): the owner's choice is not refused")
+            XCTAssertTrue(FakeCompletions.system(requests[6]).contains(choice), "\(choice): the next task's memory has it")
+            XCTAssertFalse(FakeCompletions.system(requests[6]).contains(Self.learnedLine), "\(choice): the saved choice comes before the learned app")
+            _ = ScreenHabits.memory.forgetNote(choice)
+            for key in ["history.habitsForgottenAt", "history.learnedMusicHabit", "history.habitJudged"] { UserDefaults.standard.removeObject(forKey: key) }
+        }
     }
 
     /// finish_task's requested facts and the kind of answer go back to the agent that handed the task

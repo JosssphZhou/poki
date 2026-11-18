@@ -22,6 +22,8 @@ final class PiLoop {
     let provider: ModelProvider
     let model: Model
     let inSplitView: Bool
+    /// The names of the tools this loop offers the model, in order.
+    let toolNames: [String]
     private let agent: Agent
     private let gate = StopGate()
     private let stall = StallWatch()
@@ -34,6 +36,7 @@ final class PiLoop {
         self.provider = provider
         self.model = model
         self.inSplitView = inSplitView
+        self.toolNames = tools.map(\.name)
         let gate = self.gate
         let stall = self.stall
         let agentTools = tools.map { spec in

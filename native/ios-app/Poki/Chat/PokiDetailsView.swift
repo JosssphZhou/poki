@@ -22,6 +22,9 @@ struct PokiDetailsView: View {
     @ObservedObject private var historyCapture = HistoryCapture.shared
     /// Bumped when the chosen model changes, so the Models row's value redraws (ModelKeys is not observable).
     @State private var modelVersion = 0
+    /// Habits learned from Screen History, counted with the routines on the Memory row. Read again each
+    /// time the page shows, since Forget and the switches live on pages below it.
+    @State private var learnedHabits = 0
 
     private var isSample: Bool { UserDefaults.standard.bool(forKey: "pokiDetailsSample") }
     private static let lastRow = "details.lastRow"
@@ -88,7 +91,7 @@ struct PokiDetailsView: View {
                     }
                     .accessibilityIdentifier("moreSettings.agentsAndRelay")
                     NavigationLink(value: SettingsRoute.memory) {
-                        SettingsRow(title: "Memory", symbol: "bookmark", value: "\(isSample ? 10 : RoutineStore.shared.routines.count)")
+                        SettingsRow(title: "Memory", symbol: "bookmark", value: "\(isSample ? 10 : RoutineStore.shared.routines.count + learnedHabits)")
                     }
                     .accessibilityIdentifier("moreSettings.memory")
                     NavigationLink(value: DetailsRoute.screenHistory) {
@@ -140,6 +143,7 @@ struct PokiDetailsView: View {
                 }
             }
             .settingsPage()
+            .onAppear { learnedHabits = isSample || ScreenHabits.musicApp() == nil ? 0 : 1 }
             // `-pokiSettingsEnd YES` opens the page at its end, for the build's screenshot of the rows
             // below the first screen.
             .task {

@@ -127,6 +127,8 @@ final class Computer: @unchecked Sendable {
     /// The agent's memory, and this task's recorded steps (what routines {save} keeps).
     var memory: RoutineStore?
     var trace: [RecordedStep] = []
+    /// Apps launched or driven by the agent during the open task, reported when the task ends.
+    var taskTouchedApps = Set<String>()
     /// A routine ran whole in this task (the finish line does not offer to save it again).
     var routineRanWhole = false
 
@@ -523,9 +525,12 @@ final class Computer: @unchecked Sendable {
                               jpeg: nil, isError: true, splitViewNeedsRead: true)
         }
         let begins = beginsTask() || (pane != nil && origin?.session != session)
-        if begins { beginRecording(); typedText = nil }
+        if begins { endAgentAppActivity(); beginRecording(); typedText = nil }
         async let locked = isLocked()
         var result = restartNote(await readAndReply(until: until, full: full))
+        if !begins, !taskTouchedApps.isEmpty, let fg = lastForeground?.bundleID, fg != origin?.app.bundleID {
+            noteAgentAppActivity(fg, phase: .foregroundObserved)
+        }
         if let selectedPane {
             if !result.isError, let size, let paneOffset {
                 result.splitView = .init(side: selectedPane.side, app: selectedPane.app, otherApp: selectedPane.other,
@@ -614,6 +619,8 @@ final class Computer: @unchecked Sendable {
                 }
                 selectedPane = (side, identity, app, other, session)
                 paneOffset = reply["x"]?.double.flatMap { x in reply["y"]?.double.map { (x, $0) } }
+                noteAgentAppActivity(app, phase: .foregroundObserved)
+                noteAgentAppActivity(other, phase: .foregroundObserved)
             }
             if oldIdentity != selectedPane?.identity || ownerChanged {
                 approvals.discardWorkspaceDecisions(session: oldWorkspace)
@@ -721,8 +728,29 @@ final class Computer: @unchecked Sendable {
         return selectedPane.map { "\($0.identity)\n\(steps)" } ?? steps
     }
 
+    func noteAgentAppActivity(_ bundleID: String?, phase: AgentAppActivityPhase) {
+        guard let raw = bundleID?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return }
+        if raw.caseInsensitiveCompare("com.apple.springboard") == .orderedSame { return }
+        if config.isPoki(Foreground(bundleID: raw, name: nil)) { return }
+        if phase != .taskEnded {
+            taskTouchedApps.insert(raw)
+        }
+        config.onAgentAppActivity?(raw, phase, Date())
+    }
+
+    func endAgentAppActivity() {
+        let apps = taskTouchedApps
+        taskTouchedApps.removeAll()
+        guard !apps.isEmpty else { return }
+        let endedAt = Date()
+        for bundleID in apps {
+            config.onAgentAppActivity?(bundleID, .taskEnded, endedAt)
+        }
+    }
+
     /// Drop references on an owner stop without a runner request or a visible app switch.
     func forgetTask() {
+        endAgentAppActivity()
         approvals.discardWorkspaceDecisions(session: workspaceOwner.value)
         endWorkspaceHandoff()
         if selectedPane == nil { workspaceOwner.value = nil }
@@ -824,6 +852,7 @@ final class Computer: @unchecked Sendable {
         if let selectedPane, selectedPane.session != session { return workspaceInUse() }
         // The app the owner is in before anything is sent: the read before may be another task's.
         if beginsTask() {
+            endAgentAppActivity()
             beginRecording()
             typedText = nil
             if let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), let bundle = front["bundleId"]?.string {
@@ -1030,6 +1059,7 @@ final class Computer: @unchecked Sendable {
         if let app = cameForward, lastForeground?.bundleID == app, !config.isPoki(lastForeground), app != "com.apple.springboard",
            result.text.contains("kAXErrorServerNotFound"), until - now() > config.readTimeout + 4 {
             var how = "it was opened again from a fresh start"
+            noteAgentAppActivity(app, phase: .launching)
             do {
                 _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(app)], timeout: 6, countsAsMiss: false)
                 _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(app)], timeout: max(3, min(10, until - now() - config.readTimeout - 0.5)))
@@ -1040,6 +1070,9 @@ final class Computer: @unchecked Sendable {
             lastTree = seenTree
             lastPicture = seenPicture
             result = await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: (approvedNote.map { [$0] } ?? []) + extra + ["\(app) answered no element tree (no accessibility server in its process: kAXErrorServerNotFound); \(how), so its earlier page is gone"])
+        }
+        if !harmless, let fg = lastForeground?.bundleID {
+            noteAgentAppActivity(fg, phase: .foregroundObserved)
         }
         if let line = sendCheck(toRun, error: error, textsBefore: textsBefore) { result.text += "\n" + line }
         if selectedPane != nil, error?.contains("split_view_changed") == true {
@@ -1129,6 +1162,7 @@ final class Computer: @unchecked Sendable {
     /// Ends the task: the app it began in comes to the front again (the home screen by the Home
     /// button), and nothing is sent when it is in front already. nil when no task was open.
     func returnToOrigin() async -> String? {
+        defer { endAgentAppActivity() }
         if let selectedPane {
             endWorkspaceHandoff()
             let exit = await selectPane("auto", session: selectedPane.session, until: now() + 3)
@@ -1207,6 +1241,7 @@ final class Computer: @unchecked Sendable {
             guard let front = try? await runner.call("GET", "/wda/activeAppInfo", timeout: 1.5), config.isPoki(Foreground(bundleID: front["bundleId"]?.string, name: nil)) else { return nil }
         }
         do {
+            noteAgentAppActivity(app, phase: .launching)
             _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(app)], timeout: 4)
             return "note: Poki was in front \(why); \(before?.describe ?? app) was brought back. Nothing was sent into Poki. Poki's Live Activity can still be open over the top of the screen for a few seconds: before tapping near the top again, wait ({wait: 2000}) and look, so the tap does not land on it once more."
         } catch {

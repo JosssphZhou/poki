@@ -25,6 +25,8 @@ final class LiveCore: CoreSession {
         // steps go; payments, deletions and guarded apps still wait.
         config.approvalMode = { ApprovalClassifier.mode }
         config.screenHistory = HistoryStore.agentSource
+        // Uses of a music app that an agent opened are not the owner's habit.
+        config.onAgentAppActivity = { app, phase, at in ScreenHabits.agentActivity(app, phase, at) }
         core = PokiCore(config: config, host: host, transport: transport)
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(64))
         let continuation = self.continuation

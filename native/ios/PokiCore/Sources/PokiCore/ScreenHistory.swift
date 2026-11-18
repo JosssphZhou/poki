@@ -367,6 +367,7 @@ enum ScreenHistoryLimits {
     static let defaultEntries = 20
     static let maxEntries = 50
     static let maxEntryCharacters = 600
+    static let maxTitleCharacters = 200
     static let maxTotalCharacters = 4000
 }
 
@@ -494,14 +495,18 @@ extension PokiCore {
                 bodyLines.removeFirst()
             }
             let rawText = bodyLines.joined(separator: "\n")
-            let (excerpt, wasShortened) = excerptScreenText(rawText, terms: terms, limit: textLimit)
+            let (excerpt, textShortened) = excerptScreenText(rawText, terms: terms, limit: textLimit)
+            // A title is a line, not a page: one far longer than that is cut, so it cannot fill the result.
+            let titleShortened = keepTitle && cleanTitle.count > ScreenHistoryLimits.maxTitleCharacters
+            let shownTitle = titleShortened ? String(cleanTitle.prefix(ScreenHistoryLimits.maxTitleCharacters - 1)) + "…" : cleanTitle
+            let wasShortened = textShortened || titleShortened
             let mergedSpan = Int(entry.at.timeIntervalSince(entry.startAt)) >= 1
             let item = ScreenHistoryResponseEntry(
                 app: entry.app,
                 at: iso.string(from: mergedSpan ? entry.startAt : entry.at),
                 endAt: mergedSpan ? iso.string(from: entry.at) : nil,
                 text: excerpt,
-                title: keepTitle ? cleanTitle : nil
+                title: keepTitle ? shownTitle : nil
             )
             return (item, wasShortened)
         }
