@@ -98,11 +98,10 @@ struct TalkBar: View {
         .frame(minHeight: 48)
         .animation(TalkMotion.state, value: state)
         // A tap you feel where the talk turns: it starts to listen, it is cut off, it breaks.
-        .sensoryFeedback(trigger: state) { old, new -> SensoryFeedback? in
+        .sensoryFeedback(trigger: state) { _, new -> SensoryFeedback? in
             switch new {
             case .interrupted: return .impact(weight: .medium)
             case .failed: return .error
-            case .listening where old == .connecting: return .start
             default: return nil
             }
         }

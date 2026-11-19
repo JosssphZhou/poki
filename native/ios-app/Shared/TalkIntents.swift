@@ -17,10 +17,22 @@ struct EndTalkIntent: LiveActivityIntent {
     }
 }
 
+struct RetryTalkIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Try Again"
+    static let openAppWhenRun = false
+    static let isDiscoverable = false
+    init() {}
+    func perform() async throws -> some IntentResult {
+        TalkSignal.ring(TalkSignal.retry)
+        return .result()
+    }
+}
+
 /// The Darwin notifications between the Live Activity and the talk in the app. No payload: the name
 /// is the message. Under the App Group's name, as ApprovalMailbox's are.
 enum TalkSignal {
     static let end = SharedContainer.appGroup + ".talk.end"
+    static let retry = SharedContainer.appGroup + ".talk.retry"
 
     static func ring(_ name: String) {
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)
