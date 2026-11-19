@@ -17,13 +17,20 @@ struct EndTalkIntent: LiveActivityIntent {
     }
 }
 
-struct RetryTalkIntent: LiveActivityIntent {
+/// Try Again on the Live Activity after a talk could not connect. The island and the Lock Screen show
+/// it while Poki is in the background, and iOS opens the microphone for a background app only from the
+/// recording intent that started the talk (TalkHereIntent). So this brings the person back to Poki,
+/// which starts the talk once it is in front (PokiEntry), like Talk to Poki.
+struct RetryTalkIntent: AppIntent {
     static let title: LocalizedStringResource = "Try Again"
-    static let openAppWhenRun = false
+    static let openAppWhenRun = true
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .foreground(.immediate) }
     static let isDiscoverable = false
     init() {}
+    @MainActor
     func perform() async throws -> some IntentResult {
-        TalkSignal.ring(TalkSignal.retry)
+        PokiEntry.shared.ask(.talk)
         return .result()
     }
 }
@@ -32,7 +39,6 @@ struct RetryTalkIntent: LiveActivityIntent {
 /// is the message. Under the App Group's name, as ApprovalMailbox's are.
 enum TalkSignal {
     static let end = SharedContainer.appGroup + ".talk.end"
-    static let retry = SharedContainer.appGroup + ".talk.retry"
 
     static func ring(_ name: String) {
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true)

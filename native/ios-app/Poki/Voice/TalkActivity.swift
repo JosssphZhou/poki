@@ -103,12 +103,6 @@ final class TalkActivity {
         if let endFromLiveActivityAction { endFromLiveActivityAction() } else { voice.stop() }
     }
 
-    fileprivate func retryFromLiveActivity() {
-        guard !voice.isOn else { return }
-        AppLog.shared.add("voice", "retrying the talk from the Live Activity")
-        Task { await voice.start() }
-    }
-
     private final class Mailbox {
         weak var owner: TalkActivity?
 
@@ -119,18 +113,12 @@ final class TalkActivity {
                 let mailbox = Unmanaged<Mailbox>.fromOpaque(observer).takeUnretainedValue()
                 Task { @MainActor in mailbox.owner?.endFromLiveActivity() }
             }, TalkSignal.end as CFString, nil, .deliverImmediately)
-            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), observer, { _, observer, _, _, _ in
-                guard let observer else { return }
-                let mailbox = Unmanaged<Mailbox>.fromOpaque(observer).takeUnretainedValue()
-                Task { @MainActor in mailbox.owner?.retryFromLiveActivity() }
-            }, TalkSignal.retry as CFString, nil, .deliverImmediately)
         }
 
         deinit {
             let center = CFNotificationCenterGetDarwinNotifyCenter()
             let observer = Unmanaged.passUnretained(self).toOpaque()
             CFNotificationCenterRemoveObserver(center, observer, CFNotificationName(TalkSignal.end as CFString), nil)
-            CFNotificationCenterRemoveObserver(center, observer, CFNotificationName(TalkSignal.retry as CFString), nil)
         }
     }
 }

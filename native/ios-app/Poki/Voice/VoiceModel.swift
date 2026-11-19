@@ -1,33 +1,40 @@
 import AudioToolbox
+import AVFoundation
 import Foundation
 import Observation
 import PokiCore
 import UIKit
 
 enum VoiceReadyCue {
-    static let duration: TimeInterval = 0.18
-    static let silentThreshold: TimeInterval = 0.08
+    private static let duration: TimeInterval = 0.18
+    private static let silentThreshold: TimeInterval = 0.08
     @MainActor private static var soundID: SystemSoundID = 0
 
-    @MainActor static func play(
-        silentThreshold: TimeInterval = Self.silentThreshold,
-        playSound: @MainActor (@escaping (TimeInterval) -> Void) -> Void = defaultPlaySound,
-        vibrate: @escaping @MainActor () -> Void = { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    ) {
+    /// The cue plays while the voice session records. iOS keeps system sounds and haptics off during a
+    /// recording unless the session allows them, and then neither the chime nor the buzz that stands in
+    /// for it in silent mode would be felt, so the session is told to allow them just before.
+    @MainActor static func play() {
         AppLog.shared.add("voice", "ready cue triggered")
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setAllowHapticsAndSystemSoundsDuringRecording(true)
+        } catch {
+            AppLog.shared.add("voice", "ready cue: could not allow system sounds during recording: \(error.localizedDescription)")
+        }
+        AppLog.shared.add("voice", "ready cue: system sounds during recording allowed=\(session.allowHapticsAndSystemSoundsDuringRecording)")
         playSound { elapsed in
             Task { @MainActor in
                 if elapsed < silentThreshold {
-                    vibrate()
-                    AppLog.shared.add("voice", "ready cue vibrated (silent mode)")
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    AppLog.shared.add("voice", "ready cue vibrated (silent mode), sound call returned after \(elapsed) s")
                 } else {
-                    AppLog.shared.add("voice", "ready cue played")
+                    AppLog.shared.add("voice", "ready cue played, sound call returned after \(elapsed) s")
                 }
             }
         }
     }
 
-    @MainActor private static func defaultPlaySound(_ done: @escaping (TimeInterval) -> Void) {
+    @MainActor private static func playSound(_ done: @escaping (TimeInterval) -> Void) {
         #if targetEnvironment(simulator)
         done(duration)
         #else
@@ -56,7 +63,7 @@ enum VoiceReadyCue {
         #endif
     }
 
-    static func wavData() -> Data {
+    private static func wavData() -> Data {
         let rate = 44_100
         let count = Int(Double(rate) * duration)
         var pcm = Data(capacity: count * 2)
