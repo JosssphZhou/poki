@@ -35,7 +35,11 @@
       ]
     },
     {
-      "name": "Alpha, after approval (promote-alpha.yml): the rolling releases, and the tag app-0.4.0-alpha.{N}",
+      "name": "The beta promotion merges and waits for approval in beta (publish-promotion.yml): nothing is published yet",
+      "releases": []
+    },
+    {
+      "name": "Beta, once approved (publish-promotion.yml): first the rolling Alpha releases and the tag app-0.4.0-alpha.{N}, then the Beta",
       "releases": [
         {
           "tag": "app-alpha-latest",
@@ -46,15 +50,10 @@
           "tag": "ios-alpha-latest",
           "ipa": "Poki-external-0.4.0-{N}.ipa",
           "content": "candidate"
-        }
-      ]
-    },
-    {
-      "name": "Beta, when the promotion PR merges and is approved (publish-promotion.yml)",
-      "releases": [
+        },
         {
           "tag": "app-0.4.0-beta.1",
-          "ipa": "Poki-external-0.4.0-beta.1.ipa",
+          "ipa": "Poki-external-0.4.0-{N}.ipa",
           "content": "candidate",
           "setupFrom": "app-alpha-latest"
         }

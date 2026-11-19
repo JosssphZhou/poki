@@ -1,10 +1,13 @@
 # Propose a Beta or Stable: Actions > Propose promotion > Run workflow. Opens a PR that adds the
-# promotion to .github/channels.json (a beta also moves native/ios-app/VERSION on, so later alphas
-# sort above it). The PR runs promotion-gate.yml (the Gym for a beta, the wait for a stable); merging
-# it publishes the same IPA under the new name (publish-promotion.yml). Nothing is rebuilt.
+# promotion to .github/channels.json (a beta also moves native/ios-app/VERSION on, so later
+# pre-alphas sort above it). A beta is made from a pre-alpha, the build of a merge into main; a
+# build that failed is refused with its run. The PR runs promotion-gate.yml (the Gym for a beta,
+# the wait for a stable); merging it publishes the same IPA under the new name
+# (publish-promotion.yml). Nothing is rebuilt.
 #
 # The PR is opened as the Poki Release Bot GitHub App (secrets POKI_BOT_APP_ID and
 # POKI_BOT_PRIVATE_KEY): a PR opened with the workflow's own token would start no checks.
+# A dry run, and any run from a branch other than main, prints the promotion and opens nothing.
 name: Propose promotion
 
 on:
@@ -15,7 +18,7 @@ on:
         type: choice
         options: [beta, stable]
       from:
-        description: "Build to promote: an alpha tag (app-0.3.0-alpha.712) for beta, a beta tag (app-0.3.0-beta.1) for stable. Empty: the current Alpha, or the newest Beta."
+        description: "Build to promote: for beta a pre-alpha tag (app-0.3.0-prealpha.712) or the merge commit it was built from, for stable a beta tag (app-0.3.0-beta.1). Empty: the current Pre-alpha, or the newest Beta."
         type: string
         required: false
         default: ''
@@ -24,6 +27,10 @@ on:
         type: string
         required: false
         default: ''
+      dry_run:
+        description: Check the build and print the promotion; open no PR
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,10 +44,16 @@ jobs:
         with:
           app-id: ${{ secrets.POKI_BOT_APP_ID }}
           private-key: ${{ secrets.POKI_BOT_PRIVATE_KEY }}
+      # Every commit (for a build number given as a merge commit), no file contents beyond main's.
       - uses: actions/checkout@v4
         with:
           ref: main
           token: ${{ steps.bot.outputs.token }}
+          fetch-depth: 0
+          filter: 'tree:0'
+      # The promotion script from this workflow's commit, so a dry run from a branch tests that branch.
+      - uses: actions/checkout@v4
+        with: { path: pipeline, sparse-checkout: .github/scripts }
       - id: p
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
@@ -49,8 +62,12 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           FROM: ${{ inputs.from }}
           SKIP: ${{ inputs.skip_wait }}
-        run: python3 .github/scripts/promotion.py propose "$CHANNEL" "$FROM" "$SKIP" | tee -a "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          python3 pipeline/.github/scripts/promotion.py propose "$CHANNEL" "$FROM" "$SKIP" | tee -a "$GITHUB_OUTPUT"
+          { echo '```diff'; git diff; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Open the promotion PR
+        if: inputs.dry_run != true && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ steps.bot.outputs.token }}
           SLUG: ${{ steps.bot.outputs.app-slug }}
@@ -62,6 +79,7 @@ jobs:
           TAG: ${{ steps.p.outputs.tag }}
           SOURCE: ${{ steps.p.outputs.source }}
           SHA: ${{ steps.p.outputs.sha }}
+          BUILT_BY: ${{ steps.p.outputs.built_by }}
         run: |
           set -euo pipefail
           id="$(gh api "/users/${SLUG}[bot]" --jq .id)"
@@ -77,9 +95,10 @@ jobs:
             echo "Promotes \`${SOURCE}\` (${SHA}) to **${channel^}** as \`${TAG}\`. The same IPA is published under the new name; nothing is rebuilt."
             echo
             if [ "$channel" = beta ]; then
+              echo "- Built by the Pre-alpha run ${BUILT_BY}."
               echo "- Gate: the Gym on this commit, with no more failures than the last beta (promotion-gate.yml)."
-              echo "- Also moves \`native/ios-app/VERSION\` on (see the diff), so later alphas sort above this beta in Poki Setup."
-              echo "- Merging publishes the prerelease and creates \`release/X.Y\` on the first beta of a version."
+              echo "- Also moves \`native/ios-app/VERSION\` on (see the diff), so later pre-alphas sort above this beta in Poki Setup."
+              echo "- Merging waits for approval in \`beta\` and publishes nothing before it. Once approved, it updates the Alpha records that older Poki and Poki Setup read with this build, publishes the prerelease and creates \`release/X.Y\` on the first beta of a version."
             else
               echo "- Gate: the beta has been out for the wait in \`.github/channels.json\` (\`soak_days\`). Add the \`soak-override\` label to skip it."
               [ -n "$SKIP" ] && echo "- The wait was skipped when proposing: $SKIP"

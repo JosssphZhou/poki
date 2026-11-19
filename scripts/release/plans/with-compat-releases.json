@@ -35,7 +35,11 @@
       ]
     },
     {
-      "name": "Alpha, after approval (promote-alpha.yml): the rolling releases, and the tag app-0.4.0-alpha.{N}",
+      "name": "The beta promotion merges and waits for approval in beta (publish-promotion.yml): nothing is published yet",
+      "releases": []
+    },
+    {
+      "name": "Beta, once approved (publish-promotion.yml): first the rolling Alpha releases and the tag app-0.4.0-alpha.{N}, then the Beta",
       "releases": [
         {
           "tag": "app-alpha-latest",
@@ -46,21 +50,17 @@
           "tag": "ios-alpha-latest",
           "ipa": "Poki-external-0.4.0-{N}.ipa",
           "content": "candidate"
-        }
-      ]
-    },
-    {
-      "name": "One-time: the Alpha as a release of its own on the existing tag app-0.4.0-alpha.{N}",
-      "releases": [
+        },
         {
-          "tag": "app-0.4.0-alpha.{N}",
+          "tag": "app-0.4.0-beta.1",
           "ipa": "Poki-external-0.4.0-{N}.ipa",
-          "content": "candidate"
+          "content": "candidate",
+          "setupFrom": "app-alpha-latest"
         }
       ]
     },
     {
-      "name": "One-time: the Beta under its build number, ios-beta-0.4.0-{N}, made public just before the Beta is approved",
+      "name": "One-time: the Beta under its build number, ios-beta-0.4.0-{N}, right after the Beta is approved",
       "releases": [
         {
           "tag": "ios-beta-0.4.0-{N}",
@@ -70,13 +70,12 @@
       ]
     },
     {
-      "name": "Beta, when the promotion PR merges and is approved (publish-promotion.yml)",
+      "name": "One-time: the Alpha as a release of its own on the tag app-0.4.0-alpha.{N}, after the Beta is approved",
       "releases": [
         {
-          "tag": "app-0.4.0-beta.1",
-          "ipa": "Poki-external-0.4.0-beta.1.ipa",
-          "content": "candidate",
-          "setupFrom": "app-alpha-latest"
+          "tag": "app-0.4.0-alpha.{N}",
+          "ipa": "Poki-external-0.4.0-{N}.ipa",
+          "content": "candidate"
         }
       ]
     },

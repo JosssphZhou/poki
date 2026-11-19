@@ -106,7 +106,7 @@ Node.js 24가 없거나 Windows를 사용하나요? Poki Setup을 설치하면 �
 - **컴퓨터에서 업데이트.** Poki Setup의 Renew는 선택한 채널의 최신 빌드를 기존 앱 위에 설치합니다. Mac에서는 에이전트에게 “내 iPhone의 Poki를 업데이트해 줘”라고 요청할 수도 있습니다. install-poki 스킬은 설치된 버전과 서명 정보를 먼저 확인하는 별도 업데이트 절차를 제공합니다.
 - 업데이트가 “Finishing the update”에서 멈추면 앱 전환기에서 Poki를 종료한 뒤 다시 열고 설정에서 버전을 확인하세요. 버전이 바뀌지 않았다면 컴퓨터의 Poki Setup으로 업데이트하세요. 업데이트 문제를 해결하려고 Poki를 삭제하지 마세요. 대화도 함께 삭제됩니다.
 
-채널과 Alpha에서 Beta로 빌드가 이동하는 절차는 [릴리스 채널](docs/release-channels.md)을 참고하세요.
+채널과 `main`의 빌드가 Beta로 승격되는 절차는 [릴리스 채널](docs/release-channels.md)을 참고하세요.
 
 ## 알려진 문제
 

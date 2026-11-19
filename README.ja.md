@@ -106,7 +106,7 @@ Node.js 24 がない場合や Windows でも、Poki Setup をインストール�
 - **パソコンで更新。** Poki Setup の Renew は選択中のチャンネルの最新ビルドを既存アプリに上書きインストールします。Mac ではエージェントに「iPhone の Poki を更新して」と頼むこともできます。install-poki スキルの更新手順は、先に現在のバージョンと署名の識別情報を確認します。
 - 「Finishing the update」で止まったら、アプリスイッチャーで Poki を終了して開き直し、設定でバージョンを確認してください。変わっていなければパソコンの Poki Setup から更新します。更新の修復のために Poki を削除しないでください。会話も消えます。
 
-チャンネルと Alpha から Beta への移行は[リリースチャンネル](docs/release-channels.md)をご覧ください。
+チャンネルと、`main` のビルドが Beta になるまでの流れは[リリースチャンネル](docs/release-channels.md)をご覧ください。
 
 ## 既知の問題
 

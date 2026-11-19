@@ -2,12 +2,13 @@
 """Beta and Stable promotions for Poki's iPhone app (docs/release-channels.md).
 
 A promotion moves one already-built IPA up a channel without rebuilding it:
-  alpha  app-0.3.0-alpha.712  ->  beta    app-0.3.0-beta.1  (prerelease)
-  beta   app-0.3.0-beta.1     ->  stable  app-0.3.0         (full release, never marked Latest)
+  pre-alpha  app-0.3.0-prealpha.712  ->  beta    app-0.3.0-beta.1  (prerelease)
+  beta       app-0.3.0-beta.1        ->  stable  app-0.3.0         (full release, never marked Latest)
 Each one is a record in .github/channels.json, added by a promotion PR (propose), checked on that
 PR (gate) and published when it merges into main (publish-promotion.yml).
 
-  promotion.py propose <beta|stable> [from-tag] [override reason]   edits channels.json (+ VERSION)
+  promotion.py propose <beta|stable> [from] [override reason]       edits channels.json (+ VERSION)
+                       beta: a pre-alpha tag or the commit it was built from; stable: a beta tag
   promotion.py pending                                              the record not yet published, as JSON
   promotion.py soak                                                 exit 1 if a stable's beta is too new
   promotion.py gym <baseline dir> <new dir>                         exit 1 if the Gym got worse
@@ -69,26 +70,71 @@ def vkey(v):
     return tuple(int(x) for x in v.split("."))
 
 
+# The test jobs of prealpha.yml as GitHub names them: its app-tests job runs ios-app.yml, whose jobs
+# appear as "app-tests / <job id>". Renaming any of them there means renaming it here.
+TEST_JOBS = ("app-tests / inprocess", "app-tests / agent-chat", "app-tests / app", "setup-tests")
+
+
+def prealpha(src):
+    """The pre-alpha to promote to beta, and the successful Pre-alpha run whose artifact is its IPA.
+    src is a pre-alpha tag, the commit it was built from, or empty for the one on app-prealpha-latest.
+    A build that failed or was skipped has no tag and no IPA, so it is refused with its run."""
+    if not src:
+        ipa = next(n for n in gh("release", "view", "app-prealpha-latest", "--json", "assets", "--jq", ".assets[].name").splitlines() if n.startswith("Poki-external-") and n.endswith(".ipa"))
+        stem = ipa[len("Poki-external-"):-len(".ipa")]
+        src = "app-{}-prealpha.{}".format(*stem.rsplit("-", 1))
+    if re.fullmatch(r"app-\d+\.\d+\.\d+-prealpha\.\d+", src):
+        if not tag_exists(src):
+            sys.exit(f"{src} does not exist. A Pre-alpha build is tagged only when it succeeds; pick a tag from app-prealpha-latest or the tag list.")
+        sha = tag_sha(src)
+    elif re.fullmatch(r"[0-9a-f]{7,40}", src):
+        try:
+            sha = gh("api", f"repos/{os.environ['GH_REPO']}/commits/{src}", "--jq", ".sha")
+        except subprocess.CalledProcessError:
+            sys.exit(f"{src} is not a commit of {os.environ['GH_REPO']}")
+    else:
+        sys.exit(f"{src} is neither a pre-alpha tag (app-X.Y.Z-prealpha.N) nor a commit")
+    runs = gh_json("run", "list", "--workflow", "prealpha.yml", "--commit", sha, "--json", "databaseId,status,conclusion,url") or []
+    good = next((r for r in runs if r["conclusion"] == "success"), None)
+    if not good:
+        if not runs:
+            sys.exit(f"No Pre-alpha run built {sha}. Only commits merged into main get a Pre-alpha build.")
+        last = runs[0]
+        if last["status"] != "completed":
+            sys.exit(f"The Pre-alpha run of {sha} is still building or testing ({last['status']}): {last['url']}. Propose it once the run has succeeded.")
+        sys.exit(f"The Pre-alpha run of {sha} did not succeed ({last['conclusion']}): {last['url']}. Its build or its tests failed; promote a build that passed both.")
+    # A run from before the tests joined prealpha.yml succeeded without them, so the tests must be there.
+    jobs = gh_json("api", f"repos/{os.environ['GH_REPO']}/actions/runs/{good['databaseId']}/jobs?per_page=100", "--jq", "[.jobs[] | {name, conclusion}]") or []
+    passed = {j["name"] for j in jobs if j["conclusion"] == "success"}
+    untested = [name for name in TEST_JOBS if name not in passed]
+    if untested:
+        sys.exit(f"Pre-alpha run {good['url']} did not pass {', '.join(untested)}. Promote a build whose run passed the tests.")
+    artifacts = gh_json("api", f"repos/{os.environ['GH_REPO']}/actions/runs/{good['databaseId']}/artifacts", "--jq", '[.artifacts[] | select(.name == "Poki-unsigned")]') or []
+    if not artifacts or artifacts[0]["expired"]:
+        sys.exit(f"The IPA of Pre-alpha run {good['url']} has expired (artifacts are kept 90 days). Promote a newer build.")
+    if not src.startswith("app-"):
+        version = subprocess.run(["git", "show", f"{sha}:{VERSION_FILE}"], check=True, capture_output=True, text=True).stdout.strip()
+        build = subprocess.run(["git", "rev-list", "--count", sha], check=True, capture_output=True, text=True).stdout.strip()
+        src = f"app-{version}-prealpha.{build}"
+        if not tag_exists(src) or tag_sha(src) != sha:
+            sys.exit(f"Pre-alpha run {good['url']} succeeded but {src} does not name {sha}.")
+    return src, sha, good["url"]
+
+
 def propose(channel, src=None, override=None):
     data = load()
     rec = {"channel": channel, "proposed": now().strftime("%Y-%m-%dT%H:%M:%SZ")}
     if channel == "beta":
-        if not src:
-            ipa = next(n for n in gh("release", "view", "app-alpha-latest", "--json", "assets", "--jq", ".assets[].name").splitlines() if n.startswith("Poki-external-") and n.endswith(".ipa"))
-            stem = ipa[len("Poki-external-"):-len(".ipa")]
-            src = "app-{}-alpha.{}".format(*stem.rsplit("-", 1))
-        m = re.fullmatch(r"app-(\d+\.\d+\.\d+)-alpha\.(\d+)", src)
-        if not m:
-            sys.exit(f"{src} is not app-X.Y.Z-alpha.N")
-        version, build = m.groups()
+        src, sha, build_run = prealpha(src)
+        version, build = re.fullmatch(r"app-(\d+\.\d+\.\d+)-prealpha\.(\d+)", src).groups()
         taken = [t for t in gh("api", "--paginate", f"repos/{os.environ['GH_REPO']}/tags?per_page=100", "--jq", ".[].name").splitlines() if t.startswith(f"app-{version}-beta.")]
         taken += [p["tag"] for p in data["promotions"] if p["tag"].startswith(f"app-{version}-beta.")]
         k = 1 + max([int(t.rsplit(".", 1)[1]) for t in taken], default=0)
         label = f"{version}-beta.{k}"
         if tag_exists(f"app-{version}"):
-            sys.exit(f"Poki {version} is already Stable; a beta of it would never be offered. Promote a newer alpha.")
-        rec.update(version=label, tag=f"app-{label}", base_version=version, build=build, source=src, sha=tag_sha(src))
-        # Later alphas must sort above this beta, so main moves on to the next version.
+            sys.exit(f"Poki {version} is already Stable; a beta of it would never be offered. Promote a newer pre-alpha.")
+        rec.update(version=label, tag=f"app-{label}", base_version=version, build=build, source=src, sha=sha, built_by=build_run)
+        # Later pre-alphas must sort above this beta, so main moves on to the next version.
         current = VERSION_FILE.read_text().strip()
         if vkey(current) <= vkey(version):
             VERSION_FILE.write_text(bump_patch(version) + "\n")
@@ -113,13 +159,13 @@ def propose(channel, src=None, override=None):
         sys.exit("channel is beta or stable")
     data["promotions"].append(rec)
     save(data)
-    for k in ("channel", "version", "tag", "source", "sha"):
-        print(f"{k}={rec[k]}")
+    for k in ("channel", "version", "tag", "source", "sha", "built_by"):
+        print(f"{k}={rec.get(k, '')}")
     print(f"branch=promote/{channel}-{rec['version']}")
 
 
 RECORD_FORMS = {
-    "beta": {"tag": r"app-\d+\.\d+\.\d+-beta\.\d+", "source": r"app-\d+\.\d+\.\d+-alpha\.\d+",
+    "beta": {"tag": r"app-\d+\.\d+\.\d+-beta\.\d+", "source": r"app-\d+\.\d+\.\d+-(pre)?alpha\.\d+",
              "version": r"\d+\.\d+\.\d+-beta\.\d+", "build": r"\d+"},
     "stable": {"tag": r"app-\d+\.\d+\.\d+", "source": r"app-\d+\.\d+\.\d+-beta\.\d+",
                "version": r"\d+\.\d+\.\d+", "build": r"\d*"},

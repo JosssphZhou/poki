@@ -1,6 +1,8 @@
 # Pre-alpha: every merge into main is built and published to the Pre-alpha channel, with no tag to
 # push and no step to wait for. One macOS job does it all (version, build, tag, publish), because
-# each extra job costs a runner pickup. It runs on main so that the caches it saves are the ones
+# each extra job costs a runner pickup. Beside it, the app tests (ios-app.yml) and Poki Setup's core
+# tests run on the same commit; a run where any of them fails cannot be promoted to Beta
+# (.github/scripts/promotion.py checks these jobs by id). It runs on main so that the caches it saves are the ones
 # every later run can read; a run from a tag could only read main's caches, and main had none, so
 # every release build used to start cold (about 20 minutes, 9 of them in PiSwiftAI).
 #
@@ -12,22 +14,24 @@ name: Pre-alpha
 on:
   push:
     branches: [main]
-    paths-ignore: ['**/*.md', 'docs/**', '.github/ISSUE_TEMPLATE/**', '.github/channels.json', '.github/workflows/promote-*.yml']
+    paths-ignore: ['**/*.md', 'docs/**', '.github/ISSUE_TEMPLATE/**', '.github/channels.json']
   # Re-publish main's head by hand (for example after a failed run).
   workflow_dispatch:
 
-# One pre-alpha at a time. A merge that lands while one builds waits; if several land, only the
-# newest waits and the ones in between are skipped (each build includes them).
-concurrency:
-  group: prealpha
-  cancel-in-progress: false
-
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   prealpha:
     if: github.ref == 'refs/heads/main'
+    # One pre-alpha build at a time. A merge that lands while one builds waits; if several land, only
+    # the newest waits and the ones in between are skipped (each build includes them). Only this job
+    # waits, so the tests of the last build never hold up the next one.
+    concurrency:
+      group: prealpha
+      cancel-in-progress: false
+    permissions:
+      contents: write
     # The Xcode 27 image: the iOS 27.1 SDK or later, which the iPhone Duo needs (build-ipa).
     runs-on: xcode-27
     timeout-minutes: 60
@@ -54,7 +58,7 @@ jobs:
           build: ${{ steps.v.outputs.build }}
           editions: external
 
-      # Kept 90 days: an alpha or beta promoted later copies this exact file (promote-alpha.yml).
+      # Kept 90 days: a beta promoted later copies this exact file (publish-promotion.yml).
       - uses: actions/upload-artifact@v4
         with:
           name: Poki-unsigned
@@ -90,3 +94,28 @@ jobs:
         run: |
           echo "## Poki v${{ steps.v.outputs.version }} (${{ steps.v.outputs.build }}) Pre-alpha" >> "$GITHUB_STEP_SUMMARY"
           echo "Rust library from cache: ${{ steps.build.outputs.rust-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # The tests a build passes before it can be promoted: PokiCore and loopback tests, the in-process
+  # field, apps and idle-cycle checks, the simulator smoke test with every screen, the app unit tests,
+  # and Poki's agent end to end with a scripted model. Three macOS jobs, on the same commit, after the
+  # build, so a build skipped for a newer merge takes no macOS runner for its tests. They do not hold
+  # up publishing to Pre-alpha; they decide whether this build can go to Beta. promotion.py checks
+  # them by job id ("app-tests / <job>", "setup-tests"), so renaming one means renaming it there.
+  app-tests:
+    needs: prealpha
+    uses: ./.github/workflows/ios-app.yml
+    with:
+      skip_ipa_upload: true
+
+  # Poki Setup's core (release picking, pairing, signing) on Linux.
+  setup-tests:
+    needs: prealpha
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: desktop }
+      - run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
+      - run: cargo test -p poki-setup-core -p poki-setup-cli --manifest-path desktop/Cargo.toml
+        env: { POKI_SETUP_FILE_SECRETS: "1" }

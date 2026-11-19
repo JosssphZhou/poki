@@ -73,4 +73,4 @@ jobs:
         with:
           node-version: '24'
       - name: Signed release publication contract
-        run: node --test test/publish-r2.test.mjs
+        run: node --test test/publish-r2.test.mjs test/promotion.test.mjs

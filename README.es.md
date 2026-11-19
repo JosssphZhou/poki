@@ -106,7 +106,7 @@ Comprueba la nota en Notas: el título debe ser "Poki Demo" y el contenido debe 
 - **Desde el ordenador.** Renew en Poki Setup instala la compilación más reciente del canal elegido sobre la app existente. En Mac también puedes pedir al agente «Actualiza Poki en mi iPhone». La habilidad install-poki tiene un proceso de actualización que comprueba primero la versión instalada y la identidad de firma.
 - Si la actualización se detiene en «Finishing the update», cierra Poki desde el selector de apps, ábrelo y comprueba la versión en Ajustes. Si no ha cambiado, actualiza con Poki Setup desde el ordenador. No borres Poki para arreglar una actualización: también se borrarían las conversaciones.
 
-Consulta los [canales de publicación](docs/release-channels.md) para conocer cómo pasa una compilación de Alpha a Beta.
+Consulta los [canales de publicación](docs/release-channels.md) para conocer cómo una compilación de `main` pasa a Beta.
 
 ## Problemas conocidos
 

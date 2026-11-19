@@ -106,7 +106,7 @@ Check the new note in Notes: the title must be "Poki Demo" and the body must con
 - **From the computer.** Renew in Poki Setup installs the newest build on its channel over the installed app. On a Mac you can also tell your agent "Update Poki on my iPhone"; the install-poki skill has a separate update path that checks the installed version and signing identity first.
 - If an update stops at "Finishing the update", swipe Poki away in the app switcher and open it again, then check the version in Settings. If the version did not change, update from Poki Setup on the computer. Do not delete Poki to fix an update: deleting it deletes its conversations.
 
-The release channels and how a build moves from Alpha to Beta are in [Release channels](docs/release-channels.md).
+The release channels and how a build from `main` becomes a Beta are in [Release channels](docs/release-channels.md).
 
 ## Known issues
 

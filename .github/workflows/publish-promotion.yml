@@ -1,11 +1,16 @@
 # Publishes a merged promotion (propose-promotion.yml, promotion-gate.yml): the record in
-# .github/channels.json whose tag does not exist yet. Beta keeps the numeric build in its IPA name:
+# .github/channels.json whose tag does not exist yet. A beta's files are its Pre-alpha run's artifact.
+# Beta keeps the numeric build in its IPA name:
 #   beta    Poki-external-0.3.0-712.ipa on app-0.3.0-beta.1, a prerelease, with the Gym scorecards
 #   stable  Poki-external-0.3.0.ipa on app-0.3.0, a full release (never marked Latest: GitHub's
 #           Latest is Poki MCP's v* release, which the Mac server's update check reads)
-# Poki Setup files come along from the source release. Created as a draft, checked, then published.
-# A stable waits for approval in the "stable" environment (Settings > Environments > stable >
-# Required reviewers).
+# Poki Setup files come along from app-alpha-latest (beta, filled just before) or the source
+# release (stable). Created as a draft, checked, then published. A beta waits for approval in the
+# "beta" environment, a stable in "stable" (Settings > Environments > Required reviewers).
+#
+# Older Poki and Poki Setup still read the Alpha channel's releases and install what they find there.
+# So nothing reaches them before that approval: the same job, after it, puts the same build on the
+# Alpha releases and then publishes the Beta.
 name: Publish promotion
 
 on:
@@ -100,37 +105,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { ref: "${{ fromJSON(needs.read.outputs.rec).sha }}", fetch-depth: 0, filter: 'tree:0' }
+      # The publishing script from this workflow's commit, so older pre-alphas can be published too.
+      - uses: actions/checkout@v4
+        if: env.CHANNEL == 'beta'
+        with: { path: pipeline, sparse-checkout: .github/scripts }
+      # A beta's files: the artifact of the Pre-alpha run that built it, downloaded once for the
+      # Alpha records and the Beta.
+      - name: The Pre-alpha run's build
+        if: env.CHANNEL == 'beta'
+        run: |
+          set -euo pipefail
+          run="$(gh run list --workflow prealpha.yml --commit "$SHA" --status success --json databaseId --jq '.[0].databaseId')"
+          [ -n "$run" ] || { echo "::error::no successful Pre-alpha run built $SHA (artifacts are kept 90 days)"; exit 1; }
+          echo "IPA source: Pre-alpha run $run ($SOURCE, $SHA)"
+          gh run download "$run" --name Poki-unsigned --dir prealpha
+      # Only after the beta approval above: the build as app-<VERSION>-alpha.<build> on
+      # app-alpha-latest (and the old ios-alpha-latest), for older clients, then the Beta below.
+      # scripts/release/publish-compat.sh needs that tag and release for the Beta's compatibility
+      # release. The tag push uses the workflow's own token, so it starts no tag-triggered workflow,
+      # and re-running with the same build is harmless.
+      - name: Alpha records for older clients
+        if: env.CHANNEL == 'beta'
+        run: pipeline/.github/scripts/publish-rolling.sh alpha "$BASE" "$BUILD" prealpha app-prealpha-latest
       - name: The promoted build's files
         run: |
           set -euo pipefail
-          mkdir -p src dist
+          # publish-rolling.sh left the Alpha's files in dist/; the Beta's are gathered afresh.
+          rm -rf src dist && mkdir -p src dist
           if [ "$CHANNEL" = beta ]; then
-            # The alpha's IPA is the Pre-alpha run's artifact for its commit.
-            run="$(gh run list --workflow prealpha.yml --commit "$SHA" --status success --json databaseId --jq '.[0].databaseId')"
-            if [ -n "$run" ]; then
-              echo "IPA source: Pre-alpha run $run ($SHA)"
-              gh run download "$run" --name Poki-unsigned --dir src
-              cp src/Poki-external-unsigned.ipa "dist/Poki-external-$BASE-$BUILD.ipa"
-            else
-              release="$SOURCE"
-              if ! gh release view "$release" --json tagName >/dev/null; then
-                # Alpha's immutable tag may have its files on the rolling release.
-                release=app-alpha-latest
-              fi
-              source_sha="$(gh api "repos/$GH_REPO/commits/$release" --jq .sha)"
-              [ "$source_sha" = "$SHA" ] || { echo "::error::Alpha release $release is not the promoted commit"; exit 1; }
-              echo "IPA source: Alpha release $release ($SOURCE, $SHA)"
-              ipa="Poki-external-$BASE-$BUILD.ipa"
-              gh release download "$release" --dir src --pattern "$ipa" --pattern Poki-signing.zip --pattern SHA256SUMS
-              awk -v name="$ipa" '$2 == name { print; found=1 } END { exit !found }' src/SHA256SUMS > src/IPA-SHA256SUMS
-              (cd src && sha256sum --check IPA-SHA256SUMS)
-              # Older Alpha manifests omit the signing archive; GitHub supplies its digest.
-              signing_digest="$(gh api "repos/$GH_REPO/releases/tags/$release" --jq '.assets[] | select(.name == "Poki-signing.zip") | .digest')"
-              [[ "$signing_digest" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "::error::missing signing archive SHA-256"; exit 1; }
-              (cd src && printf '%s  Poki-signing.zip\n' "${signing_digest#sha256:}" | sha256sum --check -)
-              cp "src/$ipa" "dist/$ipa"
-            fi
-            cp src/Poki-signing.zip dist/
+            cp prealpha/Poki-external-unsigned.ipa "dist/Poki-external-$BASE-$BUILD.ipa"
+            cp prealpha/Poki-signing.zip dist/
             gh release download app-alpha-latest --dir dist --pattern 'PokiSetup-*' --pattern 'SHA256SUMS-desktop.txt' || echo "::warning::no Poki Setup files on app-alpha-latest"
             # The Gym scorecards from the merged PR's gate, the baseline for the next beta.
             pr_head="$(gh api "repos/$GH_REPO/commits/$GITHUB_SHA/pulls" --jq '.[0].head.sha')"
@@ -161,7 +165,7 @@ jobs:
           {
             if [ "$CHANNEL" = beta ]; then
               n="${LABEL##*beta.}"
-              echo "Beta $n of Poki $BASE, for the Beta channel in Poki Setup. It is Alpha build $BUILD (\`$SOURCE\`), unchanged, after the Poki Gym."
+              echo "Beta $n of Poki $BASE, for the Beta channel in Poki Setup. It is build $BUILD (\`$SOURCE\`), unchanged, after the Poki Gym."
             else
               echo "Poki $BASE. It is \`$SOURCE\`, unchanged, after its time on the Beta channel."
             fi

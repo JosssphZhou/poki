@@ -106,7 +106,7 @@ iPhone App 使用你自備的模型帳號，電腦上編碼代理程式的訂閱
 - **從電腦更新。** Poki Setup 中的 Renew 會將所選通道的最新組建安裝到現有應用程式上。Mac 使用者也可以告訴代理程式「更新我 iPhone 上的 Poki」。install-poki 技能有獨立的更新流程，會先核對已安裝版本和簽署身分。
 - 如果更新停在「正在完成更新」，請在應用程式切換器中向上滑動關閉 Poki，再重新開啟並檢視設定中的版本。版本未變化時，請用電腦上的 Poki Setup 更新。不要為了修復更新而刪除 Poki，刪除應用程式會一併刪除對話。
 
-發布通道以及組建從 Alpha 進入 Beta 的方式見[發布通道](docs/release-channels.md)。
+發布通道以及 `main` 上的組建如何升為 Beta 見[發布通道](docs/release-channels.md)。
 
 ## 已知問題
 

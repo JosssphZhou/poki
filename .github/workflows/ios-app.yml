@@ -4,15 +4,19 @@
 name: iOS app
 
 on:
-  # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
+  # By hand (Actions > Run workflow); it has no push trigger of its own.
   workflow_dispatch:
-  # The release workflow builds the app from the tagged commit with the release's version.
+  # Every Pre-alpha run (prealpha.yml) tests the commit it builds; a build that fails these cannot
+  # be promoted to Beta.
   workflow_call:
     inputs:
-      version: { type: string, required: true }
-      build: { type: string, required: true }
-      # The commit to test (promote-alpha.yml passes the pre-alpha's); default the calling run's.
+      # Empty: native/ios-app/VERSION and this run's number.
+      version: { type: string, required: false, default: '' }
+      build: { type: string, required: false, default: '' }
+      # The commit to test; default the calling run's.
       ref: { type: string, required: false, default: '' }
+      # The caller publishes its own Poki-unsigned, so a second one by that name would clash.
+      skip_ipa_upload: { type: boolean, required: false, default: false }
 
 permissions:
   contents: read
@@ -54,7 +58,6 @@ jobs:
   # endpoint; the owner's task runs through the real pi loop (plan, open Settings, look, finish), the
   # session is saved, then an outside agent's ask_poki hands a second task to Poki's agent.
   agent-chat:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -362,6 +365,7 @@ jobs:
           grep -q "TEST SUCCEEDED" build/tests.log
 
       - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.skip_ipa_upload }}
         with:
           name: Poki-unsigned
           path: out/

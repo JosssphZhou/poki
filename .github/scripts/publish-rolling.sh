@@ -9,12 +9,13 @@
 #
 # Run from the checkout of the built commit with GH_TOKEN set. New files go up before the previous
 # build's are removed, so the release always has an installable IPA. With a desktop source release
-# (alpha takes app-prealpha-latest's), its Poki Setup files are copied in as well.
+# (alpha takes app-prealpha-latest's), its Poki Setup files are copied in as well. prealpha.yml
+# publishes pre-alphas; publish-promotion.yml publishes the alpha of each beta.
 set -euo pipefail
 CHANNEL="$1" VERSION="$2" BUILD="$3" SRC="$4" DESKTOP_FROM="${5:-}"
 case "$CHANNEL" in
   prealpha) TITLE=Pre-alpha; BLURB="An untested snapshot of main for the Pre-alpha channel in Poki Setup; it can break." ;;
-  alpha) TITLE=Alpha; BLURB="A pre-alpha that passed the alpha tests, for the Alpha channel in Poki Setup; expect rough edges." ;;
+  alpha) TITLE=Alpha; BLURB="The build promoted to Beta, kept here for older Poki and Poki Setup that read the Alpha channel." ;;
   *) echo "::error::channel is prealpha or alpha"; exit 2 ;;
 esac
 ROLLING="app-$CHANNEL-latest"
