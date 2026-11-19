@@ -1871,6 +1871,35 @@ final class FrontendSubtractionTests: XCTestCase {
         XCTAssertTrue(labels.contains { $0.contains("Set Up Again") }, "\(labels)")
     }
 
+    func testLoopbackPageShowsLocalAutomationWhenMountedImageCanTakeTasks() async throws {
+        let pairing = AppFiles.phonePairingFile
+        let savedPairing = try? Data(contentsOf: pairing)
+        let savedForced = UserDefaults.standard.object(forKey: "pokiLoopback")
+        defer {
+            if let savedPairing { try? savedPairing.write(to: pairing) }
+            else { try? FileManager.default.removeItem(at: pairing) }
+            UserDefaults.standard.set(savedForced, forKey: "pokiLoopback")
+        }
+        let record: [String: Any] = ["identifier": "test-host", "public_key": Data(repeating: 1, count: 32), "private_key": Data(repeating: 2, count: 32)]
+        try PropertyListSerialization.data(fromPropertyList: record, format: .xml, options: 0).write(to: pairing)
+        UserDefaults.standard.set("noanswer", forKey: "pokiLoopback")
+        let (model, restore) = try modelWithLoopbackChosen(launcher: FakeLauncher(), imageMounted: { true })
+        defer { restore() }
+        model.loopback.simulate(.noAnswer)
+        XCTAssertTrue(model.mountedImageStandsIn)
+        XCTAssertFalse(model.hasOpenInProcessSession)
+        model.setup.proxyApp = "localdevvpn"
+        let labels = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
+        XCTAssertTrue(labels.contains { $0.contains("Local automation ready") }, "\(labels)")
+        XCTAssertFalse(labels.contains { $0.contains("with the loopback on") }, "\(labels)")
+
+        let lockdown: [String: Any] = ["HostID": "test-host", "SystemBUID": "test"]
+        try PropertyListSerialization.data(fromPropertyList: lockdown, format: .xml, options: 0).write(to: pairing)
+        XCTAssertFalse(model.mountedImageStandsIn)
+        let withoutPhonePairing = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
+        XCTAssertFalse(withoutPhonePairing.contains { $0.contains("Local automation ready") }, "\(withoutPhonePairing)")
+    }
+
     /// A task on the mounted image ends and the runner stands by, as after every chat or agent task:
     /// `local_ddi` is gone from the runner, but the next task is handed to the image again, so no
     /// screen asks to turn the loopback on. Only a pairing the hand-over cannot use keeps the prompt.
