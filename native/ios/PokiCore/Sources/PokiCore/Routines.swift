@@ -50,6 +50,7 @@ public struct RoutineStep: Codable, Equatable, Sendable {
     public var app: String?
     /// A type into a password field: the text was not kept, so a run stops here for the agent.
     public var secret: Bool?
+    public var userDemonstrated: Bool?
 }
 
 public struct RoutineStop: Codable, Equatable, Sendable {
