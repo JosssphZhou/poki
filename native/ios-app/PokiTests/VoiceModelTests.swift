@@ -1,3 +1,4 @@
+import AVFoundation
 import PokiCore
 import XCTest
 @testable import Poki
@@ -515,7 +516,7 @@ extension VoiceModelTests {
         withExtendedLifetime(watcher) {}
     }
 
-    func testFailedVoiceConnectionShowsConnectionFailedAndRetryOnTheLiveActivity() async throws {
+    func testFailedVoiceConnectionShowsConnectionFailedAndTryAgainOnTheLiveActivity() async throws {
         URLProtocol.registerClass(BridgeTroubleStub.self)
         defer { URLProtocol.unregisterClass(BridgeTroubleStub.self) }
         let h = Harness()
@@ -530,36 +531,38 @@ extension VoiceModelTests {
         XCTAssertFalse(activity.state.face.endsTalk)
         XCTAssertFalse(activity.state.face.talkGlow)
         XCTAssertEqual(h.readyCues, 0)
-
-        XCTAssertTrue(h.voice.setBridge(BridgeStub.address))
-        let retried = expectation(for: NSPredicate { _, _ in h.voice.isOn }, evaluatedWith: nil)
-        _ = try await RetryTalkIntent().perform()
-        await fulfillment(of: [retried], timeout: 2)
-        await h.time.settle()
-        XCTAssertEqual(activity.state.voice, .connecting)
-        h.link.play(["type": "session.created"])
-        await h.time.settle()
-        XCTAssertEqual(activity.state.voice, .listening)
-        XCTAssertEqual(h.readyCues, 1)
-        h.voice.stop()
         withExtendedLifetime(watcher) {}
     }
 
-    func testReadyCuePlaysShortChimeOrVibratesWhenSilent() async {
-        XCTAssertLessThanOrEqual(VoiceReadyCue.duration, 0.5)
-        let wav = VoiceReadyCue.wavData()
-        XCTAssertEqual(String(decoding: wav.prefix(4), as: UTF8.self), "RIFF")
-        XCTAssertEqual(String(decoding: wav[8..<12], as: UTF8.self), "WAVE")
-        XCTAssertGreaterThan(wav.count, 44)
+    /// While the microphone is on (a voice-chat session), iOS keeps system sounds and haptics off unless
+    /// the session allows them, so the ready cue was silent exactly when it plays. Whether the sound is
+    /// heard, and not vibrated for in silent mode, needs a phone; what this holds is the session the
+    /// system consults.
+    func testTheReadyCueIsAllowedToSoundWhileTheMicrophoneIsOn() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker])
+        try session.setActive(true)
+        defer { try? session.setActive(false) }
+        XCTAssertFalse(session.allowHapticsAndSystemSoundsDuringRecording, "a recording session starts with system sounds and haptics off")
 
-        var vibrated = 0
-        VoiceReadyCue.play(playSound: { done in done(0.18) }, vibrate: { vibrated += 1 })
-        for _ in 0..<20 { await Task.yield() }
-        XCTAssertEqual(vibrated, 0, "audible chime must not vibrate")
+        VoiceReadyCue.play()
 
-        VoiceReadyCue.play(playSound: { done in done(0.01) }, vibrate: { vibrated += 1 })
-        for _ in 0..<20 { await Task.yield() }
-        XCTAssertEqual(vibrated, 1, "muted UI sound when the Silent Switch is on must vibrate once")
+        XCTAssertTrue(session.allowHapticsAndSystemSoundsDuringRecording, "the cue plays while the microphone is on")
+    }
+
+    /// The island's Try Again sits on the Lock Screen and the island, where Poki is in the background. iOS
+    /// opens the microphone for a background app only from the recording intent that started the talk, so
+    /// Try Again brings the person back to Poki, which starts the talk once it is in front, instead of
+    /// starting it where it cannot hear.
+    func testTryAgainOnTheFailedIslandAsksPokiToOpenAndTalkInsteadOfOpeningTheMicrophoneInTheBackground() async throws {
+        let h = Harness()
+        _ = PokiEntry.shared.take()
+
+        _ = try await RetryTalkIntent().perform()
+
+        XCTAssertEqual(PokiEntry.shared.take(), .talk, "Poki takes the request when it comes to the front, and talks")
+        XCTAssertFalse(h.voice.isOn, "no talk starts while Poki may still be in the background")
+        XCTAssertTrue(h.microphone.isEmpty)
     }
 
     func testEndOnTheLiveActivityEndsTheTalk() async throws {
