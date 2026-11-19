@@ -119,6 +119,41 @@ public struct Routine: Codable, Equatable, Sendable {
 
     public var stale: Bool { failuresInARow >= 2 }
     public var isLocked: Bool { locked == true }
+
+    /// The app a routine works in, worked out from its steps: the app its first step acts in. A step's
+    /// `app` is the app in front when it was sent, which is not always the app it acts in: a launch is
+    /// recorded where it began (often the app the task before left in front), and so is every step sent
+    /// after a launch or Home before the screen was read again. So a launch acts in the app it opens,
+    /// and a step still recorded in the app a Home left is passed over until a step is recorded
+    /// elsewhere. The home screen, Poki itself, waits and the hardware buttons act in no app. nil when
+    /// no step names one.
+    static func workingApp(of steps: [RoutineStep], isOwn: (String) -> Bool = RoutineStore.isOwnApp) -> String? {
+        func named(_ bundle: String?) -> String? {
+            guard let b = bundle?.trimmingCharacters(in: .whitespacesAndNewlines), !b.isEmpty, b != homeScreen, !isOwn(b) else { return nil }
+            return b
+        }
+        // The app a Home (or a launch of no app) left, while no step since was recorded in another.
+        var left: String?
+        for step in steps {
+            switch ActionKind(step.action) {
+            case .launch?:
+                if let app = named(step.action["launch"]?.string ?? step.action["launch"]?["bundle"]?.string) { return app }
+                left = step.app
+            case .button?:
+                if step.action["button"]?.text?.lowercased() == "home" { left = step.app }
+            case .wait?, .waitUntil?, .handoff?, .run?, .path?, nil:
+                continue
+            default:
+                guard let recorded = step.app, recorded != left else { continue }
+                left = nil
+                if let app = named(recorded) { return app }
+            }
+        }
+        return nil
+    }
+
+    static let homeScreen = "com.apple.springboard"
+
     public var summary: String {
         "\(name): \(description.isEmpty ? "" : description + "; ")\(app.map { "in \($0), " } ?? "")\(steps.count) steps, \(runs) runs, \(ok) ok\(stale ? ", STALE (stopped \(failuresInARow) times in a row\(lastStop.map { " at step \($0.step): \($0.why)" } ?? ""))" : "")\(params.isEmpty ? "" : ", with: " + params.keys.sorted().map { "\($0) (recorded \"\(params[$0]!.prefix(30))\")" }.joined(separator: ", "))"
     }
@@ -193,6 +228,9 @@ struct MemoryFile: Codable {
     /// The latest changes, newest first. Kept on the phone only: an export leaves them out, since a
     /// forgotten note's text lives on in its entry until it falls off the end.
     var changes: [MemoryChangeRecord]? = nil
+    /// The rule the routines' apps were worked out by (`RoutineStore.appRule`); nil in a file from
+    /// before 0.4.6, whose routines may be filed under the app the phone was in before their launch.
+    var appRule: Int? = RoutineStore.appRule
 }
 
 /// The agent's memory: thread-safe, saved to one file after every change.
@@ -204,6 +242,12 @@ public final class RoutineStore: @unchecked Sendable {
     public static let owner = "owner"
     /// The names that are not an agent's: the owner, a file the owner imported or restored, and Dream.
     static func isReserved(_ name: String) -> Bool { [owner, "import", "restore", "dream"].contains(name.lowercased()) }
+    /// The rule `Routine.workingApp` follows. A file kept by an earlier rule has its routines' apps
+    /// worked out again when it is opened or imported.
+    static let appRule = 1
+    /// Poki's own ids (its app as signed on this phone, and its extensions): no routine works there.
+    static let ownApps = ["nz.zheha.poki"] + (Bundle.main.bundleIdentifier.map { [$0] } ?? [])
+    static func isOwnApp(_ bundle: String) -> Bool { ownApps.contains { bundle == $0 || bundle.hasPrefix($0 + ".") } }
 
     private let lock = NSLock()
     private var file = MemoryFile()
@@ -217,7 +261,10 @@ public final class RoutineStore: @unchecked Sendable {
         self.url = url
         self.backupDirectory = backupDirectory
         if let url, let data = try? Data(contentsOf: url) {
-            if let saved = try? Self.decoder.decode(MemoryFile.self, from: data) {
+            if var saved = try? Self.decoder.decode(MemoryFile.self, from: data) {
+                // A file from an earlier rule is regrouped once and written back: only the file, since
+                // the backup copy may be a restore that is not merged in yet.
+                if Self.regroup(&saved), let regrouped = try? Self.encoder.encode(saved) { try? regrouped.write(to: url, options: .atomic) }
                 file = saved
             } else {
                 // A file this version cannot read is set aside, not written over with an empty memory.
@@ -498,6 +545,32 @@ public final class RoutineStore: @unchecked Sendable {
 
     private static func newID() -> String { UUID().uuidString.lowercased() }
 
+    /// Works the routines' apps out again from their steps when the file was kept by an earlier rule
+    /// (0.4.5 filed a routine under the app the phone was in before its launch: Xiaohongshu and 12306
+    /// skills under WeChat). A routine whose steps name no app keeps its own, unless that is the home
+    /// screen or Poki. The change log's copies follow, so Recent Updates and undo show the same app.
+    /// True when the file needs writing.
+    @discardableResult
+    static func regroup(_ f: inout MemoryFile) -> Bool {
+        guard (f.appRule ?? 0) < appRule else { return false }
+        func app(_ r: Routine) -> String? {
+            Routine.workingApp(of: r.steps) ?? r.app.flatMap { $0 == Routine.homeScreen || isOwnApp($0) ? nil : $0 }
+        }
+        for i in f.routines.indices { f.routines[i].app = app(f.routines[i]) }
+        if var changes = f.changes {
+            for i in changes.indices {
+                if var before = changes[i].routine { before.app = app(before); changes[i].routine = before }
+                guard let name = changes[i].routineName else { continue }
+                if let now = f.routines.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) { changes[i].routineApp = now.app }
+                else if let before = changes[i].routine { changes[i].routineApp = before.app }
+                else if let kept = changes[i].routineApp, kept == Routine.homeScreen || isOwnApp(kept) { changes[i].routineApp = nil }
+            }
+            f.changes = changes
+        }
+        f.appRule = appRule
+        return true
+    }
+
     /// Drops the oldest unlocked items over the cap; locked ones are never dropped.
     private static func trim<T>(_ items: inout [T], to cap: Int, keeping kept: (T) -> Bool) {
         while items.count > cap, let i = items.firstIndex(where: { !kept($0) }) { items.remove(at: i) }
@@ -532,11 +605,13 @@ public final class RoutineStore: @unchecked Sendable {
     /// notes are added unless the same text is there. Returns what changed, in words.
     @discardableResult
     public func importData(_ data: Data, by: String) throws -> String {
-        let incoming: MemoryFile
+        var incoming: MemoryFile
         do { incoming = try Self.decoder.decode(MemoryFile.self, from: data) }
         catch { throw ImportError("not a Poki agent backup: \(error)") }
         guard incoming.schema.hasPrefix("poki.agent-backup/") else { throw ImportError("not a Poki agent backup (schema \(incoming.schema))") }
         guard incoming.schema == Self.schema else { throw ImportError("a backup of a newer Poki (\(incoming.schema)); update Poki to import it") }
+        // A backup from an earlier version files its routines as that version did: worked out again.
+        Self.regroup(&incoming)
         var added = 0, replaced = 0, kept = 0, notes = 0
         // An agent's import brings what it says, but not the owner's say: nothing comes locked, and
         // nothing claims to be the owner's, an import's or Dream's. A note's "edited" and "heard"
@@ -708,8 +783,8 @@ extension Computer {
             let preferred = fresh.filter { ["NavigationBar", "StaticText", "Heading"].contains($0.type) } + fresh.filter { !["NavigationBar", "StaticText", "Heading"].contains($0.type) }
             checks = Array(preferred.prefix(3).map { $0.label ?? $0.text })
         }
-        // The app of the first step that touched something (a launch step was recorded where it began).
-        let app = recorded.first(where: { $0.step.target != nil && $0.step.app != nil })?.step.app ?? recorded.first(where: { $0.step.app != nil })?.step.app
+        // The app the routine works in: a launch's own app, not the one it was sent from.
+        let app = Routine.workingApp(of: steps) { config.isPoki(Foreground(bundleID: $0, name: nil)) }
         let now = Date()
         let routine = Routine(name: name, description: description, app: app, steps: steps, params: params, expect: checks.filter { !$0.isEmpty }, read: read,
                               runs: 0, ok: 0, failuresInARow: 0, lastStop: nil, lastMs: nil, savedBy: by, created: now, updated: now)
@@ -1031,10 +1106,13 @@ extension Computer {
             var recorded = step
             if let element = refs[Self.runRef], step.target?.type == RoutineTarget.anyType { recorded.target = RoutineTarget(element) }
             refs[Self.runRef] = nil
+            // The app the step was sent in: the one read for it, else the one the run went to last (its
+            // own app launched first, or a launch step), which the last read may not show yet. A launch
+            // is recorded where it began, as a do's is.
+            recorded.app = front?.bundleID ?? lastForeground?.bundleID ?? step.app
             if let spec = action["launch"] { front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil) }
             done = index + 1
             log.append("\(index + 1) \(text.prefix(80)) (\(Int(((now() - began) * 1000).rounded())) ms)")
-            recorded.app = lastForeground?.bundleID ?? step.app
             recorded.optional = nil
             // A path's typed text is what a saved routine's parameter is made of.
             trace.append(RecordedStep(step: recorded, typed: kind == "type" ? action["type"]?.string : nil, keysBefore: []))
@@ -1229,7 +1307,7 @@ extension PokiCore {
                 if let d = args["description"]?.string { r.description = d }
                 if let e = args["expect"]?.array { r.expect = e.compactMap(\.string) }
                 if let e = args["read"]?.array { r.read = e.compactMap(\.string) }
-                if let steps = newSteps { r.steps = steps; r.failuresInARow = 0; r.lastStop = nil }
+                if let steps = newSteps { r.steps = steps; r.failuresInARow = 0; r.lastStop = nil; r.app = Routine.workingApp(of: steps) ?? r.app }
                 r.updated = Date()
             }
             if let rename = args["rename"]?.string, !rename.isEmpty, !store.rename(name, to: rename, by: by) {

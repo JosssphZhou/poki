@@ -395,6 +395,16 @@ on the phone; the next first `look` of a task in that app names the saved routin
   and date. The log stays on the phone: `export` and the backup copy leave it out. These fields came
   after the first release and are all optional, so an older file opens with everything in it; a file
   that cannot be read at all is copied aside (`agent-memory.unreadable-<time>.json`), not written over.
+- **The app a routine is filed under** (the Memory page's rows, "routines for this app", the app a run
+  launches first) is the app its first step acts in (`Routine.workingApp`). A step keeps the app that
+  was in front when it was sent, and a launch is recorded where it began, often the app the task
+  before left in front; so a launch counts for the app it opens, steps still recorded in the app Home
+  left are passed over until one is recorded elsewhere, and the home screen and Poki count for no app.
+  A run's steps are recorded in the app it went to (its own app, launched first, or a launch step).
+  Up to 0.4.5 a launch counted for the app it was sent from, which filed Xiaohongshu and 12306 skills
+  under WeChat: a file or backup without `appRule` (or with an older one) has its routines' apps and
+  the log's copies worked out again from their steps once, when it is opened or imported. Opening
+  writes the file back, never the backup copy, which may be a restore not merged in yet.
 - **Moving and backing up**: `export` answers the whole memory as JSON (schema
   `poki.agent-backup/1`); `import {data}` merges one in (newer wins). The app keeps a copy at
   `Documents/AgentBackup/poki-agent-backup.json`, which Poki Setup copies off and puts back; a copy put
