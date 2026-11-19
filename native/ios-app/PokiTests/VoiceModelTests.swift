@@ -118,6 +118,7 @@ final class VoiceModelTests: XCTestCase {
         let time: FakeTime
         private(set) var links: [FakeConnection] = []
         private(set) var microphone: [Bool] = []
+        private(set) var readyCues = 0
         var link: FakeConnection { links.last! }
 
         @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
@@ -125,10 +126,13 @@ final class VoiceModelTests: XCTestCase {
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
+            var cued: (() -> Void)!
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
+                               readyCue: { cued() },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
             made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
+            cued = { [unowned self] in self.readyCues += 1 }
             _ = voice.setBridge(BridgeStub.address)
             // As in the app: an ended conversation goes into the chat, and its lines leave the voice model.
             voice.onConversationEnded = { _, _ in }
@@ -478,10 +482,19 @@ extension VoiceModelTests {
     func testTheLiveActivitySaysWhatTheTalkIsDoing() async {
         let h = Harness()
         let (activity, watcher) = following(h)
-        await h.talk()
+        await h.connect()
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .connecting)
+        XCTAssertEqual(activity.state.face.content, StatusWord.connecting.text)
+        XCTAssertEqual(activity.state.face.bear, .thinking)
+        XCTAssertEqual(h.readyCues, 0, "the ready cue waits for session.created")
+
+        h.link.play(["type": "session.created"])
         await h.time.settle()
         XCTAssertEqual(activity.state.voice, .listening)
         XCTAssertEqual(activity.state.face.content, StatusWord.listening.text)
+        XCTAssertEqual(activity.state.face.bear, .ready)
+        XCTAssertEqual(h.readyCues, 1, "the ready cue plays once when session.created arrives")
         XCTAssertTrue(activity.state.face.endsTalk)
         XCTAssertTrue(activity.state.face.talkGlow, "the island's brand band shows while a talk is on")
         XCTAssertTrue(activity.state.face.shieldsTaps, "a tap on the expanded island during a talk keeps the owner in their app")
@@ -492,6 +505,7 @@ extension VoiceModelTests {
         await h.time.settle()
         XCTAssertEqual(activity.state.voice, .speaking)
         XCTAssertEqual(activity.state.face.content, StatusWord.speaking.text)
+        XCTAssertEqual(h.readyCues, 1)
 
         h.voice.stop()
         await h.time.settle()
@@ -499,6 +513,53 @@ extension VoiceModelTests {
         XCTAssertFalse(activity.state.face.endsTalk)
         XCTAssertFalse(activity.state.face.talkGlow)
         withExtendedLifetime(watcher) {}
+    }
+
+    func testFailedVoiceConnectionShowsConnectionFailedAndRetryOnTheLiveActivity() async throws {
+        URLProtocol.registerClass(BridgeTroubleStub.self)
+        defer { URLProtocol.unregisterClass(BridgeTroubleStub.self) }
+        let h = Harness()
+        let (activity, watcher) = following(h)
+        XCTAssertTrue(h.voice.setBridge(BridgeTroubleStub.slow))
+        await h.connect()
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .failed)
+        XCTAssertEqual(activity.state.face.content, StatusWord.connectionFailed.text)
+        XCTAssertEqual(activity.state.face.bear, .tripped)
+        XCTAssertEqual(activity.state.face.bottom, .retryTalk)
+        XCTAssertFalse(activity.state.face.endsTalk)
+        XCTAssertFalse(activity.state.face.talkGlow)
+        XCTAssertEqual(h.readyCues, 0)
+
+        XCTAssertTrue(h.voice.setBridge(BridgeStub.address))
+        let retried = expectation(for: NSPredicate { _, _ in h.voice.isOn }, evaluatedWith: nil)
+        _ = try await RetryTalkIntent().perform()
+        await fulfillment(of: [retried], timeout: 2)
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .connecting)
+        h.link.play(["type": "session.created"])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .listening)
+        XCTAssertEqual(h.readyCues, 1)
+        h.voice.stop()
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testReadyCuePlaysShortChimeOrVibratesWhenSilent() async {
+        XCTAssertLessThanOrEqual(VoiceReadyCue.duration, 0.5)
+        let wav = VoiceReadyCue.wavData()
+        XCTAssertEqual(String(decoding: wav.prefix(4), as: UTF8.self), "RIFF")
+        XCTAssertEqual(String(decoding: wav[8..<12], as: UTF8.self), "WAVE")
+        XCTAssertGreaterThan(wav.count, 44)
+
+        var vibrated = 0
+        VoiceReadyCue.play(playSound: { done in done(0.18) }, vibrate: { vibrated += 1 })
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(vibrated, 0, "audible chime must not vibrate")
+
+        VoiceReadyCue.play(playSound: { done in done(0.01) }, vibrate: { vibrated += 1 })
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(vibrated, 1, "muted UI sound when the Silent Switch is on must vibrate once")
     }
 
     func testEndOnTheLiveActivityEndsTheTalk() async throws {
@@ -604,9 +665,9 @@ extension VoiceModelTests {
         let expected: [(language: String, connecting: String, step: String, interrupted: String, reason: String, lost: String)] = [
             ("en", "Connecting", "Using the phone", "Interrupted", "Check the network, then try again.",
              "Connection lost. Nothing is sent again. Talk again to hear how running steps ended."),
-            ("zh-Hans", "正在连接", "正在操作手机", "已打断", "请检查网络后重试。",
+            ("zh-Hans", "连接中", "正在操作手机", "已打断", "请检查网络后重试。",
              "连接中断。已发出的内容不会重发，重新对话可以了解步骤的结果。"),
-            ("zh-Hant", "正在連線", "正在操作手機", "已打斷", "請檢查網路後再試。",
+            ("zh-Hant", "連線中", "正在操作手機", "已打斷", "請檢查網路後再試。",
              "連線中斷。已送出的內容不會重送，重新對話可以了解步驟的結果。"),
         ]
         for words in expected {

@@ -326,6 +326,38 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(state.face.compact.says("Allow?"))
     }
 
+    func testVoiceConnectingListeningAndFailedFacesUseStandardProductLanguage() {
+        let cases: [(String, String, String, String, String)] = [
+            ("en", "Connecting", "Listening", "Connection failed", "Try Again"),
+            ("zh-Hans", "连接中", "聆听中", "连接失败", "重试"),
+            ("zh-Hant", "連線中", "聆聽中", "連線失敗", "重試"),
+        ]
+        for (locale, connecting, listening, failed, retry) in cases {
+            AppLocalization.shared.preference = locale
+            var state = PokiState(phase: .idle, headline: "Listening", thumbnailVersion: 0)
+
+            state.voice = .connecting
+            XCTAssertEqual(state.face.content, connecting, locale)
+            XCTAssertEqual(state.face.bear, .thinking, locale)
+            XCTAssertTrue(state.face.endsTalk, locale)
+            XCTAssertTrue(state.face.talkGlow, locale)
+
+            state.voice = .listening
+            XCTAssertEqual(state.face.content, listening, locale)
+            XCTAssertEqual(state.face.bear, .ready, locale)
+            XCTAssertTrue(state.face.endsTalk, locale)
+            XCTAssertTrue(state.face.talkGlow, locale)
+
+            state.voice = .failed
+            XCTAssertEqual(state.face.content, failed, locale)
+            XCTAssertEqual(state.face.bear, .tripped, locale)
+            XCTAssertEqual(state.face.bottom, .retryTalk, locale)
+            XCTAssertFalse(state.face.endsTalk, locale)
+            XCTAssertFalse(state.face.talkGlow, locale)
+            XCTAssertEqual(String(activity: "Try Again"), retry, locale)
+        }
+    }
+
     private static var runningSession: RunningSession?
 
     private struct RunningSession {
