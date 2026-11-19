@@ -787,6 +787,8 @@ struct ChatTranscript<Footer: View>: View {
             switch entry.kind {
             case .you(let text, _): return (text, nil)
             case .request(let text, let from): return (text, from)
+            // A task the live voice handed over stands as a grey line (`ChatModel.runSpoken`).
+            case .step(let text, _): return (text, nil)
             default: continue
             }
         }

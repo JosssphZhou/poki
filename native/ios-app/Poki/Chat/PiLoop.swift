@@ -182,6 +182,16 @@ final class PiLoop {
         return .done
     }
 
+    /// Words for the task under way, from the owner: the model reads them before its next turn.
+    func steer(_ text: String) {
+        agent.steer(.user(UserMessage(content: .text(text))))
+    }
+
+    /// Words that came after the task's last turn: pi would put them in front of the next task.
+    func dropSteering() {
+        agent.clearSteeringQueue()
+    }
+
     /// Ends the task after the step under way: nothing more is sent to the phone or the model.
     func stop() {
         gate.end(.stopped)

@@ -245,6 +245,98 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(requests[6].contains("interrupted drags are not replayed"))
     }
 
+    /// A live talk on the stubbed voice bridge whose work goes to `chat`; the test plays the Realtime events.
+    private func talk(handingTo chat: ChatModel) async -> (VoiceModel, FakeConnection) {
+        let saved = UserDefaults.standard.object(forKey: "voice.openai.enabled")
+        let savedBridge = UserDefaults.standard.string(forKey: "voiceBridge")
+        URLProtocol.registerClass(BridgeStub.self)
+        addTeardownBlock { @MainActor in
+            URLProtocol.unregisterClass(BridgeStub.self)
+            UserDefaults.standard.set(saved, forKey: "voice.openai.enabled")
+            UserDefaults.standard.set(savedBridge, forKey: "voiceBridge")
+        }
+        VoiceDirect.enabled = false
+        let link = FakeConnection()
+        let voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: { _, _ in ("", false, nil) }, tasks: .chat { chat },
+                               connection: { onEvent, onClosed in link.onEvent = onEvent; link.onClosed = onClosed; return link })
+        _ = voice.setBridge(BridgeStub.address)
+        await voice.start(microphone: false)
+        link.play(["type": "session.created"])
+        return (voice, link)
+    }
+
+    private static func call(_ id: String, _ name: String, _ arguments: [String: Any] = [:]) -> [String: Any] {
+        ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": id, "name": name, "arguments": json(arguments)]]
+    }
+
+    /// What the talk handed back to the voice model for `id`, once it has.
+    private static func output(_ id: String, on link: FakeConnection) -> String? {
+        link.sent.lazy.compactMap { $0["item"] as? [String: Any] }.first { $0["call_id"] as? String == id }?["output"] as? String
+    }
+
+    private func until(_ seconds: Int, _ what: String, _ done: () -> Bool) async {
+        let deadline = ContinuousClock.now + .seconds(seconds)
+        while !done(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(done(), what)
+    }
+
+    /// The live voice does not operate the phone: its task runs in Poki's chat, as a typed one would,
+    /// what the person adds while it runs reaches that same task, and the voice hears how it ended only
+    /// when it has. The task stands in the chat as the voice's wording, not as the owner's message.
+    func testATalksTaskRunsInPokisChatTakesWhatIsAddedAndReportsItsEnd() async throws {
+        let modelAnswers = DispatchSemaphore(value: 0)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Sent good evening to File Transfer.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Sent."),
+        ], onRequest: { _ in modelAnswers.wait() })
+        let chat = chat(on: server, kind: .poki)
+        let (voice, link) = await talk(handingTo: chat)
+        defer { voice.stop() }
+        // Poki's chat may open on a conversation an earlier run saved: this run's words are its own.
+        let run = UUID().uuidString.prefix(6)
+        let task = "Open WeChat and send hello \(run) to File Transfer", addition = "Send good evening \(run) instead"
+
+        link.play(Self.call("c1", VoiceTasks.run, ["task": task]))
+        await until(10, "the chat's model got the task") { server.requests.count == 1 }
+        XCTAssertTrue(chat.running)
+        XCTAssertEqual(voice.talkState, .acting)
+
+        link.play(Self.call("c2", VoiceTasks.run, ["task": addition]))
+        await until(5, "the addition was answered") { Self.output("c2", on: link) != nil }
+        XCTAssertNil(Self.output("c1", on: link), "the task's result waits for its end")
+        modelAnswers.signal(); modelAnswers.signal()
+
+        await until(10, "the task's result reached the voice") { Self.output("c1", on: link) != nil }
+        let result = try XCTUnwrap(Self.output("c1", on: link))
+        XCTAssertTrue(result.contains("result: done: Sent good evening to File Transfer."), result)
+        XCTAssertTrue(try XCTUnwrap(Self.output("c2", on: link)).hasPrefix("added:"))
+        XCTAssertEqual(server.requests.count, 2, "one task, not a second one for the addition")
+        XCTAssertTrue(Self.json(server.requests[0]).contains(task))
+        XCTAssertTrue(Self.json(server.requests[1]).contains(addition))
+        XCTAssertTrue(chat.entries.contains { $0.kind == .step(task, ok: true) })
+        XCTAssertFalse(chat.ownerContext.contains { $0.text.contains(run) },
+                       "the approval check must not read the voice model's wording as the owner's request: \(chat.ownerContext.map(\.text))")
+    }
+
+    /// Stop said in a talk stops the chat's task, as Stop in the chat does, and the voice hears it stopped.
+    func testStopInATalkStopsTheChatsTaskAndTheTalkHearsItStopped() async throws {
+        let modelAnswers = DispatchSemaphore(value: 0)
+        let server = try FakeCompletions(replies: [FakeCompletions.text("Never sent.")], onRequest: { _ in modelAnswers.wait() })
+        defer { modelAnswers.signal() }
+        let chat = chat(on: server, kind: .poki)
+        let (voice, link) = await talk(handingTo: chat)
+        defer { voice.stop() }
+
+        link.play(Self.call("c1", VoiceTasks.run, ["task": "Open Settings"]))
+        await until(10, "the chat's model got the task") { server.requests.count == 1 }
+        link.play(Self.call("c2", VoiceTasks.stop))
+
+        await until(10, "the stopped task's end reached the voice") { Self.output("c1", on: link) != nil }
+        XCTAssertFalse(chat.running)
+        XCTAssertTrue(try XCTUnwrap(Self.output("c1", on: link)).hasPrefix("stopped:"))
+        XCTAssertTrue(try XCTUnwrap(Self.output("c2", on: link)).hasPrefix("stopping:"))
+    }
+
     func testOversizedAttachmentKeepsOwnerRestrictionInApprovalRequest() async throws {
         let server = try FakeCompletions(replies: [FakeCompletions.text("Done."), FakeCompletions.text("ALLOW: owner asked")])
         let chat = chat(on: server)

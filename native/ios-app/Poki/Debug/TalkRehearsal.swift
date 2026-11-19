@@ -4,7 +4,7 @@ import Foundation
 /// `-pokiTalkRehearsal 1`, in a simulator's development build: Talk with Poki connects to this instead of
 /// OpenAI. It plays one talk's worth of the Realtime API's events into VoiceModel, the way the unit
 /// tests' FakeConnection does, so every state of the talk's screens can be seen without a key, a
-/// microphone or sound: Poki listens, hears a request, thinks, runs a step on the phone (a stand-in
+/// microphone or sound: Poki listens, hears a request, thinks, hands it to Poki's agent (a stand-in
 /// that only waits), speaks, is spoken over, and answers again. VoiceModel handles the events as it
 /// would OpenAI's: its phases, lines and the end after a quiet while are the real ones. Nothing is
 /// sent anywhere and no step runs on the phone.
@@ -17,16 +17,17 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     private static var loses: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") == "lost" }
     static var hold: TalkState? { UserDefaults.standard.string(forKey: "pokiTalkHold").flatMap(TalkState.named) }
 
-    /// The stand-in for the key exchange, which a rehearsal skips. `do` is on the phone's list, so the
-    /// step goes to `step()` below instead of a voice bridge.
-    static let token = VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: ["do"])
+    /// The stand-in for the key exchange, which a rehearsal skips.
+    static let token = VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: [])
 
-    /// The step on the phone: it waits as long as a short one takes and says it went well. Held for a
-    /// screenshot, it does not come back.
-    static func step() async -> PhoneAnswer {
+    /// The task handed to Poki's agent: it waits as long as a short one takes and says it went well.
+    /// Held for a screenshot, it does not come back.
+    static func step() async -> (String, Bool) {
         try? await Task.sleep(for: .seconds(hold == .acting ? 3600 : 3.2))
-        return ("done", false, nil)
+        return ("result: done", false)
     }
+
+    @MainActor static let tasks = VoiceTasks { _, _ in await step() }
 
     private let onEvent: @MainActor ([String: Any]) -> Void
     private let onClosed: @MainActor (String) -> Void
@@ -44,7 +45,8 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
         let answer = zh ? "已经把亮度调高了。现在大约是百分之八十，还需要" : "Brightness is up. It’s at about eighty percent now, do you want"
         let stops = zh ? "够了，谢谢" : "That’s enough, thanks"
         let closing = zh ? "好的。" : "Okay."
-        let step: [String: Any] = ["type": "function_call", "call_id": "rehearsal-step", "name": "do", "arguments": "{}"]
+        let task = String(decoding: (try? JSONSerialization.data(withJSONObject: ["task": asks])) ?? Data(), as: UTF8.self)
+        let step: [String: Any] = ["type": "function_call", "call_id": "rehearsal-step", "name": VoiceTasks.run, "arguments": task]
         // Seconds from the connection, what OpenAI would send then, and the state the talk is in after it.
         let turn: [(Double, [String: Any], TalkState?)] = [
             (0.3, ["type": "session.created"], .listening),
@@ -54,7 +56,7 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
             (5.6, ["type": "response.created", "response": ["id": "rehearsal-1"]], nil),
             (5.8, ["type": "response.output_item.done", "item": step], .acting),
             (5.9, ["type": "response.done", "response": ["id": "rehearsal-1"]], nil),
-            // The step takes 3.2 s; VoiceModel hands its result over and asks for the answer.
+            // The task takes 3.2 s; VoiceModel hands its result over and asks for the answer.
             (9.4, ["type": "response.created", "response": ["id": "rehearsal-2"]], nil),
             (9.6, ["type": "output_audio_buffer.started"], nil),
             (9.7, ["type": "response.output_audio_transcript.done", "transcript": answer], .speaking),

@@ -407,7 +407,7 @@ final class ChatModel {
         let engine: Engine
     }
 
-    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [], inSplitView: Bool = false, chooseWorkspace: Bool = false) {
+    private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [], inSplitView: Bool = false, chooseWorkspace: Bool = false, spoken: Bool = false) {
         if let message = app.signer.installMessage {
             add(.note(.problem(message)))
             return
@@ -451,7 +451,7 @@ final class ChatModel {
                 }
                 self.lastImages = capturedImages
                 guard let prepared = self.prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
-                                                      inSplitView: inSplitView, chooseWorkspace: chooseWorkspace) else {
+                                                      inSplitView: inSplitView, chooseWorkspace: chooseWorkspace, spoken: spoken) else {
                     self.running = false
                     self.awaitingModel = false
                     return
@@ -461,7 +461,7 @@ final class ChatModel {
             return
         }
         guard let prepared = prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
-                                         inSplitView: inSplitView, chooseWorkspace: chooseWorkspace) else { return }
+                                         inSplitView: inSplitView, chooseWorkspace: chooseWorkspace, spoken: spoken) else { return }
         running = true
         awaitingModel = true
         stopAsked = false
@@ -477,7 +477,7 @@ final class ChatModel {
     }
 
     private func prepareSend(_ text: String, again: Bool, thumbnails: [Data], documents: [ChatTextDocument],
-                             inSplitView: Bool, chooseWorkspace: Bool) -> PreparedSend? {
+                             inSplitView: Bool, chooseWorkspace: Bool, spoken: Bool = false) -> PreparedSend? {
         var resumedTask: String?
         if kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
             switch ChatContinuation.resolve(text, current: sessionID, choices: entries.last?.continuationChoices,
@@ -518,6 +518,12 @@ final class ChatModel {
             entries.append(you)
         }
         let message = you.requestText
+        // A task the live voice handed over is the voice model's wording, not the owner's: it stands as a
+        // grey line, which the approval check (`ownerContext`) does not read as the owner's request.
+        if spoken, let i = entries.firstIndex(where: { $0.id == you.id }) {
+            entries[i].kind = .step(text, ok: nil)
+            spokenEntry = you.id
+        }
         usesSplitView = inSplitView
         splitViewSession = inSplitView ? UUID().uuidString : nil
         expectedSplitViewApps = nil
@@ -833,7 +839,13 @@ final class ChatModel {
                 return ("Stopped. Poki's task was cancelled.", false)
             }
         }
-        let replies = entries.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
+        return (outcome(since: 0).joined(separator: "\n"), taskResult?.success)
+    }
+
+    /// How the task ended, for whoever handed it over: finish_task's verdict and answer, Poki's last
+    /// words since entry `from`, and the error, if the task failed.
+    private func outcome(since from: Int) -> [String] {
+        let replies = entries.dropFirst(from).compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }
         var lines: [String] = []
         if let taskResult {
             lines.append("result: \(taskResult.success ? "done" : "not done"): \(taskResult.summary)")
@@ -843,7 +855,74 @@ final class ChatModel {
         if case .failed(let why)? = lastOutcome { lines.append("error: \(why)") }
         if lastOutcome == nil, let tail = entries.last, case .note(.problem(let why)) = tail.kind { lines.append("error: \(why)") }
         if lines.isEmpty { lines.append("Poki ended without an answer.") }
-        return (lines.joined(separator: "\n"), taskResult?.success)
+        return lines
+    }
+
+    // MARK: Tasks a live talk hands over (`VoiceTasks`)
+
+    /// The grey line of the task the live voice handed over, while it runs.
+    private var spokenEntry: UUID?
+
+    /// Runs a task the live voice model handed over (`run_task`) in this chat, the one the talk is held
+    /// in, with the model chosen in Settings, as a typed message runs; answers when it has ended. Not
+    /// `runDelegated`: that marks an outside agent busy, and this chat's `send` refuses while one is.
+    func runSpoken(_ task: String) async -> (text: String, failed: Bool) {
+        let task = task.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !task.isEmpty else { return ("error: task is empty; nothing was done", true) }
+        if let message = app.signer.installMessage { return ("error: \(message)", true) }
+        guard !running, ChatModel.delegatedBusy == nil else {
+            return ("busy: Poki is already working on a task for another agent; nothing was started.", true)
+        }
+        lastOutcome = nil
+        taskResult = nil
+        let from = entries.count
+        send(task, again: false, spoken: true)
+        AppLog.shared.add("chat", "the live voice handed a task to Poki (\(task.count) characters)")
+        // Nothing runs when no model is set up: the chat said why, and that is the answer.
+        guard running, let started = self.task else {
+            if let id = spokenEntry, let i = entries.firstIndex(where: { $0.id == id }) { entries[i].kind = .step(task, ok: false) }
+            spokenEntry = nil
+            return ((["error: the task did not start; nothing was done on the phone."] + outcome(since: from)).joined(separator: "\n"), true)
+        }
+        await started.value
+        loop?.dropSteering()
+        let stopped = stopAsked
+        var lines = stopped ? ["stopped: the user stopped the task before it ended. Do not start it again unless they ask."] : []
+        lines += outcome(since: from)
+        let failed = stopped || taskResult?.success == false || lines.contains { $0.hasPrefix("error: ") }
+        if let id = spokenEntry, let i = entries.firstIndex(where: { $0.id == id }) { entries[i].kind = .step(task, ok: !failed) }
+        spokenEntry = nil
+        return (lines.joined(separator: "\n"), failed)
+    }
+
+    /// What the owner said by voice while a task runs: it goes to that task's model before its next
+    /// turn. false when no pi task is running to take it.
+    func addSpoken(_ text: String) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard running, !text.isEmpty, !Self.direct, let loop else { return false }
+        loop.steer("The owner added this by voice while you work. Follow it; if it changes or replaces the task, do what it now asks: \(text)")
+        add(.step(text, ok: true))
+        AppLog.shared.add("chat", "the live voice added to the running task (\(text.count) characters)")
+        return true
+    }
+
+    /// Where the task under way is, for the live voice (`check_task`).
+    var spokenProgress: String {
+        guard running else { return "idle: Poki is not working on a task now." }
+        var lines = ["running: for \(Int(Date().timeIntervalSince(taskStart))) s, \(toolCalls) steps so far."]
+        if let id = planID, let plan = entries.first(where: { $0.id == id }), case .plan(let steps) = plan.kind {
+            lines.append("plan: " + steps.enumerated().map { "\($0.offset + 1). \($0.element.text) (\($0.element.state.rawValue))" }.joined(separator: "; "))
+        }
+        if let asked, asked.state == .asking { lines.append("waiting: \(asked.summary) in \(asked.app) waits for the user to allow it on the phone.") }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Stops the task under way, as Stop in the chat does (`stop_task`). false when none is running.
+    func stopSpoken() -> Bool {
+        guard running else { return false }
+        AppLog.shared.add("chat", "the live voice stopped the running task")
+        stop()
+        return true
     }
 
     /// The display name of the agent whose hand-off is running, while one runs.

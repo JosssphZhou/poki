@@ -120,12 +120,13 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
+        @MainActor init(phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) },
+                        tasks: VoiceTasks = VoiceTasks { _, _ in ("result: done", false) }) {
             let time = FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
-            voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, holdMicrophone: { held($0) },
+            voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: phoneTool, tasks: tasks, holdMicrophone: { held($0) },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
             made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
@@ -153,13 +154,13 @@ final class VoiceModelTests: XCTestCase {
         }
     }
 
-    /// Said once, answered once: the conversation waits 8 s for the person to go on, then ends and lets
+    /// Said once, answered once: the conversation waits 15 s for the person to go on, then ends and lets
     /// go of the microphone, so iOS's microphone dot goes off instead of Poki listening on.
-    func testTheConversationEndsWhenNobodySpeaksForEightSecondsAfterTheAnswer() async {
+    func testTheConversationEndsWhenNobodySpeaksForFifteenSecondsAfterTheAnswer() async {
         let h = Harness()
         await h.talk()
         h.turn("What iOS version is this?", "iOS 26.1.", id: "r1")
-        await h.time.advance(7)
+        await h.time.advance(14)
         XCTAssertTrue(h.voice.isOn)
         await h.time.advance(1)
         XCTAssertFalse(h.voice.isOn)
@@ -168,35 +169,35 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertEqual(h.microphone, [true, false])
     }
 
-    /// Talk to Poki and then nothing said: the same 8 s end it.
-    func testTheConversationEndsWhenNobodySpeaksForEightSecondsAfterItOpens() async {
+    /// Talk to Poki and then nothing said: the same 15 s end it.
+    func testTheConversationEndsWhenNobodySpeaksForFifteenSecondsAfterItOpens() async {
         let h = Harness()
         await h.talk()
-        await h.time.advance(7)
+        await h.time.advance(14)
         XCTAssertTrue(h.voice.isOn)
         await h.time.advance(1)
         XCTAssertFalse(h.voice.isOn)
         XCTAssertEqual(h.microphone, [true, false])
     }
 
-    /// Speech the server answers only with an error: no answer is coming, so the 8 s still end it.
-    func testSpeechAnsweredOnlyWithAnErrorStillEndsAfterEightSeconds() async {
+    /// Speech the server answers only with an error: no answer is coming, so the 15 s still end it.
+    func testSpeechAnsweredOnlyWithAnErrorStillEndsAfterFifteenSeconds() async {
         let h = Harness()
         await h.talk()
         h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
                     ["type": "error", "error": ["message": "Conversation already has an active response"]])
-        await h.time.advance(8)
+        await h.time.advance(15)
         XCTAssertFalse(h.voice.isOn)
     }
 
-    /// Speaking again within the 8 s goes on in the same conversation: the model keeps what was said.
-    func testSpeakingAgainWithinEightSecondsGoesOnInTheSameConversation() async {
+    /// Speaking again within the 15 s goes on in the same conversation: the model keeps what was said.
+    func testSpeakingAgainWithinFifteenSecondsGoesOnInTheSameConversation() async {
         let h = Harness()
         await h.talk()
         h.turn("Open Settings.", "Settings is open.", id: "r1")
         await h.time.settle()
         h.link.play(["type": "input_audio_buffer.speech_started"])
-        await h.time.advance(8)
+        await h.time.advance(15)
         XCTAssertTrue(h.voice.isOn)
         XCTAssertEqual(h.links.count, 1)
         XCTAssertFalse(h.link.closed)
@@ -208,7 +209,7 @@ final class VoiceModelTests: XCTestCase {
         let h = Harness()
         await h.talk()
         h.turn("Open Settings.", "Settings is open.", id: "r1")
-        await h.time.advance(8)
+        await h.time.advance(15)
         XCTAssertFalse(h.voice.isOn)
 
         await h.time.advance(4 * 60)
@@ -242,17 +243,17 @@ final class VoiceModelTests: XCTestCase {
         await h.time.settle()
         XCTAssertEqual(h.voice.calls.first?.delivered, true)
         h.link.play(["type": "response.done", "response": ["id": "r1"]])
-        await h.time.advance(8)
+        await h.time.advance(15)
         XCTAssertTrue(h.voice.isOn)
         h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
                     ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
-        await h.time.advance(8)
+        await h.time.advance(15)
         XCTAssertFalse(h.voice.isOn)
     }
 
     /// You switch to another app during a talk and it goes on (the owner, 2026-11-13): Poki still listens,
     /// the microphone stays with it and the Live Activity says so, also when it was still connecting. It
-    /// ends there as it does in front: 8 s after an answer if nobody speaks.
+    /// ends there as it does in front: 15 s after an answer if nobody speaks.
     func testATalkGoesOnWhenPokiGoesToTheBackground() async {
         let h = Harness()
         await h.talk()
@@ -264,7 +265,7 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertEqual(TalkActivity.state(of: h.voice), .listening)
         h.turn("Open Settings.", "Settings is open.", id: "r1")
         XCTAssertTrue(h.voice.isOn, "an answer said in the background does not end the talk")
-        await h.time.advance(7)
+        await h.time.advance(14)
         XCTAssertTrue(h.voice.isOn)
         await h.time.advance(1)
         XCTAssertFalse(h.voice.isOn)
@@ -285,7 +286,7 @@ final class VoiceModelTests: XCTestCase {
 
     /// An error that is not about the request for the step's answer (a stale cancel, say) leaves that
     /// answer expected: the talk waits for it. The error that is about it means no answer is coming, and
-    /// the talk ends after the 8 s it gives the person to go on.
+    /// the talk ends after the 15 s it gives the person to go on.
     func testOnlyAnErrorForTheAnswerRequestGivesUpOnTheAnswer() async {
         for ownError in [false, true] {
             let (step, stepDone) = AsyncStream<Void>.makeStream()
@@ -302,7 +303,7 @@ final class VoiceModelTests: XCTestCase {
             XCTAssertNotNil(id, "the request for the answer carries an id its error can name")
 
             h.link.play(["type": "error", "error": ["message": "x", "event_id": ownError ? id ?? "" : "event_other"]])
-            await h.time.advance(8)
+            await h.time.advance(15)
             XCTAssertEqual(h.voice.isOn, !ownError, ownError ? "the answer request failed, nothing is coming" : "an unrelated error ended it before the answer")
         }
     }
@@ -317,7 +318,7 @@ final class VoiceModelTests: XCTestCase {
 
         await h.time.advance(30)
         await h.talk()
-        await h.time.advance(8)
+        await h.time.advance(15)
         XCTAssertFalse(h.voice.isOn)
 
         await h.time.advance(30)
@@ -420,24 +421,46 @@ final class OpenAIStub: URLProtocol {
     override func stopLoading() {}
 }
 
-/// ESP-221: in a Chinese conversation the live voice answered in English right after the phone's
-/// English tool results. The session tells the model the user's latest turn decides the language,
-/// not tool results or notes, and names this iPhone's language only for before the user has spoken.
-/// The transcription has no fixed language, so a user who switches is heard in their own.
+/// What the live session tells the model and how it hears, byte for byte as tuned against
+/// gpt-realtime-2.1 with native/ios-app/scripts/voice-eval.py (the spoken acceptance sentences, in
+/// Chinese, over WebRTC). Before, it followed the language chosen in Poki, took a short English sound
+/// as the talk opened as a reason to answer in English (3 of 4 runs), sent 打开微信 through Poki's
+/// agent (26 s on the phone) and told the user nothing when sending a message.
 final class VoiceLanguageTests: XCTestCase {
-    func testTheLiveSessionSpeaksTheUsersLanguageAfterEnglishToolResults() async throws {
+    /// The iPhone's language, not Poki's, is what the talk hears and speaks: the tests run with the
+    /// iPhone in English (-AppleLanguages (en)) and Poki set to Chinese.
+    @MainActor
+    func testTheLiveSessionHearsAndSpeaksTheIPhonesLanguageAndOpensAppsItself() async throws {
+        let saved = AppLocalization.shared.preference
+        defer { AppLocalization.shared.preference = saved }
+        AppLocalization.shared.preference = "zh-Hans"
         URLProtocol.registerClass(OpenAIStub.self)
         defer { URLProtocol.unregisterClass(OpenAIStub.self) }
-        _ = try await VoiceDirect.token(apiKey: "sk-test")
+        let token = try await VoiceDirect.token(apiKey: "sk-test")
         let session = try XCTUnwrap(OpenAIStub.session)
         let instructions = try XCTUnwrap(session["instructions"] as? String)
-        XCTAssertTrue(instructions.contains("Always speak the language the user spoke in their latest turn"), instructions)
-        XCTAssertTrue(instructions.contains("they never decide the language you speak, so after a tool result keep to the user's language"), instructions)
-        let language = Locale(identifier: "en").localizedString(forIdentifier: Locale.preferredLanguages[0]) ?? ""
-        XCTAssertTrue(instructions.contains("Before the user has said anything, or when you cannot tell their language, speak \(language), this iPhone's language."), instructions)
+        for line in [
+            "- Speak English, the iPhone's language, from your first sentence to your last.",
+            "- Never change language on your own: not for tool results, screen text, screenshots or notes from Poki in another language, not for a short sound, a word or a name in another language, and not for audio you could not make out. Change only when the user asks you to speak another language.",
+            "- When the latest audio holds no request (a filler or backchannel such as 嗯, 哦, 啊, uh-huh or ok, a cough, noise, or a word cut off as the talk opens), call wait_for_user and say nothing.",
+            "- A clear request to do something on the phone: first say only \"好\" (\"OK\" in English), one word and nothing after it (never \"好，我来帮你打开\" or \"好，我帮你往下翻\"), then call the tool in the same turn.",
+            "- When a request leaves out what it is about (帮我打开 with no app named, 发给他 with nobody named), ask for that one thing in a few words (打开哪个？) and call no tool. Never fill it in from earlier in the talk.",
+            "- After you call run_task, say nothing until its result arrives: no \"我来处理\", no \"稍等\", no \"已经加到任务里\", no \"正在处理中\".",
+            "- To scroll the screen in front (往下翻, 往上翻, 下一页), go back one page (返回, 返回上一页) or go to the Home Screen (回到桌面, 回主屏幕), call phone_step: it is done at once.",
+            "- A request that sends something to someone (a message, a file, an email): first say in one short sentence what you will send to whom (\"我把 hello 发给文件传输助手\"), then call run_task in the same turn. Do not wait for the user to confirm; they can say stop.",
+            "- When the user says stop (停, 别说了, stop) at any time: stop talking, and call stop_task at once when a task is running.",
+            "- To open an app and do nothing more in it, call open_app with its name: it opens at once.",
+            "- Short commands are phone actions too: 往下翻, 翻一下 and 下一页 mean scroll.",
+        ] { XCTAssertTrue(instructions.contains(line), line) }
+        let tools = (session["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+        for tool in ["wait_for_user", "open_app", "phone_step", "run_task", "stop_task"] {
+            XCTAssertTrue(tools.contains(tool), "\(tool) in \(tools)")
+            XCTAssertTrue(token.local_tools.contains(tool), "the phone answers \(tool) itself")
+        }
         let transcription = ((session["audio"] as? [String: Any])?["input"] as? [String: Any])?["transcription"] as? [String: Any]
-        XCTAssertNotNil(transcription)
-        XCTAssertNil(transcription?["language"], "a fixed transcription language would mishear a user who switches")
+        XCTAssertEqual(transcription?["model"] as? String, "gpt-transcribe")
+        XCTAssertEqual(transcription?["languages"] as? [String], ["en"])
+        XCTAssertEqual(VoiceDirect.transcription("zh-Hans-CN")["languages"] as? [String], ["zh", "en"], "Chinese, and the English words in it")
     }
 }
 
@@ -736,15 +759,84 @@ extension VoiceModelTests {
         XCTAssertEqual(deleted, [images[0].id], "the earlier screenshot leaves the conversation")
     }
 
-    /// Poki speaks the language chosen in Poki from its first sentence, whatever the iPhone's language
-    /// (the owner, 2026-11-18: with Poki in Chinese, the first sentence came in English).
-    func testTheLiveVoiceSpeaksTheLanguageChosenInPoki() {
-        let saved = AppLocalization.shared.preference
-        defer { AppLocalization.shared.preference = saved }
-        for (language, name) in [("zh-Hans", "Chinese, Simplified"), ("en", "English")] {
-            AppLocalization.shared.preference = language
-            let instructions = VoiceDirect.session["instructions"] as? String ?? ""
-            XCTAssertTrue(instructions.contains("Speak \(name), the language of Poki's interface, from your first sentence on."), language)
-        }
+    /// A 嗯 or a cough while Poki listens: the model ends its turn with wait_for_user, and Poki closes
+    /// that call without asking for another answer, so it says nothing, shows no step, and the talk still
+    /// ends 15 s later.
+    func testASoundWithNoRequestInItIsLeftUnanswered() async {
+        let h = Harness()
+        await h.talk()
+        h.turn("打开微信", "微信已经打开。", id: "r1")
+        await h.time.settle()
+        let asked = h.link.sent.filter { $0["type"] as? String == "response.create" }.count
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "response.created", "response": ["id": "r2"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "wait_for_user", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r2"]])
+        await h.time.settle()
+        let outputs = h.link.sent.compactMap { ($0["item"] as? [String: Any]).flatMap { $0["type"] as? String == "function_call_output" ? $0["call_id"] as? String : nil } }
+        XCTAssertEqual(outputs, ["c1"])
+        XCTAssertEqual(h.link.sent.filter { $0["type"] as? String == "response.create" }.count, asked, "Poki would answer the 嗯")
+        XCTAssertEqual(h.voice.talkState, .listening)
+        XCTAssertFalse(h.voice.lines.contains { $0.role == .tool })
+        await h.time.advance(15)
+        XCTAssertFalse(h.voice.isOn)
+    }
+
+    /// Speech while Poki answers is heard at once. Speech detection used to be off from the start of each
+    /// answer until its audio had played: on a physical iPhone (2026-11-19) a request said over an answer
+    /// waited in the buffer and was taken as one turn, twice over, after the answer ("帮返回主菜单。帮返回主菜单。").
+    func testSpeechDetectionStaysOnWhilePokiAnswers() async {
+        let h = Harness()
+        await h.voice.start()
+        let turn: [String: Any] = ["type": "server_vad", "threshold": 0.5, "create_response": true, "interrupt_response": true]
+        h.link.play(["type": "session.created", "session": ["audio": ["input": ["turn_detection": turn]]]])
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "response.created", "response": ["id": "r1"]], ["type": "output_audio_buffer.started"],
+                    ["type": "response.done", "response": ["id": "r1", "output": [["type": "message"]]]], ["type": "output_audio_buffer.stopped"])
+        XCTAssertEqual(h.link.sent.filter { $0["type"] as? String == "session.update" }.count, 0, "Poki turned speech detection off")
+    }
+
+    /// A 嗯 that cuts Poki off (over WebRTC the server drops the rest of an answer at any speech): the model
+    /// closes it with wait_for_user, and Poki asks for the rest of the answer, not the whole answer again.
+    /// A 嗯 while Poki only listens is still left unanswered.
+    func testABackchannelThatCutsPokiOffGetsTheRestOfTheAnswer() async {
+        let h = Harness()
+        await h.talk()
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "response.created", "response": ["id": "r1"]], ["type": "output_audio_buffer.started"],
+                    ["type": "input_audio_buffer.speech_started"], ["type": "output_audio_buffer.cleared"],
+                    ["type": "response.done", "response": ["id": "r1", "status": "cancelled"]],
+                    ["type": "input_audio_buffer.speech_stopped"], ["type": "response.created", "response": ["id": "r2"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "wait_for_user", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r2"]])
+        await h.time.settle()
+        let sent = h.link.sent
+        let output = sent.firstIndex { ($0["item"] as? [String: Any])?["call_id"] as? String == "c1" }
+        let note = sent.firstIndex { (($0["item"] as? [String: Any])?["content"] as? [[String: Any]])?.first?["text"] as? String == VoiceModel.resume }
+        let ask = sent.lastIndex { $0["type"] as? String == "response.create" }
+        guard let output, let note, let ask else { return XCTFail("the rest of the answer was not asked for: \(sent.compactMap { $0["type"] as? String })") }
+        XCTAssertTrue(output < note && note < ask)
+
+        // Said over nothing: no answer.
+        let asked = h.link.sent.filter { $0["type"] as? String == "response.create" }.count
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "response.created", "response": ["id": "r3"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c2", "name": "wait_for_user", "arguments": "{}"]],
+                    ["type": "response.done", "response": ["id": "r3"]])
+        await h.time.settle()
+        XCTAssertEqual(h.link.sent.filter { $0["type"] as? String == "response.create" }.count, asked)
+    }
+
+    /// Something added to the running task (再打开小红书 while it works): its result is the answer, so Poki
+    /// asks for none now. On a physical iPhone it said "好的，我已经把……加到正在进行的任务里" each time.
+    func testSomethingAddedToTheRunningTaskIsNotAnsweredUntilTheTaskEnds() async {
+        let h = Harness(tasks: VoiceTasks { _, _ in (VoiceTasks.added + " the running task takes this in.", false) })
+        await h.talk()
+        h.link.play(["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "run_task", "arguments": #"{"task":"打开小红书"}"#]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        XCTAssertTrue(h.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "c1" })
+        XCTAssertFalse(h.link.sent.contains { $0["type"] as? String == "response.create" }, "Poki talks while the task runs")
     }
 }

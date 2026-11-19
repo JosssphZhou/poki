@@ -36,4 +36,26 @@ final class VoiceAppsTests: XCTestCase {
             if c.arguments.contains("bluetooth") { XCTAssertEqual(links, [URL(string: "App-prefs:Bluetooth")!], c.arguments) }
         }
     }
+
+    /// phone_step, the fast path for 往下翻, 返回 and 回到桌面: one PokiCore do, not Poki's agent (30 to
+    /// 50 s on a physical iPhone, 2026-11-19).
+    func testPhoneStepScrollsGoesBackOrHomeInOneDo() async {
+        let cases: [(arguments: String, sent: [String], failed: Bool)] = [
+            (#"{"step":"scroll_down"}"#, [#"{"actions":[{"swipe":{"direction":"up","distance":"scroll"}}]}"#], false),
+            (#"{"step":"scroll_up"}"#, [#"{"actions":[{"swipe":{"direction":"down","distance":"scroll"}}]}"#], false),
+            (#"{"step":"back"}"#, [#"{"actions":[{"back":true}]}"#], false),
+            (#"{"step":"home"}"#, [#"{"actions":[{"button":"home"}]}"#], false),
+            (#"{"step":"tap"}"#, [], true),
+        ]
+        for c in cases {
+            var sent: [String] = []
+            let answer = await VoiceApps.step(c.arguments, tool: { name, arguments in
+                XCTAssertEqual(name, "do")
+                sent.append(arguments)
+                return ("app: in front", false, nil)
+            })
+            XCTAssertEqual(sent, c.sent, c.arguments)
+            XCTAssertEqual(answer.failed, c.failed, c.arguments)
+        }
+    }
 }
