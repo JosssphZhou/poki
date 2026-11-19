@@ -56,6 +56,7 @@ final class LiveCore: CoreSession {
         await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps)
     }
     func settle(timeout: Double) async -> Bool { await core.settle(timeout: timeout) }
+    func itemPictures(_ boxes: [String: Rect]) async -> ItemPictures? { await core.itemPictures(boxes) }
     func prepareWorkspace(session: String) async -> Bool { await core.prepareWorkspace(session: session) }
     func clearWorkspacePaneForSetup(session: String) async -> Bool {
         await core.clearWorkspacePaneForSetup(session: session)
