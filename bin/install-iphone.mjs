@@ -12,6 +12,7 @@ import { codeCommand, defaultStateDir, manifest, run } from '../src/install/run.
 import { PROVIDERS } from '../src/install/model-key.mjs';
 import { readRecords } from '../src/install/records.mjs';
 import { updateOnly, updateResult } from '../src/install/update.mjs';
+import { isHttpHost, normalizeHttpHosts } from '../src/install/http-endpoint.mjs';
 
 const usage = `Usage: node bin/install-iphone.mjs <command> [options]
 
@@ -45,6 +46,10 @@ Options:
                       (${PROVIDERS.join(', ')}). Off unless given: ask the person first. The key is sealed
                       to a key Poki makes on the phone and never printed, logged or put on a command line.
   --model-key-item <item>  The keychain item to read it from (default <name>-api-key, e.g. openai-api-key).
+  --allow-http-host <host> Let this one host serve the Custom Endpoint over plain HTTP. Repeatable.
+                      A DNS name or IP literal, without scheme, port, path or mask. Poki Setup
+                      adds it to the signed app's Info.plist. Every other host keeps full ATS.
+                      Bring it again on an update; a plain-HTTP gateway sends its key in cleartext.
   --version           Print the installer's version and build commit.
   --out <file>        records only: write the text here instead.
   --bundle <id>       records only: Poki's bundle id, when iOS does not list it as Poki.
@@ -80,6 +85,7 @@ try {
       reinstall: { type: 'boolean', default: false },
       'model-key': { type: 'string' },
       'model-key-item': { type: 'string' },
+      'allow-http-host': { type: 'string', multiple: true },
       'no-device': { type: 'boolean', default: false },
       out: { type: 'string' },
       bundle: { type: 'string' },
@@ -106,6 +112,26 @@ if (opts['update-only'] && !opts.help &&
   updateResult(false, 'update_options_conflict', 'Update-only cannot change configuration; remove the conflicting options and retry the same update-only command.');
   process.exit(2);
 }
+
+// Explicit opt-in: name the host(s) that may serve the Custom Endpoint over plain HTTP.
+// The signing bridge inherits this and injects one NSExceptionDomains entry per host into the
+// signed IPA. Ambient POKI_HTTP_ENDPOINT_HOST is cleared when the flag is absent so an inherited
+// shell variable cannot silently widen ATS.
+const httpHosts = normalizeHttpHosts(opts['allow-http-host'] ?? []);
+if (!opts.help) {
+  for (const host of httpHosts) {
+    if (!isHttpHost(host)) {
+      if (opts['update-only']) {
+        updateResult(false, 'update_options_conflict', '--allow-http-host takes a DNS name or IP literal, without a scheme, port, brackets, zone, mask or userinfo.');
+      }
+      console.error(`--allow-http-host takes a DNS name or IP literal, without a scheme, port, path, mask or userinfo: ${host}`);
+      process.exit(2);
+    }
+  }
+}
+if (httpHosts.length) process.env.POKI_HTTP_ENDPOINT_HOST = httpHosts.join(',');
+else delete process.env.POKI_HTTP_ENDPOINT_HOST;
+
 const dryRun = opts['dry-run'];
 const state = resolve(opts.state ?? join(defaultStateDir(), dryRun ? 'dry-run' : ''));
 const appDir = opts['app-dir'] ? resolve(opts['app-dir']) : dryRun ? join(state, 'app') : undefined;

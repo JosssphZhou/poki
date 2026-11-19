@@ -378,8 +378,14 @@ struct KeyEntry: View {
             Form {
                 if provider == .custom {
                     Section {
-                        TextField("https://…/v1", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        TextField("https://…/v1 or http://…/v1", text: $url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         TextField("Model, such as llama-4-maverick", text: $modelID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if plainHTTP {
+                            Text("This address is plain HTTP. The key and your chats travel unencrypted. Use it only on a network you trust, or switch the gateway to HTTPS.").foregroundStyle(Color(.systemOrange))
+                            if !PlainHTTPPolicy.isAllowed(url) {
+                                Text("This build has no plain-HTTP exception for this host. Install Poki with --allow-http-host set to this host, or build with POKI_HTTP_ENDPOINT_HOST.").foregroundStyle(Color(.systemRed))
+                            }
+                        }
                     } header: { Text("Address and model") }
                 }
                 Section {
@@ -437,12 +443,26 @@ struct KeyEntry: View {
         }
     }
 
+    private var plainHTTP: Bool {
+        url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("http://")
+    }
+
+    private var validCustomURL: Bool {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parts = URLComponents(string: trimmed),
+              let scheme = parts.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = parts.host, !host.isEmpty, host != "[]" else { return false }
+        if let port = parts.port, !(1...65535).contains(port) { return false }
+        return true
+    }
+
     /// The key a test sends: the one typed, else the saved one. A custom endpoint may have none, but
     /// needs an address and a model.
     private var testKey: String? {
         let typed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if provider == .custom {
-            let ready = URL(string: url.trimmingCharacters(in: .whitespaces))?.scheme?.hasPrefix("http") == true && !modelID.trimmingCharacters(in: .whitespaces).isEmpty
+            let ready = validCustomURL && !modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             return ready ? (typed.isEmpty ? ModelKeys.key(provider) ?? "" : typed) : nil
         }
         return typed.isEmpty ? ModelKeys.key(provider) : typed
@@ -456,9 +476,10 @@ struct KeyEntry: View {
     private func check(_ key: String, closeIfPassed: Bool) {
         testing = true
         result = nil
-        let (url, modelID) = (url, modelID)
+        let customURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        let customModel = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
-            let outcome = await ConnectionCheck.run(provider, key: key, customURL: url, modelID: modelID)
+            let outcome = await ConnectionCheck.run(provider, key: key, customURL: customURL, modelID: customModel)
             result = outcome
             testing = false
             if closeIfPassed, outcome.passed {
@@ -469,15 +490,15 @@ struct KeyEntry: View {
     }
 
     private var canSave: Bool {
-        provider == .custom ? URL(string: url.trimmingCharacters(in: .whitespaces))?.scheme?.hasPrefix("http") == true && !modelID.trimmingCharacters(in: .whitespaces).isEmpty : !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        provider == .custom ? validCustomURL && !modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func save() {
         let tested = testKey
         do {
             if provider == .custom {
-                ModelKeys.customURL = url.trimmingCharacters(in: .whitespaces)
-                ModelKeys.customModel = modelID.trimmingCharacters(in: .whitespaces)
+                ModelKeys.customURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+                ModelKeys.customModel = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
                 if key.isEmpty { ModelKeys.selectedProvider = .custom }
             }
             if !key.isEmpty { try ModelKeys.save(key, for: provider) }
