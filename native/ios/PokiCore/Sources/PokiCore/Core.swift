@@ -327,6 +327,7 @@ public final class PokiCore: @unchecked Sendable {
     private let continuation: AsyncStream<CoreEvent>.Continuation
     public let events: AsyncStream<CoreEvent>
     private let gate = Gate()
+    private var itemPictureSources = ItemPictureSources()
     private let sessions = LockedBox<Set<String>>([])
     /// Each MCP session's client, by the name it gave at initialize (skills and notes say who saved them).
     let clientNames = LockedBox<[String: String]>([:])
@@ -636,6 +637,13 @@ public final class PokiCore: @unchecked Sendable {
         await computer.runner.settle(timeout: timeout)
     }
 
+    /// The finished task's pictures grouped by the screenshots that supplied their coordinates.
+    public func itemPictures(_ requests: [String: ItemPictureRequest], localTask: String) async -> [ItemPictures] {
+        guard !requests.isEmpty, await gate.enter(waiting: 2) else { return [] }
+        defer { gate.leave() }
+        return itemPictureSources.pictures(requests, task: localTask)
+    }
+
     /// The chat can set up an iPhone workspace while it owns the same queue its pane tools use.
     /// Launcher steps are device-local and are never listed as model or connector tools.
     public func prepareWorkspace(session: String) async -> Bool {
@@ -736,6 +744,10 @@ public final class PokiCore: @unchecked Sendable {
         } catch {
             // Never reached in practice (every step has its own deadline), but a call always answers.
             output = ToolResult(text: "error: \(error); what was sent is unknown. Call look to see the screen.", jpeg: nil, isError: true)
+        }
+        if local, let localTask, let source = output.itemPictureSource {
+            let id = itemPictureSources.record(source, task: localTask)
+            output.text += "\nscreenshot_id: \(id)"
         }
         gate.current = nil
         gate.leave()
