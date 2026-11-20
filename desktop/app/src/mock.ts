@@ -5,6 +5,12 @@ const facts = { udid: "00008150-000829EA2183C01C", name: "Zhehan's iPhone", prod
 const record = { udid: facts.udid, phone_name: facts.name, ios: "26.1", apple_id: "zh…@example.com", team_id: "ABCDE12345", team_name: "Zhehan Zhang", team_is_free: true, bundle_id: "nz.zheha.poki.ABCDE12345", version: "0.2.7", build: "70", release_tag: "ios-v0.2.7", signed_at: now - 86400 * 5, profile_expires_at: now + 86400 * 2, last_error: null, pairing_handed_off: true };
 const answers: Record<string, unknown> = {
   app_info: { version: "0.2.0", os: (new URLSearchParams(location.search).get("os") ?? "windows"), arch: "aarch64", data_dir: "~/Library/Application Support/nz.Poki.Poki Setup", can_use_system_anisette: true },
+  wizard_state: { state: "ready_to_install", selected_udid: facts.udid, usb_phones: [{ udid: facts.udid, name: "iPhone" }], failure: null },
+  wizard_pair: null,
+  wizard_reveal: null,
+  wizard_mount: null,
+  cancel_sign_in: null,
+  resend_code: now + 60,
   phones: [{ phone: { udid: facts.udid, link: { kind: "usb" } }, facts, error: null, record }],
   account: { signed_in: true, apple_id: "zhehan@example.com", name: "Zhehan Zhang", team_id: "ABCDE12345", password_kept: true, anisette: { kind: "system" }, pending_factor: null },
   teams: [{ team_id: "ABCDE12345", name: "Zhehan Zhang", kind: "Individual", is_free: true }],

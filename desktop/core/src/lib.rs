@@ -43,6 +43,8 @@ pub mod support;
 pub mod vault;
 #[cfg(feature = "device")]
 pub mod update;
+#[cfg(feature = "device")]
+pub mod wizard;
 
 pub use error::{Error, Result};
 pub use progress::{Progress, Reporter};

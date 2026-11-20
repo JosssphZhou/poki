@@ -89,6 +89,9 @@ enum AppFiles {
     /// lockdown record over pairing.plist, and on iOS 27 that record does not open the loopback; this
     /// copy is used first.
     static var phonePairingFile: URL { support.appendingPathComponent("pairing-phone.plist") }
+    static var sideloadedPairingFile: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("pairingFile.plist")
+    }
     static var ddiDirectory: URL {
         let url = support.appendingPathComponent("ddi", isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)

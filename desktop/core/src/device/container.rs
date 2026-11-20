@@ -8,7 +8,7 @@ use idevice::{IdeviceService, afc::{AfcClient, opcode::AfcFopenMode}, house_arre
 
 pub const SUPPORT_DIR: &str = "Library/Application Support/Poki";
 
-async fn afc_for(phone: &Phone, bundle_id: &str) -> Result<AfcClient> {
+pub(crate) async fn afc_for(phone: &Phone, bundle_id: &str) -> Result<AfcClient> {
     let provider = phone.provider()?;
     let ha = HouseArrestClient::connect(&*provider).await?;
     ha.vend_container(bundle_id).await.map_err(|e| match e {
@@ -19,7 +19,7 @@ async fn afc_for(phone: &Phone, bundle_id: &str) -> Result<AfcClient> {
     })
 }
 
-async fn mkdir_p(afc: &mut AfcClient, path: &str) -> Result<()> {
+async fn mkdir_p(afc: &mut AfcClient, path: &str) {
     let mut so_far = String::new();
     for part in path.split('/').filter(|p| !p.is_empty()) {
         if !so_far.is_empty() {
@@ -28,17 +28,24 @@ async fn mkdir_p(afc: &mut AfcClient, path: &str) -> Result<()> {
         so_far.push_str(part);
         let _ = afc.mk_dir(so_far.clone()).await;
     }
-    Ok(())
 }
 
 /// Writes `bytes` to `relative` (relative to the container root) inside Poki's sandbox.
 pub async fn write_file(phone: &Phone, bundle_id: &str, relative: &str, bytes: &[u8]) -> Result<()> {
     let mut afc = afc_for(phone, bundle_id).await?;
     if let Some((dir, _)) = relative.rsplit_once('/') {
-        mkdir_p(&mut afc, dir).await?;
+        mkdir_p(&mut afc, dir).await;
     }
     let mut file = afc.open(relative, AfcFopenMode::WrOnly).await?;
     file.write_entire(bytes).await?;
+    file.close().await?;
+    Ok(())
+}
+
+pub(crate) async fn write_setup_challenge(afc: &mut AfcClient, challenge: uuid::Uuid) -> Result<()> {
+    mkdir_p(afc, "Documents/PokiSetup").await;
+    let mut file = afc.open("Documents/PokiSetup/usb-setup-challenge", AfcFopenMode::WrOnly).await?;
+    file.write_entire(challenge.to_string().as_bytes()).await?;
     file.close().await?;
     Ok(())
 }

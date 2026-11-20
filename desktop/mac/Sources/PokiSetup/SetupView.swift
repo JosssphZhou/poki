@@ -4,6 +4,14 @@ import UniformTypeIdentifiers
 struct SetupView: View {
     @EnvironmentObject var model: AppModel
     @State private var handOff = false
+    @State private var wizard: USBSetupSnapshot?
+    @State private var wizardSelection: String?
+    @State private var changingWizardSelection = false
+    @State private var probeError: String?
+    @State private var wizardError: String?
+    @State private var wizardAction: String?
+    @State private var automaticActions: Set<String> = []
+    @State private var showInstallOptions = false
     @State private var result: InstallAnswer?
     @State private var failed: String?
     /// Set when the Apple Account is at its certificate limit: the question to put to the person.
@@ -18,13 +26,34 @@ struct SetupView: View {
             HeroSection {
                 PageHero(symbol: nil, title: localized("Set Up Poki"), subtitle: localized("Poki Setup signs Poki with your Apple Account, installs it on your iPhone or iPad and keeps it signed."))
             }
-            phoneSection
-            accountSection
-            appSection
-            if let result { resultSection(result) }
+            if showInstallOptions {
+                phoneSection
+                accountSection
+                appSection
+                if let result { resultSection(result) }
+            } else {
+                wizardSection
+                if !changingWizardSelection, wizard?.state == .accountSignedOut { AccountView(embedded: true) }
+                if let s = model.steps["install"], !s.isEmpty, installing {
+                    Section { JobProgress(steps: s, running: true, weights: JobProgress.install) }
+                }
+            }
+            Section {
+                Button(showInstallOptions ? localized("Back to USB Setup") : localized("More Install Options")) {
+                    showInstallOptions.toggle()
+                }
+            }
         }
         .pokiPage()
         .task { await model.refreshChannels() }
+        .task(id: wizardSelection) {
+            while !Task.isCancelled {
+                if !showInstallOptions, !installing {
+                    await refreshWizard()
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
         .alert(localized("Replace the Certificate?"), isPresented: Binding(get: { certificateQuestion != nil }, set: { if !$0 { certificateQuestion = nil } })) {
             Button(localized("Replace Certificate"), role: .destructive) {
                 Task {
@@ -39,7 +68,7 @@ struct SetupView: View {
             Text(certificateQuestion ?? "")
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            if showInstallOptions { ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await install() }
                 } label: {
@@ -47,8 +76,133 @@ struct SetupView: View {
                 }
                 .disabled(!canInstall)
                 .help(localized("Sign Poki with your Apple Account and install it on the device"))
+            } }
+        }
+    }
+
+    @ViewBuilder private var wizardSection: some View {
+        Section {
+            if let wizard, wizard.usbPhones.count > 1 || wizard.state == .chooseDevice {
+                Picker(localized("Device"), selection: Binding(
+                    get: { changingWizardSelection ? wizardSelection : wizard.selectedUdid },
+                    set: {
+                        changingWizardSelection = true
+                        wizardSelection = $0
+                        wizardError = nil
+                    }
+                )) {
+                    Text(localized("Choose a device")).tag(String?.none)
+                    ForEach(wizard.usbPhones) { phone in
+                        Text("\(phone.name.isEmpty ? localized("Device") : phone.name) · \(phone.udid.suffix(6))").tag(Optional(phone.udid))
+                    }
+                }
+                .disabled(wizardAction != nil || installing || certificateQuestion != nil)
+            }
+            if let probeError {
+                Label(probeError, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+            } else if let wizard, !changingWizardSelection {
+                Text(wizardTitle(wizard.state)).font(.headline)
+                Text(wizardInstruction(wizard.state)).foregroundStyle(.secondary)
+                if let failure = wizard.failure, wizard.state == .signingFailed || wizard.state == .installFailed {
+                    Text(failure.message).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                if let wizardError { Text(wizardError).foregroundStyle(.red).textSelection(.enabled) }
+                wizardButtons(wizard)
+                if wizardAction != nil { ProgressView().controlSize(.small) }
+            } else {
+                ProgressView().controlSize(.small)
             }
         }
+    }
+
+    private func wizardTitle(_ step: USBSetupStep) -> String {
+        switch step {
+        case .deviceDisconnected: localized("Connect your iPhone or iPad")
+        case .chooseDevice: localized("Choose a device")
+        case .deviceUntrusted: localized("Trust This Computer")
+        case .developerModeOff: localized("Turn on Developer Mode")
+        case .accountSignedOut: localized("Sign in with your Apple Account")
+        case .readyToInstall: localized("Ready to install")
+        case .signingFailed: localized("Poki could not be signed")
+        case .installFailed: localized("Poki could not be installed")
+        case .ddiUnmounted: localized("Restore the developer disk image")
+        case .appUntrusted: localized("Trust the app developer")
+        case .pokiNotStarted: localized("Open Poki on your iPhone")
+        case .pokiUpdateRequired: localized("Update Poki to finish setup")
+        case .automationPending: localized("Enable UI Automation")
+        case .completed: localized("Poki is ready")
+        }
+    }
+
+    private func wizardInstruction(_ step: USBSetupStep) -> String {
+        switch step {
+        case .deviceDisconnected: localized("Use a USB data cable and unlock the device.")
+        case .chooseDevice: localized("Select the iPhone or iPad you want to set up. You can also unplug the other devices.")
+        case .deviceUntrusted: localized("On the unlocked iPhone, tap Trust and enter its passcode.")
+        case .developerModeOff: localized("Developer Mode lets iOS run Poki. On your iPhone, open Settings › Privacy & Security › Developer Mode. Turn it on and restart. After the restart, unlock the iPhone, tap Turn On and enter its passcode.")
+        case .accountSignedOut: localized("A free Apple Account can sign Poki for this device.")
+        case .readyToInstall: localized("Keep the iPhone connected and unlocked while Poki Setup signs and installs Poki.")
+        case .signingFailed: localized("Check your Apple Account and try again.")
+        case .installFailed: localized("Reconnect and unlock the iPhone, then try again.")
+        case .ddiUnmounted: localized("Keep the iPhone connected and unlocked. Poki Setup can restore the image without reinstalling Poki.")
+        case .appUntrusted: localized("On your iPhone, open Settings › General › VPN & Device Management. Select the developer for your Apple Account and tap Trust. Follow any restart prompt, then open Poki.")
+        case .pokiNotStarted: localized("Tap Poki on the iPhone Home Screen.")
+        case .pokiUpdateRequired: localized("Keep Poki installed to preserve its data. Update it with the Apple Account and tool you used to install it, then open it again.")
+        case .automationPending: localized("On your iPhone, open Settings › Developer and turn on Enable UI Automation. Return to Poki, start automation and enter the iPhone passcode when iOS asks.")
+        case .completed: localized("You can unplug the USB cable and use Poki on your iPhone.")
+        }
+    }
+
+    @ViewBuilder private func wizardButtons(_ snapshot: USBSetupSnapshot) -> some View {
+        if let udid = snapshot.selectedUdid {
+            switch snapshot.state {
+            case .deviceUntrusted:
+                Button(localized("Request Trust Again")) { Task { await runWizard("wizard_pair", udid: udid) } }.disabled(wizardAction != nil)
+            case .developerModeOff:
+                Button(localized("Show Developer Mode in Settings")) { Task { await runWizard("wizard_reveal", udid: udid) } }.disabled(wizardAction != nil)
+            case .ddiUnmounted:
+                Button(localized("Restore the developer disk image")) { Task { await runWizard("wizard_mount", udid: udid) } }.disabled(wizardAction != nil)
+            case .readyToInstall, .signingFailed, .installFailed:
+                Button(localized(snapshot.state == .readyToInstall ? "Install Poki" : "Try Again")) {
+                    Task { await install() }
+                }.pokiProminentButton().disabled(installing)
+            default: EmptyView()
+            }
+        }
+    }
+
+    private func refreshWizard() async {
+        let selection = wizardSelection
+        do {
+            let snapshot: USBSetupSnapshot = try await model.bridge.call("wizard_state", ["udid": selection])
+            guard !Task.isCancelled, selection == wizardSelection else { return }
+            if wizard?.state != snapshot.state || wizard?.selectedUdid != snapshot.selectedUdid { wizardError = nil }
+            wizard = snapshot
+            changingWizardSelection = false
+            probeError = nil
+            guard let udid = snapshot.selectedUdid else { automaticActions.removeAll(); return }
+            let action: String
+            switch snapshot.state {
+            case .deviceUntrusted: action = "wizard_pair"
+            case .developerModeOff: action = "wizard_reveal"
+            case .ddiUnmounted: action = "wizard_mount"
+            default: return
+            }
+            if automaticActions.insert("\(udid)-\(action)").inserted {
+                Task { await runWizard(action, udid: udid) }
+            }
+        } catch {
+            if !Task.isCancelled, selection == wizardSelection { probeError = error.localizedDescription }
+        }
+    }
+
+    private func runWizard(_ action: String, udid: String) async {
+        guard wizardAction == nil, !changingWizardSelection, wizard?.selectedUdid == udid else { return }
+        wizardAction = action
+        wizardError = nil
+        defer { wizardAction = nil }
+        do { try await model.bridge.run(action, ["udid": udid]) }
+        catch { wizardError = error.localizedDescription }
     }
 
     // MARK: iPhone
@@ -341,16 +495,20 @@ struct SetupView: View {
     }
 
     private func install() async {
-        guard let phone = model.selectedPhone else { return }
+        guard showInstallOptions || !changingWizardSelection,
+              let udid = showInstallOptions ? model.selectedPhone?.id : wizard?.selectedUdid else { return }
         failed = nil
+        wizardError = nil
         result = nil
         do {
-            result = try await model.install(udid: phone.id, ipa: nil, handOff: handOff)
+            result = try await model.install(udid: udid, ipa: nil, handOff: showInstallOptions && handOff, usbOnly: !showInstallOptions)
+            if !showInstallOptions { await refreshWizard() }
         } catch let e as CoreError where e.kind == "certificate_limit" {
             failed = e.message
             certificateQuestion = e.message
         } catch {
             failed = error.localizedDescription
+            if !showInstallOptions { wizardError = error.localizedDescription }
         }
     }
 

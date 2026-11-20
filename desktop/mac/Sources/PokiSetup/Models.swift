@@ -371,3 +371,36 @@ struct BuildRef: Decodable, Equatable {
     var sha: String
     var pr: Int?
 }
+
+enum USBSetupStep: String, Decodable {
+    case deviceDisconnected = "device_disconnected"
+    case chooseDevice = "choose_device"
+    case deviceUntrusted = "device_untrusted"
+    case developerModeOff = "developer_mode_off"
+    case accountSignedOut = "account_signed_out"
+    case readyToInstall = "ready_to_install"
+    case signingFailed = "signing_failed"
+    case installFailed = "install_failed"
+    case ddiUnmounted = "ddi_unmounted"
+    case appUntrusted = "app_untrusted"
+    case pokiNotStarted = "poki_not_started"
+    case pokiUpdateRequired = "poki_update_required"
+    case automationPending = "automation_pending"
+    case completed
+}
+
+struct USBSetupSnapshot: Decodable {
+    struct Phone: Decodable, Identifiable {
+        var id: String { udid }
+        var udid: String
+        var name: String
+    }
+    struct Failure: Decodable {
+        var kind: String
+        var message: String
+    }
+    var state: USBSetupStep
+    var usbPhones: [Phone]
+    var selectedUdid: String?
+    var failure: Failure?
+}

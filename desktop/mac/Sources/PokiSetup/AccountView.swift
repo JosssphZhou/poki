@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AccountView: View {
     @EnvironmentObject var model: AppModel
+    var embedded = false
     @State private var appleID = ""
     @State private var password = ""
     @State private var keep = true
@@ -10,16 +11,21 @@ struct AccountView: View {
     @State private var confirmSignOut = false
 
     var body: some View {
-        Form {
-            if let a = model.account, a.signedIn {
-                signedIn(a)
-            } else if let err = model.accountError {
-                keychainError(err)
-            } else {
-                signInForm
-            }
+        if embedded {
+            accountContent
+        } else {
+            Form { accountContent }.pokiPage()
         }
-        .pokiPage()
+    }
+
+    @ViewBuilder private var accountContent: some View {
+        if let a = model.account, a.signedIn {
+            signedIn(a)
+        } else if let err = model.accountError {
+            keychainError(err)
+        } else {
+            signInForm
+        }
     }
 
     @ViewBuilder private func keychainError(_ err: CoreError) -> some View {

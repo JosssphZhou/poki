@@ -16,6 +16,11 @@ pub async fn status(phone: &Phone) -> Result<bool> {
     Ok(amfi(phone).await?.get_developer_mode_status().await?)
 }
 
+pub async fn reveal(phone: &Phone) -> Result<()> {
+    amfi(phone).await?.reveal_developer_mode_option_in_ui().await?;
+    Ok(())
+}
+
 /// Turns Developer Mode on. Returns `Ok(true)` when it was already on, `Ok(false)` when the phone
 /// is restarting and the person has to confirm there. The phone must have no passcode-locked
 /// screen for the second step; iOS asks for the passcode itself.
@@ -26,9 +31,7 @@ pub async fn enable(phone: &Phone, reporter: &Reporter) -> Result<bool> {
         return Ok(true);
     }
     // Shows the switch in Settings > Privacy & Security first, so the person can also do it by hand.
-    if let Ok(mut c) = amfi(phone).await {
-        let _ = c.reveal_developer_mode_option_in_ui().await;
-    }
+    let _ = reveal(phone).await;
     match amfi(phone).await?.enable_developer_mode().await {
         Ok(()) => {}
         // The phone restarts at once and can drop the connection before it answers.

@@ -14,6 +14,7 @@ pub struct InstalledApp {
     /// `TeamIdentifier` from the app's signing, when iOS reports it.
     pub team: Option<String>,
     pub path: Option<String>,
+    pub profile_validated: Option<bool>,
 }
 
 /// Installs every profile the signer produced. A profile that is already there is replaced.
@@ -115,6 +116,7 @@ pub async fn find_apps(phone: &Phone, prefix: &str) -> Result<Vec<InstalledApp>>
             build: s("CFBundleVersion").unwrap_or_default(),
             team: s("TeamIdentifier").or_else(|| s("ApplicationDSID")),
             path: s("Path"),
+            profile_validated: d.get("ProfileValidated").and_then(plist::Value::as_boolean),
         });
     }
     out.sort_by(|a, b| a.bundle_id.cmp(&b.bundle_id));

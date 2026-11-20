@@ -16,10 +16,11 @@ use crate::{Error, Result};
 use idevice::{
     pairing_file::PairingFile,
     provider::{IdeviceProvider, TcpProvider, UsbmuxdProvider},
-    usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection},
+    usbmuxd::{Connection, RawPacket, UsbmuxdAddr, UsbmuxdConnection},
 };
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub const LABEL: &str = "poki-setup";
 
@@ -57,7 +58,7 @@ fn one_per_phone(mut phones: Vec<Phone>) -> Vec<Phone> {
 impl Phone {
     /// The phones usbmuxd knows, one entry per phone: USB first, then network ones.
     pub async fn list() -> Result<Vec<Phone>> {
-        let mut mux = UsbmuxdConnection::default().await?;
+        let mut mux = mux_addr().connect(0).await?;
         let devices = mux.get_devices().await?;
         let phones: Vec<Phone> = devices
             .into_iter()
@@ -84,7 +85,7 @@ impl Phone {
     pub fn provider(&self) -> Result<Box<dyn IdeviceProvider>> {
         match &self.link {
             Link::Usb | Link::Muxed { .. } => Ok(Box::new(UsbmuxdProvider {
-                addr: UsbmuxdAddr::from_env_var().unwrap_or_default(),
+                addr: mux_addr(),
                 tag: 1,
                 udid: self.udid.clone(),
                 device_id: self.mux_id.unwrap_or(0),
@@ -101,14 +102,43 @@ impl Phone {
     pub fn is_usb(&self) -> bool { matches!(self.link, Link::Usb) }
 }
 
+fn mux_addr() -> UsbmuxdAddr {
+    UsbmuxdAddr::from_env_var().unwrap_or_default()
+}
+
 /// The pairing record usbmuxd holds for a UDID (macOS and Windows keep one per trusted phone).
 pub async fn mux_pairing_record(udid: &str) -> Result<Option<PairingFile>> {
-    let mut mux = UsbmuxdConnection::default().await?;
-    match mux.get_pair_record(udid).await {
-        Ok(p) => Ok(Some(p)),
-        Err(idevice::IdeviceError::NotFound) => Ok(None),
-        Err(e) => Err(e.into()),
+    // idevice 0.1.68 drops the Result number when PairRecordData is absent.
+    let mut socket = mux_addr().to_socket().await.map_err(Error::from)?;
+    let request = RawPacket::new(
+        plist::Dictionary::from_iter([
+            ("MessageType", plist::Value::from("ReadPairRecord")),
+            ("PairRecordID", plist::Value::from(udid)),
+        ]),
+        UsbmuxdConnection::XML_PLIST_VERSION,
+        UsbmuxdConnection::PLIST_MESSAGE_TYPE,
+        0,
+    );
+    socket.write_all(&Vec::from(request)).await.map_err(idevice::IdeviceError::from)?;
+    let size = socket.read_u32_le().await.map_err(idevice::IdeviceError::from)?;
+    if !(16..=1024 * 1024).contains(&size) {
+        return Err(Error::device("The iPhone service sent an invalid pairing record response."));
     }
+    let mut packet = vec![0; size as usize];
+    packet[..4].copy_from_slice(&size.to_le_bytes());
+    socket.read_exact(&mut packet[4..]).await.map_err(idevice::IdeviceError::from)?;
+    let response = RawPacket::try_from(packet.as_slice())
+        .map_err(|_| Error::device("The iPhone service sent an invalid pairing record response."))?;
+    if let Some(data) = response.plist.get("PairRecordData").and_then(plist::Value::as_data) {
+        return Ok(Some(PairingFile::from_bytes(data)?));
+    }
+    let number = response.plist.get("Number").and_then(plist::Value::as_unsigned_integer);
+    if response.plist.get("MessageType").and_then(plist::Value::as_string) == Some("Result")
+        && number == Some(2)
+    {
+        return Ok(None);
+    }
+    Err(Error::device("Poki Setup could not read the iPhone's system pairing record. Reconnect the iPhone and try again."))
 }
 
 #[cfg(test)]

@@ -542,6 +542,7 @@ pub struct Options {
     pub wait: Option<Duration>,
     /// Also serve the pairing file on the LAN for the phone's QR (for later, Wi-Fi-only use).
     pub hand_off: bool,
+    pub usb_only: bool,
     /// Pre-seed the developer disk image into Poki's container.
     pub seed_ddi: bool,
     /// The test build `ipa` came from (Developer > Test Builds), kept in the device's record so
@@ -588,26 +589,34 @@ pub async fn pick_phone(udid: Option<&str>) -> Result<Phone> {
 pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Result<Done> {
     let wait = opts.wait.unwrap_or(Duration::from_secs(120));
     reporter.step("phone", "Finding the iPhone");
-    let phone = pick_phone(opts.udid.as_deref()).await?;
+    let phone = if opts.usb_only {
+        crate::wizard::usb_phone(opts.udid.as_deref().ok_or_else(|| Error::device("Choose a USB device first."))?).await?
+    } else {
+        pick_phone(opts.udid.as_deref()).await?
+    };
     reporter.done("phone", Some(phone.udid.clone()));
 
     reporter.step("pair", "Pairing with the iPhone");
     let lockdown_record = device::pairing::pair(&phone, reporter, wait).await?;
-    if let Err(e) = device::pairing::enable_network(&phone).await {
+    if !opts.usb_only && let Err(e) = device::pairing::enable_network(&phone).await {
         reporter.note("pair", format!("Could not let the iPhone use this pairing over the network ({e}); Poki may need to pair on the phone."));
     }
     let facts = device::info::read(&phone).await?;
-    // iOS 26.4 and later only accept an RPPairing record over the loopback Poki uses.
-    let needs_remote = device::pairing::needs_remote_record(&facts.ios);
-    let record = match device::pairing::pair_remote(&phone, reporter, wait).await {
-        Ok(r) => Some(r),
-        Err(e) if needs_remote => {
-            reporter.note("pair", format!("Remote pairing did not finish ({e}). Poki can pair on the iPhone instead."));
-            None
-        }
-        Err(e) => {
-            tracing::info!("remote pairing not made, using the lockdown record: {e}");
-            Some(lockdown_record)
+    let record = if opts.usb_only {
+        Some(lockdown_record)
+    } else {
+        // iOS 26.4 and later only accept an RPPairing record over the loopback Poki uses.
+        let needs_remote = device::pairing::needs_remote_record(&facts.ios);
+        match device::pairing::pair_remote(&phone, reporter, wait).await {
+            Ok(record) => Some(record),
+            Err(error) if needs_remote => {
+                reporter.note("pair", format!("Remote pairing did not finish ({error}). Poki can pair on the iPhone instead."));
+                None
+            }
+            Err(error) => {
+                tracing::info!("remote pairing not made, using the lockdown record: {error}");
+                Some(lockdown_record)
+            }
         }
     };
     reporter.done("pair", Some(format!("{} · iOS {}", facts.name, facts.ios)));
@@ -686,6 +695,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
                     handed = true;
                     reporter.done("pairing_file", Some("Poki already has its own pairing; kept it".into()));
                 }
+                Err(e) if opts.usb_only => reporter.note("pairing_file", format!("Could not copy the pairing file over USB ({e}). Poki can pair on the iPhone if needed.")),
                 Err(e) => reporter.note("pairing_file", format!("Could not write into Poki's container ({e}); the QR hand-off below does it instead.")),
             }
         }
@@ -706,7 +716,7 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
             }
         }
     }
-    let handoff = if let (true, Some(record)) = (opts.hand_off || !handed, &record) {
+    let handoff = if let (true, Some(record)) = (!opts.usb_only && (opts.hand_off || !handed), &record) {
         let server = pairshare::serve(record.clone()).await?;
         reporter.waiting("pairing_file", format!("Scan the code with the iPhone's Camera, or open {} on the iPhone", server.handoff.link));
         Some(server)

@@ -1,6 +1,6 @@
 use crate::Shared;
 use poki_setup_core::apple::anisette::Source;
-use poki_setup_core::{Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support};
+use poki_setup_core::{Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support, wizard};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -192,6 +192,51 @@ pub async fn finish_sign_in(state: State<'_, Shared>, code: String) -> R<()> {
 }
 
 #[tauri::command]
+pub async fn wizard_state(state: State<'_, Shared>, udid: Option<String>) -> R<wizard::Snapshot> {
+    let signed_in = account(state.clone()).await.map(|a| a.signed_in && a.pending_factor.is_none()).unwrap_or(false);
+    Ok(state.wizard.inspect(udid.as_deref(), signed_in).await?)
+}
+
+#[tauri::command]
+pub async fn wizard_pair(app: AppHandle, udid: String) -> R<()> {
+    Ok(wizard::pair(&udid, &reporter(&app, "pair")).await?)
+}
+
+#[tauri::command]
+pub async fn wizard_reveal(udid: String) -> R<()> {
+    Ok(wizard::reveal_developer_mode(&udid).await?)
+}
+
+#[tauri::command]
+pub async fn wizard_mount(app: AppHandle, udid: String) -> R<()> {
+    Ok(wizard::mount(&udid, &reporter(&app, "ddi")).await?)
+}
+
+#[tauri::command]
+pub async fn clear_wizard_failure(state: State<'_, Shared>) -> R<()> {
+    state.wizard.clear().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_sign_in(state: State<'_, Shared>) -> R<()> {
+    with_signer(&state, async |s| {
+        s.cancel_sign_in()?;
+        *state.pending.lock().await = None;
+        Ok(())
+    }).await
+}
+
+#[tauri::command]
+pub async fn resend_code(state: State<'_, Shared>) -> R<i64> {
+    with_signer(&state, async |s| {
+        let result = s.resend_code().await;
+        *state.pending.lock().await = s.pending().cloned();
+        result.map(|pending| pending.resend_available_at())
+    }).await
+}
+
+#[tauri::command]
 pub async fn sign_out(state: State<'_, Shared>) -> R<()> {
     *state.pending.lock().await = None;
     with_signer(&state, async |s| s.sign_out()).await
@@ -214,7 +259,7 @@ pub struct InstallResult {
 }
 
 #[tauri::command]
-pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<String>, ipa: Option<String>, hand_off: bool, test_build: Option<devbuilds::BuildRef>, close_poki: Option<bool>) -> R<InstallResult> {
+pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<String>, ipa: Option<String>, hand_off: bool, test_build: Option<devbuilds::BuildRef>, close_poki: Option<bool>, usb_only: Option<bool>) -> R<InstallResult> {
     {
         let mut busy = state.busy.lock().await;
         if *busy {
@@ -222,9 +267,15 @@ pub async fn install(app: AppHandle, state: State<'_, Shared>, udid: Option<Stri
         }
         *busy = true;
     }
-    let r = reporter(&app, "install");
-    let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi: true, test_build, close_poki: close_poki.unwrap_or(false) };
+    let usb_only = usb_only.unwrap_or(false);
+    let attempt = udid.clone().filter(|_| usb_only);
+    if attempt.is_some() { state.wizard.clear().await; }
+    let (r, stage) = wizard::install_reporter(reporter(&app, "install"));
+    let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, usb_only, seed_ddi: true, test_build, close_poki: close_poki.unwrap_or(false) };
     let result = with_signer(&state, async |s| setup::run(s, opts, &r).await).await;
+    if let (Some(udid), Err(failure)) = (attempt, &result) {
+        state.wizard.remember(udid, stage(), failure.kind, &failure.message).await;
+    }
     *state.busy.lock().await = false;
     let done = result?;
     let handoff = done.handoff.as_ref().map(|s| s.handoff.clone());

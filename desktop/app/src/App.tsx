@@ -92,7 +92,7 @@ export default function App() {
             <Capsule sm kind="ghost" disabled={updating} onClick={() => setDismissed(update.latest)}>{t("Later")}</Capsule>
           </div>
         )}
-        {page === "setup" && <Setup goAccount={() => setPage("account")} />}
+        {page === "setup" && <Setup />}
         {page === "phones" && <Phones />}
         {page === "account" && <Account info={info} />}
         {page === "relay" && <Relay />}

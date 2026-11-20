@@ -51,7 +51,30 @@ pub fn qr_svg(text: &str) -> Result<String> {
 
 /// The computer's address on the local network, the one the phone can reach.
 pub fn lan_address() -> Result<IpAddr> {
-    local_ip_address::local_ip().map_err(|e| Error::msg(format!("This computer has no local network address ({e}). Join the same Wi-Fi as the iPhone.")))
+    let ifaces = local_ip_address::list_afinet_netifas()
+        .map_err(|e| Error::msg(format!("This computer has no local network address ({e}). Join the same Wi-Fi as the iPhone.")))?;
+    lan_address_from(&ifaces)
+}
+
+fn lan_address_from(ifaces: &[(String, IpAddr)]) -> Result<IpAddr> {
+    ifaces
+        .iter()
+        .filter(|(name, _)| {
+            let name = name.to_ascii_lowercase();
+            !["utun", "tun", "tap", "singbox", "wintun", "clash", "vethernet", "ipsec", "ppp"]
+                .iter().any(|prefix| name.starts_with(prefix))
+        })
+        .find(|(_, ip)| match ip {
+            IpAddr::V4(ip) => {
+                let [a, b, ..] = ip.octets();
+                !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local() && !ip.is_multicast()
+                    && !(a == 198 && (18..=19).contains(&b))
+                    && !(a == 100 && (64..=127).contains(&b))
+            }
+            IpAddr::V6(_) => false,
+        })
+        .map(|(_, ip)| *ip)
+        .ok_or_else(|| Error::msg("This computer has no local network address. Join the same Wi-Fi as the iPhone."))
 }
 
 pub fn inline_link(record: &[u8]) -> String {
@@ -149,5 +172,24 @@ mod tests {
         assert!(l.starts_with("poki://pairing?data="));
         assert_eq!(urlencode("http://10.0.0.2:1/a.plist"), "http%3A%2F%2F10.0.0.2%3A1%2Fa.plist");
         assert!(qr_svg("poki://pairing?x=1").unwrap().contains("<svg"));
+    }
+
+    #[test]
+    fn lan_address_filters_virtual_tunnels_and_198_18_subnet() {
+        let candidates = vec![
+            ("lo0".to_string(), "127.0.0.1".parse().unwrap()),
+            ("singbox_tun".to_string(), "198.18.0.1".parse().unwrap()),
+            ("utun4".to_string(), "198.19.2.5".parse().unwrap()),
+            ("utun3".to_string(), "10.7.0.1".parse().unwrap()),
+            ("en0".to_string(), "192.168.1.23".parse().unwrap()),
+        ];
+        assert_eq!(lan_address_from(&candidates).unwrap(), "192.168.1.23".parse::<IpAddr>().unwrap());
+
+        let virtual_only = vec![
+            ("singbox_tun".to_string(), "198.18.0.1".parse().unwrap()),
+            ("utun1".to_string(), "10.7.0.1".parse().unwrap()),
+            ("Ethernet 2".to_string(), "198.19.0.9".parse().unwrap()),
+        ];
+        assert!(lan_address_from(&virtual_only).is_err());
     }
 }

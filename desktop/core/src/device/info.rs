@@ -31,20 +31,50 @@ fn string(v: &plist::Dictionary, key: &str) -> String {
     v.get(key).and_then(|x| x.as_string()).unwrap_or_default().to_string()
 }
 
+pub(crate) async fn name(phone: &Phone) -> Result<String> {
+    let provider = phone.provider()?;
+    let mut lockdown = LockdownClient::connect(&*provider).await?;
+    let value = lockdown.get_value(Some("DeviceName"), None).await?;
+    Ok(value.into_string().unwrap_or_default())
+}
+
 /// Reads the facts. Works before pairing for the public values (name, version); Developer Mode and
 /// the Wi-Fi address need a session, so they are `None` until the phone trusts this computer.
 pub async fn read(phone: &Phone) -> Result<Facts> {
+    read_with_record(phone, false).await
+}
+
+/// Setup opens installation and image services with the system record.
+pub(crate) async fn read_for_wizard(phone: &Phone) -> Result<Facts> {
+    read_with_record(phone, true).await
+}
+
+async fn read_with_record(phone: &Phone, system_only: bool) -> Result<Facts> {
     let provider = phone.provider()?;
     let mut lockdown = LockdownClient::connect(&*provider).await?;
-    let record = super::pairing::saved(&phone.udid)?;
-    let mut paired = false;
-    if let Some(record) = &record {
-        paired = lockdown.start_session(record).await.is_ok();
-    } else if let Ok(Some(record)) = super::mux_pairing_record(&phone.udid).await {
-        paired = lockdown.start_session(&record).await.is_ok();
-    }
-    let all = lockdown.get_value(None, None).await?;
-    let dict = all.as_dictionary().cloned().unwrap_or_default();
+    let record = if system_only {
+        super::mux_pairing_record(&phone.udid).await?
+    } else {
+        match super::pairing::saved(&phone.udid)? {
+            Some(record) => Some(record),
+            None => super::mux_pairing_record(&phone.udid).await.ok().flatten(),
+        }
+    };
+    let paired = if let Some(record) = &record {
+        match lockdown.start_session(record).await {
+            Ok(_) => true,
+            Err(idevice::IdeviceError::InvalidHostID) => false,
+            Err(_) if !system_only => false,
+            Err(error) => return Err(error.into()),
+        }
+    } else {
+        false
+    };
+    let dict = match lockdown.get_value(None, None).await {
+        Ok(values) => values.into_dictionary().unwrap_or_default(),
+        Err(idevice::IdeviceError::GetProhibited) if system_only && !paired => plist::Dictionary::new(),
+        Err(error) => return Err(error.into()),
+    };
     let developer_mode = if paired {
         match lockdown.get_value(Some("DeveloperModeStatus"), Some("com.apple.security.mac.amfi")).await {
             Ok(v) => v.as_boolean(),

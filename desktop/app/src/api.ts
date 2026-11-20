@@ -17,6 +17,16 @@ export type Record_ = { udid: string; phone_name: string; ios: string; apple_id:
 export type PhoneRow = { phone: { udid: string; link: Link }; facts: Facts | null; error: string | null; record: Record_ | null };
 export type Anisette = { kind: "system" } | { kind: "remote"; url: string };
 export type Account = { signed_in: boolean; needs_reauth?: boolean; apple_id: string | null; name: string | null; team_id: string | null; password_kept: boolean; anisette: Anisette; pending_factor: "trusted_device" | "sms" | null };
+export type USBSetupStep =
+  | "device_disconnected" | "choose_device" | "device_untrusted" | "developer_mode_off" | "account_signed_out"
+  | "ready_to_install" | "signing_failed" | "install_failed" | "ddi_unmounted"
+  | "app_untrusted" | "poki_not_started" | "poki_update_required" | "automation_pending" | "completed";
+export type USBSetupSnapshot = {
+  state: USBSetupStep;
+  usb_phones: { udid: string; name: string }[];
+  selected_udid: string | null;
+  failure: Failure | null;
+};
 export type Team = { team_id: string; name: string; kind: string; is_free: boolean };
 export type Handoff = { link: string; inline_link: string; url: string; sha256: string; host: string; port: number; qr_svg: string; inline_qr_svg: string };
 export type InstallResult = { record: Record_; notes: string[]; handoff: Handoff | null };
@@ -52,6 +62,12 @@ export const api = {
   sharePairing: (udid: string) => invoke<Handoff>("share_pairing", { udid }),
   stopSharing: () => invoke<void>("stop_sharing"),
   devmode: (udid: string) => invoke<boolean>("devmode", { udid }),
+  wizardState: (udid: string | null) => invoke<USBSetupSnapshot>("wizard_state", { udid }),
+  wizardPair: (udid: string) => invoke<void>("wizard_pair", { udid }),
+  wizardReveal: (udid: string) => invoke<void>("wizard_reveal", { udid }),
+  wizardMount: (udid: string) => invoke<void>("wizard_mount", { udid }),
+  cancelSignIn: () => invoke<void>("cancel_sign_in"),
+  resendCode: () => invoke<number>("resend_code"),
   account: () => invoke<Account>("account"),
   signIn: (appleId: string, password: string, keepPassword: boolean) => invoke<"trusted_device" | "sms" | null>("sign_in", { appleId, password, keepPassword }),
   finishSignIn: (code: string) => invoke<void>("finish_sign_in", { code }),
@@ -59,7 +75,7 @@ export const api = {
   teams: () => invoke<Team[]>("teams"),
   chooseTeam: (teamId: string) => invoke<void>("choose_team", { teamId }),
   setAnisette: (source: Anisette) => invoke<void>("set_anisette", { source }),
-  install: (udid: string | null, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null, closePoki = false) => invoke<InstallResult>("install", { udid, ipa, handOff, testBuild, closePoki }),
+  install: (udid: string | null, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null, closePoki = false, usbOnly = false) => invoke<InstallResult>("install", { udid, ipa, handOff, testBuild, closePoki, usbOnly }),
   pokiRunning: (udid: string) => invoke<boolean | null>("poki_running", { udid }),
   devState: () => invoke<DevState>("dev_state"),
   devSetPrefs: (prefs: DevPrefs) => invoke<DevState>("dev_set_prefs", { prefs }),
@@ -133,14 +149,14 @@ export async function okToReplacePoki(udid: string, name: string): Promise<boole
 }
 
 /** An install that may replace a running Poki: asks first, and again if Poki was opened meanwhile. */
-export async function installClosingPoki(udid: string, name: string, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null): Promise<InstallResult> {
+export async function installClosingPoki(udid: string, name: string, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null, usbOnly = false): Promise<InstallResult> {
   const dev = await api.devState().catch(() => null);
-  if (!(await okToReplacePoki(udid, name))) throw { kind: "cancelled", message: "Nothing was installed. Poki is still open on the device." } as Failure;
+  if (!usbOnly && !(await okToReplacePoki(udid, name))) throw { kind: "cancelled", message: "Nothing was installed. Poki is still open on the device." } as Failure;
   try {
-    return await api.install(udid, handOff, ipa, testBuild, true);
+    return await api.install(udid, handOff, ipa, testBuild, !usbOnly || dev?.prefs.close_without_asking === true, usbOnly);
   } catch (e) {
     if (failureKind(e) !== "poki_running" || dev?.prefs.close_without_asking) throw e;
     if (!(await askToClosePoki(name))) throw e;
-    return await api.install(udid, handOff, ipa, testBuild, true);
+    return await api.install(udid, handOff, ipa, testBuild, true, usbOnly);
   }
 }

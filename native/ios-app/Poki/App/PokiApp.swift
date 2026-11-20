@@ -275,7 +275,9 @@ struct RootView: View {
         .onGeometryChange(for: Bool.self) { geometry in
             geometry.size.width >= Self.sidebarWidth + 1 + Self.minimumChatWidth
         } action: { showsSidebar = $0 }
-        .fullScreenCover(isPresented: $welcoming) { FirstRunGuide(link: $welcomeLink, done: { welcoming = false }) }
+        .fullScreenCover(isPresented: $welcoming) {
+            FirstRunGuide(link: $welcomeLink, done: { welcoming = false }).modifier(AutomationNotices())
+        }
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .alert(model.connectionAsk.map { AppLocalization.text(LocalizedStringResource("Allow \($0.client) to connect?")) } ?? "",
                isPresented: Binding(get: { model.connectionAsk != nil }, set: { if !$0 { model.answerConnection(false) } }),
@@ -290,7 +292,7 @@ struct RootView: View {
         } message: {
             Text("The update is almost in. Poki will close to finish it. Open Poki again afterwards.")
         }
-        .modifier(AutomationNotices(enabled: !detailsOpen))
+        .modifier(AutomationNotices(enabled: !detailsOpen && !welcoming))
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
         }
@@ -511,7 +513,7 @@ struct RootView: View {
     }
 }
 
-private struct AutomationNotices: ViewModifier {
+struct AutomationNotices: ViewModifier {
     @Environment(AppModel.self) private var model
     var enabled = true
 

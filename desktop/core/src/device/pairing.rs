@@ -51,55 +51,76 @@ pub async fn pair(phone: &Phone, reporter: &Reporter, wait: Duration) -> Result<
         return Err(Error::device("Pairing needs the cable. Plug the iPhone in with a data cable."));
     }
     reporter.step("pair", "Pairing with the iPhone");
-    let mut mux = UsbmuxdConnection::default().await?;
+    let mut mux = super::mux_addr().connect(0).await?;
     let buid = mux.get_buid().await?;
     let provider = phone.provider()?;
-    let mut lockdown = LockdownClient::connect(&*provider).await?;
-
-    // A record this computer or usbmuxd already holds is kept when it still works: the phone then
-    // shows no dialog, and Poki keeps the identity it knows.
-    if let Some(existing) = saved(&phone.udid)? {
-        if lockdown.start_session(&existing).await.is_ok() {
-            reporter.note("pair", "This iPhone already trusts this computer.");
-            reporter.done("pair", None);
-            return Ok(std::fs::read(record_path(&phone.udid)?)?);
-        }
-        let mut lockdown2 = LockdownClient::connect(&*provider).await?;
-        std::mem::swap(&mut lockdown, &mut lockdown2);
-    } else if let Ok(Some(existing)) = super::mux_pairing_record(&phone.udid).await {
-        if lockdown.start_session(&existing).await.is_ok() {
-            let mut existing = existing;
-            existing.udid = Some(phone.udid.clone());
-            let bytes = existing.serialize()?;
-            std::fs::write(record_path(&phone.udid)?, &bytes)?;
-            reporter.note("pair", "Using the trust this computer already has with the iPhone.");
-            reporter.done("pair", None);
-            return Ok(bytes);
-        }
-        let mut lockdown2 = LockdownClient::connect(&*provider).await?;
-        std::mem::swap(&mut lockdown, &mut lockdown2);
+    let local = saved(&phone.udid)?;
+    let system = super::mux_pairing_record(&phone.udid).await?;
+    let local_valid = match local.as_ref() {
+        Some(record) => record_is_valid(&*provider, record).await?,
+        None => false,
+    };
+    let system_valid = match system.as_ref() {
+        Some(record) => record_is_valid(&*provider, record).await?,
+        None => false,
+    };
+    let stale_system_record = system.is_some() && !system_valid;
+    if let Some(record) = local.filter(|_| local_valid) {
+        let bytes = save_local(phone, record)?;
+        if !system_valid { save_system(&mut mux, phone, &bytes, stale_system_record).await?; }
+        reporter.done("pair", Some("This iPhone already trusts this computer.".into()));
+        return Ok(bytes);
+    }
+    if let Some(record) = system.filter(|_| system_valid) {
+        let bytes = save_local(phone, record)?;
+        reporter.done("pair", Some("Restored this computer's existing trust.".into()));
+        return Ok(bytes);
     }
 
+    let mut lockdown = LockdownClient::connect(&*provider).await?;
     let host_id = uuid::Uuid::new_v4().to_string().to_uppercase();
     reporter.waiting("pair", "On the iPhone: tap Trust, then enter the passcode.");
     let pairing = tokio::time::timeout(wait, lockdown.pair(host_id, buid, Some(HOST_NAME)))
         .await
         .map_err(|_| Error::NeedsPerson("The iPhone did not answer the Trust dialog in time. Unlock it, plug it in again and tap Trust.".into()))??;
-    let mut record = pairing;
-    record.udid = Some(phone.udid.clone());
-
-    // Test it before anything is saved.
-    let mut check = LockdownClient::connect(&*provider).await?;
-    check.start_session(&record).await?;
-
-    let bytes = record.clone().serialize()?;
-    std::fs::write(record_path(&phone.udid)?, &bytes)?;
-    if let Err(e) = mux.save_pair_record(&phone.udid, bytes.clone()).await {
-        tracing::warn!("usbmuxd did not keep the pairing record: {e}");
-    }
+    check_record(&*provider, &pairing).await?;
+    let bytes = save_local(phone, pairing)?;
+    save_system(&mut mux, phone, &bytes, stale_system_record).await?;
     reporter.done("pair", Some("Paired.".into()));
     reporter.emit(Progress::Note { id: "pair".into(), text: format!("Record saved for {}.", phone.udid) });
     Ok(bytes)
+}
+
+async fn check_record(provider: &dyn idevice::provider::IdeviceProvider, record: &PairingFile) -> std::result::Result<(), idevice::IdeviceError> {
+    LockdownClient::connect(provider).await?.start_session(record).await.map(|_| ())
+}
+
+async fn record_is_valid(provider: &dyn idevice::provider::IdeviceProvider, record: &PairingFile) -> Result<bool> {
+    match check_record(provider, record).await {
+        Ok(()) => Ok(true),
+        Err(idevice::IdeviceError::InvalidHostID) => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn save_local(phone: &Phone, mut record: PairingFile) -> Result<Vec<u8>> {
+    record.udid = Some(phone.udid.clone());
+    let bytes = record.serialize()?;
+    std::fs::write(record_path(&phone.udid)?, &bytes)?;
+    Ok(bytes)
+}
+
+async fn save_system(mux: &mut UsbmuxdConnection, phone: &Phone, bytes: &[u8], stale: bool) -> Result<()> {
+    if stale {
+        // Windows can refuse to overwrite an InvalidHostID entry. Remove it only after a
+        // replacement has opened a session with the same phone.
+        if mux.save_pair_record(&phone.udid, bytes.to_vec()).await.is_ok() {
+            return Ok(());
+        }
+        mux.delete_pair_record(&phone.udid).await?;
+    }
+    mux.save_pair_record(&phone.udid, bytes.to_vec()).await?;
+    Ok(())
 }
 
 /// Forgets the record on this computer and asks the phone to forget this host.

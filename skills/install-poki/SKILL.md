@@ -128,7 +128,7 @@ A paid developer membership is not required. A free Apple Account works. Poki Se
 
 ## No VPN app
 
-Poki reaches the iPhone's developer services at 10.7.0.1, and a VPN app on the phone routes that address back to the phone. Poki offers instructions for the free LocalDevVPN from the App Store. In Poki it is listed at Settings > Connection > Local Connection (the Turn On Loopback page), under Use Your Proxy App, with its steps. At the `loopback` stop, tell the user `say`, and to install LocalDevVPN when they have no VPN app. Done when the `loopback` step ends `done`. If the user does not want a VPN app now, Poki stays installed but cannot operate other apps: after 15 minutes the installer exits with code 3; report the local connection as not set up.
+Poki reaches the iPhone's developer services at 10.7.0.1, and a VPN app on the phone routes that address back to the phone. Poki offers instructions for the free LocalDevVPN from the App Store. In Poki it is listed at Settings > Connection > Local Connection (the Turn On Loopback page), under Use Your Proxy App, with its steps. At the `loopback` stop, tell the user `say`, and to install LocalDevVPN when they have no VPN app. Done when the `loopback` step ends `done`. If the user skips the VPN, the script keeps Poki installed and exits with code 3 after 15 minutes. Report that the script could not confirm the local connection. When Poki Setup mounts the developer disk image over USB, Poki can operate other apps after the user confirms UI Automation on the iPhone.
 
 ## What to keep running
 

@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn installed_facts_must_match_phone_and_original_record() {
         let installed = installed();
-        let app = device::install::InstalledApp { bundle_id: installed.bundle_id.clone(), name: "Poki".into(), version: "0.4.0".into(), build: "100".into(), team: Some("TESTTEAM".into()), path: None };
+        let app = device::install::InstalledApp { bundle_id: installed.bundle_id.clone(), name: "Poki".into(), version: "0.4.0".into(), build: "100".into(), team: Some("TESTTEAM".into()), path: None, profile_validated: None };
         let record: keeper::Record = serde_json::from_value(serde_json::json!({
             "udid": "fake-phone", "phone_name": "Fixture", "ios": "27.0", "apple_id": "fixture@example.invalid",
             "team_id": "TESTTEAM", "team_name": "Fixture", "team_is_free": true,

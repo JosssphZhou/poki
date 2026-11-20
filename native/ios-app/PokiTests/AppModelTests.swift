@@ -568,12 +568,13 @@ final class InProcessPasscodeTests: XCTestCase {
     }
 
     /// A fresh model on an iPhone running this iOS major version, with Poki on.
-    private func useSystem(_ major: Int) {
+    private func useSystem(_ major: Int, usbSetup: Bool = false) {
         model?.stopSession()
         model = AppModel(launcher: launcher, pairer: FakePairing(), automation: session,
-                         systemVersion: OperatingSystemVersion(majorVersion: major, minorVersion: 6, patchVersion: 1))
+                         systemVersion: OperatingSystemVersion(majorVersion: major, minorVersion: 6, patchVersion: 1),
+                         imageMounted: { usbSetup || AppModel.localDDIMounted })
         model.loopback.simulate(.working(ms: 9))
-        model.setup.loopback = .proxy
+        model.setup.loopback = usbSetup ? .none : .proxy
         XCTAssertTrue(model.setRelay("https://relay.invalid"))
         model.startSession()
     }
@@ -605,6 +606,22 @@ final class InProcessPasscodeTests: XCTestCase {
 
         await fulfillment(of: [opened], timeout: 0.5)
         XCTAssertFalse(model.hasOpenInProcessSession)
+    }
+
+    func testUSBSetupStartRetriesAfterThePasscodePromptTimesOut() async {
+        useSystem(27, usbSetup: true)
+        session.holdNextOpen()
+        model.verifyMountedImageAutomation()
+        await finishPreparing()
+        await waitFor("the first automation request reached iOS") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "detail": "Timed out while enabling automation mode."])
+        await waitFor("Poki shows that the passcode was missed") {
+            self.model.host.currentRunner.describe.contains("owner did not enter the iPhone passcode")
+        }
+        XCTAssertFalse(model.hasOpenInProcessSession)
+
+        model.verifyMountedImageAutomation()
+        await waitFor("Poki opens automation after the user taps Start again") { self.model.hasOpenInProcessSession }
     }
 
     func testCellularPreparationWaitsForTheImageWithoutOpeningAutomation() async {

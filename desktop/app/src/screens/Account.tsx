@@ -4,7 +4,7 @@ import { api, failureText, type Account as AccountT, type AppInfo, type Team } f
 import { t } from "../i18n";
 import { Capsule, Card, ErrorBox, Field, Toggle } from "../ui";
 
-export default function Account({ info }: { info: AppInfo | null }) {
+export default function Account({ info, embedded = false }: { info: AppInfo | null; embedded?: boolean }) {
   const [acct, setAcct] = useState<AccountT | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [appleId, setAppleId] = useState("");
@@ -13,6 +13,8 @@ export default function Account({ info }: { info: AppInfo | null }) {
   const [code, setCode] = useState("");
   const [factor, setFactor] = useState<"trusted_device" | "sms" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const load = () => api.account().then((a) => {
     setAcct(a);
@@ -20,6 +22,11 @@ export default function Account({ info }: { info: AppInfo | null }) {
     if (a.signed_in && !a.pending_factor) api.teams().then(setTeams).catch((e) => setError(failureText(e)));
   }).catch((e) => setError(failureText(e)));
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!factor || now >= resendAt) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(resendAt - now, 1000));
+    return () => clearTimeout(timer);
+  }, [factor, now, resendAt]);
   // Another client (the CLI) may store the sign-in-again state while this page is open.
   useEffect(() => {
     const un = listen("account-changed", () => api.account().then((a) => {
@@ -34,7 +41,8 @@ export default function Account({ info }: { info: AppInfo | null }) {
     try {
       const f = await api.signIn(appleId, password, keep);
       setFactor(f);
-      if (!f) { setPassword(""); load(); }
+      setPassword("");
+      if (!f) load();
     } catch (e) { setError(failureText(e)); }
     setBusy(false);
   };
@@ -43,11 +51,30 @@ export default function Account({ info }: { info: AppInfo | null }) {
     try { await api.finishSignIn(code); setFactor(null); setCode(""); setPassword(""); load(); } catch (e) { setError(failureText(e)); }
     setBusy(false);
   };
+  const resend = async () => {
+    setBusy(true); setError(null);
+    try {
+      setResendAt((await api.resendCode()) * 1000);
+      setNow(Date.now());
+      setCode("");
+    } catch (e) { setError(failureText(e)); }
+    setBusy(false);
+  };
+
+  const changeAccount = async () => {
+    setBusy(true); setError(null);
+    try {
+      await api.cancelSignIn();
+      setFactor(null); setCode(""); setPassword(""); setAppleId(""); setResendAt(0);
+      load();
+    } catch (e) { setError(failureText(e)); }
+    setBusy(false);
+  };
   const anisetteIsSystem = acct?.anisette.kind === "system";
 
   return (
     <>
-      <h1 className="page-title">{t("Apple ID")}</h1>
+      {!embedded && <h1 className="page-title">{t("Apple ID")}</h1>}
       <p className="page-sub">{info?.os === "macos" ? "" : ""}</p>
       <ErrorBox error={error} />
       {factor ? (
@@ -55,9 +82,10 @@ export default function Account({ info }: { info: AppInfo | null }) {
           <h2>{t("Enter the code")}</h2>
           <p className="muted">{factor === "sms" ? t("Apple sent a code by text message.") : t("Apple sent a code to your devices.")}</p>
           <form className="row" onSubmit={(e) => { e.preventDefault(); finish(); }}>
-            <input className="input mono" style={{ width: 160, letterSpacing: "0.2em" }} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoFocus placeholder="000000" />
+            <input aria-label={t("Six-digit verification code")} className="input mono" style={{ width: 160, letterSpacing: "0.2em" }} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoFocus placeholder="000000" />
             <Capsule type="submit" disabled={busy || code.length !== 6}>{t("Continue")}</Capsule>
-            <Capsule kind="ghost" onClick={() => setFactor(null)}>{t("Stop")}</Capsule>
+            <Capsule kind="ghost" onClick={resend} disabled={busy || now < resendAt}>{t("Resend Code")}</Capsule>
+            <Capsule kind="ghost" onClick={changeAccount} disabled={busy}>{t("Use Another Account")}</Capsule>
           </form>
         </Card>
       ) : acct?.signed_in ? (

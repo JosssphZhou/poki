@@ -447,6 +447,19 @@ final class AppModel: ObservableObject {
         await refreshAccount()
     }
 
+    func resendSignInCode() async throws -> Date {
+        struct Answer: Decodable { var resendAvailableAt: Int }
+        let answer: Answer = try await bridge.call("resend_code")
+        return Date(timeIntervalSince1970: TimeInterval(answer.resendAvailableAt))
+    }
+
+    func changeSignInAccount() async throws {
+        try await bridge.run("cancel_sign_in")
+        codeVia = nil
+        needsCode = false
+        await refreshAccount()
+    }
+
     func signOut() async {
         do {
             try await bridge.run("sign_out")
@@ -532,8 +545,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func install(udid: String, ipa: URL?, handOff: Bool) async throws -> InstallAnswer {
-        let answer = try await installClosingPoki(udid: udid, ["udid": udid, "ipa": ipa?.path, "hand_off": handOff])
+    func install(udid: String, ipa: URL?, handOff: Bool, usbOnly: Bool = false) async throws -> InstallAnswer {
+        let answer = try await installClosingPoki(udid: udid, ["udid": udid, "ipa": ipa?.path, "hand_off": handOff, "usb_only": usbOnly])
         await refreshRecords()
         await refreshPhones()
         return answer
@@ -585,15 +598,18 @@ final class AppModel: ObservableObject {
     /// Runs an install that may replace a running Poki: asks first, and asks again if Poki was
     /// opened while Poki Setup signed it.
     func installClosingPoki(udid: String, _ args: [String: Any?]) async throws -> InstallAnswer {
-        guard await okToReplacePoki(udid: udid) else {
+        let usbOnly = args["usb_only"] as? Bool ?? false
+        let approved = usbOnly ? true : await okToReplacePoki(udid: udid)
+        guard approved else {
             throw CoreError(kind: "cancelled", message: localized("Nothing was installed. Poki is still open on \(deviceName(udid))."))
         }
         var withClose = args
-        withClose["close_poki"] = true
+        withClose["close_poki"] = !usbOnly || dev.prefs.closeWithoutAsking
         do {
             return try await job("install") { try await bridge.call("install", withClose) }
         } catch let e as CoreError where e.kind == "poki_running" {
             guard await askToClosePoki(udid: udid) else { throw e }
+            withClose["close_poki"] = true
             return try await job("install") { try await bridge.call("install", withClose) }
         }
     }

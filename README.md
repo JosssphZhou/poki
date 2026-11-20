@@ -52,14 +52,8 @@ Poki is an open-source iPhone agent that operates your entire iPhone for you. Th
 
 ### Install Poki on your iPhone
 
-1. **Install once from a Mac or Windows PC.** Connect and unlock your iPhone over USB (a free Apple Account works), then tell your coding agent, such as Claude Code or Codex:
-
-   ```text
-   Install Poki on my iPhone from https://github.com/JosssphZhou/poki
-   ```
-
-   Or download [Poki Setup](https://github.com/JosssphZhou/poki/releases) for macOS (`.dmg`) or Windows (`.exe`) and follow the window.
-2. **Connect and add your model account.** Accept **Trust**, turn on Developer Mode and Automation Mode when iOS asks, set up an external connection routing `10.7.0.1` back to your iPhone (such as free LocalDevVPN), and sign in with ChatGPT Plus or Pro or paste an API key (Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, OpenCode Go, or an OpenAI-compatible server).
+1. **Install with Poki Setup.** Download [Poki Setup](https://github.com/JosssphZhou/poki/releases) for macOS or Windows. Connect your unlocked iPhone over USB and follow the [installation guide](INSTALL-IPHONE.md). A free Apple Account works.
+2. **Add your model account in Poki.** Sign in with ChatGPT Plus or Pro, or paste an API key for Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, OpenCode Go, or an OpenAI-compatible server.
 3. **Run your first task.** Open Poki and send:
 
    ```text
@@ -76,7 +70,7 @@ Poki is an open-source iPhone agent that operates your entire iPhone for you. Th
 | iPhone | iOS 18 or later (iPhone XS, XR, SE 2nd gen or newer; iPadOS 18+ on iPad). Tested on physical iPhones with iOS 27. |
 | Computer | Mac with macOS 14+ (Node.js 24+ for agent install) or Windows PC (x64) with Apple Devices or iTunes. |
 | Cable and account | USB data cable and an Apple Account. Poki Setup renews free 7-day signatures while open, or sign in inside Poki. |
-| Connection | External connection routing `10.7.0.1` back to the iPhone (LocalDevVPN, Karing, or Shadowrocket). |
+| Connection | USB for the first install and developer disk image mount. An existing local connection can restore the image after a restart. |
 | Model account | ChatGPT Plus/Pro sign-in, an API key (Anthropic, OpenAI, Gemini, DeepSeek, OpenRouter, OpenCode Go), or an OpenAI-compatible server. |
 
 - Agent installer skill and Poki Setup: [install-poki skill](skills/install-poki/SKILL.md) and [Poki Setup](desktop/README.md)

@@ -101,6 +101,7 @@ private struct SidebarFooter: View {
 private struct VerificationCodeSheet: View {
     @EnvironmentObject var model: AppModel
     @State private var code = ""
+    @State private var resendAt = Date.distantPast
     @State private var working = false
     @State private var error: String?
 
@@ -124,13 +125,14 @@ private struct VerificationCodeSheet: View {
                     if digits.count == 6 { Task { await verify() } }
                 }
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Button(localized("Resend Code")) { Task { await resend() } }
+                    .disabled(working || context.date < resendAt)
+            }
             HStack {
-                Button(localized("Cancel")) {
-                    model.needsCode = false
-                    code = ""
-                    error = nil
-                }
-                .keyboardShortcut(.cancelAction)
+                Button(localized("Use Another Account")) {
+                    Task { await changeAccount() }
+                }.disabled(working)
                 Spacer()
                 if working { ProgressView().controlSize(.small) }
                 Button(localized("Verify")) { Task { await verify() } }
@@ -141,6 +143,25 @@ private struct VerificationCodeSheet: View {
         }
         .padding(24)
         .frame(width: 380)
+    }
+
+    private func resend() async {
+        guard !working else { return }
+        working = true
+        error = nil
+        defer { working = false }
+        do {
+            resendAt = try await model.resendSignInCode()
+            code = ""
+        } catch { self.error = error.localizedDescription }
+    }
+
+    private func changeAccount() async {
+        guard !working else { return }
+        working = true
+        defer { working = false }
+        do { try await model.changeSignInAccount() }
+        catch { self.error = error.localizedDescription }
     }
 
     private func verify() async {

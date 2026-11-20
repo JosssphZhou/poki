@@ -126,24 +126,27 @@ final class AppModel {
     /// when Poki is installed again, and a stored path then points at nothing.
     var pairingPath: String? {
         _ = pairingFileSeen
-        if FileManager.default.fileExists(atPath: AppFiles.phonePairingFile.path) { return AppFiles.phonePairingFile.path }
-        return FileManager.default.fileExists(atPath: AppFiles.pairingFile.path) ? AppFiles.pairingFile.path : nil
+        return Self.installedPairingFile?.path
     }
     /// Whether the pairing file was there at the last look. Poki Setup on a computer writes it into
     /// Poki's container after an install, while Poki may be running: setting this redraws what depends
     /// on `pairingPath` (the file itself is not observed).
-    private var pairingFileSeen = FileManager.default.fileExists(atPath: AppFiles.pairingFile.path)
+    private var pairingFileSeen = AppModel.installedPairingFile
+    nonisolated private static var installedPairingFile: URL? {
+        [AppFiles.phonePairingFile, AppFiles.pairingFile, AppFiles.sideloadedPairingFile].first {
+            FileManager.default.fileExists(atPath: $0.path)
+        }
+    }
     /// Looks for a pairing file Poki Setup put in the container (at launch, on coming to the front,
     /// and every few seconds on the pairing step).
     func lookForHandedPairing() {
-        let there = FileManager.default.fileExists(atPath: AppFiles.pairingFile.path)
-        guard there != pairingFileSeen else { return }
-        pairingFileSeen = there
-        // A pairing made here writes the same file just before it reports `paired`, which handles it.
-        guard there, !pairingUnderWay else { return }
-        try? (AppFiles.pairingFile as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
-        setup.pairingFile = AppFiles.pairingFile.path
-        SetupVault.mirrorPairingFromContainer()
+        let present = Self.installedPairingFile
+        guard present != pairingFileSeen else { return }
+        pairingFileSeen = present
+        guard let present, !pairingUnderWay else { return }
+        try? (present as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
+        setup.pairingFile = present.path
+        if present != AppFiles.sideloadedPairingFile { SetupVault.mirrorPairingFromContainer() }
         pairingTrouble = nil; pairingVerifiedAt = nil
         log.add("pairing", "pairing file from Poki Setup found")
     }
@@ -160,7 +163,10 @@ final class AppModel {
     private(set) var passcodeHint = false
     /// Turning on now will probably bring up iOS's passcode screen (no automation has started since
     /// this iPhone last restarted, or ever): the owner is told first (`passcodeHeadsUp`).
-    var passcodeExpected: Bool { UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current }
+    var passcodeExpected: Bool {
+        let boot = BootClock.current
+        return boot <= 0 || UserDefaults.standard.double(forKey: Self.automationBootKey) != boot
+    }
     var passcodeHeadsUp = false
     private(set) var passcodeConfirmationPending = false
     static let passcodeConfirmationMessage: LocalizedStringResource = "To turn on automation, open Settings › Connection and tap Continue."
@@ -579,7 +585,7 @@ final class AppModel {
     /// Mounting developer services does not enable Automation Mode. A probe-driven model already
     /// has the session the probe opened, so it starts no other.
     func prepareForTask() {
-        guard automationPath == .inProcess, setup.loopback != .none, !probeDriven else { return }
+        guard automationPath == .inProcess, setup.loopback != .none || usesMountedImageWithoutLoopback, !probeDriven else { return }
         if !sessionOn {
             pendingPrepareForTask = true
             startSession()
@@ -810,7 +816,9 @@ final class AppModel {
         Task {
             await tunnel.refresh()
             await diskImage.ensureChecked()
-            if wantsOn, !sessionOn, pairingPath != nil, diskImage.hasFiles { startSession(reconnectLocal: false) }
+            if wantsOn, !sessionOn, usesMountedImageWithoutLoopback || (pairingPath != nil && diskImage.hasFiles) {
+                startSession(reconnectLocal: false)
+            }
         }
     }
 
@@ -823,7 +831,8 @@ final class AppModel {
             log.add("setup", what)
             turnOnIfWanted()
         }
-        PokiHandoff.writeHello(loopbackWorking: loopback.isWorking, loopbackSay: loopback.isWorking ? nil : loopbackSentence)
+        PokiHandoff.writeHello(loopbackWorking: loopback.isWorking, loopbackSay: loopback.isWorking ? nil : loopbackSentence,
+                               uiAutomationReady: setup.uiAutomation && !passcodeExpected)
     }
 
     /// The one thing to do for the local connection, for the person, as the installer says it.
@@ -1039,6 +1048,10 @@ final class AppModel {
             log.add("runner", "no automation since this iPhone restarted: requested notice that iOS will ask for the passcode")
             return
         }
+        if usesMountedImageWithoutLoopback {
+            beginSession()
+            return
+        }
         if setup.loopback == .none {
             problem = "Choose and enable a local connection first (Setup)."
             return
@@ -1096,11 +1109,17 @@ final class AppModel {
         // the Mac (see `launchRunner`).
         let pairing = pairingPath ?? ""
         #else
-        guard let pairing = pairingPath else { problem = "Pair this iPhone first (Setup)."; return nil }
+        guard let pairing = pairingPath ?? (usesMountedImageWithoutLoopback ? "" : nil) else {
+            problem = "Pair this iPhone first (Setup)."
+            return nil
+        }
         #endif
         // The chat's own model loop needs no relay; agents on a computer do.
         let relay = activeRelay
-        guard relay != nil || ModelKeys.hasUsableKey else { problem = Self.noRelay; return nil }
+        guard relay != nil || ModelKeys.hasUsableKey || usesMountedImageWithoutLoopback else {
+            problem = Self.noRelay
+            return nil
+        }
         return (pairing, relay)
     }
 
@@ -1133,7 +1152,8 @@ final class AppModel {
         log.add("activity", activity.isRunning ? "Live Activity started" : "Live Activity not running: \(activity.lastError ?? "unknown reason")")
         sessionOn = true
         wantsOn = true
-        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess, ddi_marker: Self.ddiMarker)
+        launcherConfig = LauncherConfig(pairing_file: pairing, ddi_dir: AppFiles.ddiDirectory.path, in_process: automationPath == .inProcess, ddi_marker: Self.ddiMarker,
+                                        use_mounted_image_only: usesMountedImageWithoutLoopback)
         lastAgentActivity = Date()
         // Away from Poki the runner (and with it iOS's automation banner) starts only when an agent asks.
         standBy(reason: nil)
@@ -2251,7 +2271,7 @@ final class AppModel {
         try data.write(to: AppFiles.pairingFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         // Chosen by hand: it replaces the phone's own pairing as well.
         try? FileManager.default.removeItem(at: AppFiles.phonePairingFile)
-        pairingFileSeen = true
+        pairingFileSeen = Self.installedPairingFile
         SetupVault.storePairing(data)
         setup.pairingFile = AppFiles.pairingFile.path
         pairingTrouble = nil; pairingVerifiedAt = nil
@@ -2425,13 +2445,13 @@ final class AppModel {
     func isDone(_ step: SetupStep) -> Bool {
         switch step {
         case .runner: setup.runnerInstalled
-        case .developerMode: setup.developerMode
+        case .developerMode: setup.developerMode || usesMountedImageWithoutLoopback
         // A loopback that answers is the step done, whichever app provides it: one set up before Poki
         // (or by Poki Setup on a computer) has no row tapped here, and `loopbackChanged` records it.
         // Poki's own session open on the mounted image does the step's job without it (ESP-448).
-        case .loopback: loopback.isWorking || hasOpenInProcessSession
+        case .loopback: loopback.isWorking || hasOpenInProcessSession || usesMountedImageWithoutLoopback
         // The disk image downloads by itself (and is checked again when Poki turns on): it does not hold the step open.
-        case .pairing: pairingPath != nil && pairingTrouble == nil
+        case .pairing: usesMountedImageWithoutLoopback || (pairingPath != nil && pairingTrouble == nil)
         case .automation: setup.uiAutomation
         case .background: background.allowed
         }
@@ -2457,7 +2477,18 @@ final class AppModel {
     /// what keeps Poki from acting. Unlike `canStartTasks`, this still holds once that task ended and
     /// the runner stands by without `local_ddi`, and it leaves an open step elsewhere to name itself.
     var mountedImageStandsIn: Bool {
-        automationPath == .inProcess && setup.loopback != .none && hasPhonePairing && imageMounted()
+        usesMountedImageWithoutLoopback || (automationPath == .inProcess && setup.loopback != .none && hasPhonePairing && imageMounted())
+    }
+
+    var usesMountedImageWithoutLoopback: Bool {
+        automationPath == .inProcess && setup.loopback == .none && imageMounted()
+    }
+
+    func verifyMountedImageAutomation() {
+        guard usesMountedImageWithoutLoopback, !probeDriven, !passcodeConfirmationPending else { return }
+        InProcessWDA.gate.withLock { $0.declined = false }
+        if !sessionOn { startSession() }
+        if sessionOn { wakeRunner(asked: "checking UI Automation during USB setup") }
     }
 
     /// The pairing is an RPPairing record made on this iPhone, the only kind the launcher can hand to the mounted image.
@@ -2471,12 +2502,12 @@ final class AppModel {
     /// answers right now is checked live and is off whenever Poki is (the built-in connection), which is
     /// not a step left for the owner.
     var setupStepsLeft: Bool {
-        SetupStep.shown.contains { $0 == .loopback ? setup.loopback == .none : !isDone($0) }
+        SetupStep.shown.contains { $0 == .loopback ? setup.loopback == .none && !usesMountedImageWithoutLoopback : !isDone($0) }
     }
 
     /// Home offers Start although the loopback is not answering: the image is mounted and the
     /// pairing is Poki's own, so a new task can open Poki's session on cellular (ESP-448).
-    var canStartFromHome: Bool { canStartFromHome(localDDIAvailable: diskImage.isReady && imageMounted()) }
+    var canStartFromHome: Bool { canStartFromHome(localDDIAvailable: usesMountedImageWithoutLoopback || (diskImage.isReady && imageMounted())) }
 
     /// Poki can start a task: setup looks complete, or on cellular the mounted image stands in for the
     /// loopback, because the launcher already handed a task to it or Home can start one there (ESP-448).
@@ -2484,7 +2515,8 @@ final class AppModel {
 
     func canStartFromHome(localDDIAvailable: @autoclosure () -> Bool) -> Bool {
         if setupLooksComplete { return true }
-        guard automationPath == .inProcess, setup.loopback != .none, !setupStepsLeft, hasPhonePairing else { return false }
+        guard automationPath == .inProcess, !setupStepsLeft,
+              usesMountedImageWithoutLoopback || (setup.loopback != .none && hasPhonePairing) else { return false }
         return localDDIAvailable()
     }
 

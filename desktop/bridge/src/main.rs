@@ -9,7 +9,7 @@
 //! Requests run concurrently; the Apple account is behind one lock, as in the Tauri shell.
 //! Logs go to stderr. The process ends when stdin closes.
 use poki_setup_core::apple::anisette::Source;
-use poki_setup_core::{Error, Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support};
+use poki_setup_core::{Error, Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support, wizard};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -72,6 +72,7 @@ struct Shared {
     handoff: Mutex<Option<pairshare::Server>>,
     logs: Mutex<Option<tokio::task::JoinHandle<()>>>,
     busy: Mutex<bool>,
+    wizard: wizard::Attempts,
     update: Mutex<Option<poki_setup_core::update::Prepared>>,
 }
 
@@ -339,7 +340,40 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             with_signer(state, async |s| s.set_anisette(source)).await?;
             ok(true)
         }
+        "wizard_state" => {
+            let udid: Option<String> = arg(a, "udid")?;
+            let signed_in = with_signer(state, async |s| {
+                Ok(s.signed_in() && s.pending().is_none() && state.pending.lock().await.is_none())
+            }).await.unwrap_or(false);
+            ok(state.wizard.inspect(udid.as_deref(), signed_in).await?)
+        }
+        "wizard_pair" => {
+            wizard::pair(&arg::<String>(a, "udid")?, &out.reporter("pair")).await?;
+            ok(true)
+        }
+        "wizard_reveal" => {
+            wizard::reveal_developer_mode(&arg::<String>(a, "udid")?).await?;
+            ok(true)
+        }
+        "wizard_mount" => {
+            wizard::mount(&arg::<String>(a, "udid")?, &out.reporter("ddi")).await?;
+            ok(true)
+        }
+        "clear_wizard_failure" => {
+            state.wizard.clear().await;
+            ok(true)
+        }
         "install" => {
+            let udid: Option<String> = arg(a, "udid")?;
+            let ipa: Option<String> = arg(a, "ipa")?;
+            let hand_off: bool = arg::<Option<bool>>(a, "hand_off")?.unwrap_or(false);
+            // Poki counts pairing as done only with the disk image in place, so it goes in with the pairing file.
+            let seed_ddi: bool = arg::<Option<bool>>(a, "seed_ddi")?.unwrap_or(true);
+            // A test build from Developer > Test Builds: downloaded (once) during the install.
+            let test_build: Option<devbuilds::BuildRef> = arg(a, "test_build")?;
+            // The person was asked (or chose Close Poki Without Asking): close Poki before replacing it.
+            let close_poki: bool = arg::<Option<bool>>(a, "close_poki")?.unwrap_or(false);
+            let usb_only = arg::<Option<bool>>(a, "usb_only")?.unwrap_or(false);
             {
                 let mut busy = state.busy.lock().await;
                 if *busy {
@@ -347,18 +381,14 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
                 }
                 *busy = true;
             }
-            let udid: Option<String> = arg(a, "udid")?;
-            let ipa: Option<String> = arg(a, "ipa")?;
-            let hand_off: bool = arg::<Option<bool>>(a, "hand_off")?.unwrap_or(false);
-            let r = out.reporter("install");
-            // Poki counts pairing as done only with the disk image in place, so it goes in with the pairing file.
-            let seed_ddi: bool = arg::<Option<bool>>(a, "seed_ddi")?.unwrap_or(true);
-            // A test build from Developer > Test Builds: downloaded (once) during the install.
-            let test_build: Option<devbuilds::BuildRef> = arg(a, "test_build")?;
-            // The person was asked (or chose Close Poki Without Asking): close Poki before replacing it.
-            let close_poki: bool = arg::<Option<bool>>(a, "close_poki")?.unwrap_or(false);
-            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi, test_build, close_poki };
+            let attempt = udid.clone().filter(|_| usb_only);
+            if attempt.is_some() { state.wizard.clear().await; }
+            let (r, stage) = wizard::install_reporter(out.reporter("install"));
+            let opts = setup::Options { udid, ipa: ipa.map(Into::into), signing_zip: None, wait: None, hand_off, seed_ddi, test_build, close_poki, usb_only };
             let result = with_signer(state, async |s| setup::run(s, opts, &r).await).await;
+            if let (Some(udid), Err(failure)) = (attempt, &result) {
+                state.wizard.remember(udid, stage(), failure.kind, &failure.message).await;
+            }
             *state.busy.lock().await = false;
             let done = result?;
             let handoff = done.handoff.as_ref().map(|s| s.handoff.clone());

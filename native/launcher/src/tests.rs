@@ -181,6 +181,28 @@ fn with_the_image_mounted_a_refused_loopback_starts_the_local_session() {
     assert!(!events.iter().any(|v| v["state"] == "waiting_network"), "{events:?}");
 }
 
+#[test]
+fn usb_prepared_image_opens_without_a_pairing_record_or_loopback() {
+    let marker = temp("usb-prepared-image");
+    std::fs::write(&marker, b"").unwrap();
+    let config: Config = serde_json::from_value(json!({
+        "pairing_file": temp("usb-wizard-has-no-pairing-file"),
+        "in_process": true,
+        "use_mounted_image_only": true,
+        "ddi_marker": marker,
+    })).unwrap();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let launcher = Arc::new(Launcher::new(config, Box::new(move |event| sink.lock().unwrap().push(event))));
+    launcher.clone().start();
+    wait_for(&events, 5, settled);
+    launcher.stop();
+    std::fs::remove_file(marker).unwrap();
+    let events = events.lock().unwrap();
+    assert!(events.iter().any(|event| event["state"] == "running" && event["code"] == "local_ddi"), "{events:?}");
+    assert!(!events.iter().any(|event| event["state"] == "connecting" || event["state"] == "pairing"), "{events:?}");
+}
+
 /// Mounting the image needs the developer services, so without it the loopback error stands.
 #[test]
 fn without_the_image_a_refused_loopback_still_waits_for_the_network() {

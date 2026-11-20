@@ -127,6 +127,8 @@ jobs:
           test "$CODE" = 2
       - name: Core and bridge check against Apple
         run: python3 desktop/mac/scripts/e2e.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
+      - name: USB wizard regression checks
+        run: python3 desktop/mac/scripts/test-usb-pairing.py "$PWD/dist/Poki Setup.app/Contents/MacOS/poki-setup-bridge"
       - name: Signing check with Apple's codesign
         env:
           GH_TOKEN: ${{ github.token }}
