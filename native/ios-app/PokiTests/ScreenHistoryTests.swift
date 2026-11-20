@@ -153,16 +153,20 @@ final class ScreenHistoryTests: XCTestCase {
             (.notPaired, "Pair this iPhone in Settings › Connection to start recording."),
             (.task, "Automation is using the screen. Recording resumes when it releases the screen."),
             (.locked, "Unlock this iPhone to resume recording."),
+            (.backgroundExpired, "iOS paused background recording. Open Poki to resume."),
+            (.readFailed, "Poki couldn’t read the screen. It will try again."),
             (.waiting, "Starting recording…"),
             (.reading, "Recording"),
         ]
         for (status, caption) in captions {
             XCTAssertEqual(HistoryNames.recordingStatus(status, enabled: true), caption, status.rawValue)
         }
-        for (held, caption) in captions.prefix(4) {
+        for (held, caption) in captions.prefix(6) {
             XCTAssertEqual(HistoryNames.recordingStatus(.waiting, held: held, enabled: true), caption, "held.\(held.rawValue)")
         }
         XCTAssertEqual(HistoryNames.recordingStatus(.noConnection, enabled: false), "Off")
+        XCTAssertEqual(HistoryNames.status(.backgroundExpired), "iOS Paused Background Recording")
+        XCTAssertEqual(HistoryNames.status(.readFailed), "Screen Read Failed")
     }
 
     func testALeftOutAppAndTheHomeScreenLeaveNothingInTheStore() async {

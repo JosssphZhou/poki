@@ -79,6 +79,7 @@ final class HistoryCapture: ObservableObject {
     /// observing records still display.
     enum Status: String {
         case off, waiting, reading, finished, stopped, locked, task, noConnection, notPaired, paused
+        case backgroundExpired, readFailed
     }
 
     enum ListMode: String, CaseIterable, Identifiable {
@@ -443,12 +444,12 @@ final class HistoryCapture: ObservableObject {
     /// Why a read cannot happen now, or nil when it can.
     private func refusal(_ model: AppModel) -> Status? {
         if lockedOrDark { return .locked }
-        // Reading stays out of the way of an agent's task.
-        if model.hasOpenInProcessSession { return .task }
         #if !targetEnvironment(simulator)
         if model.pairingPath == nil { return .notPaired }
         if !model.loopback.isWorking { return .noConnection }
         #endif
+        // Reading stays out of the way of an agent's task.
+        if model.hasOpenInProcessSession { return .task }
         return nil
     }
 
@@ -472,6 +473,14 @@ final class HistoryCapture: ObservableObject {
     func appDidBecomeActive() {
         guard let model else { return }
         HistoryCollector.shared.attach(model)
+    }
+
+    /// Ends a foreground-only run when Poki moves to the background with no active background task
+    /// or keeper holding it up.
+    func appDidEnterBackground() {
+        guard isRunning, background == .invalid else { return }
+        if isAlways, let model, HistoryCollector.shared.staysUp(model) { return }
+        end(run, .backgroundExpired)
     }
 
     /// Reads once after `waitSeconds`, or looks every `interval` seconds for `minutes`, or with `always`
@@ -501,21 +510,29 @@ final class HistoryCapture: ObservableObject {
         Self.withdrawNotice()
         background = UIApplication.shared.beginBackgroundTask(withName: "poki-screen-history") { [weak self] in
             Task { @MainActor in
+                guard let self, self.run == me, self.isRunning else { return }
                 // While something else keeps Poki running (Poki is on), the run does not live on
                 // this background time: only the task is given back, and reading goes on.
-                if let self, self.run == me, self.isAlways, HistoryCollector.shared.staysUp(model) {
+                if self.isAlways, HistoryCollector.shared.staysUp(model) {
                     AppLog.shared.add("history", "background time given back; Poki stays up and reading goes on")
-                    if self.background != .invalid {
-                        UIApplication.shared.endBackgroundTask(self.background)
-                        self.background = .invalid
-                    }
+                    self.endBackgroundTask()
+                    return
+                }
+                if UIApplication.shared.applicationState == .active {
+                    AppLog.shared.add("history", "iOS ended the background time while Poki is active; keeping foreground recording")
+                    self.endBackgroundTask()
                     return
                 }
                 AppLog.shared.add("history", "iOS ended the background time; keeper on: \(model.background.isOn), silent audio lost: \(model.background.audioLost)")
                 // Not the owner's doing, and not the run's time being up.
-                if let self, self.run == me, self.isRunning, !self.once { self.notice() }
-                self?.end(me, .stopped)
+                if !self.once { self.notice() }
+                self.end(me, .backgroundExpired)
             }
+        }
+        if background == .invalid, UIApplication.shared.applicationState == .background,
+           !(always && HistoryCollector.shared.staysUp(model)) {
+            set(.backgroundExpired)
+            return
         }
         let wait = once ? Self.waitSeconds : 0
         set(once ? .waiting : .reading)
@@ -613,7 +630,7 @@ final class HistoryCapture: ObservableObject {
         if status != .waiting { status = .waiting }
         // An agent's task is no accident, and neither is being on cellular, where iOS refuses the
         // local connection for as long as it lasts: nothing to turn back on.
-        if why == .noConnection, let model, !model.loopback.cellularRefused { failing() } else { failingSince = nil }
+        if (why == .noConnection || why == .readFailed), let model, !model.loopback.cellularRefused { failing() } else { failingSince = nil }
     }
 
     /// Reads go on.
@@ -684,12 +701,15 @@ final class HistoryCapture: ObservableObject {
         failingSince = nil
         sayCount()
         sayTally()
-        if background != .invalid {
-            UIApplication.shared.endBackgroundTask(background)
-            background = .invalid
-        }
+        endBackgroundTask()
         // The file is closed when the phone locks, so iOS's file protection holds.
         if why == .locked { HistoryStore.shared.close() }
+    }
+
+    private func endBackgroundTask() {
+        guard background != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(background)
+        background = .invalid
     }
 
     /// Monitor device lock independently of a recording run. The observer lives for the
@@ -810,7 +830,7 @@ final class HistoryCapture: ObservableObject {
             resume()
             return
         }
-        guard status == .reading, !lockedOrDark else { return }
+        guard isRunning, !lockedOrDark else { return }
         if model.hasOpenInProcessSession {
             // A single read gives way. A run waits for the task to end and reads on. An always run
             // waits inside the launcher, which keeps its tunnel: on cellular a closed one cannot
@@ -828,6 +848,7 @@ final class HistoryCapture: ObservableObject {
         if line["ok"] as? Bool == true {
             // A look that read no screen (the same app as a moment ago, or one that is left out)
             // shows the connection open as well as a read does.
+            resume()
             lastReadAt = Date()
             sayCount()
             working()
@@ -840,8 +861,9 @@ final class HistoryCapture: ObservableObject {
         } else {
             // The same reason is said once and counted, whatever the network: a try with no
             // tunnel comes five times a second around a change of network.
-            say((line["tunnel"] as? Bool == false ? "no tunnel: " : "read failed: ") + Self.brief(error))
-            if !model.loopback.cellularRefused { failing() }
+            let reason: Status = line["tunnel"] as? Bool == false ? .noConnection : .readFailed
+            say((reason == .noConnection ? "no tunnel: " : "read failed: ") + Self.brief(error))
+            hold(reason, model: model)
         }
         if keep(read), once { end(me, .finished) }
     }

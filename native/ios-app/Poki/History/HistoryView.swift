@@ -45,9 +45,17 @@ enum HistoryNames {
 
     static func recordingStatus(_ status: HistoryCapture.Status, held: HistoryCapture.Status? = nil, enabled: Bool) -> LocalizedStringKey {
         guard enabled else { return "Off" }
-        if status == .reading { return "Recording" }
-        if status == .waiting, let held { return LocalizedStringKey(Self.status(held)) }
-        return "Paused, Waiting to Resume"
+        let effective = (status == .waiting || status == .reading) ? (held ?? status) : status
+        return switch effective {
+        case .off, .waiting, .finished, .stopped: "Starting recording…"
+        case .reading: "Recording"
+        case .locked: "Unlock this iPhone to resume recording."
+        case .task: "Automation is using the screen. Recording resumes when it releases the screen."
+        case .noConnection: "Recording needs the local connection. Connect to Wi-Fi and check Local Connection in Settings."
+        case .notPaired: "Pair this iPhone in Settings › Connection to start recording."
+        case .backgroundExpired: "iOS paused background recording. Open Poki to resume."
+        case .paused, .readFailed: "Poki couldn’t read the screen. It will try again."
+        }
     }
 
     static func status(_ status: HistoryCapture.Status) -> String {
@@ -62,6 +70,8 @@ enum HistoryNames {
         case .noConnection: "No Local Connection"
         case .notPaired: "Not Paired"
         case .paused: "Paused, Waiting to Resume"
+        case .backgroundExpired: "iOS Paused Background Recording"
+        case .readFailed: "Screen Read Failed"
         }
     }
 
