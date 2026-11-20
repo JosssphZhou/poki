@@ -480,6 +480,8 @@ struct HomePage<Footer: View>: View {
     var sessionStore: SessionStore = .shared
     var shortcutStore: HomeShortcutStore = .shared
     var pick: (String) -> Void
+    /// A swipe down on the page while the message field has the keyboard: the keyboard goes down.
+    var putAway: () -> Void = {}
     @ViewBuilder var footer: () -> Footer
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -502,6 +504,8 @@ struct HomePage<Footer: View>: View {
     @State private var page = CGRect.zero
     /// Counts the long presses, for a tap in the hand.
     @State private var holds = 0
+    /// This swipe down has already put the keyboard away.
+    @State private var swiped = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -512,7 +516,9 @@ struct HomePage<Footer: View>: View {
                 ScrollView {
                     content(inset: inset, height: geometry.size.height, scrolls: true)
                 }
-                    .scrollBounceBehavior(.basedOnSize)
+                    // While the keyboard is up the page gives a little under a swipe down even when
+                    // it all fits, so the swipe can take the keyboard down with it.
+                    .scrollBounceBehavior(writing ? .always : .basedOnSize, axes: .vertical)
                     .scrollDismissesKeyboard(.interactively)
             } else {
                 content(inset: inset, height: geometry.size.height, scrolls: false)
@@ -593,6 +599,30 @@ struct HomePage<Footer: View>: View {
             Spacer().frame(height: 34)
         }
         .frame(maxWidth: .infinity, minHeight: height)
+        // The page has no scroll view of its own to take the keyboard down (its layout stays still as
+        // the keyboard comes), so once the keyboard is up a swipe down anywhere on it does. The whole
+        // page takes the swipe only then: otherwise its empty space is not there for a touch. In the
+        // scrolling layout the scroll view does it (`scrollDismissesKeyboard`).
+        .contentShape(writing && !scrolls ? AnyShape(Rectangle()) : AnyShape(NoTouch()))
+        .simultaneousGesture(swipeDown, including: writing && !scrolls ? .all : .subviews)
+    }
+
+    /// A mostly upright drag down: the keyboard goes down as soon as it has gone 28 points, or at its
+    /// end if it was a flick. A drag up or sideways does nothing.
+    private var swipeDown: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { drag in
+                let (dx, dy) = (drag.translation.width, drag.translation.height)
+                guard !swiped, dy > 28, dy > abs(dx) * 1.5 else { return }
+                swiped = true
+                putAway()
+            }
+            .onEnded { drag in
+                defer { swiped = false }
+                let (dx, dy) = (drag.translation.width, drag.predictedEndTranslation.height)
+                guard !swiped, dy > 60, drag.translation.height > abs(dx) * 1.5 else { return }
+                putAway()
+            }
     }
 
     /// The part of the pressed pill that shows, in the page's own points: a pill at an end of a row is
@@ -634,6 +664,11 @@ struct HomePage<Footer: View>: View {
 
     /// A pill's menu or its Edit popup is open, or about to: the rows stand still, and no pill is tapped.
     private var busy: Bool { held != nil || editing != nil || editNext != nil }
+}
+
+/// A shape with nothing in it: a view shaped so takes no touch of its own.
+private struct NoTouch: Shape {
+    func path(in rect: CGRect) -> Path { Path() }
 }
 
 /// A pill under a long press: the quick action, and where its pill is on the screen.

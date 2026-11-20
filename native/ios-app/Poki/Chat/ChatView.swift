@@ -126,7 +126,8 @@ struct ChatView: View {
             // The home page stays in the tree while the conversation is in front, neither seen nor
             // touched, so a new conversation brings it back on the same animation.
             HomePage(home: home, writing: writing, rise: flightRise, sessionStore: sessionStore, shortcutStore: shortcutStore,
-                     pick: { model.prepareForTask(); chat.setDraftActivity(true); draft.wrappedValue = $0; writing = true }) {
+                     pick: { model.prepareForTask(); chat.setDraftActivity(true); draft.wrappedValue = $0; writing = true },
+                     putAway: { writing = false }) {
                 if home, let update { UpdatePill(version: update, open: openUpdates) }
                 if home, let hint = homeHint {
                     SetupHintLine(hint: hint, openSetupStep: openSetupStep, openSetup: openSetup, openModel: openModel,

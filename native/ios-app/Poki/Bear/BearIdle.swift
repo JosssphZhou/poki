@@ -102,6 +102,8 @@ struct BearIdle {
     private var glance: Glance?
     /// While the bear plays a state other than ready, it starts none of its small things.
     var calm = false
+    /// The bear watching you type, between its small things (`BearWatch`).
+    var watch = BearWatch()
     private var nextGlance: TimeInterval
     private var breath: Double = 0, breathAt: TimeInterval, breathLength: TimeInterval = 3.4
     private var lastSide: Float = Bool.random() ? 1 : -1
@@ -122,7 +124,7 @@ struct BearIdle {
     static func ease(_ x: Float) -> Float { let x = min(max(x, 0), 1); return x * x * (3 - 2 * x) }
 
     /// Turning its head somewhere, so worth drawing at the full rate; breathing and swaying alone are slow enough for a third of it.
-    func busy(at t: TimeInterval) -> Bool { glance?.turning(at: t) ?? false }
+    func busy(at t: TimeInterval) -> Bool { (glance?.turning(at: t) ?? false) || watch.moving }
 
     /// Something else plays until `t`: nothing of its own starts before then, and not at once after.
     mutating func rest(until t: TimeInterval) {
@@ -131,6 +133,7 @@ struct BearIdle {
 
     /// A hi is coming: whatever it is doing, it comes back now, quickly.
     mutating func attend(at t: TimeInterval) {
+        watch.pause(at: t)
         guard var g = glance, t < g.end else { return }
         if g.stop == nil { g.stop = t }
         glance = g
@@ -139,7 +142,8 @@ struct BearIdle {
 
     /// `blinking`: a look somewhere does not start while the bear blinks; it waits for the eyes to open.
     mutating func pose(at t: TimeInterval, blinking: Bool = false) -> Pose {
-        breath += (t - breathAt) / breathLength
+        let dt = t - breathAt
+        breath += dt / breathLength
         breathAt = t
         if breath >= 1 { breath = breath.truncatingRemainder(dividingBy: 1); breathLength = .random(in: 3.0...4.2) }
         let inhale = Float(0.5 - 0.5 * cos(2 * .pi * breath))
@@ -152,7 +156,18 @@ struct BearIdle {
         p.bodyYaw = 0.025 * Float(sin(t * 0.29 + 0.4))
         p.headYaw = 0.03 * Float(sin(t * 0.41 + 2.1))
         if calm, glance.map({ t >= $0.end }) ?? true { nextGlance = max(nextGlance, t + .random(in: 1.0...2.0)) }
-        if !blinking, !calm, t >= nextGlance, glance.map({ t >= $0.end }) ?? true {
+        // Typing began: whatever small thing it was doing fades out as it looks down at the field. A
+        // later look waits for the small thing to end, and after a look a moment passes before the next.
+        switch watch.update(at: t, dt: dt, calm: calm, glancing: glance.map { t < $0.end } ?? false) {
+        case .began:
+            if var g = glance, t < g.end, g.stop == nil { g.stop = t; glance = g }
+        case .ended:
+            nextGlance = max(nextGlance, t + .random(in: 0.6...1.4))
+        case .none:
+            break
+        }
+        if watch.following { nextGlance = max(nextGlance, t + 0.6) }
+        if !blinking, !calm, !watch.following, t >= nextGlance, glance.map({ t >= $0.end }) ?? true {
             let g = makeGlance(at: t)
             glance = g
             nextGlance = g.end + .random(in: 1.2...4.5)
@@ -187,7 +202,7 @@ struct BearIdle {
                 break
             }
         }
-        return p
+        return p + watch.pose
     }
 
     /// The next gesture: each once a turn, in a new order every turn, never the same twice in a row.

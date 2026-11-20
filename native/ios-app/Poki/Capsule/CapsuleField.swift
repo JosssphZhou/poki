@@ -88,6 +88,20 @@ struct CapsuleField: UIViewRepresentable {
             guard let view = textView as? CapsuleTextView else { return }
             view.reconcile()
             if parent.text != view.plainText { parent.text = view.plainText }
+            CaretWatch.shared.typed(at: Self.caret(in: textView))
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard textView.isFirstResponder else { return }
+            CaretWatch.shared.moved(to: Self.caret(in: textView))
+        }
+
+        /// The caret's middle in the window, for Poki to look at as you type.
+        @MainActor private static func caret(in view: UITextView) -> CGPoint? {
+            guard view.window != nil, let end = view.selectedTextRange?.end else { return nil }
+            let rect = view.caretRect(for: end)
+            guard rect.origin.x.isFinite, rect.origin.y.isFinite else { return nil }
+            return view.convert(CGPoint(x: rect.midX, y: rect.midY), to: nil)
         }
 
         @objc func swiped(_ pan: UIPanGestureRecognizer) {
@@ -109,6 +123,7 @@ struct CapsuleField: UIViewRepresentable {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             parent.scroll?.scrolledDown = Self.scrolledDown(scrollView)
+            if let view = scrollView as? UITextView, view.isFirstResponder { CaretWatch.shared.moved(to: Self.caret(in: view)) }
         }
 
         /// Away from the first line of a message taller than the field. A message that fits can sit a
@@ -118,7 +133,10 @@ struct CapsuleField: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { parent.focused = true } }
-        func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
+        func textViewDidEndEditing(_ textView: UITextView) {
+            CaretWatch.shared.clear()
+            if parent.focused { parent.focused = false }
+        }
     }
 }
 

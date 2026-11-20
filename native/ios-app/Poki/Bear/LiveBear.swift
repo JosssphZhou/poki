@@ -580,6 +580,14 @@ private final class BearCanvas: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// The message field's caret while someone types, from the bear's middle on the screen, for the
+    /// bear to watch (`BearWatch`).
+    private func caret(at now: TimeInterval) -> SIMD2<Float>? {
+        guard window != nil, let point = CaretWatch.shared.caret(at: now) else { return nil }
+        let middle = convert(CGPoint(x: bounds.midX, y: bounds.midY), to: nil)
+        return SIMD2(Float(point.x - middle.x), Float(point.y - middle.y))
+    }
+
     deinit {
         link?.invalidate()
         wake?.cancel()
@@ -619,6 +627,7 @@ private final class BearCanvas: UIView {
             joints.shut(blink, in: &standing[index])
         }
         if moving, let (index, joints) = idleSkin, index < standing.count {
+            idle.watch.caret = caret(at: now)
             var move = idle.pose(at: now, blinking: playback.move == .blink)
             #if DEBUG
             // `-pokiBearLook <-1…1>` holds the head turned that far toward one side, as far as a look
