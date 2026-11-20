@@ -199,6 +199,9 @@ private struct WardrobeGrid: View {
 private struct BearMixView: View {
     @ScaledMetric(relativeTo: .subheadline) private var resetRowHeight: CGFloat = 45
     @State private var slot = BearOutfitSlot.headwear
+    @State private var clothingScrollPosition = ScrollPosition()
+    @State private var pendingColorReveal: UUID?
+    @State private var resetRowExtendsBelowViewport = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -294,6 +297,7 @@ private struct BearMixView: View {
             .frame(maxWidth: .infinity)
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.3, bounce: 0), value: BearWardrobe.shared.colors != BearOutfitColors())
+        .scrollPosition(category == .clothes ? $clothingScrollPosition : .constant(ScrollPosition()))
         .accessibilityIdentifier("wardrobe.page.\(category.rawValue)")
     }
 
@@ -355,6 +359,27 @@ private struct BearMixView: View {
             .opacity(wardrobe.colors != BearOutfitColors() ? 1 : 0)
             .allowsHitTesting(wardrobe.colors != BearOutfitColors())
             .accessibilityHidden(wardrobe.colors == BearOutfitColors())
+            .onGeometryChange(for: Bool.self) { geometry in
+                guard let bounds = geometry.bounds(of: .scrollView(axis: .vertical)) else { return false }
+                return geometry.frame(in: .scrollView(axis: .vertical)).maxY > bounds.height + 0.5
+            } action: { extendsBelowViewport in
+                resetRowExtendsBelowViewport = extendsBelowViewport
+            }
+            .task(id: pendingColorReveal) {
+                guard let request = pendingColorReveal else { return }
+                // Let the reset row finish expanding before determining whether it fits.
+                do { try await Task.sleep(for: .milliseconds(reduceMotion ? 170 : 320)) }
+                catch { return }
+                guard pendingColorReveal == request else { return }
+                pendingColorReveal = nil
+                guard slot == .clothes, wardrobe.selection.clothes == outfit,
+                      wardrobe.colors != BearOutfitColors(), resetRowExtendsBelowViewport else { return }
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    clothingScrollPosition.scrollTo(edge: .bottom)
+                }
+            }
         }
         .font(.subheadline)
         .background(.fill.tertiary, in: .rect(cornerRadius: 12))
@@ -370,7 +395,10 @@ private struct BearMixView: View {
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return }
             let rgb = [r, g, b].map { UInt32((min(max($0, 0), 1) * 255).rounded()) }
-            wardrobe.colors[keyPath: component] = rgb[0] << 16 | rgb[1] << 8 | rgb[2]
+            let value = rgb[0] << 16 | rgb[1] << 8 | rgb[2]
+            guard wardrobe.colors[keyPath: component] != value else { return }
+            wardrobe.colors[keyPath: component] = value
+            pendingColorReveal = UUID()
         }
     }
 }
