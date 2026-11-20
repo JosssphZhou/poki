@@ -4,6 +4,7 @@
 // Only the input payload is synthetic. Delivery uses the SDK's Objective-C delegate selector.
 @interface TestNotification : NSObject
 @property(nonatomic, strong) UNNotificationRequest *request;
+@property(nonatomic, strong) NSDate *date;
 @end
 @implementation TestNotification
 @end
@@ -15,15 +16,20 @@
 @end
 
 static void deliver(id<UNUserNotificationCenterDelegate> delegate, NSUInteger index) {
-    NSArray *actions = @[UNNotificationDefaultActionIdentifier, @"approval.allow", @"approval.deny", @"unknown"];
+    NSArray *actions = @[UNNotificationDefaultActionIdentifier, @"approval.allow", @"approval.deny", @"unknown",
+                         UNNotificationDefaultActionIdentifier, @"daily-task.run", UNNotificationDismissActionIdentifier];
     if (index == actions.count) {
         puts("PASS: notification responses complete on the main thread");
         exit(0);
     }
     UNMutableNotificationContent *content = [UNMutableNotificationContent new];
     content.userInfo = index == 0 ? @{@"poki_link": @"poki://setup"} : @{@"approval": @"test-approval"};
+    BOOL daily = index >= 4;
+    if (daily) content.categoryIdentifier = @"daily-task";
     TestNotification *notification = [TestNotification new];
-    notification.request = [UNNotificationRequest requestWithIdentifier:@"test" content:content trigger:nil];
+    notification.date = [NSDate dateWithTimeIntervalSince1970:index];
+    NSString *identifier = daily ? @"poki.daily-task.00000000-0000-0000-0000-000000000001" : @"test";
+    notification.request = [UNNotificationRequest requestWithIdentifier:identifier content:content trigger:nil];
     TestResponse *response = [TestResponse new];
     response.notification = notification;
     response.actionIdentifier = actions[index];

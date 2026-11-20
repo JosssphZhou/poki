@@ -2420,11 +2420,15 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
 }
 
 - (BOOL)screenLocked {
+    return [self screenLockState].boolValue;
+}
+
+- (NSNumber *)screenLockState {
     static int token = -1;
-    if (token == -1 && notify_register_check("com.apple.springboard.lockstate", &token) != NOTIFY_STATUS_OK) return NO;
+    if (token == -1 && notify_register_check("com.apple.springboard.lockstate", &token) != NOTIFY_STATUS_OK) return nil;
     uint64_t state = 0;
-    notify_get_state(token, &state);
-    return state != 0;
+    if (notify_get_state(token, &state) != NOTIFY_STATUS_OK) return nil;
+    return @(state != 0);
 }
 
 - (NSDictionary<NSString *, id> *)readProbe {

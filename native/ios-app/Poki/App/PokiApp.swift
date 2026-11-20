@@ -51,6 +51,7 @@ struct PokiApp: App {
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
         AskPoki.install(app: model, chat: chat)
+        DailyTaskNotice.schedulesChanged()
     }
 
     var body: some Scene {
@@ -298,8 +299,21 @@ struct RootView: View {
         }
         .modifier(AutomationNotices(enabled: !detailsOpen))
         .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active { model.becameActive(); AskPoki.refresh(); model.startSigner(); model.signer.maintain(); Task { await model.verifyPairing() } } else if phase == .background { model.wentToBackground() }
+            if phase == .active {
+                model.becameActive()
+                AskPoki.refresh()
+                model.startSigner()
+                model.signer.maintain()
+                Task { await model.verifyPairing() }
+                runPendingDailyTasks()
+            } else if phase == .background {
+                model.wentToBackground()
+            }
         }
+        .onChange(of: DailyTask.shared.pending, initial: true) { runPendingDailyTasks() }
+        .onChange(of: DailyTask.shared.plans) { DailyTaskNotice.schedulesChanged() }
+        .onChange(of: DailyTaskNotice.canStart(app: model, chat: chat)) { runPendingDailyTasks() }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in runPendingDailyTasks() }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
         // the setup step, or the Activity Log for a problem; `poki://voice` brings the chat to the front.
         .onOpenURL { url in open(link: url) }
@@ -386,6 +400,15 @@ struct RootView: View {
             if !model.voice.isOn, !model.voice.canTalkLive { model.voice.keyAsked = true }
         } else {
             detailsOpen = false
+            show(.chat)
+        }
+    }
+
+    private func runPendingDailyTasks() {
+        guard scenePhase == .active else { return }
+        if DailyTaskNotice.runPending() {
+            detailsOpen = false
+            statusOpen = false
             show(.chat)
         }
     }

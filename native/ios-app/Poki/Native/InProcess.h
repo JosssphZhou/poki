@@ -126,6 +126,8 @@ FOUNDATION_EXPORT CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSAr
 /// launch, activate or terminate an app by its bundle id. Nil when done, else why not.
 - (nullable NSString *)app:(NSString *)bundle action:(NSString *)action;
 - (BOOL)screenLocked;
+/// Nil when the system's lock state cannot be read. Automatic task starts must wait then.
+- (nullable NSNumber *)screenLockState;
 /// The current session's generation: it goes up when the daemon session is replaced.
 - (uint64_t)generation;
 /// A trial for ending the session: opens a session of its own (not the shared one that XCUIAutomation

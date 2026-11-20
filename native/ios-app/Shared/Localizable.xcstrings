@@ -37479,6 +37479,374 @@
           }
         }
       }
+    },
+    "Automatic daily tasks use at least Balanced approvals without changing your saved settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动执行每日任务时至少使用均衡审批，不会更改你保存的设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動執行每日任務時至少使用均衡審批，不會更改你儲存的設定。"
+          }
+        }
+      }
+    },
+    "Delete a daily task before adding another." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先删除一条每日任务，再添加新任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請先刪除一則每日任務，再新增任務。"
+          }
+        }
+      }
+    },
+    "Run Task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "执行任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行任務"
+          }
+        }
+      }
+    },
+    "Daily Task Ready" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任务已到时间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任務已到時間"
+          }
+        }
+      }
+    },
+    "Tap to run your scheduled task." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按执行每日任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點一下以執行每日任務。"
+          }
+        }
+      }
+    },
+    "Every day at" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日执行时间"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日執行時間"
+          }
+        }
+      }
+    },
+    "Tasks start automatically only while Poki is open and idle. Otherwise, tap the reminder." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅当 Poki 位于前台且空闲时，才会自动执行每日任务。否则，点按提醒即可执行。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅當 Poki 位於前景且閒置時，才會自動執行每日任務。否則，點一下提醒即可執行。"
+          }
+        }
+      }
+    },
+    "Save Schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存每日任務"
+          }
+        }
+      }
+    },
+    "Open Notification Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开通知设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟通知設定"
+          }
+        }
+      }
+    },
+    "Allow notifications so Poki can remind you when it isn’t open." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许通知后，Poki 不在前台时也能提醒你。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允許通知後，Poki 不在前景時也能提醒你。"
+          }
+        }
+      }
+    },
+    "Couldn’t update the schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法更新每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法更新每日任務"
+          }
+        }
+      }
+    },
+    "Daily Tasks" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日任務"
+          }
+        }
+      }
+    },
+    "Add Daily Task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增每日任務"
+          }
+        }
+      }
+    },
+    "Edit Daily Task" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯每日任務"
+          }
+        }
+      }
+    },
+    "No daily tasks yet." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有每日任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有每日任務。"
+          }
+        }
+      }
+    },
+    "Tasks are waiting. Turn on Poki and make sure it has a model and is idle." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有每日任务等待执行。请开启 Poki、配置模型，并等当前任务结束。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有每日任務等待執行。請開啟 Poki、設定模型，並等目前任務結束。"
+          }
+        }
+      }
+    },
+    "Reminder name (optional)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒名称（选填）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒名稱（選填）"
+          }
+        }
+      }
+    },
+    "The name can appear on the Lock Screen. The instructions stay private." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称可能显示在锁屏上，任务指令不会显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名稱可能顯示在鎖定畫面上，任務指令不會顯示。"
+          }
+        }
+      }
+    },
+    "Delete Schedule" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除每日任務"
+          }
+        }
+      }
+    },
+    "Delete this daily task?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除这条每日任务？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除這則每日任務？"
+          }
+        }
+      }
+    },
+    "Try again from Daily Tasks." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请返回“每日任务”重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請返回「每日任務」再試一次。"
+          }
+        }
+      }
+    },
+    "Couldn’t load daily tasks" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取每日任務"
+          }
+        }
+      }
+    },
+    "Your saved schedules are unchanged. Try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存的每日任务未作更改。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已儲存的每日任務未作變更。請再試一次。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

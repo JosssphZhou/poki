@@ -21,9 +21,9 @@ final class LiveCore: CoreSession {
         config.relayAppVersion = "\(version) (\(build))"
         // Signing tools may rename the app; its own id is Poki too.
         if let own = Bundle.main.bundleIdentifier { config.ownApps.append(own) }
-        // Read at each step, from the saved choice the Approvals page shows: Never Ask lets optional
-        // steps go; payments, deletions and guarded apps still wait.
-        config.approvalMode = { ApprovalClassifier.mode }
+        // Read at each step: normally the saved choice, with a temporary minimum for automatic
+        // daily tasks. Payments, deletions and guarded apps always retain their owner checks.
+        config.approvalMode = { ApprovalClassifier.effectiveMode }
         // Apps by name, from the apps Poki knows; the two speed-ups read their Testing Options switch.
         config.resolveApp = { KnownApps.find($0)?.id }
         config.appNames = { SpeedOptions.appNames }

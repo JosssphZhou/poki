@@ -31,6 +31,62 @@ For a pair of apps that's already open, you can also use the **Send Task to Poki
 Shortcuts with **Use Split View** turned on. Both ways use Poki's usual approvals and leave the two
 apps open when the task finishes.
 
+## Daily Tasks
+
+Open **Settings › Daily Tasks** and tap **Add Daily Task**. Each task has its own instructions
+and time in the iPhone's local time. Tap a task in the list to edit or delete it. Give reminders
+distinct names if they are due together; the name can appear on the Lock Screen, but the
+instructions do not.
+Poki keeps up to 20 daily tasks, reserving notification capacity for other reminders.
+
+Keep Poki on, choose a model, and allow notifications. Tasks start automatically only while Poki
+is in the foreground, the iPhone is unlocked, and Poki is idle. Tasks due together queue before
+starting the first one; queued automatic tasks can start only while Poki remains in the foreground.
+Automatic runs use at least Balanced approvals, even when optional approvals
+are off or the chosen sensitivity is Permissive. Stricter choices remain stricter, and the saved
+approval preference is unchanged. Starting a daily task always makes a new conversation, including
+when its instructions begin with “continue” or “继续”.
+
+If the phone is locked, Poki is busy, or another app is in front, iOS posts that task's reminder.
+Reminders have a ten-second grace period so a successful automatic start can suppress that
+occurrence without cancelling future daily reminders. If Poki was suspended or terminated,
+iOS still owns the repeating reminder; it cannot guarantee a timed cold launch.
+Tap a reminder or its **Run Task** action and unlock if asked. Tapped tasks wait in order.
+Simply unlocking or opening Poki after a missed occurrence starts nothing without a tap,
+even after a brief trip to another app between timer ticks.
+
+Each occurrence is claimed on disk before submission, by its absolute due time rather than a
+calendar-day number. Duplicate taps and relaunches cannot resubmit it, while travelling west still
+allows the next local due time even if the calendar date repeats. Editing preserves the previous
+claim; changing the time can create a different future occurrence. The usual approvals apply to
+manual notification starts. Interrupted submissions are not automatically retried.
+If the saved schedule file cannot be read, Poki leaves it and existing reminders untouched and
+disables schedule changes until it can load them. It retries on activation; **Try Again** in
+Daily Tasks retries immediately. A successful retry restores the original schedules and claims.
+After a reboot, the first phone automation may still require opening Poki and answering iOS's own
+passcode prompt.
+
+To verify on a signed physical iPhone, create a **new** read-only task for each case:
+
+1. Keep Poki in the foreground and idle. A task due in the next minute must start without a tap;
+   two tasks due together must run sequentially, not replace one another. Confirm exactly one
+   `[daily-task] scheduled task submitted` line per task in Diagnostics.
+2. Keep the phone unlocked on the Home Screen or in Settings at the due time. It must only
+   remind. Return to Poki without tapping the reminder: the missed task must not start.
+3. Swipe Poki away, lock the phone, and wait for its reminder. Tap it and unlock; one conversation
+   must start, and reopening Poki or tapping a duplicate must not run the same occurrence again.
+4. With a Permissive/Never Ask saved preference, observe an automatic run's sensitive-step approval
+   at Balanced or stricter, then confirm the saved preference is unchanged after completion/Stop.
+   Edit/delete one task and confirm the other reminders remain. Deny notifications and check that
+   failed reminder registration does not retry or log every second.
+
+`DailyTaskTests`, `DailyTaskSchedulerTests`, `DailyTaskRemindersTests`, and
+`AutomaticTaskApprovalsTests` cover durable claims, injected foreground/lock/clock observations,
+queueing, real repeating request construction, in-flight changes, authorization and retry backoff.
+`ChatHarnessTests` drives continuation-prefix and automatic-approval lifetime checks through the
+real send path with a local scripted model. Device checks establish iOS notification delivery,
+lock-screen launch, and system approval presentation.
+
 ## Layout
 
 | Path | What |
