@@ -79,12 +79,13 @@ final class HistoryLock: ObservableObject {
     private enum Event {
         case refresh
         case enteredBackground
+        case explicitLock
         case protectedDataUnavailable
         case protectedDataAvailable
         case beginBiometrics(UUID)
-        case finishBiometrics(attempt: UUID, passed: Bool)
+        case finishBiometrics(attempt: UUID, passed: Bool, allowAgentAccess: Bool)
         case setPIN(String)
-        case unlockWithPIN(String)
+        case unlockWithPIN(String, allowAgentAccess: Bool)
         case removePIN
         case setBiometrics(Bool)
         case readStarting
@@ -100,7 +101,6 @@ final class HistoryLock: ObservableObject {
     private let boundary: Boundary
     /// Only the live lock owns the production grant. Test boundaries may observe their own grants.
     private let agentGrantChanged: ((Bool) -> Void)?
-    private var agentGrantOpen = false
     /// The will-become-unavailable event precedes the keychain losing access.
     private var protectedDataUnavailable = false
     private static let pinAccount = "pin"
@@ -131,7 +131,7 @@ final class HistoryLock: ObservableObject {
         let center = NotificationCenter.default
         subscriptions.observers = [
             center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.lock() }
+                MainActor.assumeIsolated { self?.enteredBackground() }
             },
             center.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { _ = self?.transition(.protectedDataUnavailable) }
@@ -145,7 +145,7 @@ final class HistoryLock: ObservableObject {
         ]
         // Not documented for apps; coming back to the foreground reads Face ID again either way.
         notify_register_dispatch("com.apple.BiometricKit.enrollmentChanged", &subscriptions.enrollmentToken, DispatchQueue.main) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.lock() }
         }
     }
 
@@ -194,11 +194,11 @@ final class HistoryLock: ObservableObject {
         return nil
     }
 
-    func unlockWithBiometrics() async {
+    func unlockWithBiometrics(allowAgentAccess: Bool = false) async {
         let attempt = UUID()
         guard transition(.beginBiometrics(attempt)) else { return }
         let passed = await boundary.evaluateBiometrics(AppLocalization.text("Unlock Screen History"))
-        _ = transition(.finishBiometrics(attempt: attempt, passed: passed))
+        _ = transition(.finishBiometrics(attempt: attempt, passed: passed, allowAgentAccess: allowAgentAccess))
     }
 
     /// Asks for Face ID or Touch ID again, for something that cannot be undone. The page stays as it is.
@@ -215,7 +215,7 @@ final class HistoryLock: ObservableObject {
     @discardableResult
     func setPIN(_ pin: String) -> Bool { transition(.setPIN(pin)) }
 
-    func unlock(pin: String) -> Bool { transition(.unlockWithPIN(pin)) }
+    func unlock(pin: String, allowAgentAccess: Bool = false) -> Bool { transition(.unlockWithPIN(pin, allowAgentAccess: allowAgentAccess)) }
 
     /// Removes the PIN. Refused unless Face ID or Touch ID stays as the way in.
     @discardableResult
@@ -225,7 +225,12 @@ final class HistoryLock: ObservableObject {
     @discardableResult
     func setBiometrics(_ on: Bool) -> Bool { transition(.setBiometrics(on)) }
 
-    func lock() { _ = transition(.enteredBackground) }
+    /// Explicit lock and device-lock observers revoke both the UI and agent grants.
+    func lock() { _ = transition(.explicitLock) }
+
+    /// Moving to another app locks the UI but does not renew or revoke an already-issued
+    /// agent grant. Device lock/protected-data loss still revokes through its own event.
+    func enteredBackground() { _ = transition(.enteredBackground) }
 
     /// Reads the iPhone and the keychain again, as when Poki comes back from Settings.
     func refresh() { _ = transition(.refresh) }
@@ -239,10 +244,9 @@ final class HistoryLock: ObservableObject {
     @discardableResult
     private func transition(_ event: Event) -> Bool {
         // Revoke synchronously before credential I/O and before the device loses protected data.
-        // Only this transition may restore a grant, once the final state is known.
-        defer { publishAgentGrant(unlocked) }
+        // Only successful owner authentication may issue a new grant; refresh never renews it.
         switch event {
-        case .enteredBackground, .setPIN, .removePIN, .setBiometrics:
+        case .explicitLock, .setPIN, .removePIN, .setBiometrics:
             publishAgentGrant(false)
         case .protectedDataUnavailable:
             protectedDataUnavailable = true
@@ -260,7 +264,9 @@ final class HistoryLock: ObservableObject {
         let now = boundary.now()
         var env = readEnvironment()
         let current = Self.reconcile(state, env: env, now: now)
-        apply(current)
+        // Reconciliation may update a cooldown or clear a stale attempt without
+        // changing the credential configuration. Those UI-only changes keep the grant.
+        apply(current, preserveAgentGrant: Self.sameAuthenticationMethods(state, current))
 
         let next: State
         let accepted: Bool
@@ -274,7 +280,7 @@ final class HistoryLock: ObservableObject {
             next = .deviceLocked
             accepted = true
 
-        case .enteredBackground:
+        case .enteredBackground, .explicitLock:
             let base: State = switch current {
             case .unlocked(let methods):
                 .locked(methods: methods, evaluatingBiometrics: nil, cooldown: PINCooldown())
@@ -293,7 +299,7 @@ final class HistoryLock: ObservableObject {
             next = .locked(methods: methods, evaluatingBiometrics: attempt, cooldown: cooldown)
             accepted = true
 
-        case .finishBiometrics(let attempt, let passed):
+        case .finishBiometrics(let attempt, let passed, _):
             guard case .locked(let methods, let active?, let cooldown) = current, active == attempt else {
                 return refuse(current)
             }
@@ -327,7 +333,7 @@ final class HistoryLock: ObservableObject {
             next = .unlocked(methods: methods)
             accepted = true
 
-        case .unlockWithPIN(let pin):
+        case .unlockWithPIN(let pin, _):
             switch current {
             case .locked(let methods, let attempt, var cooldown) where methods.hasPIN:
                 if let until = cooldown.blockedUntil, until > now {
@@ -385,21 +391,48 @@ final class HistoryLock: ObservableObject {
             accepted = true
         }
 
-        apply(next)
+        // UI-only events never renew or revoke an existing grant when the same
+        // authentication methods remain configured. Explicit locks and credential
+        // changes above still revoke synchronously, including when the UI was already locked.
+        let preserve: Bool
+        switch event {
+        case .enteredBackground, .beginBiometrics, .finishBiometrics, .unlockWithPIN,
+             .refresh, .protectedDataAvailable, .readStarting:
+            preserve = Self.sameAuthenticationMethods(current, next)
+        default:
+            preserve = false
+        }
+        apply(next, preserveAgentGrant: preserve)
+        if accepted, unlocked {
+            switch event {
+            case .finishBiometrics(_, true, true), .unlockWithPIN(_, true):
+                // Only explicit consent with successful authentication starts a new grant.
+                publishAgentGrant(true)
+            default: break
+            }
+        }
         return accepted
     }
 
-    /// The single state publication boundary. Revoke before changing any authorization state;
-    /// transition's defer restores a grant only if the final state is unlocked.
-    private func apply(_ next: State) {
+    private static func sameAuthenticationMethods(_ lhs: State, _ rhs: State) -> Bool {
+        func methods(_ state: State) -> AuthMethods? {
+            switch state {
+            case .locked(let methods, _, _), .unlocked(let methods): return methods
+            default: return nil
+            }
+        }
+        guard let old = methods(lhs), let new = methods(rhs) else { return false }
+        return old == new
+    }
+
+    /// Revoke on authorization changes, not on ordinary presentation/authentication of the UI.
+    private func apply(_ next: State, preserveAgentGrant: Bool = false) {
         guard state != next else { return }
-        publishAgentGrant(false)
+        if !preserveAgentGrant { publishAgentGrant(false) }
         state = next
     }
 
     private func publishAgentGrant(_ open: Bool) {
-        guard agentGrantOpen != open else { return }
-        agentGrantOpen = open
         agentGrantChanged?(open)
     }
 
@@ -848,5 +881,59 @@ struct HistoryLockSettings: View {
         }
         .navigationTitle(AppLocalization.text("Screen History Lock"))
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Explicit, one-shot owner consent. No automatic Face ID on appearance, and no setup flow here.
+/// The parent locks before presenting this sheet, so a fresh credential is required.
+struct HistoryAgentConsentPage: View {
+    @ObservedObject private var lock = HistoryLock.shared
+    @ObservedObject private var capture = HistoryCapture.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var pin = ""
+    @State private var failed = false
+
+    var body: some View {
+        List {
+            Section {
+                Text("Allow Poki and connected agents to query Screen History for up to 5 minutes, even when you switch apps. Relevant text may be sent to the selected AI provider or connected agent. Lock Screen History or turn it off to revoke access.")
+            }
+            if lock.usesBiometrics {
+                Section {
+                    Button("Authenticate and Allow") {
+                        Task {
+                            await lock.unlockWithBiometrics(allowAgentAccess: true)
+                            if HistoryCapture.agentQueryAllowed { dismiss() }
+                            else { failed = true }
+                        }
+                    }
+                    .disabled(!capture.enabled)
+                }
+            }
+            if lock.hasPIN {
+                Section {
+                    SecureField("PIN", text: $pin).keyboardType(.numberPad).textContentType(.oneTimeCode)
+                    Button("Authenticate and Allow") {
+                        let accepted = lock.unlock(pin: pin, allowAgentAccess: true)
+                        pin = ""
+                        if accepted && HistoryCapture.agentQueryAllowed { dismiss() }
+                        else { failed = true }
+                    }
+                    .disabled(!capture.enabled || !HistoryLock.valid(pin))
+                }
+            }
+            if !lock.hasPIN && !lock.usesBiometrics {
+                Section { Text("Unlock or set up Screen History first, then return here to allow agent access.") }
+            }
+            if failed {
+                Section { Text("Authentication failed or agent access is unavailable. Try again.").foregroundStyle(.secondary) }
+            }
+        }
+        .navigationTitle("Allow Agent Access")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { lock.lock(); dismiss() } } }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            pin = ""
+        }
     }
 }

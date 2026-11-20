@@ -117,6 +117,7 @@ struct HistoryPage: View {
 // MARK: Settings
 
 struct ScreenHistorySettingsView: View {
+    @State private var showAgentConsent = false
     @ObservedObject private var capture = HistoryCapture.shared
     @ObservedObject private var lock = HistoryLock.shared
     @State private var size: (entries: Int, bytes: Int64) = (0, 0)
@@ -167,6 +168,15 @@ struct ScreenHistorySettingsView: View {
                     )
                 }
                 .accessibilityIdentifier("screenHistory.excludedApps")
+                if capture.enabled {
+                    Button("Allow Agent Access") {
+                        lock.lock()
+                        showAgentConsent = true
+                    }
+                    .accessibilityIdentifier("screenHistory.allowAgentAccess")
+                    Button("Lock Screen History Now") { lock.lock() }
+                        .accessibilityIdentifier("screenHistory.revokeGrant")
+                }
             }
 
             Section {
@@ -186,6 +196,7 @@ struct ScreenHistorySettingsView: View {
         .navigationTitle(AppLocalization.text("Screen History"))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: capture.changes) { size = await HistoryStore.shared.size() }
+        .sheet(isPresented: $showAgentConsent) { NavigationStack { HistoryAgentConsentPage() }.interactiveDismissDisabled() }
         .confirmationDialog("Clear History", isPresented: $clearing, titleVisibility: .visible) {
             Button("Last 10 Minutes", role: .destructive) { Task { await capture.clear(last: 600) } }
             Button("Last Hour", role: .destructive) { Task { await capture.clear(last: 3600) } }

@@ -54,10 +54,11 @@ final class ScreenHistoryTests: XCTestCase {
     /// Run these destructive history fixtures only on a disposable simulator.
     private func unlockHistoryForFixture() throws {
         #if targetEnvironment(simulator)
+        HistoryCapture.shared.enabled = true
         let lock = HistoryLock.shared
-        if lock.unlocked { return }
+        if lock.unlocked { lock.lock() }
         if lock.hasPIN {
-            guard lock.unlock(pin: fixturePIN) else {
+            guard lock.unlock(pin: fixturePIN, allowAgentAccess: true) else {
                 throw XCTSkip("An existing non-fixture history PIN is configured; use a disposable simulator.")
             }
         } else {
@@ -65,6 +66,9 @@ final class ScreenHistoryTests: XCTestCase {
                 throw XCTSkip("Biometrics are enrolled; use a fresh simulator without biometric enrollment.")
             }
             XCTAssertTrue(lock.setPIN(fixturePIN), "Failed to create fixture PIN")
+            XCTAssertNil(HistoryCapture.agentQueryRevision, "PIN setup must not grant agent access")
+            lock.lock()
+            XCTAssertTrue(lock.unlock(pin: fixturePIN, allowAgentAccess: true))
         }
         XCTAssertTrue(lock.unlocked, "The real history lock must be open")
         #else
@@ -425,7 +429,7 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertTrue(locked.isError)
         XCTAssertFalse(locked.text.contains(canary))
 
-        XCTAssertTrue(lock.unlock(pin: fixturePIN))
+        XCTAssertTrue(lock.unlock(pin: fixturePIN, allowAgentAccess: true))
         XCTAssertTrue(Harness.tools.map(\.name).contains("screen_history"))
         let reopened = await app.runTool("screen_history", arguments: #"{"period":"last_hour"}"#)
         XCTAssertFalse(reopened.isError, reopened.text)
@@ -433,9 +437,171 @@ final class ScreenHistoryTests: XCTestCase {
 
         capture.enabled = false
         capture.enabled = true
+        let denied = await app.runTool("screen_history", arguments: #"{"period":"last_hour"}"#)
+        XCTAssertTrue(denied.isError, "Re-enabling must not restore an old grant")
+        XCTAssertFalse(denied.text.contains(canary))
+        XCTAssertTrue(lock.unlock(pin: fixturePIN, allowAgentAccess: true))
         let fresh = await app.runTool("screen_history", arguments: #"{"period":"last_hour"}"#)
         XCTAssertFalse(fresh.isError, fresh.text)
         XCTAssertTrue(fresh.text.contains(canary), fresh.text)
+    }
+
+    func testBackgroundLocksUIButAllowsExistingAgentGrantUntilExplicitLock() async throws {
+        try unlockHistoryForFixture()
+        let lock = HistoryLock.shared
+        let canary = "SYNTHETIC_BACKGROUND_GRANT_CANARY"
+        HistoryStore.shared.add(at: Date().addingTimeInterval(-120), app: "com.apple.mobilenotes", title: "Notes", text: canary)
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: FakeAutomation())
+        let revision = HistoryCapture.agentQueryRevision
+        XCTAssertNotNil(revision)
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertFalse(lock.unlocked, "The private UI must lock immediately")
+        lock.refresh()
+        XCTAssertEqual(HistoryCapture.agentQueryRevision, revision, "Background and foreground refresh must not renew the grant")
+        XCTAssertTrue(lock.unlock(pin: fixturePIN))
+        XCTAssertEqual(HistoryCapture.agentQueryRevision, revision, "Viewing with PIN keeps the original grant")
+        let permitted = await app.runTool("screen_history", arguments: #"{"period":"last_hour"}"#)
+        XCTAssertFalse(permitted.isError, permitted.text)
+        XCTAssertTrue(permitted.text.contains(canary))
+        lock.lock()
+        XCTAssertNil(HistoryCapture.agentQueryRevision)
+        let denied = await app.runTool("screen_history", arguments: #"{"period":"last_hour"}"#)
+        XCTAssertTrue(denied.isError)
+        XCTAssertFalse(denied.text.contains(canary))
+        XCTAssertTrue(HistoryCapture.validateAgentAnswer(permitted, revision: revision).isError)
+    }
+
+    func testMCPHistoryQueryIsRevokedOnDeviceLockAfterBackground() async throws {
+        try unlockHistoryForFixture()
+        let canary = "SYNTHETIC_MCP_DEVICE_LOCK_CANARY"
+        HistoryStore.shared.add(at: Date().addingTimeInterval(-120), app: "com.apple.mobilenotes", title: "Notes", text: canary)
+        let core = PokiCore(config: CoreConfig(screenHistory: HistoryStore.agentSource), host: AppCoreHost())
+        let initialization = await core.handle(RelayRequest(id: "init", method: "POST", headers: [:], body: #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"History fixture","version":"1"},"capabilities":{}}}"#))
+        let session = try XCTUnwrap(initialization.headers["mcp-session-id"])
+        let headers = ["mcp-session-id": session]
+        func request(_ id: String) async -> String {
+            let body = #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"screen_history","arguments":{"period":"last_hour"}}}"#
+            return await core.handle(RelayRequest(id: id, method: "POST", headers: headers, body: body)).body
+        }
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertFalse(HistoryLock.shared.unlocked)
+        let allowed = await request("allowed")
+        XCTAssertTrue(allowed.contains(canary), allowed)
+        NotificationCenter.default.post(name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+        defer { NotificationCenter.default.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil) }
+        XCTAssertNil(HistoryCapture.agentQueryRevision)
+        let denied = await request("denied")
+        XCTAssertFalse(denied.contains(canary), denied)
+        XCTAssertTrue(denied.contains("locked") || denied.contains("unavailable"), denied)
+        NotificationCenter.default.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        let stillDenied = await request("still-denied")
+        XCTAssertFalse(stillDenied.contains(canary), stillDenied)
+    }
+
+    func testMCPBatchDiscardsBufferedHistoryAtExpiry() async throws {
+        try await assertMCPBatchDiscardsBufferedHistory(regrant: false)
+    }
+
+    func testMCPBatchCannotDeliverBufferedHistoryAfterFreshGrant() async throws {
+        try await assertMCPBatchDiscardsBufferedHistory(regrant: true)
+    }
+
+    private func assertMCPBatchDiscardsBufferedHistory(regrant: Bool) async throws {
+        try unlockHistoryForFixture()
+        let clock = GrantTestClock()
+        let lease = HistoryQueryPermissionLease(enabled: true, now: { clock.now })
+        lease.setUnlocked(true)
+        let canary = "SYNTHETIC_MCP_BATCH_BUFFER_CANARY"
+        HistoryStore.shared.add(at: Date().addingTimeInterval(-120), app: "com.apple.mobilenotes", title: "Notes", text: canary)
+        let delayed = SuspendedScreenHistoryRead()
+        let reads = HistoryFixtureCounter()
+        var source = HistoryStore.agentSource
+        source.isEnabled = { lease.grant != nil }
+        source.accessRevision = { lease.revision }
+        let originalRead = source.entries
+        source.entries = { start, end in
+            let snapshot = await originalRead(start, end)
+            if reads.next() == 2 { return await delayed.hold(snapshot) }
+            return snapshot
+        }
+        let core = PokiCore(config: CoreConfig(screenHistory: source), host: AppCoreHost())
+        let body = #"[{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"screen_history","arguments":{"period":"last_hour"}}},{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"screen_history","arguments":{"period":"last_hour"}}},{"jsonrpc":"2.0","id":13,"method":"ping"}]"#
+        let pending = Task { await core.handle(RelayRequest(id: "batch", method: "POST", headers: [:], body: body)) }
+        guard let snapshot = await delayed.waitForSnapshot() else {
+            await delayed.release()
+            pending.cancel()
+            _ = await pending.value
+            return XCTFail("The second request did not reach the read latch")
+        }
+        XCTAssertTrue(snapshot.contains { $0.text.contains(canary) })
+        clock.advance(.seconds(300))
+        if regrant { lease.setUnlocked(true) }
+        await delayed.release()
+        let reply = await pending.value
+        XCTAssertFalse(reply.body.contains(canary), reply.body)
+        let items = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(reply.body.utf8)) as? [[String: Any]])
+        XCTAssertEqual(items.count, 3)
+        for id in [11, 12] {
+            let item = try XCTUnwrap(items.first { $0["id"] as? Int == id })
+            let result = try XCTUnwrap(item["result"] as? [String: Any])
+            XCTAssertEqual(result["isError"] as? Bool, true)
+        }
+        let ping = try XCTUnwrap(items.first { $0["id"] as? Int == 13 })
+        XCTAssertNotNil(ping["result"], "Non-history batch responses must remain intact")
+    }
+
+    func testInFlightTimedGrantDiscardsReadAtExpiry() async throws {
+        try await assertTimedGrantExpiresDuringRead(regrant: false)
+    }
+
+    func testAReauthenticatedGrantCannotRestoreAnExpiredPendingRead() async throws {
+        try await assertTimedGrantExpiresDuringRead(regrant: true)
+    }
+
+    /// Use the production SQLite reader and filtering, the production lease implementation,
+    /// and the real core query. Substitute only an isolated lease with a deterministic clock
+    /// and a latch after the read, avoiding changes to the process-wide clock or sleeping.
+    private func assertTimedGrantExpiresDuringRead(regrant: Bool) async throws {
+        try unlockHistoryForFixture()
+        let clock = GrantTestClock()
+        let lease = HistoryQueryPermissionLease(enabled: true, duration: .seconds(300), now: { clock.now })
+        lease.setUnlocked(true)
+        let revision = lease.grant
+        XCTAssertNotNil(revision)
+        let canary = "SYNTHETIC_TIMED_EXPIRY_CANARY"
+        HistoryStore.shared.add(at: Date().addingTimeInterval(-120), app: "com.apple.mobilenotes", title: "Notes", text: canary)
+        let delayed = SuspendedScreenHistoryRead()
+        var source = HistoryStore.agentSource
+        source.isEnabled = { lease.grant != nil }
+        source.accessRevision = { lease.revision }
+        let read = source.entries
+        source.entries = { start, end in
+            let snapshot = await read(start, end)
+            return await delayed.hold(snapshot)
+        }
+        let core = PokiCore(config: CoreConfig(screenHistory: source), host: AppCoreHost())
+        let query = Task { await core.callTool("screen_history", arguments: #"{"period":"last_hour"}"#) }
+        guard let snapshot = await delayed.waitForSnapshot() else {
+            await delayed.release()
+            query.cancel()
+            _ = await query.value
+            return XCTFail("The real reader did not reach the latch")
+        }
+        XCTAssertTrue(snapshot.contains { $0.text.contains(canary) })
+        clock.advance(.seconds(299))
+        XCTAssertEqual(lease.grant, revision)
+        clock.advance(.seconds(1))
+        // No intermediate grant read in the regrant case: an old snapshot cannot
+        // survive expiry even if the owner authenticates before the old query resumes.
+        if regrant { lease.setUnlocked(true) }
+        await delayed.release()
+        let answer = await query.value
+        XCTAssertTrue(answer.isError)
+        XCTAssertEqual(answer.text, PokiCore.screenHistoryRevokedMessage)
+        XCTAssertFalse(answer.text.contains(canary))
+        let fresh = await core.callTool("screen_history", arguments: #"{"period":"last_hour"}"#)
+        XCTAssertEqual(fresh.isError, !regrant)
+        XCTAssertEqual(fresh.text.contains(canary), regrant)
     }
 
     /// The chat uses this same validation after its core await and before persisting a call.
@@ -450,7 +616,7 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertFalse(answer.isError, answer.text)
         XCTAssertTrue(answer.text.contains(canary), answer.text)
         HistoryLock.shared.lock()
-        XCTAssertTrue(HistoryLock.shared.unlock(pin: fixturePIN))
+        XCTAssertTrue(HistoryLock.shared.unlock(pin: fixturePIN, allowAgentAccess: true))
         let safe = HistoryCapture.validateAgentAnswer(answer, revision: revision)
         XCTAssertTrue(safe.isError)
         XCTAssertFalse(safe.text.contains(canary))
@@ -471,6 +637,7 @@ final class ScreenHistoryTests: XCTestCase {
             for (key, value) in zip(settings, saved) { UserDefaults.standard.set(value, forKey: key) }
         }
         let requestsSeen = HistoryFixtureCounter()
+        let pin = fixturePIN
         let server = try FakeCompletions(replies: [
             FakeCompletions.tool("screen_history", ["period": "last_hour"]),
             FakeCompletions.tool("report_plan", ["steps": ["Check note", "Answer"], "currentStep": 1]),
@@ -482,7 +649,10 @@ final class ScreenHistoryTests: XCTestCase {
             // The fake server invokes this on its own serial network queue, before
             // it sends a reply, so the next model turn observes a deterministic change.
             DispatchQueue.main.sync {
-                MainActor.assumeIsolated { HistoryCapture.shared.enabled = turn == 3 }
+                MainActor.assumeIsolated {
+                    HistoryCapture.shared.enabled = turn == 3
+                    if turn == 3 { _ = HistoryLock.shared.unlock(pin: pin, allowAgentAccess: true) }
+                }
             }
         })
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
@@ -510,7 +680,7 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertFalse(hasHistoryTool(requests[2]), "An active Pi loop must not keep its stale tool list")
         XCTAssertFalse(FakeCompletions.system(requests[2]).contains(PokiCore.screenHistoryInstructions))
         XCTAssertFalse(payload(requests[2]).contains(canary), "Do not resend the revoked raw tool result")
-        XCTAssertTrue(hasHistoryTool(requests[3]), "Re-enabling should restore the tool within the same loop")
+        XCTAssertTrue(hasHistoryTool(requests[3]), "Fresh authentication should restore the tool within the same loop")
         XCTAssertTrue(FakeCompletions.system(requests[3]).contains(PokiCore.screenHistoryInstructions))
         XCTAssertFalse(payload(requests[3]).contains(canary), "A new grant does not revive old evidence")
     }
@@ -565,15 +735,15 @@ final class ScreenHistoryTests: XCTestCase {
         case .lockThenUnlock:
             lock.lock()
             XCTAssertFalse(HistoryCapture.agentQueryAllowed)
-            XCTAssertTrue(lock.unlock(pin: fixturePIN))
+            XCTAssertTrue(lock.unlock(pin: fixturePIN, allowAgentAccess: true))
         case .deviceLock:
             XCTAssertFalse(capture.isRunning)
             NotificationCenter.default.post(name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
             XCTAssertFalse(lock.unlocked, "Device lock must revoke even with no recording run")
             XCTAssertFalse(HistoryCapture.agentQueryAllowed)
-            XCTAssertFalse(lock.unlock(pin: fixturePIN), "Protected data is still unavailable")
+            XCTAssertFalse(lock.unlock(pin: fixturePIN, allowAgentAccess: true), "Protected data is still unavailable")
             NotificationCenter.default.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
-            XCTAssertTrue(lock.unlock(pin: fixturePIN))
+            XCTAssertTrue(lock.unlock(pin: fixturePIN, allowAgentAccess: true))
         case .changePIN:
             // This regenerates the real credential's salt and grant, using only the fixture PIN.
             XCTAssertTrue(lock.setPIN(fixturePIN))
