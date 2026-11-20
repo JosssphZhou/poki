@@ -37815,6 +37815,38 @@
           }
         }
       }
+    },
+    "Couldn’t load daily tasks" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取每日任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取每日任務"
+          }
+        }
+      }
+    },
+    "Your saved schedules are unchanged. Try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保存的每日任务未作更改。请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已儲存的每日任務未作變更。請再試一次。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

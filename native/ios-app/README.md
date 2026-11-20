@@ -52,13 +52,17 @@ Reminders have a ten-second grace period so a successful automatic start can sup
 occurrence without cancelling future daily reminders. If Poki was suspended or terminated,
 iOS still owns the repeating reminder; it cannot guarantee a timed cold launch.
 Tap a reminder or its **Run Task** action and unlock if asked. Tapped tasks wait in order.
-Simply unlocking or opening Poki after a missed occurrence starts nothing without a tap.
+Simply unlocking or opening Poki after a missed occurrence starts nothing without a tap,
+even after a brief trip to another app between timer ticks.
 
 Each occurrence is claimed on disk before submission, by its absolute due time rather than a
 calendar-day number. Duplicate taps and relaunches cannot resubmit it, while travelling west still
 allows the next local due time even if the calendar date repeats. Editing preserves the previous
 claim; changing the time can create a different future occurrence. The usual approvals apply to
 manual notification starts. Interrupted submissions are not automatically retried.
+If the saved schedule file cannot be read, Poki leaves it and existing reminders untouched and
+disables schedule changes until it can load them. It retries on activation; **Try Again** in
+Daily Tasks retries immediately. A successful retry restores the original schedules and claims.
 After a reboot, the first phone automation may still require opening Poki and answering iOS's own
 passcode prompt.
 

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 @testable import Poki
 
@@ -26,6 +27,34 @@ final class DailyTaskSchedulerTests: XCTestCase {
             h.foreground = true; h.now = h.due.addingTimeInterval(11)
             XCTAssertNil(h.scheduler.tick())
             h.tasks.request(.init(id: h.first.noticeID, date: h.now), at: h.now, calendar: h.calendar)
+            XCTAssertNotNil(h.scheduler.drain())
+            XCTAssertEqual(h.sent.map(\.automatic), [false])
+        }
+    }
+
+    func testShortBackgroundRoundTripWithoutATimerTickRequiresATap() async throws {
+        try withScheduler { h in
+            let center = NotificationCenter()
+            var activations = 0
+            let observers = h.scheduler.observeActivity(in: center,
+                resigning: UIApplication.willResignActiveNotification,
+                active: UIApplication.didBecomeActiveNotification,
+                onActive: { activations += 1 })
+            defer { observers.forEach(center.removeObserver) }
+            h.foreground = false
+            center.post(name: UIApplication.willResignActiveNotification, object: nil)
+            // The process has no tick while away; the whole trip is shorter than ten seconds.
+            h.now = h.due.addingTimeInterval(1)
+            h.foreground = true
+            center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+            XCTAssertEqual(activations, 1, "Recovery uses the same production activation subscription")
+            h.now = h.due.addingTimeInterval(2)
+            XCTAssertNil(h.scheduler.tick())
+            XCTAssertTrue(h.tasks.pending.isEmpty)
+            XCTAssertTrue(h.sent.isEmpty)
+            let delivery = DailyTask.Delivery(id: h.first.noticeID, date: h.now)
+            XCTAssertTrue(h.tasks.shouldRemind(delivery, at: h.now, calendar: h.calendar))
+            h.tasks.request(delivery, at: h.now, calendar: h.calendar)
             XCTAssertNotNil(h.scheduler.drain())
             XCTAssertEqual(h.sent.map(\.automatic), [false])
         }

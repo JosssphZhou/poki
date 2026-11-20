@@ -45,29 +45,40 @@ final class DailyTask {
         var plans: [Plan] = []
     }
 
-    enum ChangeError: Error { case scheduleChanged, tooManyPlans }
+    enum ChangeError: Error { case scheduleChanged, tooManyPlans, unavailable }
 
     private let file: URL
-    private var saved: Saved
+    private let read: (URL) throws -> Data
+    private var saved = Saved()
+    private(set) var isAvailable = false
     var plans: [Plan] { saved.plans }
     private(set) var pending: [Request] = []
 
-    init(file: URL) {
+    init(file: URL, read: @escaping (URL) throws -> Data = { try Data(contentsOf: $0) }) {
         self.file = file
-        let decoder = JSONDecoder()
-        if let data = try? Data(contentsOf: file) {
-            if let saved = try? decoder.decode(Saved.self, from: data) {
-                self.saved = saved
-                return
-            }
+        self.read = read
+        retryLoading()
+    }
+
+    /// Only a genuinely missing file means a new schedule list. An unreadable or invalid existing
+    /// file stays untouched, with writes disabled until a later read succeeds.
+    func retryLoading() {
+        guard !isAvailable else { return }
+        do {
+            saved = try JSONDecoder().decode(Saved.self, from: read(file))
+            isAvailable = true
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            isAvailable = true
+        } catch {
+            isAvailable = false
         }
-        saved = Saved()
     }
 
     /// Check the old revision after the notification request is installed. An edit never replaces
     /// a newer save or resurrects a schedule deleted while the system was processing the request.
     @discardableResult
     func save(_ plan: Plan, replacing noticeID: UUID? = nil) throws -> Plan? {
+        guard isAvailable else { throw ChangeError.unavailable }
         var next = saved
         let index = next.plans.firstIndex { $0.id == plan.id }
         let previous = index.map { next.plans[$0] }
@@ -86,6 +97,7 @@ final class DailyTask {
 
     @discardableResult
     func remove(_ id: UUID) throws -> Plan? {
+        guard isAvailable else { throw ChangeError.unavailable }
         var next = saved
         guard let index = next.plans.firstIndex(where: { $0.id == id }) else { return nil }
         let previous = next.plans.remove(at: index)
@@ -131,13 +143,14 @@ final class DailyTask {
     }
 
     private func persist(_ next: Saved) throws {
+        guard isAvailable else { throw ChangeError.unavailable }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(next).write(to: file, options: .atomic)
         saved = next
     }
 
     private func eligible(_ delivery: Delivery, at now: Date, calendar: Calendar) -> (index: Int, due: Date)? {
-        guard delivery.date <= now,
+        guard isAvailable, delivery.date <= now,
               let index = plans.firstIndex(where: { $0.noticeID == delivery.id }) else { return nil }
         let plan = plans[index]
         guard let due = Self.due(at: delivery.date, plan: plan, calendar: calendar),

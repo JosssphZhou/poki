@@ -7,13 +7,21 @@ struct DailyTaskSettings: View {
 
     var body: some View {
         List {
+            if !tasks.isAvailable {
+                Section {
+                    Text("Couldn’t load daily tasks")
+                    Button("Try Again") { DailyTaskNotice.schedulesChanged() }
+                } footer: {
+                    Text("Your saved schedules are unchanged. Try again.")
+                }
+            }
             Section {
                 NavigationLink {
                     DailyTaskEditor(plan: nil).settingsPage()
                 } label: {
                     Label("Add Daily Task", systemImage: "plus")
                 }
-                .disabled(tasks.plans.count >= DailyTask.capacity)
+                .disabled(!tasks.isAvailable || tasks.plans.count >= DailyTask.capacity)
                 .accessibilityIdentifier("dailyTask.add")
             } footer: {
                 if tasks.plans.count >= DailyTask.capacity {
@@ -22,7 +30,7 @@ struct DailyTaskSettings: View {
             }
 
             Section {
-                if tasks.plans.isEmpty {
+                if tasks.isAvailable && tasks.plans.isEmpty {
                     Text("No daily tasks yet.").foregroundStyle(.secondary)
                 }
                 ForEach(tasks.plans.sorted { ($0.hour, $0.minute) < ($1.hour, $1.minute) }) { plan in

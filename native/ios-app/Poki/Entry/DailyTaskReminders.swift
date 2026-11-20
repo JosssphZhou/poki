@@ -85,6 +85,7 @@ final class DailyTaskReminders {
     }
 
     private func reconcile() async {
+        guard tasks.isAvailable else { return }
         let ids = Set(tasks.plans.map(\.noticeID))
         for id in Set(installed.keys).union(failures.keys).subtracting(ids) { remove(id) }
         let date = now()

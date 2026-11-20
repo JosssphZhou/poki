@@ -29,6 +29,21 @@ final class DailyTaskScheduler {
 
     func resetClock() { clock = DailyTaskClock(now: now()) }
 
+    /// UIKit's actual inactive/active notifications, including a round-trip with no timer tick.
+    /// The owner retains and removes the subscriptions; tests use the same path with a private center.
+    func observeActivity(in center: NotificationCenter = .default,
+                         resigning: Notification.Name, active: Notification.Name,
+                         onActive: @escaping @MainActor () -> Void) -> [NSObjectProtocol] {
+        [resigning, active].map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notice in
+                MainActor.assumeIsolated {
+                    self?.resetClock()
+                    if notice.name == active { onActive() }
+                }
+            }
+        }
+    }
+
     @discardableResult func tick() -> DailyTask.Delivery? {
         let date = now()
         let calendar = calendar()

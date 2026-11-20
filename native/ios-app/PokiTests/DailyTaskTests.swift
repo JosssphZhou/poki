@@ -150,6 +150,49 @@ final class DailyTaskTests: XCTestCase {
         }
     }
 
+    func testUnreadableSchedulesCannotBeOverwrittenAndRecoverOnRetry() async throws {
+        try withSchedule { file, plan in
+            let original = DailyTask(file: file)
+            let due = delivery(plan, on: 18)
+            XCTAssertEqual(original.run(due, ready: true, at: time(18), calendar: utc) { _ in }, .submitted)
+            let bytes = try Data(contentsOf: file)
+            var readable = false
+            let tasks = DailyTask(file: file, read: { url in
+                guard readable else { throw CocoaError(.fileReadNoPermission) }
+                return try Data(contentsOf: url)
+            })
+            XCTAssertFalse(tasks.isAvailable)
+            XCTAssertThrowsError(try tasks.save(.init(prompt: "Must not replace existing data", hour: 10, minute: 0)))
+            XCTAssertThrowsError(try tasks.remove(plan.id))
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+            tasks.retryLoading()
+            XCTAssertFalse(tasks.isAvailable)
+            readable = true
+            tasks.retryLoading()
+            XCTAssertTrue(tasks.isAvailable)
+            XCTAssertEqual(tasks.plans, original.plans)
+            XCTAssertEqual(tasks.run(due, ready: true, at: time(18), calendar: utc) { _ in XCTFail("The saved claim must survive") }, .ignored)
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+            let next = DailyTask.Plan(prompt: "A new task after recovery", hour: 10, minute: 0)
+            try tasks.save(next)
+            XCTAssertEqual(DailyTask(file: file).plans, original.plans + [next])
+        }
+    }
+
+    func testInvalidExistingSchedulesAreNotReplacedWithAnEmptyList() async throws {
+        try withSchedule { file, plan in
+            let bytes = Data("not valid schedule JSON".utf8)
+            try bytes.write(to: file)
+            let tasks = DailyTask(file: file)
+            XCTAssertFalse(tasks.isAvailable)
+            XCTAssertThrowsError(try tasks.save(.init(prompt: "Must not overwrite", hour: 10, minute: 0)))
+            XCTAssertThrowsError(try tasks.remove(plan.id))
+            tasks.retryLoading()
+            XCTAssertFalse(tasks.isAvailable)
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+        }
+    }
+
     func testWestwardTravelDoesNotSkipTheNextLocalDueInstant() async throws {
         try withSchedule { file, plan in
             let tasks = DailyTask(file: file)

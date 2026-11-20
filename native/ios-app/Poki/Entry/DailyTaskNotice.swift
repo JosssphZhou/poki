@@ -21,7 +21,16 @@ enum DailyTaskNotice {
         center: SystemDailyTaskNotifications(), request: reminder,
         logFailure: { AppLog.shared.add("daily-task", "could not refresh a reminder; retrying with backoff") })
 
+    // A background round-trip can fit entirely between two timer ticks. Reset at UIKit's actual
+    // lifecycle boundaries, before the next active tick, rather than inferring it from elapsed time.
+    @MainActor private static let lifecycleObservers = scheduler.observeActivity(
+        resigning: UIApplication.willResignActiveNotification,
+        active: UIApplication.didBecomeActiveNotification,
+        onActive: { schedulesChanged() })
+
     @MainActor static func schedulesChanged() {
+        _ = lifecycleObservers
+        DailyTask.shared.retryLoading()
         if DailyTask.shared.plans.isEmpty {
             timer?.invalidate()
             timer = nil
@@ -63,6 +72,7 @@ enum DailyTaskNotice {
     }
 
     @MainActor static func save(_ plan: DailyTask.Plan, replacing previousID: UUID?) async throws -> Bool {
+        guard DailyTask.shared.isAvailable else { throw DailyTask.ChangeError.unavailable }
         if previousID == nil, DailyTask.shared.plans.count >= DailyTask.capacity {
             throw DailyTask.ChangeError.tooManyPlans
         }
