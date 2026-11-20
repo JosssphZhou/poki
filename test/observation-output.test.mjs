@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import sharp from 'sharp';
 import { fixture, value } from './fixture.mjs';
 
-test('observe_device omits PNG only when requested', async t => {
+test('observe_device can omit its image while retaining prompt checks and element refs', async t => {
   const f = await fixture(t);
   const defaultResult = await f.call('observe_device', { source: 'ocr' });
   const compactResult = await f.call('observe_device', { source: 'ocr', include_image: false });
@@ -12,6 +14,7 @@ test('observe_device omits PNG only when requested', async t => {
   assert.ok(!compactResult.content.some(item => item.type === 'image'));
   const first = value(defaultResult), second = value(compactResult);
   assert.notEqual(first.observation.id, second.observation.id);
+  assert.equal(second.screenshot, undefined);
   assert.equal(second.observation.atomic, false);
   assert.equal(second.source, 'ocr');
   assert.equal(second.prompt.status, 'checked');
@@ -19,6 +22,36 @@ test('observe_device omits PNG only when requested', async t => {
   assert.ok(second.elements.every(element => /^e\d+$/.test(element.ref)));
   const screenshots = (await f.events()).filter(event => event.args?.includes('screenshot'));
   assert.equal(screenshots.length, 2, 'Internal capture still occurs for structured-only responses');
+});
+
+test('screen replies attach a small JPEG and retain the exact source PNG', async t => {
+  const f = await fixture(t);
+  await sharp({ create: { width: 1200, height: 1800, channels: 3, background: 'navy' } }).png().toFile(f.image);
+  const source = await readFile(f.image);
+  for (const [name, args] of [
+    ['take_screenshot', {}],
+    ['observe_device', { source: 'ocr' }],
+    ['wait_for', { text: 'First' }],
+  ]) {
+    const result = await f.call(name, args);
+    assert.ok(!result.isError, JSON.stringify(result.content[0]));
+    const image = result.content.find(item => item.type === 'image');
+    const data = Buffer.from(image.data, 'base64');
+    const { width, height } = await sharp(data).metadata();
+    assert.equal(image.mimeType, 'image/jpeg', name);
+    assert.equal(Math.max(width, height), 800, name);
+    assert.ok(image.data.length <= 300_000, name);
+    assert.deepEqual(await readFile(value(result).screenshot.original_path), source, name);
+
+    const original = await f.call(name, { ...args, full_resolution: true });
+    const attachment = original.content.find(item => item.type === 'image');
+    assert.equal(attachment.mimeType, 'image/png', name);
+    assert.deepEqual(Buffer.from(attachment.data, 'base64'), source, name);
+  }
+
+  const custom = await f.call('take_screenshot', { max_width: 200 });
+  const customBytes = Buffer.from(custom.content.find(item => item.type === 'image').data, 'base64');
+  assert.equal((await sharp(customBytes).metadata()).width, 200);
 });
 test('missing prompt OCR remains explicit without an image attachment', async t => {
   const f = await fixture(t);

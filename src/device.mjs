@@ -20,6 +20,7 @@ import { updateNotice } from './update-check.mjs';
 import * as cua from './cua.mjs';
 import { leavesUnnamedBand, textOutside } from './ocr-supplement.mjs';
 import { version, buildInfo, requireCurrentCode } from './build-info.mjs';
+import { screenshotReply } from './screenshot.mjs';
 
 export const text = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
 const usedSimulators = new Set();
@@ -554,12 +555,11 @@ export class Devices {
         }
         case 'take_screenshot': {
           const frame = await this.capture();
-          const width = Math.round(args.max_width ?? frame.width);
-          const jpeg = await sharp(frame.data).resize({ width }).jpeg({ quality: 90 }).toBuffer();
           let prompt;
           try { prompt = { status:'checked', source:'ocr', warning:promptWarning(await this.ocr(frame)) }; }
           catch (error) { if (stopped(error)) throw error; prompt = { status:'unavailable', instruction:'Inspect the screenshot for system prompts before continuing.' }; }
-          return { content: [...text({ observation: this.observation(frame) }).content, { type: 'text', text: `Screen: ${frame.width} × ${frame.height} points. Image width: ${width} pixels. Coordinates for tools are screen points. Source: lossless device capture. Captured through the developer screenshot service; not saved to the device's Photos library.\nPrompt check: ${JSON.stringify(prompt)}` }, { type:'image',data:jpeg.toString('base64'),mimeType:'image/jpeg' }] };
+          const { screenshot, image } = await screenshotReply(frame, args);
+          return { content: [...text({ observation: this.observation(frame), screenshot }).content, { type: 'text', text: `Screen: ${frame.width} × ${frame.height} points. Image width: ${screenshot.width} pixels. Coordinates for tools are screen points. Captured through the developer screenshot service and not saved to the device's Photos library.\nPrompt check: ${JSON.stringify(prompt)}` }, image] };
         }
         case 'save_screenshot': {
           let path = args.path ?? join(homedir(), 'Pictures', 'Poki MCP');
@@ -581,10 +581,9 @@ export class Devices {
           catch (error) { if (stopped(error)) throw error; prompt = { status: 'unavailable', instruction: args.include_image === false
             ? 'Prompt check unavailable. Take a screenshot and inspect it before continuing.'
             : 'Inspect the image for system prompts before continuing.' }; }
-          // Capturing and prompt checking are unchanged; only the optional
-          // response image attachment is skipped.
-          return { content: [...text({ ...result, prompt }).content,
-            ...(args.include_image === false ? [] : [{ type: 'image', data: frame.data.toString('base64'), mimeType: 'image/png' }])] };
+          if (args.include_image === false) return text({ ...result, prompt });
+          const { screenshot, image } = await screenshotReply(frame, args);
+          return { content: [...text({ ...result, prompt, screenshot }).content, image] };
         }
         case 'get_foreground_app': {
           const tree = await this.bridge({ op:'ax', include_offscreen:false });
@@ -664,7 +663,10 @@ export class Devices {
           // The user's answer is the result: a confirmed dialog is a success, and an unanswered one an ordinary failure for stop_on_error to decide.
           if (name === 'request_human_action') return { ...(result.completed ? {} : { isError: true, _meta: { stop_reason: 'error' } }), ...text(result) };
           if (result.stopped || result.isError) return { isError: true, ...text(result), _meta: { stop_reason: result.stop_reason ?? (result.stopped ? 'cancelled' : 'unknown') } };
-          if (name === 'wait_for') return { content: [...text(result).content, { type: 'image', data: this.frame.data.toString('base64'), mimeType: 'image/png' }] };
+          if (name === 'wait_for') {
+            const { screenshot, image } = await screenshotReply(this.frame, args);
+            return { content: [...text({ ...result, screenshot }).content, image] };
+          }
           return { ...text(result), ...(unchanged || result.screen_change ? { _meta: { ...(unchanged ? { stop_reason: 'no_change' } : {}), ...(result.screen_change ? { verdict: result.screen_change } : {}) } } : {}) };
         }
       }

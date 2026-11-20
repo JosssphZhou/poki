@@ -71,12 +71,15 @@
     },
     {
       "name": "take_screenshot",
-      "description": "Capture the current display and return a JPEG image with screen dimensions and a prompt warning check. max_width resizes the image only; interaction coordinates remain logical points. The compatibility lossless argument does not change this JPEG response. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Capture the display, check for prompt warnings, and return a JPEG thumbnail with an 800-pixel long edge or smaller. screenshot.original_path points to the full-resolution PNG on this Mac. full_resolution also attaches that PNG and takes precedence over max_width. Interaction coordinates remain in screen points. Use device to select an id or name.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "device": {
             "type": "string"
+          },
+          "full_resolution": {
+            "type": "boolean"
           },
           "max_width": {
             "type": "number",
@@ -1317,7 +1320,7 @@
     },
     {
       "name": "wait_for",
-      "description": "Poll visible text until it appears, or disappears when gone=true. timeout_seconds defaults to ten. Disappearance requires a complete readable result; unreadable or truncated content is not proof of absence. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Wait for visible text to appear, or to disappear when gone=true. timeout_seconds defaults to ten. Disappearance requires a complete readable result. A match includes a JPEG thumbnail and screenshot.original_path on this Mac. Set full_resolution to attach the original PNG. Use device to select an id or name.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1328,6 +1331,9 @@
             "type": "string"
           },
           "gone": {
+            "type": "boolean"
+          },
+          "full_resolution": {
             "type": "boolean"
           },
           "timeout_seconds": {
@@ -1497,12 +1503,15 @@
     },
     {
       "name": "observe_device",
-      "description": "Capture one image with its structured observation, non-reused element references and prompt check. AX and image are sequential, not atomic. Use before input and after unknown delivery.",
+      "description": "Capture a JPEG thumbnail with its structured observation, new element references and prompt check. Screenshot and accessibility capture run in sequence. screenshot.original_path points to the full-resolution PNG on this Mac. Set full_resolution to attach the original PNG.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "device": {
             "type": "string"
+          },
+          "full_resolution": {
+            "type": "boolean"
           },
           "source": {
             "type": "string",

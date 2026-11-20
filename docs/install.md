@@ -113,6 +113,8 @@ node bin/call.mjs list_elements '{"device":"YOUR_DEVICE_NAME_OR_ID","source":"ac
 
 `list_devices` with `{"include_all_simulators":true}` lists the models that `start_simulator` can create. `start_simulator` names a new simulator `Poki MCP <model>`.
 
+`take_screenshot`, `observe_device`, and a successful `wait_for` return a JPEG thumbnail. Open `screenshot.original_path` on the Mac running Poki MCP to see the original PNG, or pass `"full_resolution": true` to attach the PNG. Poki stores these originals under `evidence/screenshots` in its state directory. Use `"include_image": false` with `observe_device` for a structured observation without saving or attaching a picture.
+
 To use a physical iPhone, first pair it with your Mac over USB. After that, keep both devices on the same local network with the phone unlocked. See [Physical iPhone setup](physical-iphone.md).
 
 ## Fix common problems

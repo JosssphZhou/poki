@@ -62,7 +62,7 @@ const schemaOf = tool => {
       post_action_ocr: { type: 'boolean', description: 'Capture after stable AX and check image OCR prompts (default false).' } } }
     : tool.name === 'observe_device'
       ? { ...tool.inputSchema, properties: { ...tool.inputSchema.properties,
-        include_image: { type: 'boolean', description: 'Attach PNG (default true); false retains capture and prompt checks.' } } }
+        include_image: { type: 'boolean', description: 'Attach a screenshot by default. Set false for a structured observation with prompt checks only.' } } }
       : tool.inputSchema;
   const schema = z.fromJSONSchema(schemaWithObservations);
   return strokeChecks[tool.name] ? schema.superRefine(strokeChecks[tool.name]) : schema;
