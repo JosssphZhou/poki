@@ -137,6 +137,8 @@ struct TestingOptionsView: View {
             } footer: {
                 Text("Off by default. ask_poki lets outside agents hand a repetitive task to Poki's own agent. Changes take effect the next time Poki opens. The Auto-Classifier is in Settings › Approvals.")
             }
+            // Apps by name and the read that comes when the screen settles: on unless turned off here.
+            SpeedTestingSection()
             // The in-process path's switch and probes (ESP-173, ESP-175).
             InProcessSection()
             Section {
@@ -164,9 +166,6 @@ struct TestingOptionsView: View {
             Section {
                 NavigationLink("Live Activity Preview") { ActivityPreview() }
             }
-            // Screen History, an experiment that reads only when started here (issue 356). Last, so
-            // the sections above keep their place.
-            HistoryTestingSection()
         }
         .navigationTitle(AppLocalization.text("Testing Options"))
         .navigationBarTitleDisplayMode(.inline)

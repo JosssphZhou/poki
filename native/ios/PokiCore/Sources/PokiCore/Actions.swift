@@ -11,12 +11,13 @@ import Foundation
 //   {launch: "bundle" | {bundle, fresh?}}      {wait: ms}       {back: true}
 //   {handoff: {kind, text}} hands a step to the owner on the phone (no input until Done, or {handoff: false})
 //   {wait_until: "text" | {text, gone?, ms?} | {settled: true, ms?}}
+//   {path: {goal, steps: [{tap: "text"}, {type: "…", into?: "text"}, …]}} steps written ahead, by text
 
 /// Every action `do` sends and a routine replays. An action is the first of these keys it holds, in
 /// this order: `perform` sends it as that and the approval check (`Computer.sensitive`) judges it as
 /// that, so a new kind of action is not sent before both say what it does.
 enum ActionKind: String, CaseIterable {
-    case run, tap, type, back, handoff, key, swipe, scrollTo = "scroll_to", longPress = "long_press", drag, pinch, button, launch, waitUntil = "wait_until", wait
+    case run, path, tap, type, back, handoff, key, swipe, scrollTo = "scroll_to", longPress = "long_press", drag, pinch, button, launch, waitUntil = "wait_until", wait
 
     init?(_ action: JSON) {
         guard let kind = Self.allCases.first(where: { action[$0.rawValue] != nil }) else { return nil }
@@ -27,7 +28,7 @@ enum ActionKind: String, CaseIterable {
     var movesScreen: Bool {
         switch self {
         case .tap, .type, .back, .key, .swipe, .scrollTo, .longPress, .drag, .pinch: true
-        case .run, .handoff, .button, .launch, .waitUntil, .wait: false
+        case .run, .path, .handoff, .button, .launch, .waitUntil, .wait: false
         }
     }
 
@@ -35,7 +36,7 @@ enum ActionKind: String, CaseIterable {
     /// routine.
     func changesScreen(_ action: JSON) -> Bool {
         switch self {
-        case .launch, .run: true
+        case .launch, .run, .path: true
         case .button: action["button"]?.text?.lowercased() == "home"
         default: movesScreen
         }
@@ -47,7 +48,7 @@ enum ActionKind: String, CaseIterable {
         switch self {
         case .tap, .back, .swipe, .scrollTo, .longPress, .drag, .pinch: true
         case .type: action["ref"] != nil
-        case .run, .handoff, .key, .button, .launch, .waitUntil, .wait: false
+        case .run, .path, .handoff, .key, .button, .launch, .waitUntil, .wait: false
         }
     }
 }
@@ -293,12 +294,19 @@ extension Computer {
     }
 
     /// Returns the action's kind (for the settle pause) and what it did.
-    func perform(_ action: JSON, until: Double) async throws -> (String, String) {
+    func perform(_ action: JSON, until: Double, backTarget: BackTarget? = nil) async throws -> (String, String) {
         guard let kind = ActionKind(action) else { throw ActionFailure(message: "unknown action \(action.serialized())", delivery: .notSent) }
         let spec = action[kind.rawValue] ?? .null
         switch kind {
         case .run:
-            return ("run", try await runRoutine(spec, until: until))
+            runEndedOnARead = false
+            let text = try await runSkill(spec, until: until)
+            // A run whose end check found its texts has read the screen it ends on: no pause before the read.
+            return (runEndedOnARead ? "run_read" : "run", text)
+        case .path:
+            runEndedOnARead = false
+            let text = try await runPath(spec, until: until)
+            return (runEndedOnARead ? "run_read" : "run", text)
         case .tap:
             let p = try point(spec)
             try await tap(p, within: frame(of: spec))
@@ -334,7 +342,7 @@ extension Computer {
             typedText = hidden ? nil : text
             return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
         case .back:
-            return ("back", try await back(until: until))
+            return ("back", try await back(to: backTarget ?? currentBackTarget, until: until))
         case .handoff:
             if case .bool(false) = spec {
                 guard let current = handoff.apply(.takeBack).takenBack else { return ("handoff", "handoff: nothing is handed to the owner") }
@@ -414,7 +422,11 @@ extension Computer {
             }
             return ("button", "button \(name)")
         case .launch:
-            guard let bundle = spec.string ?? spec["bundle"]?.string, !bundle.isEmpty else { throw ActionFailure(message: "launch takes a bundle id", delivery: .notSent) }
+            guard let bundle = spec.string ?? spec["bundle"]?.string, !bundle.isEmpty else { throw ActionFailure(message: "launch takes a bundle id or an app's name", delivery: .notSent) }
+            // A name the host could not turn into a bundle id: nothing is sent for it.
+            if config.appNames(), !bundle.contains(".") || bundle.contains(" ") {
+                throw ActionFailure(message: "launch \(bundle): no app named \"\(bundle)\" is known on this phone. Give its bundle id, or go home ({button: \"home\"}), swipe down to search, type its name and tap it", delivery: .notSent)
+            }
             let fresh = spec["fresh"]?.bool ?? false
             // A fresh launch ends the app first, so a page it was left on cannot answer for it, and
             // starts it through XCTest's launch. Otherwise the app is activated: brought to the front
@@ -612,28 +624,34 @@ extension Computer {
         return (field, keyboard, true)
     }
 
-    /// The button `back` taps: a button in the top left corner of the read.
-    static func backButton(in all: [Element]) -> Element? {
-        all.filter { e in
-            e.type == "Button" && e.frame.x < 70 && e.frame.y < 130 && e.frame.y + e.frame.height > 20 && e.frame.width < 180 && e.frame.height < 70 && !e.fromPicture
-        }.min { ($0.frame.y, $0.frame.x) < ($1.frame.y, $1.frame.x) }
+    /// The return target from one tree. Without a button, back uses the left-edge gesture.
+    struct BackTarget {
+        let button: Element?
+        let sheet: Element?
+
+        init(in all: [Element]) {
+            button = all.lazy.filter { e in
+                e.type == "Button" && e.frame.x < 70 && e.frame.y < 130 && e.frame.y + e.frame.height > 20 && e.frame.width < 180 && e.frame.height < 70 && !e.fromPicture
+            }.min { ($0.frame.y, $0.frame.x) < ($1.frame.y, $1.frame.x) }
+            sheet = all.first { $0.type == "Sheet" && !$0.fromPicture }
+        }
     }
 
     /// `{back: true}`: the navigation bar's back button when the last read listed one (a button in
     /// the top left corner), else an edge swipe from the left, which most apps take as back. The
     /// answer says which, and the model sees the result in the read. No app-specific rule.
-    func back(until: Double) async throws -> String {
+    func back(to target: BackTarget, until: Double) async throws -> String {
         let screen = try await screenSize(until: until)
         // A sheet (a first-run "What's New", a share sheet) takes neither a back button nor the edge
         // swipe: the answer says so and names its buttons (gym: Photos' sheet, back "sent" and
         // nothing changed).
         var sheetNote = ""
-        if let sheet = lastAll.first(where: { $0.type == "Sheet" && !$0.fromPicture }) {
+        if let sheet = target.sheet {
             let buttons = listed.filter { $0.element.type == "Button" && sheet.contains($0.element) }.prefix(4).map { "\($0.ref) \"\($0.element.text.prefix(30))\"" }.joined(separator: ", ")
             sheetNote = "; a sheet is up\(buttons.isEmpty ? "" : " (its buttons: \(buttons))"): back does not dismiss sheets, tap one of its buttons or drag it down"
         }
-        if let button = Self.backButton(in: lastAll) {
-            let p = (x: button.frame.x + button.frame.width / 2, y: button.frame.y + button.frame.height / 2)
+        if let button = target.button {
+            let p = button.frame.centre
             try await tap(p, within: button.frame)
             return "back: tapped the top-left button \(button.text.isEmpty ? "" : "\"\(button.text)\" ")at [\(Int(p.x)), \(Int(p.y))]\(sheetNote)"
         }

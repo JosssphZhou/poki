@@ -568,9 +568,9 @@ final class InProcessPasscodeTests: XCTestCase {
     }
 
     /// A fresh model on an iPhone running this iOS major version, with Poki on.
-    private func useSystem(_ major: Int) {
+    private func useSystem(_ major: Int, transport: HTTPTransport? = nil) {
         model?.stopSession()
-        model = AppModel(launcher: launcher, pairer: FakePairing(), automation: session,
+        model = AppModel(launcher: launcher, pairer: FakePairing(), automation: session, transport: transport,
                          systemVersion: OperatingSystemVersion(majorVersion: major, minorVersion: 6, patchVersion: 1))
         model.loopback.simulate(.working(ms: 9))
         model.setup.loopback = .proxy
@@ -698,7 +698,7 @@ final class InProcessPasscodeTests: XCTestCase {
     private enum ChatEntryPoint: String { case focus, dictation, shortcut, send }
 
     private func exerciseChatEntry(_ entry: ChatEntryPoint) async throws {
-        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "pokiDraft", "pokiDictationButton"]
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom", "pokiDraft", "pokiDictationButton"]
         let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
         defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
         let server = try FakeCompletions(replies: Array(repeating: FakeCompletions.text("The answer is four."), count: 3))
@@ -878,7 +878,7 @@ final class InProcessPasscodeTests: XCTestCase {
     /// reply comes in, staying on the chat. The late reply must not bring it back, and the chat moves on
     /// to a new conversation. (Archiving waits: a conversation whose task runs is not archived.)
     func testAConversationDeletedBeforeItsFirstReplyStaysDeleted() async throws {
-        let keys = ["chat.provider", "chat.customURL", "chat.customModel"]
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom"]
         let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
         defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
         let server = try FakeCompletions(replies: [FakeCompletions.text("Four.")], holdAfter: 0)
@@ -916,7 +916,7 @@ final class InProcessPasscodeTests: XCTestCase {
     }
 
     private func chatWithoutAutomation(on server: FakeCompletions, request: String) async throws -> ChatModel {
-        let keys = ["chat.provider", "chat.customURL", "chat.customModel"]
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom"]
         let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
         defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
         ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
@@ -1019,6 +1019,39 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertEqual(hint?.target, .setup)
     }
 
+    func testLoopbackPageShowsFailedMountedImageSession() async throws {
+        let savedLanguage = AppLocalization.shared.preference
+        let savedLoopback = UserDefaults.standard.object(forKey: "pokiLoopback")
+        AppLocalization.shared.preference = "en"
+        UserDefaults.standard.set("noanswer", forKey: "pokiLoopback")
+        defer {
+            AppLocalization.shared.preference = savedLanguage
+            UserDefaults.standard.set(savedLoopback, forKey: "pokiLoopback")
+        }
+
+        await handOverToTheMountedImage()
+        session.answer(["ok": false, "code": "missing_framework"])
+        await waitFor("the local session failure") { self.model.localSessionTrouble != nil }
+        try await assertLoopbackPageShowsSessionTrouble()
+
+        session.holdNextOpen()
+        model.runnerChanged(RunnerStatus(state: "running", code: "local_ddi"))
+        await waitFor("the next local open is under way") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "code": "passcode_declined"])
+        await waitFor("the passcode failure") {
+            self.model.localSessionTrouble?.text.contains("not entered") == true
+        }
+        try await assertLoopbackPageShowsSessionTrouble()
+    }
+
+    private func assertLoopbackPageShowsSessionTrouble() async throws {
+        XCTAssertEqual(model.runner.code, "local_ddi")
+        let trouble = try XCTUnwrap(model.localSessionTrouble?.text)
+        let labels = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
+        XCTAssertTrue(labels.contains { $0.contains(trouble) }, "\(labels)")
+        XCTAssertFalse(labels.contains { $0.contains("Local automation ready") }, "\(labels)")
+    }
+
     /// A local open that fails waits for the loopback; when it answers again the launcher goes the
     /// normal way once, as before the hand-over.
     func testAFailedLocalOpenRetriesOverTheLoopbackOnce() async {
@@ -1037,6 +1070,66 @@ final class InProcessPasscodeTests: XCTestCase {
         session.answer(["ok": false, "code": "missing_framework"])
         await waitFor("the second local failure is reported") { self.model.host.currentRunner.describe.contains("missing_framework") }
         XCTAssertEqual(launcher.restarts, restarts + 1, "one retry while the loopback stays up")
+    }
+
+    func testLocalPhoneReadContinuesAfterTheOwnerAllowsAutomation() async throws {
+        let transport = SessionScreenTransport(session: session)
+        useSystem(27, transport: transport)
+        await prepareWithoutPhoneTask()
+        session.holdNextOpen()
+
+        let reading = Task { await model.runTool("look", arguments: "{}") }
+        await waitFor("the local phone step is opening automation") { self.session.isHoldingOpen }
+        session.setAuthorizationWait(4)
+        model.checkIdle()
+
+        XCTAssertTrue(model.passcodeHint)
+        XCTAssertEqual(transport.screenReads, 0)
+        try await captureSessionState("owner-authorization-waiting")
+
+        session.answer(nil)
+        let screen = await reading.value
+
+        XCTAssertFalse(model.passcodeHint)
+        XCTAssertFalse(screen.isError, screen.text)
+        XCTAssertTrue(screen.text.contains("General"), screen.text)
+        XCTAssertEqual(transport.screenReads, 1, "the original read gets the screen after authorization")
+        try await captureSessionState("owner-authorization-ready")
+    }
+
+    func testOwnerCancellationEndsTheChatBeforeTheModelCanRequestAnotherTool() async throws {
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel"]
+        let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("look", [:]),
+            FakeCompletions.tool("look", [:]),
+            FakeCompletions.text("The model continued after cancellation."),
+        ])
+        ModelKeys.customURL = "http://127.0.0.1:\(server.port)/v1"
+        ModelKeys.customModel = "fake-model"
+        ModelKeys.selectedProvider = .custom
+        let transport = SessionScreenTransport(session: session)
+        useSystem(27, transport: transport)
+        await prepareWithoutPhoneTask()
+        session.holdNextOpen()
+
+        let chat = ChatModel(app: model)
+        chat.restore(SavedSession(id: UUID().uuidString, kind: .poki, title: "Settings", started: .now,
+                                  updated: .now, live: false,
+                                  entries: [ChatEntry(.you("Earlier conversation", delivered: true))], calls: []))
+        defer { if chat.running { chat.stop() } }
+        chat.send("Read the General settings page.", attachments: [])
+        await waitFor("the chat is opening automation") { self.session.isHoldingOpen }
+        session.setAuthorizationWait(4)
+        model.checkIdle()
+        XCTAssertTrue(model.passcodeHint)
+        session.answer(["ok": false, "code": "automation_cancelled", "detail": "Timed out while enabling automation mode."])
+        await waitFor("the original chat task ended") { !chat.running }
+
+        XCTAssertTrue(chat.entries.contains { if case .poki("Stopped.") = $0.kind { return true }; return false })
+        XCTAssertEqual(server.requests.count, 1, "After the owner cancels, the original chat sends no more model requests")
+        XCTAssertEqual(transport.screenReads, 0)
     }
 
     func testAPasscodeWaitAsksTheOwnerAndTellsTheAgentWhoMustEnterIt() async throws {
@@ -1132,7 +1225,7 @@ final class InProcessPasscodeTests: XCTestCase {
         await prepareWithoutPhoneTask()
         model.wakeRunner()
         await waitFor("automation is open") { self.session.isOpen && self.model.hasOpenInProcessSession }
-        model.chatTaskBegan()
+        await model.chatTaskBegan()
 
         model.checkIdle(now: Date().addingTimeInterval(120))
         XCTAssertTrue(session.isOpen, "thinking between phone steps must keep the same session")
@@ -1331,7 +1424,7 @@ final class InProcessPasscodeTests: XCTestCase {
     func testOnIOS26TheEndOfATaskKeepsTheSession() async {
         useSystem(26)
         await openSessionForATask()
-        model.chatTaskBegan()
+        await model.chatTaskBegan()
         model.chatTaskEnded(reply: nil, session: "test", acted: true)
         await waitFor("the end of the task stood by") { self.model.runnerPaused && self.model.lastInProcessClose != nil }
         XCTAssertTrue(session.isOpen)
@@ -1411,7 +1504,7 @@ final class InProcessPasscodeTests: XCTestCase {
         try XCTSkipUnless(UserDefaults.standard.bool(forKey: "sessionTiming"), "explicit simulator timing run only")
         let entry = try XCTUnwrap(ChatEntryPoint(rawValue: UserDefaults.standard.string(forKey: "sessionTimingEntry") ?? "focus"))
         let baseline = UserDefaults.standard.bool(forKey: "sessionTimingBaseline")
-        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "pokiDraft", "pokiDictationButton"]
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom", "pokiDraft", "pokiDictationButton"]
         let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
         defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
         let server = try FakeCompletions(replies: [FakeCompletions.tool("look", [:]), FakeCompletions.text("The screen was read.")])
@@ -1739,7 +1832,7 @@ final class FrontendSubtractionTests: XCTestCase {
 
     /// Every setup step done and a connection chosen, with the loopback not yet checked.
     private func modelWithLoopbackChosen(launcher: FakeLauncher, imageMounted: @escaping () -> Bool = { AppModel.localDDIMounted }) throws -> (model: AppModel, restore: () -> Void) {
-        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "relayAddress", "relayEnabled", "wantsOn"]
+        let keys = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom", "relayAddress", "relayEnabled", "wantsOn"]
         let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
 
         let pairing = AppFiles.phonePairingFile
@@ -1960,7 +2053,11 @@ final class FrontendSubtractionTests: XCTestCase {
         await fulfillment(of: [done], timeout: 5)
     }
 
-    private func renderedLabels<Content: View>(of view: Content, model: AppModel) async throws -> [String] {
+}
+
+@MainActor
+private extension XCTestCase {
+    func renderedLabels<Content: View>(of view: Content, model: AppModel) async throws -> [String] {
         let chat = ChatModel(app: model)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -1977,10 +2074,10 @@ final class FrontendSubtractionTests: XCTestCase {
         display.add(to: .main, forMode: .common)
         await fulfillment(of: [drawn], timeout: 5)
         display.invalidate()
-        return Self.collectLabels(in: window)
+        return Self.collectLoopbackTestLabels(in: window)
     }
 
-    private static func collectLabels(in root: NSObject) -> [String] {
+    private static func collectLoopbackTestLabels(in root: NSObject) -> [String] {
         var labels: [String] = []
         var pending = [root]
         var visited = Set<ObjectIdentifier>()
