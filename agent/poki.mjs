@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { PokiClient } from './poki-client.mjs';
 import { modelConfig, safeModelError } from './model-config.mjs';
+import { chooseProvider } from './imessage-provider.mjs';
 
-const entries = { task: 'cli.mjs', imessage: 'imessage.mjs', telegram: 'telegram.mjs' };
+const entries = { task: 'cli.mjs', imessage: 'imessage.mjs', telegram: 'telegram.mjs', photon: 'photon.mjs' };
 const taskOptions = {
   device: { type: 'string' }, state: { type: 'string' }, model: { type: 'string' },
   auth: { type: 'string' }, 'service-tier': { type: 'string' }, context: { type: 'string' },
@@ -20,7 +21,7 @@ const help = `Usage: poki "task" [--device <UUID>] [--state <directory>] [--mode
        poki login [--auth chatgpt|api-key]
        poki status
        poki update
-       poki imessage --config <private JSON file> [--check]
+       poki imessage [--provider bluebubbles|photon] --config <private JSON file> [--check]
        poki telegram --config <private JSON file> [--check]
 With one connected physical phone, --device is optional. Use --device for a simulator.
 Tasks accept /stop and corrections on stdin. Step timeout defaults to 60 seconds.
@@ -135,8 +136,17 @@ async function main() {
   if (command === 'imessage' || command === 'telegram') {
     target = command; forwarded = args.slice(1);
     if (forwarded.includes('--help') || forwarded.includes('-h')) {
-      console.log(`Usage: poki ${command} --config <private JSON file> [--state <directory>] [--step-timeout <seconds>] [--once] [--check]\n--check authenticates and reads only; no task or reply is sent.`);
+      const usage = '--config <private JSON file> [--state <directory>] [--step-timeout <seconds>] [--once] [--check]\n--check authenticates and reads only; no task or reply is sent.';
+      console.log(command === 'telegram' ? `Usage: poki telegram ${usage}`
+        : `Usage: poki imessage [--provider bluebubbles|photon] ${usage}\nWithout --provider, the provider whose credentials are in the environment starts. With both, poki asks in a terminal and otherwise starts BlueBubbles.`);
       return;
+    }
+    if (command === 'imessage') {
+      const { tokens } = parseArgs({ args: forwarded, strict: false, tokens: true, options: { provider: { type: 'string' } } });
+      const flag = tokens.find(token => token.kind === 'option' && token.name === 'provider');
+      if (flag) forwarded.splice(flag.index, flag.inlineValue ? 1 : 2);
+      const configured = [['bluebubbles', 'BLUEBUBBLES_PASSWORD'], ['photon', 'PHOTON_API_KEY']].filter(([, key]) => process.env[key]).map(([name]) => name);
+      if (await chooseProvider(flag && (flag.value ?? ''), configured) === 'photon') target = 'photon';
     }
   } else {
     const { values, positionals } = parse(args, taskOptions, true);

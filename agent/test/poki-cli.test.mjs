@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { makeMessages } from './fixtures/messages.mjs';
 import { makeTelegram } from './fixtures/telegram.mjs';
+import { makePhoton } from './fixtures/photon.mjs';
 import { taskServices } from './fixtures/task-services.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -127,18 +128,85 @@ test('fresh OAuth login persists through the SDK and hides provider failures', a
 test('channel commands reach existing read checks without sending messages', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'poki-channels-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  for (const channel of ['imessage', 'telegram']) {
-    const api = await (channel === 'imessage' ? makeMessages() : makeTelegram());
+  for (const [channel, command] of [['imessage', ['imessage']], ['telegram', ['telegram']], ['photon', ['imessage']], ['photon', ['imessage', '--provider=photon']]]) {
+    const api = await (channel === 'imessage' ? makeMessages() : channel === 'photon' ? makePhoton() : makeTelegram());
     try {
       const config = join(dir, `${channel}.json`);
-      await writeFile(config, JSON.stringify({ device: 'synthetic-device', ...(channel === 'imessage' ? { sender: 'allowed@example.test' } : { allowedUsers: [101] }) }));
-      const result = await run([channel, '--config', config, '--state', join(dir, channel), '--check'], {
+      await writeFile(config, JSON.stringify({ device: 'synthetic-device', ...(channel === 'telegram' ? { allowedUsers: [101] } : { sender: 'allowed@example.test' }) }));
+      const result = await run([...command, '--config', config, '--state', join(dir, channel), '--check'], {
         BLUEBUBBLES_URL: api.url, BLUEBUBBLES_PASSWORD: api.password ?? '', TELEGRAM_API_URL: api.url, TELEGRAM_BOT_TOKEN: api.token ?? '',
+        PHOTON_API_URL: api.url, PHOTON_PROJECT_ID: api.project ?? '', PHOTON_API_KEY: api.key ?? '',
       });
       assert.equal(result.code, 0, result.output);
       assert.match(result.output, /authentication and read check succeeded/);
+      assert.ok(result.output.startsWith(`${channel === 'imessage' ? 'bluebubbles' : channel}:`), result.output);
       assert.equal((api.sent ?? api.messages).length, 0);
-      t.diagnostic(`$ poki ${channel} --config <synthetic config> --check\n${result.output.trim()}`);
+      t.diagnostic(`$ poki ${command.join(' ')} --config <synthetic config> --check\n${result.output.trim()}`);
     } finally { await api.close(); }
   }
+});
+
+test('poki imessage starts the chosen provider and asks only in a terminal with both configured', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'poki-provider-'));
+  const messages = await makeMessages();
+  const photon = await makePhoton();
+  t.after(async () => { await messages.close(); await photon.close(); await rm(dir, { recursive: true, force: true }); });
+  const config = join(dir, 'imessage.json');
+  await writeFile(config, JSON.stringify({ device: 'synthetic-device', sender: 'allowed@example.test' }));
+  const env = { BLUEBUBBLES_URL: messages.url, BLUEBUBBLES_PASSWORD: messages.password,
+    PHOTON_API_URL: photon.url, PHOTON_PROJECT_ID: photon.project, PHOTON_API_KEY: photon.key };
+  const check = (args, state) => [...args, '--config', config, '--state', join(dir, state), '--check'];
+  const reached = () => ({ bluebubbles: messages.requests.length, photon: photon.subscriptions.length });
+
+  const unattended = await run(check(['imessage'], 'unattended'), env);
+  assert.equal(unattended.code, 0, unattended.output);
+  assert.equal(unattended.output, 'BlueBubbles and Photon are both configured for iMessage. Starting BlueBubbles; pass --provider photon to start Photon.\n'
+    + 'bluebubbles: authentication and read check succeeded. No tasks or replies sent.\n');
+  assert.deepEqual(reached(), { bluebubbles: 2, photon: 0 }, 'Without a terminal, existing BlueBubbles starts stay BlueBubbles');
+
+  const named = await run(check(['imessage', '--provider', 'photon'], 'named'), env);
+  assert.equal(named.output, 'photon: authentication and read check succeeded. No tasks or replies sent.\n');
+  const kept = await run(check(['imessage', '--provider', 'bluebubbles'], 'kept'), env);
+  assert.equal(kept.output, 'bluebubbles: authentication and read check succeeded. No tasks or replies sent.\n');
+  assert.deepEqual(reached(), { bluebubbles: 4, photon: 1 });
+
+  for (const [args, message] of [
+    [check(['imessage', '--provider', 'signal'], 'refused'), /^Choose --provider bluebubbles or --provider photon\.\n$/],
+    [[...check(['imessage'], 'refused'), '--provider'], /^Choose --provider bluebubbles or --provider photon\.\n$/],
+    [check(['telegram', '--provider', 'photon'], 'refused'), /^Unknown option '--provider'/],
+    [check(['photon'], 'refused'), /^Invalid arguments\. Use poki --help\./],
+  ]) {
+    const refused = await run(args, env);
+    assert.equal(refused.code, 1, refused.output);
+    assert.match(refused.output, message);
+  }
+  assert.deepEqual(reached(), { bluebubbles: 4, photon: 1 }, 'A refused provider reaches neither service');
+
+  const terminal = async input => {
+    const before = reached();
+    const result = await new Promise((resolveRun, reject) => {
+      const child = spawn('python3', ['-c', 'import os, pty, sys; sys.exit(os.waitstatus_to_exitcode(pty.spawn(sys.argv[1:])))',
+        join(root, 'bin/poki'), ...check(['imessage'], 'terminal')], { cwd: root, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] });
+      let output = '';
+      child.stdout.on('data', data => { output += data; });
+      child.stderr.on('data', data => { output += data; });
+      child.on('error', reject);
+      child.on('close', code => resolveRun({ code, output }));
+      child.stdin.end(input);
+    });
+    const after = reached();
+    return { ...result, bluebubbles: after.bluebubbles - before.bluebubbles, photon: after.photon - before.photon };
+  };
+  const second = await terminal('2\n');
+  assert.equal(second.code, 0, second.output);
+  assert.match(second.output, /BlueBubbles and Photon are both configured for iMessage\.\r?\n\r?\n1\. BlueBubbles \(default\)\r?\n   Your own Messages account, through BlueBubbles Server on your Mac\.\r?\n\r?\n2\. Photon\r?\n   The number Photon assigned to your sender\. Task text and replies pass\r?\n   through Photon's servers\.\r?\n\r?\nChoose 1 or 2 \[1\]: [^]*photon: authentication and read check succeeded/);
+  assert.deepEqual([second.bluebubbles, second.photon], [0, 1]);
+  const entered = await terminal('\n');
+  assert.match(entered.output, /Choose 1 or 2 \[1\]: [^]*bluebubbles: authentication and read check succeeded/);
+  assert.deepEqual([entered.bluebubbles, entered.photon], [2, 0]);
+  const other = await terminal('3\n');
+  assert.equal(other.code, 1, other.output);
+  assert.match(other.output, /Choose 1 for BlueBubbles or 2 for Photon\./);
+  assert.deepEqual([other.bluebubbles, other.photon], [0, 0], 'An answer that names no provider starts nothing');
+  t.diagnostic(`$ poki imessage --config <synthetic config> --check (terminal, answer 2)\n${second.output.trim()}`);
 });

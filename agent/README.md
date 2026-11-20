@@ -65,7 +65,7 @@ poki 'Open Settings and read the iOS version.'
 
 The terminal shows progress and the final result. Enter `/stop` to stop or enter task corrections while it runs. The agent handles login, verification codes and system prompts with its tools. If it cannot complete the task, it reports the completed work, blocker and attempted approaches.
 
-Each step has a 60-second deadline including model and tool time. Set `POKI_AGENT_STEP_TIMEOUT` or pass `--step-timeout <seconds>` to the CLI or a channel worker. Individual device tool calls are capped at 130 seconds by default, deliberately just above the daemon's own 120-second remote limit so that a slow link is reported by the daemon - which can say whether input may already have been delivered - instead of being cut off by the client with a bare timeout; `POKI_MCP_CALL_TIMEOUT_MS` overrides it. There is no whole-task deadline. A forward `report_plan.currentStep` or a changed screen fingerprint after a successful action resets the step clock, including pages without headings or a bundle ID. Scrolling, swiping, text-field edits without submission, same-page actions and repeated/backward step numbers do not. A pending model request is cancelled when the deadline expires. Task records include `metrics.steps` with page fingerprint, step, elapsed time and reset reason. Alert/dialog/sheet changes do not count as a new page. Tool errors are returned to the model while the step clock keeps running. Submitting a final answer suspends the step clock. A separate 45-second limit covers the final model response and independent verification. On verification timeout the candidate answer is retained and returned as unverified, never as confirmed success. Each attempt and its reason are retained in `execution.verifications`. Failed verification resumes the remaining step time and asks the model to continue collecting evidence; it does not grant a fresh deadline. Failure conclusions also undergo independent verification. Claims that an entry or content cannot be found require evidence of scrolling down the current page until content stops changing; scrolling up or reaching the bottom of another page does not suffice. An unsupported failure is returned for further search at most once. Failure review and further search keep the current step clock running. Evidence-backed capability or information blockers remain failures, not successes.
+Each step has a 60-second deadline including model and tool time. Set `POKI_AGENT_STEP_TIMEOUT` or pass `--step-timeout <seconds>` to the CLI or a channel worker. Individual device tool calls are capped at 130 seconds by default, deliberately just above the daemon's own 120-second remote limit so that a slow link is reported by the daemon - which can say whether input may already have been delivered - instead of being cut off by the client with a bare timeout; `POKI_MCP_CALL_TIMEOUT_MS` overrides it. There is no whole-task deadline. A forward `report_plan.currentStep` or a changed screen fingerprint after a successful action resets the step clock, including pages without headings or a bundle ID. Scrolling, swiping, text-field edits without submission, same-page actions and repeated/backward step numbers do not. A pending model request is cancelled when the deadline expires. Task records include `metrics.steps` with page fingerprint, step, elapsed time and reset reason. Alert/dialog/sheet changes do not count as a new page. Tool errors are returned to the model while the step clock keeps running. Submitting a final answer suspends the step clock. A separate 45-second limit covers the final model response and independent verification. On verification timeout the candidate answer is retained and returned as unverified, never as confirmed success. Each attempt and its reason are retained in `execution.verifications`. Failed verification resumes the remaining step time and asks the model to continue collecting evidence; it does not grant a fresh deadline. Failure conclusions also undergo independent verification. Claims that an entry or content cannot be found require evidence of scrolling down the current page until content stops changing; scrolling up or reaching the bottom of another page does not suffice. An unsupported failure is returned for further search at most once. Failure review and further search keep the current step clock running. Evidence-backed capabilit... (line truncated to 2000 chars)
 
 ### Optional iPhone unlock
 
@@ -149,6 +149,34 @@ The default private state directory is `agent/.runtime/bluebubbles`. Use `--stat
 
 For an isolated MCP and worker lifecycle, run `node agent/scripts/self-chat.mjs --config <private JSON file> --state <private directory>` from the repository root. Add `--check` for a read-only startup check. The supervisor records device-call notifications from this worker. Stopping an idle worker closes its services without acquiring or cleaning up a device. Physical-device runs must still use the shared device lock.
 
+## Configure iMessage through Photon
+
+Poki can also receive iMessage tasks through [Photon](https://photon.codes/docs/beta/photon), which hosts the iMessage line. This channel needs no Mac running Messages and no BlueBubbles, but task text and replies pass through Photon's servers. Read the [Photon channel guide](../docs/photon-channel.md) for setup, the shared-line assignment and the limits of Photon Beta.
+
+The guided route is `./bin/setup-channels --channel imessage`: choose Photon, and setup signs you in to Photon in a browser, finds or creates your `Poki Agent` project, creates its API key, stores it privately for `node bin/poki-imessage.mjs` and assigns your sender a shared line.
+
+To supply the credentials yourself, set the project ID and API key in the worker's environment. The key needs `project:read` and `project:write`. Keep it out of configuration files, shell history, and source control. These lines work in zsh and bash:
+
+```sh
+export PHOTON_PROJECT_ID=pho_prj_REPLACE_WITH_YOUR_PROJECT_ID
+printf 'Photon API key: '; read -rs PHOTON_API_KEY; echo
+export PHOTON_API_KEY
+```
+
+Create a private JSON file such as `~/.config/poki-agent/photon.json` with the same fields as the BlueBubbles configuration, without `chatGuid`. Set `sender` to the exact iMessage phone number, including country code, or email address that has a shared-line assignment in the project.
+
+```sh
+chmod 600 ~/.config/poki-agent/photon.json
+poki imessage --provider photon --config ~/.config/poki-agent/photon.json --check
+poki imessage --provider photon --config ~/.config/poki-agent/photon.json
+```
+
+Without `--provider`, `poki imessage` starts the provider whose credentials are in the environment: `BLUEBUBBLES_PASSWORD` for BlueBubbles, `PHOTON_API_KEY` for Photon. With both set it asks in a terminal which one to start, and without a terminal it starts BlueBubbles.
+
+`--check` authenticates and subscribes to the project's event stream. It sends no replies, saves no cursor and starts no phone task. Only plain-text messages from the configured sender in a direct conversation become tasks; the first start skips history. Confirmations, `/stop`, corrections and results behave as on the BlueBubbles channel, without a reply ledger. The worker also marks the sender's messages as read and shows a typing indicator while a task runs. The default private state directory is `agent/.runtime/photon`.
+
+For local protocol development only, `PHOTON_API_URL` may point to a loopback HTTP service. Other endpoints are rejected. The default is `https://api.photon.codes`.
+
 ## Telegram
 
 Local protocol checks pass. A real bot receipt and delivery run has not been verified for this release.
@@ -197,17 +225,17 @@ For local protocol development only, `TELEGRAM_API_URL` may point to a loopback 
 
 ## Test the message transport locally
 
-`test/fixtures/messages.mjs` serves a synthetic BlueBubbles HTTP API on a random loopback port. It uses no personal Messages data and sends no real messages. The channel checks exercise sender isolation, pagination, restart, long replies, bounded retries and progress editing. The CLI checks run the real worker, task state machine, pi SDK and MCP stdio bridge against synthetic local model and device services:
+`test/fixtures/messages.mjs` serves a synthetic BlueBubbles HTTP API on a random loopback port, and `test/fixtures/photon.mjs` serves a synthetic Photon REST and Socket.IO API. They use no personal Messages data and send no real messages. The channel checks exercise sender isolation, pagination, restart, long replies, bounded retries and progress editing. The CLI checks run the real worker, task state machine, pi SDK and MCP stdio bridge against synthetic local model and device services:
 
 ```sh
-node --test agent/test/messages.test.mjs agent/test/telegram.test.mjs agent/test/channels.test.mjs
+node --test agent/test/messages.test.mjs agent/test/photon.test.mjs agent/test/telegram.test.mjs agent/test/channels.test.mjs
 ```
 
 The existing simulator acceptance script uses this HTTP fixture and a real dedicated simulator. Do not run it against a physical device. Provider protocol checks also use a local fake HTTP service and synthetic keys.
 
 ## Validation boundary
 
-Real iMessage and Telegram receipt and delivery, and physical iPhone operation, need a separate authorized run. Fake transport results do not prove either. The local acceptance evidence distinguishes those paths. Source revisions and future synchronization points are in [SOURCES.md](SOURCES.md).
+Real iMessage and Telegram receipt and delivery, including through Photon, and physical iPhone operation, need a separate authorized run. Fake transport results do not prove either. The local acceptance evidence distinguishes those paths. Source revisions and future synchronization points are in [SOURCES.md](SOURCES.md).
 
 ## Startup checks and app lookup
 
