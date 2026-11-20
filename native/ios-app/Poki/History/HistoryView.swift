@@ -43,6 +43,13 @@ struct HistorySpan: Identifiable, Hashable {
 enum HistoryNames {
     static func app(_ id: String) -> String { HistoryAppNames.name(id) }
 
+    static func recordingStatus(_ status: HistoryCapture.Status, held: HistoryCapture.Status? = nil, enabled: Bool) -> LocalizedStringKey {
+        guard enabled else { return "Off" }
+        if status == .reading { return "Recording" }
+        if status == .waiting, let held { return LocalizedStringKey(Self.status(held)) }
+        return "Paused, Waiting to Resume"
+    }
+
     static func status(_ status: HistoryCapture.Status) -> String {
         switch status {
         case .off: "Off"
@@ -212,11 +219,12 @@ struct ScreenHistorySettingsView: View {
     }
 
     /// Only while Screen History is on: off, the switch above already says so.
-    private var recordingStatus: String {
-        if capture.status == .reading { return AppLocalization.text(LocalizedStringResource("Recording")) }
-        // A run that waits says why: the iPhone is locked, an agent's task, or no local connection.
-        if capture.isRunning, let held = capture.held { return AppLocalization.text(LocalizedStringResource(String.LocalizationValue(HistoryNames.status(held)))) }
-        return AppLocalization.text(LocalizedStringResource("Paused, Waiting to Resume"))
+    private var isActivelyRecording: Bool {
+        capture.status == .reading && capture.held == nil
+    }
+
+    private var recordingStatus: LocalizedStringKey {
+        HistoryNames.recordingStatus(capture.status, held: capture.held, enabled: capture.enabled)
     }
 
     var body: some View {
@@ -232,7 +240,12 @@ struct ScreenHistorySettingsView: View {
                     Text("Screen History needs the Poki Loopback shortcut. Add it below, run it once, then turn Screen History on.")
                 }
                 if capture.enabled {
-                    SettingsRow(title: "Status", symbol: "dot.radiowaves.left.and.right", value: recordingStatus)
+                    SettingsRow(
+                        title: "Status",
+                        caption: isActivelyRecording ? nil : recordingStatus,
+                        symbol: "dot.radiowaves.left.and.right",
+                        value: isActivelyRecording ? AppLocalization.text(LocalizedStringResource("Recording")) : nil
+                    )
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("screenHistory.status")
                 }

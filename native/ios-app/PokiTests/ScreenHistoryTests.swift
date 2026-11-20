@@ -1,4 +1,5 @@
 import PokiCore
+import SwiftUI
 import UIKit
 import XCTest
 import LocalAuthentication
@@ -144,6 +145,24 @@ final class ScreenHistoryTests: XCTestCase {
         line["ok"] = false
         XCTAssertNil(HistoryBridge.Read(line).text)
         XCTAssertNil(HistoryBridge.Read(line).tree)
+    }
+
+    func testRecordingStatusTellsTheOwnerWhatLetsRecordingResume() {
+        let captions: [(HistoryCapture.Status, LocalizedStringKey)] = [
+            (.noConnection, "Recording needs the local connection. Connect to Wi-Fi and check Local Connection in Settings."),
+            (.notPaired, "Pair this iPhone in Settings › Connection to start recording."),
+            (.task, "Automation is using the screen. Recording resumes when it releases the screen."),
+            (.locked, "Unlock this iPhone to resume recording."),
+            (.waiting, "Starting recording…"),
+            (.reading, "Recording"),
+        ]
+        for (status, caption) in captions {
+            XCTAssertEqual(HistoryNames.recordingStatus(status, enabled: true), caption, status.rawValue)
+        }
+        for (held, caption) in captions.prefix(4) {
+            XCTAssertEqual(HistoryNames.recordingStatus(.waiting, held: held, enabled: true), caption, "held.\(held.rawValue)")
+        }
+        XCTAssertEqual(HistoryNames.recordingStatus(.noConnection, enabled: false), "Off")
     }
 
     func testALeftOutAppAndTheHomeScreenLeaveNothingInTheStore() async {
