@@ -59,7 +59,7 @@ struct Issue: Identifiable {
         switch fix {
         case .setup: openSetup()
         case .settings: if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-        case .retry: model.runnerPaused ? model.wakeRunner() : model.restartRunner()
+        case .retry: model.runnerPaused ? model.wakeRunner(asked: "retry", byOwner: true) : model.restartRunner()
         case .none: break
         }
     }

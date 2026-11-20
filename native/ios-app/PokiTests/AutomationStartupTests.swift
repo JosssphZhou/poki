@@ -108,6 +108,9 @@ final class AutomationStartupTests: XCTestCase {
             }
             XCTAssertEqual(model.log.lines.filter { $0.contains("iOS will ask for the passcode") }.count, notices,
                            "Repeated requests must retain the same pending confirmation without another notice log")
+            model.startSession(byOwner: true)
+            XCTAssertTrue(model.passcodeHeadsUp, "An explicit owner start must re-present a suppressed passcode alert")
+            model.passcodeHeadsUp = false
             _ = try await screenElements()
             try capture(window, named: "fallback-waiting-\(choice)")
             model.setup.loopback = .none

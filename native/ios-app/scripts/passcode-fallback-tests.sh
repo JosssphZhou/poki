@@ -18,13 +18,10 @@ source, out = map(Path, sys.argv[1:])
 p = source / 'native/ios-app/Poki/App/AppModel.swift'
 before = p.read_text()
 after = before
-for condition in [
-    'if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator, !inProcessWarming {',
-    'if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {'
-]:
-    if after.count(condition) != 1:
-        raise SystemExit('The simulator passcode gate changed; inspect it before updating this runner.')
-    after = after.replace(condition, condition.replace(', !Self.onSimulator', ''))
+condition = 'passcodeExpected && passcodeConsent != .confirmedForBoot(BootClock.current) && inFront && !Self.onSimulator'
+if after.count(condition) != 1:
+    raise SystemExit('The simulator passcode gate changed; inspect it before updating this runner.')
+after = after.replace(condition, condition.replace(' && !Self.onSimulator', ''))
 p.write_text(after)
 (out / 'simulator-gates.patch').write_text(''.join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile='original/AppModel.swift', tofile='simulator/AppModel.swift')))
 PY
@@ -54,7 +51,7 @@ SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFramew
 SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib" \
   timeout 60 xcrun simctl launch --console-pty "$UDID" "$BUNDLE" \
     -XCTest AutomationStartupTests/testConnectionCanContinueOrCancelWhenPasscodeAlertIsAbsent \
-    -passcodeFallbackGate YES -AppleLanguages '(en)' -AppleLocale en_US > "$OUT/test-run.log" 2>&1 || true
+    -automationPath runner -passcodeFallbackGate YES -AppleLanguages '(en)' -AppleLocale en_US > "$OUT/test-run.log" 2>&1 || true
 CONTAINER="$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)"
 if [ -d "$CONTAINER/Documents/AutomationStartupEvidence" ]; then
   mkdir -p "$OUT/screenshots"

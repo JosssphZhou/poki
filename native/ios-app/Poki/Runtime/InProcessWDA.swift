@@ -94,38 +94,137 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     /// When an open may bring up iOS's passcode screen. It does only before the first automation
     /// of a boot, so until then: one open at a time (two at once each showed a screen), never from
     /// the background (the screen then could not be closed), and none after the owner cancelled one,
-    /// until they turn Poki on again. `startedThisBoot` is also set at launch on iOS 27 while the
+    /// until they turn Poki on again. `bootConfirmed` is also set at launch on iOS 27 while the
     /// boot's allowance lasts (`AutomationAllowance`): then no screen comes.
-    struct OpenGate {
-        var declined = false
-        var inFront = true
-        var startedThisBoot = false
-        var opening = false
+    struct OpenGate: Equatable {
+        enum Phase: Equatable {
+            case awaitingFirstBootOpen
+            case opening(bootConfirmed: Bool, startedAt: ContinuousClock.Instant)
+            case readyForBoot
+            case declined(bootConfirmed: Bool)
+        }
+
+        enum Event {
+            case sceneVisibilityChanged(inFront: Bool)
+            case beginOpen(now: ContinuousClock.Instant = .now)
+            case finishOpen(succeeded: Bool)
+            case bootConfirmed
+            case passcodeDeclined
+            case ownerReenabled
+        }
+
+        enum Decision: Equatable {
+            case allow
+            case refuse(code: String, detail: String)
+        }
+
+        /// Longer than iOS keeps its passcode screen up (about a minute): an open still waiting for the
+        /// owner's passcode is never taken as stale, so a second open cannot bring up a second screen.
+        private static let staleOpening: Duration = .seconds(90)
+        private(set) var phase: Phase = .awaitingFirstBootOpen
+        private(set) var inFront = true
+
+        var isDeclined: Bool {
+            if case .declined = phase { return true }
+            return false
+        }
+
+        @discardableResult
+        mutating func transition(_ event: Event) -> Decision {
+            switch event {
+            case .sceneVisibilityChanged(let visible):
+                inFront = visible
+                return .allow
+
+            case .beginOpen(let now):
+                switch phase {
+                case .declined:
+                    return .refuse(
+                        code: "passcode_declined",
+                        detail: "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on"
+                    )
+                case .opening(let bootConfirmed, let startedAt):
+                    guard now - startedAt > Self.staleOpening else {
+                        return .refuse(code: "open_under_way", detail: "an open is already asking for the passcode")
+                    }
+                    if !bootConfirmed, !inFront {
+                        return .refuse(
+                            code: "open_poki_first",
+                            detail: "iOS asks for the passcode before the first automation since the iPhone restarted; that happens with Poki open, so the owner opens Poki first"
+                        )
+                    }
+                    phase = .opening(bootConfirmed: bootConfirmed, startedAt: now)
+                    return .allow
+                case .awaitingFirstBootOpen:
+                    guard inFront else {
+                        return .refuse(
+                            code: "open_poki_first",
+                            detail: "iOS asks for the passcode before the first automation since the iPhone restarted; that happens with Poki open, so the owner opens Poki first"
+                        )
+                    }
+                    phase = .opening(bootConfirmed: false, startedAt: now)
+                    return .allow
+                case .readyForBoot:
+                    phase = .opening(bootConfirmed: true, startedAt: now)
+                    return .allow
+                }
+
+            case .finishOpen(let succeeded):
+                switch phase {
+                case .opening(let bootConfirmed, _):
+                    phase = (succeeded || bootConfirmed) ? .readyForBoot : .awaitingFirstBootOpen
+                case .declined(let bootConfirmed):
+                    phase = .declined(bootConfirmed: bootConfirmed || succeeded)
+                case .awaitingFirstBootOpen, .readyForBoot:
+                    if succeeded { phase = .readyForBoot }
+                }
+                return .allow
+
+            case .bootConfirmed:
+                switch phase {
+                case .awaitingFirstBootOpen:
+                    phase = .readyForBoot
+                case .opening(_, let startedAt):
+                    phase = .opening(bootConfirmed: true, startedAt: startedAt)
+                case .declined:
+                    phase = .declined(bootConfirmed: true)
+                case .readyForBoot:
+                    break
+                }
+                return .allow
+
+            case .passcodeDeclined:
+                let confirmed: Bool = switch phase {
+                case .readyForBoot, .opening(true, _), .declined(true): true
+                case .awaitingFirstBootOpen, .opening(false, _), .declined(false): false
+                }
+                phase = .declined(bootConfirmed: confirmed)
+                return .allow
+
+            case .ownerReenabled:
+                if case .declined(let bootConfirmed) = phase {
+                    phase = bootConfirmed ? .readyForBoot : .awaitingFirstBootOpen
+                }
+                return .allow
+            }
+        }
     }
+
     static let gate = OSAllocatedUnfairLock(initialState: OpenGate())
-    static var automationDeclined: Bool { gate.withLock { $0.declined } }
+    static var automationDeclined: Bool { gate.withLock { $0.isDeclined } }
+
+    @discardableResult
+    static func transitionGate(_ event: OpenGate.Event) -> OpenGate.Decision {
+        gate.withLock { $0.transition(event) }
+    }
 
     /// prepare through the gate: an answer in prepare's shape when it may not run now.
     static func openThroughGate(_ prepare: () -> [String: Any]) -> [String: Any] {
-        let refusal: String? = gate.withLock { g in
-            if g.startedThisBoot { return nil }
-            if g.declined { return "passcode_declined" }
-            if !g.inFront { return "open_poki_first" }
-            if g.opening { return "open_under_way" }
-            g.opening = true
-            return nil
-        }
-        if let refusal {
-            let detail = refusal == "passcode_declined" ? "the owner cancelled iOS's passcode screen for automation; Poki asks again when they turn it on"
-                : refusal == "open_poki_first" ? "iOS asks for the passcode before the first automation since the iPhone restarted; that happens with Poki open, so the owner opens Poki first"
-                : "an open is already asking for the passcode"
-            return ["ok": false, "code": refusal, "detail": detail, "seconds": 0.0]
+        if case .refuse(let code, let detail) = transitionGate(.beginOpen()) {
+            return ["ok": false, "code": code, "detail": detail, "seconds": 0.0]
         }
         let result = prepare()
-        gate.withLock { g in
-            g.opening = false
-            if result["ok"] as? Bool == true { g.startedThisBoot = true }
-        }
+        transitionGate(.finishOpen(succeeded: result["ok"] as? Bool == true))
         return result
     }
 

@@ -94,6 +94,13 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     func authorizationWaitSeconds() -> Double { lock.withLock { authorizationWait } }
 }
 
+final class Opens: @unchecked Sendable {
+    private let lock = NSLock()
+    private var opens = 0
+    func add() { lock.withLock { opens += 1 } }
+    var count: Int { lock.withLock { opens } }
+}
+
 final class FakePairing: DevicePairing {
     func start(hostName: String, saveTo: URL, onEvent: @escaping @Sendable (PairingEvent) -> Void) throws {}
     func cancel() {}
@@ -1515,6 +1522,100 @@ final class InProcessPasscodeTests: XCTestCase {
         let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("OnDemandEvidence")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent("\(name).png"))
+    }
+
+    /// Automation started earlier in this boot, stood by, and the next open meets iOS's 8-hour
+    /// passcode screen: it is up now, held until the test answers.
+    private func reopenIntoThePasscodeScreen() async {
+        await openSessionForATask()
+        await standByWhenIdle()
+
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("the simulator's runner check answered") { ["failed", "running"].contains(self.model.runner.state) }
+        model.runnerChanged(RunnerStatus(state: "running"))
+        await waitFor("the re-authorized open is under way") { self.session.isHoldingOpen }
+        session.setAuthorizationWait(4)
+        model.checkIdle(now: Date().addingTimeInterval(6))
+        XCTAssertTrue(model.passcodeHint)
+    }
+
+    private func declinePasscodeAfterBoot() async {
+        await reopenIntoThePasscodeScreen()
+        session.answer(["ok": false, "code": "com.apple.dt.XCTest.XCTFuture 1000", "detail": "Timed out while enabling automation mode.", "seconds": 60.0])
+        await waitFor("iOS gave up on the passcode") { !self.model.passcodeHint && !self.model.host.currentRunner.describe.hasPrefix("starting") }
+        XCTAssertTrue(InProcessWDA.automationDeclined)
+    }
+
+    func testDeclinedPasscodeAfterBootBlocksOpenUntilOwnerTurnsAutomationOffAndOn() async {
+        await declinePasscodeAfterBoot()
+
+        let gated = InProcessWDA.openThroughGate { ["ok": true, "generation": 99] }
+        XCTAssertEqual(gated["ok"] as? Bool, false, "A declined 8-hour passcode prompt must block POST /session even after automation started earlier in this boot")
+        XCTAssertEqual(gated["code"] as? String, "passcode_declined")
+
+        let core = PokiCore(config: CoreConfig(), host: model.host, transport: SessionScreenTransport(session: session))
+        let refused = await core.callTool("look", arguments: "{}")
+        XCTAssertTrue(refused.isError, refused.text)
+        XCTAssertTrue(refused.text.contains("owner did not enter the iPhone passcode"), refused.text)
+
+        model.pauseByOwner()
+        XCTAssertTrue(model.ownerPaused)
+        let opened = expectation(description: "no passcode screen comes up for the agent")
+        opened.isInverted = true
+        session.onPrepare = { opened.fulfill() }
+        model.wakeRunner()
+        XCTAssertTrue(InProcessWDA.automationDeclined, "An agent waking Poki after the owner's pause is not the owner turning it on again")
+        await fulfillment(of: [opened], timeout: 0.5)
+        session.onPrepare = nil
+        model.pauseByOwner()
+        model.wakeRunner(asked: "turned on by the owner", byOwner: true)
+        XCTAssertFalse(InProcessWDA.automationDeclined, "Turning Automation off and on must clear the declined passcode lock")
+        await finishPreparing()
+        await waitFor("automation reopens after the owner turns Poki off and on") { self.model.hasOpenInProcessSession }
+        XCTAssertTrue(session.isOpen)
+    }
+
+    func testAnAgentTurningPokiOnKeepsTheOwnersCancelledPasscode() async {
+        await declinePasscodeAfterBoot()
+        model.stopSession()
+        let opened = expectation(description: "no passcode screen comes up for the agent")
+        opened.isInverted = true
+        session.onPrepare = { opened.fulfill() }
+
+        let refused = await model.runTool("look", arguments: "{}")
+
+        XCTAssertTrue(refused.isError, refused.text)
+        XCTAssertTrue(InProcessWDA.automationDeclined, "Only the owner turning Poki on asks for the passcode again")
+        await fulfillment(of: [opened], timeout: 0.5)
+    }
+
+    /// Poki Anytime starts from the Action Button with Poki in the background: the owner's press is the
+    /// owner asking for automation again after cancelling iOS's passcode screen, as turning Poki on is.
+    func testAnOwnerStartedTalkAfterACancelledPasscodeAsksForAutomationAgain() async {
+        await declinePasscodeAfterBoot()
+        model.stopSession()
+
+        model.prepareForTask(byOwner: true)
+
+        XCTAssertFalse(InProcessWDA.automationDeclined, "The owner starting a talk asks for automation again, as turning Poki on does")
+    }
+
+    /// iOS keeps its passcode screen up for about a minute. An agent's next step in that time is
+    /// told to wait: it never brings up a second session (and a second screen).
+    func testAnotherRequestWhileThePasscodeScreenIsUpOpensNoSecondSession() async throws {
+        await reopenIntoThePasscodeScreen()
+        let opens = Opens()
+        session.onPrepare = { opens.add() }
+
+        try await Task.sleep(for: .seconds(16))
+        model.wakeRunner()
+        try await Task.sleep(for: .milliseconds(500))
+
+        XCTAssertEqual(opens.count, 0, "a second open while the owner is still at iOS's passcode screen")
+        session.answer(nil)
+        await waitFor("the owner's passcode opens the session") { self.model.hasOpenInProcessSession }
+        XCTAssertFalse(InProcessWDA.automationDeclined)
     }
 
 }

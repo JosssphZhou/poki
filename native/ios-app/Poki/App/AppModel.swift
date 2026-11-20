@@ -160,42 +160,126 @@ final class AppModel {
     private(set) var passcodeHint = false
     /// Turning on now will probably bring up iOS's passcode screen (no automation has started since
     /// this iPhone last restarted, or ever): the owner is told first (`passcodeHeadsUp`).
+    enum PasscodeConsentTarget: Equatable {
+        case runnerStart(reconnectLocal: Bool)
+        case inProcessWarm(reason: String)
+    }
+
+    enum PasscodeConsentState: Equatable {
+        case idle
+        case awaitingOwner(target: PasscodeConsentTarget, alertPresented: Bool)
+        case manualAlertPresented
+        case confirmedForBoot(Double)
+    }
+
+    private enum PasscodeConsentEvent {
+        case request(PasscodeConsentTarget, byOwner: Bool)
+        case presentAlertManually
+        case alertDismissedWithoutChoice
+        case ownerContinued(boot: Double)
+        case ownerCancelled
+        case resetForStop
+    }
+
+    private var passcodeConsent: PasscodeConsentState = .idle
     var passcodeExpected: Bool { UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current }
-    var passcodeHeadsUp = false
-    private(set) var passcodeConfirmationPending = false
+    var passcodeHeadsUp: Bool {
+        get {
+            switch passcodeConsent {
+            case .awaitingOwner(_, alertPresented: true), .manualAlertPresented:
+                return true
+            case .idle, .awaitingOwner(_, alertPresented: false), .confirmedForBoot:
+                return false
+            }
+        }
+        set {
+            _ = transitionPasscodeConsent(newValue ? .presentAlertManually : .alertDismissedWithoutChoice)
+        }
+    }
+    var passcodeConfirmationPending: Bool {
+        if case .awaitingOwner = passcodeConsent { return true }
+        return false
+    }
+    private var shouldRequestPasscodeConsent: Bool {
+        passcodeExpected && passcodeConsent != .confirmedForBoot(BootClock.current) && inFront && !Self.onSimulator
+    }
     static let passcodeConfirmationMessage: LocalizedStringResource = "To turn on automation, open Settings › Connection and tap Continue."
     /// The note's text (PokiApp's alert). Its translations are looked up by this exact English key.
     static let passcodeHeadsUpMessage: LocalizedStringResource = "This is the first time Poki starts automation since your iPhone restarted, so iOS will ask for your passcode. It may ask only when Poki first operates the phone. That screen belongs to iOS. Poki can’t see or read what you enter, and it asks only once until the next restart."
-    private var passcodeHeadsUpReconnect = true
-    private var passcodeHeadsUpSeen = 0.0
     private static let automationBootKey = "automationStartedBoot"
+
+    @discardableResult
+    private func transitionPasscodeConsent(_ event: PasscodeConsentEvent) -> PasscodeConsentTarget? {
+        switch event {
+        case .request(let target, let byOwner):
+            switch passcodeConsent {
+            case .awaitingOwner(_, let alertPresented):
+                if !alertPresented, byOwner {
+                    passcodeConsent = .awaitingOwner(target: target, alertPresented: true)
+                }
+            case .idle, .manualAlertPresented, .confirmedForBoot:
+                passcodeConsent = .awaitingOwner(target: target, alertPresented: true)
+            }
+            return nil
+
+        case .presentAlertManually:
+            switch passcodeConsent {
+            case .awaitingOwner(let target, false):
+                passcodeConsent = .awaitingOwner(target: target, alertPresented: true)
+            case .idle, .confirmedForBoot:
+                passcodeConsent = .manualAlertPresented
+            case .awaitingOwner(_, true), .manualAlertPresented:
+                break
+            }
+            return nil
+
+        case .alertDismissedWithoutChoice:
+            switch passcodeConsent {
+            case .awaitingOwner(let target, true):
+                passcodeConsent = .awaitingOwner(target: target, alertPresented: false)
+            case .manualAlertPresented:
+                passcodeConsent = .idle
+            case .idle, .awaitingOwner(_, false), .confirmedForBoot:
+                break
+            }
+            return nil
+
+        case .ownerContinued(let boot):
+            guard case .awaitingOwner(let target, _) = passcodeConsent else { return nil }
+            passcodeConsent = .confirmedForBoot(boot)
+            return target
+
+        case .ownerCancelled, .resetForStop:
+            switch passcodeConsent {
+            case .awaitingOwner, .manualAlertPresented:
+                passcodeConsent = .idle
+            case .idle, .confirmedForBoot:
+                break
+            }
+            return nil
+        }
+    }
+
     /// Automation started in this boot: iOS will not ask again until the next restart.
     private func automationStarted() {
-        InProcessWDA.gate.withLock { $0.startedThisBoot = true }
+        InProcessWDA.transitionGate(.bootConfirmed)
         AutomationAllowance(boot: BootClock.current, at: Date()).save()
         guard UserDefaults.standard.double(forKey: Self.automationBootKey) != BootClock.current else { return }
         UserDefaults.standard.set(BootClock.current, forKey: Self.automationBootKey)
     }
     /// Continue on the note: Poki turns on, and iOS's passcode screen comes next.
     func continueAfterPasscodeHeadsUp() {
-        guard passcodeConfirmationPending else { return }
-        passcodeConfirmationPending = false
-        passcodeHeadsUp = false
-        passcodeHeadsUpSeen = BootClock.current
-        if let why = passcodeHeldOpen {
-            passcodeHeldOpen = nil
-            warmInProcess(why)
-            return
+        guard let target = transitionPasscodeConsent(.ownerContinued(boot: BootClock.current)) else { return }
+        switch target {
+        case .inProcessWarm(let reason):
+            warmInProcess(reason)
+        case .runnerStart(let reconnectLocal):
+            startSession(reconnectLocal: reconnectLocal, byOwner: true)
         }
-        startSession(reconnectLocal: passcodeHeadsUpReconnect)
     }
     func cancelPasscodeHeadsUp() {
-        passcodeConfirmationPending = false
-        passcodeHeadsUp = false
-        passcodeHeldOpen = nil
+        _ = transitionPasscodeConsent(.ownerCancelled)
     }
-    /// The in-process open waiting for Continue on the passcode note: its reason.
-    private var passcodeHeldOpen: String?
     /// The hand-off the agent asked the owner for, while it waits (shown on the home screen too).
     private(set) var handoffText: String?
     private var launchingSince: Date?
@@ -344,7 +428,7 @@ final class AppModel {
         // iOS 27 lets a relaunched Poki open automation without the passcode while the boot's allowance
         // lasts, so a phone step from the background (Poki Anytime, an agent) does not wait for Poki in front.
         if IdleSessionPolicy.forSystem(systemVersion) == .close, AutomationAllowance.saved?.covers(boot: BootClock.current, at: Date()) == true {
-            InProcessWDA.gate.withLock { $0.startedThisBoot = true }
+            InProcessWDA.transitionGate(.bootConfirmed)
         }
         self.requiresDiskImageCheck = requiresDiskImageCheck ?? !Self.onSimulator
         // A reinstall emptied the container: the pairing file comes back from the Keychain (and the
@@ -373,7 +457,10 @@ final class AppModel {
                            connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
-        // inFront starts true before the first scene callback, including a background launch.
+        if UIApplication.shared.applicationState == .background {
+            self.inFront = false
+            InProcessWDA.transitionGate(.sceneVisibilityChanged(inFront: false))
+        }
         self.activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
@@ -578,11 +665,13 @@ final class AppModel {
 
     /// Mounting developer services does not enable Automation Mode. A probe-driven model already
     /// has the session the probe opened, so it starts no other.
-    func prepareForTask() {
+    /// byOwner: the owner's own gesture started this (Poki Anytime's Action Button). The composer, a
+    /// mic tap and a task's start do not say so: they leave a cancelled passcode screen cancelled.
+    func prepareForTask(byOwner: Bool = false) {
         guard automationPath == .inProcess, setup.loopback != .none, !probeDriven else { return }
         if !sessionOn {
             pendingPrepareForTask = true
-            startSession()
+            startSession(byOwner: byOwner)
         }
         guard sessionOn, runnerPaused else { return }
         pendingPrepareForTask = false
@@ -621,23 +710,27 @@ final class AppModel {
         else { launchRunner() }
     }
 
-    func warmInProcess(_ why: String) {
+    func warmInProcess(_ why: String, byOwner: Bool = false) {
         guard automationPath == .inProcess, sessionOn, runner.isRunning,
               inProcessSession != .idle, inProcessSession != .open else { return }
         if case .closing = inProcessSession { return }
-        if InProcessWDA.automationDeclined || passcodeConfirmationPending { return }
+        if InProcessWDA.automationDeclined { return }
+        if passcodeConfirmationPending {
+            if byOwner { _ = transitionPasscodeConsent(.request(.inProcessWarm(reason: why), byOwner: true)) }
+            return
+        }
         // The first open since the iPhone restarted is what brings up iOS's passcode screen: with
         // Poki in front, the owner is told just before it (Continue opens; elsewhere the Live
         // Activity asks for it once iOS has held its "allow automation" call for `passcodeEvidence` seconds).
-        if passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator, !inProcessWarming {
-            passcodeHeldOpen = why
-            passcodeConfirmationPending = true
-            passcodeHeadsUp = true
+        if shouldRequestPasscodeConsent, !inProcessWarming {
+            _ = transitionPasscodeConsent(.request(.inProcessWarm(reason: why), byOwner: byOwner))
             log.add("runner", "first automation since this iPhone restarted: requested notice that iOS will ask for the passcode")
             return
         }
         if inProcessWarming {
-            guard Date().timeIntervalSince(inProcessWarmStarted) > Self.staleOpen else { return }
+            // An open held by iOS's passcode screen is the owner typing, not a stale open: iOS
+            // answers it within about a minute, and a second open would bring up a second screen.
+            guard !inProcessPasscode, Date().timeIntervalSince(inProcessWarmStarted) > Self.staleOpen else { return }
             log.add("runner", "the in-process open under way has not answered in \(Int(Self.staleOpen)) s: asking again for \(why)")
         }
         log.add("session-timing", String(format: "session_requested uptime=%.6f", ProcessInfo.processInfo.systemUptime))
@@ -715,7 +808,7 @@ final class AppModel {
                 let passcodeMissed = !unreadable && (waitedForPasscode || detail.localizedCaseInsensitiveContains("enabling automation mode"))
                 // Cancelled (or left) iOS's passcode screen: Poki does not open it again by itself.
                 if !ok, passcodeMissed {
-                    InProcessWDA.gate.withLock { $0.declined = true }
+                    InProcessWDA.transitionGate(.passcodeDeclined)
                     self.log.add("runner", "the passcode for automation was not entered: Poki will not ask again until it is turned on again")
                 }
                 self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: "\(result["code"] ?? "unknown")", detail: detail)
@@ -775,7 +868,7 @@ final class AppModel {
     func becameActive() {
         inFront = true
         guard signer.installFinish == .idle else { return }
-        InProcessWDA.gate.withLock { $0.inFront = true }
+        InProcessWDA.transitionGate(.sceneVisibilityChanged(inFront: true))
         cameToFront = Date()
         // A pairing file and disk image Poki Setup put in the container while Poki was running (or
         // since it last came to the front) count at once: mirrored to the Keychain, the disk image
@@ -843,7 +936,7 @@ final class AppModel {
     /// it): every 6 s, light enough for the location-kept background time.
     func wentToBackground() {
         inFront = false
-        InProcessWDA.gate.withLock { $0.inFront = false }
+        InProcessWDA.transitionGate(.sceneVisibilityChanged(inFront: false))
         // The idle time counts from here: Poki in front was not idle (it stands by only away from it).
         if sessionOn { lastAgentActivity = max(lastAgentActivity, Date()) }
         sessionOn ? loopback.resume(every: 6) : loopback.pause()
@@ -1023,19 +1116,22 @@ final class AppModel {
         return await task.value
     }
 
-    func startSession(reconnectLocal: Bool = true) {
-        guard !passcodeConfirmationPending, !sessionOn, !sessionStarting else { return }
+    func startSession(reconnectLocal: Bool = true, byOwner: Bool = false) {
+        if passcodeConfirmationPending {
+            if byOwner { _ = transitionPasscodeConsent(.request(.runnerStart(reconnectLocal: reconnectLocal), byOwner: true)) }
+            return
+        }
+        guard !sessionOn, !sessionStarting else { return }
         diskImage.refreshAvailability()
-        // Turning on is the owner asking for automation again, after a cancelled passcode screen too.
-        InProcessWDA.gate.withLock { $0.declined = false }
+        // The owner turning Poki on asks for automation again, after a cancelled passcode screen too.
+        // An agent turning it on does not.
+        if byOwner { InProcessWDA.transitionGate(.ownerReenabled) }
         // The first automation after a restart (or ever) brings up iOS's own passcode screen. With
         // Poki in front, the owner is told first that it is expected and that Poki cannot see it.
         // Start asks for everything at once: the note now, and on Continue the session's first open
         // (warmInProcess, as soon as the launcher is ready), which brings up iOS's passcode screen.
-        if automationPath == .runner, passcodeExpected, passcodeHeadsUpSeen != BootClock.current, inFront, !Self.onSimulator {
-            passcodeHeadsUpReconnect = reconnectLocal
-            passcodeConfirmationPending = true
-            passcodeHeadsUp = true
+        if automationPath == .runner, shouldRequestPasscodeConsent {
+            _ = transitionPasscodeConsent(.request(.runnerStart(reconnectLocal: reconnectLocal), byOwner: byOwner))
             log.add("runner", "no automation since this iPhone restarted: requested notice that iOS will ask for the passcode")
             return
         }
@@ -1209,6 +1305,7 @@ final class AppModel {
 
     /// The update is accepted by iOS. Keep the loopback and wantsOn for the replacement app.
     func windDownForUpdate() async {
+        _ = transitionPasscodeConsent(.resetForStop)
         sessionStartTask?.cancel()
         pendingPrepareForTask = false
         idleTimer?.invalidate(); idleTimer = nil
@@ -1233,6 +1330,7 @@ final class AppModel {
     }
 
     func stopSession() {
+        _ = transitionPasscodeConsent(.resetForStop)
         sessionStartTask?.cancel()
         pendingPrepareForTask = false
         preparingCellularImage = false
@@ -1407,6 +1505,7 @@ final class AppModel {
     private func clearStuckNotice() { if problem == Self.stuckNotice { problem = nil } }
 
     func pauseByOwner() {
+        _ = transitionPasscodeConsent(.resetForStop)
         guard sessionOn else { return }
         if runnerPaused {
             ownerPaused = true
@@ -1513,8 +1612,12 @@ final class AppModel {
     }
 
     /// Starts a paused runner again (the next agent request, or the owner).
-    func wakeRunner(asked: String = "an agent asked") {
+    func wakeRunner(asked: String = "an agent asked", byOwner: Bool = false) {
         ownerPaused = false
+        if byOwner {
+            InProcessWDA.transitionGate(.ownerReenabled)
+            if inProcessSession == .passcodeMissed { inProcessSession = .idle }
+        }
         guard sessionOn else { return }
         if automationPath == .inProcess {
             if case .closing = inProcessSession {
@@ -1522,7 +1625,7 @@ final class AppModel {
                 return
             }
             if inProcessSession == .idle { inProcessSession = .opening }
-            if !runnerPaused { warmInProcess(asked); return }
+            if !runnerPaused { warmInProcess(asked, byOwner: byOwner); return }
         }
         guard sessionOn, runnerPaused else { return }
         runnerPaused = false
@@ -1530,7 +1633,7 @@ final class AppModel {
         lastAgentActivity = Date()
         log.add("runner", automationPath == .inProcess ? "\(asked): opening the automation session again" : "\(asked): starting the runner")
         activity.update { $0.runnerPaused = false; $0.phase = .working; $0.headline = "Starting the runner"; $0.since = Date() }
-        if automationPath == .inProcess, runner.isRunning { warmInProcess(asked); return }
+        if automationPath == .inProcess, runner.isRunning { warmInProcess(asked, byOwner: byOwner); return }
         launchRunner()
     }
 
