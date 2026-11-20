@@ -22,6 +22,9 @@ struct PokiApp: App {
         SettingsVault.restore()
         AppLocalization.publish()
         SettingsVault.watch()
+        // Install history lock observers before any local or external agent can query the store.
+        _ = HistoryLock.shared
+        HistoryCapture.shared.watchLock()
         // Someone updating from an earlier version keeps the dictation microphone it always showed; this
         // reads what that version left behind, so it runs before the conversations and the model load.
         FieldDictation.keepButtonForUpgrade()
@@ -35,6 +38,9 @@ struct PokiApp: App {
         }
         #if DEBUG && targetEnvironment(simulator)
         TestCredential.importIfGiven()
+        #endif
+        #if DEBUG
+        LaunchBackdropRender.writeIfAsked()
         #endif
         // A memory backup Poki Setup put back (Documents/AgentBackup) is merged in off the main thread.
         Self.scheduleStartupWork()
@@ -97,6 +103,8 @@ struct RootView: View {
     @AppStorage(AppInterfaceSize.defaultsKey) private var interfaceSize = AppInterfaceSize.system
     @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @Namespace private var profile
+    /// The launch screen is still over the first frame, letting go (`LaunchCurtain`).
+    @State private var curtain = true
 
     enum HomeRoute: Hashable { case chat, session(String), voice, setup }
 
@@ -262,6 +270,9 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tint.page.ignoresSafeArea())
+        .overlay {
+            if curtain { LaunchCurtain(done: { curtain = false }).ignoresSafeArea().allowsHitTesting(false) }
+        }
         .onGeometryChange(for: Bool.self) { geometry in
             geometry.size.width >= Self.sidebarWidth + 1 + Self.minimumChatWidth
         } action: { showsSidebar = $0 }
@@ -326,6 +337,10 @@ struct RootView: View {
             }
         }
         .onAppear(perform: openLaunchScreen)
+        // A conversation archived or deleted (in the list or in Settings) is not left open on screen.
+        .onChange(of: SessionStore.shared.removed) { _, removed in
+            if let removed { leave(removed.id) }
+        }
         .task {
             #if DEBUG
             // Development builds: `-pokiVoiceLink "poki://voice?…"` at launch starts a silent test run.
@@ -358,6 +373,18 @@ struct RootView: View {
             openDetails([DetailsRoute.history])
         } else if url.host() == "approvals" {
             openDetails([DetailsRoute.approvals])
+        } else if url.host() == "memory" {
+            // poki://memory, and poki://memory/recent?change=<id> from a conversation's "Memory updated",
+            // which lights that change up.
+            let change = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "change" }?.value
+            openDetails(url.path() == "/recent" ? [SettingsRoute.memory, SettingsRoute.memoryPage(.recent(highlight: change))] : [SettingsRoute.memory])
+        } else if url.host() == "session" {
+            // poki://session/<id>: a memory's Source, back to the conversation it was heard in. A conversation
+            // that is no longer kept leaves the page where it is.
+            if let id = url.pathComponents.dropFirst().first, SessionStore.shared.session(id) != nil {
+                detailsOpen = false
+                openRun(id)
+            }
         } else if url.host() == "voice" {
             detailsOpen = false
             model.voice.open(url)
@@ -406,6 +433,16 @@ struct RootView: View {
         guard request == .talk, !chat.running, !model.voice.isOn else { return }
         // Without a live voice (no OpenAI key, no voice bridge) Talk opens the message field instead.
         if model.voice.canTalkLive { openLiveVoice() } else { MessageFieldAsk.shared.ask() }
+    }
+
+    /// The conversation `id` left the list. When it is the one in the chat, the chat stops its task and
+    /// starts a new conversation (`ChatModel.conversationLeft`); when an outside agent's session with that
+    /// id is open over the chat (iPhone) or beside the list (iPad), the chat comes back. The drawer stays
+    /// as it is: the owner is in it.
+    private func leave(_ id: String) {
+        chat.conversationLeft(id)
+        if wide == .session(id) { wide = .chat }
+        if home == NavigationPath([HomeRoute.session(id)]) { home = NavigationPath() }
     }
 
     /// A run from the Activity Log: Poki's own chat or an outside agent's session.
@@ -474,6 +511,8 @@ struct RootView: View {
             openDetails([DetailsRoute.model])
         case "memory":
             openDetails([SettingsRoute.memory])
+        case "memoryRecent":
+            openDetails([SettingsRoute.memory, SettingsRoute.memoryPage(.recent())])
         case "interfaceSize":
             openDetails([DetailsRoute.interfaceSize])
         case "appearance":
@@ -484,6 +523,8 @@ struct RootView: View {
             openDetails([DetailsRoute.voice])
         case "conversations":
             openDetails([DetailsRoute.conversations])
+        case "screenHistory":
+            openDetails([DetailsRoute.screenHistory])
         case "updates":
             openDetails([DetailsRoute.updates])
         case "steps":
