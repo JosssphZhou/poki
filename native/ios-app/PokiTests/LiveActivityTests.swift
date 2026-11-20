@@ -25,11 +25,17 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(activity.state.phase, .done)
     }
 
-    func testStoppingARunReturnsItsActivityStateToIdle() {
+    func testStoppedRunShowsItsOutcomeBeforeReturningToIdle() async throws {
         let activity = ActivityController()
+        activity.foldAfter = .milliseconds(20)
         activity.update { $0.phase = .working; $0.headline = "Read Notes" }
         XCTAssertEqual(activity.state.phase, .working)
-        activity.endStoppedRun()
+        activity.stopRun()
+        XCTAssertEqual(activity.state.face.content, "Stopped")
+        let foldedBy = ContinuousClock.now + .seconds(1)
+        while activity.state.phase != .idle, ContinuousClock.now < foldedBy {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(activity.state.phase, .idle)
     }
 
@@ -48,7 +54,7 @@ final class LiveActivityTests: XCTestCase {
             app.startSession()
             XCTAssertTrue(app.sessionOn)
             XCTAssertTrue(activities().isEmpty, "Starting the session in the background must defer the activity")
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             XCTAssertTrue(activities().isEmpty, "Live Activity updates must also wait for the foreground")
 
             app.becameActive()
@@ -59,7 +65,7 @@ final class LiveActivityTests: XCTestCase {
             XCTAssertEqual(activity.content.state.headline, "Thinking")
 
             app.becameActive()
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             XCTAssertEqual(activities().map(\.id), [activity.id])
 
             app.stopSession()
@@ -89,7 +95,7 @@ final class LiveActivityTests: XCTestCase {
         let taskID = UUID()
         try await withSessionApp { app, activities in
             app.startSession()
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             let original = try XCTUnwrap(activities().first)
 
             UserDefaults.standard.set(false, forKey: ActivityController.capturePermissionKey)
@@ -130,7 +136,7 @@ final class LiveActivityTests: XCTestCase {
             try await withSessionApp { app, activities in
                 let taskID = UUID()
                 app.startSession()
-                app.chatTaskBegan()
+                await app.chatTaskBegan()
                 let original = try XCTUnwrap(activities().first)
                 let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
                 XCTAssertFalse(hidden.isError)
@@ -161,7 +167,7 @@ final class LiveActivityTests: XCTestCase {
         try await withSessionApp { app, activities in
             let taskID = UUID()
             app.startSession()
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             let original = try XCTUnwrap(activities().first)
             let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
             XCTAssertFalse(hidden.isError)
@@ -247,7 +253,7 @@ final class LiveActivityTests: XCTestCase {
     func testRestartingSessionInPokiClearsCaptureVisibility() async throws {
         try await withSessionApp { app, activities in
             app.startSession()
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             let taskID = UUID()
             let original = try XCTUnwrap(activities().first)
             let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
@@ -292,7 +298,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(activity.isRunning)
 
         activity.captureTaskEnded(.chat(taskID))
-        activity.endStoppedRun()
+        activity.stopRun()
         try await captureEvidenceWindow("reopen")
         if recordEvidence { XCTAssertEqual(UIApplication.shared.applicationState, .active) }
         activity.reopenedAfterBackground()
@@ -579,7 +585,7 @@ final class LiveActivityTests: XCTestCase {
             try await withSessionApp { app, activities in
                 app.becameActive()
                 app.startSession()
-                app.chatTaskBegan()
+                await app.chatTaskBegan()
                 let activity = try XCTUnwrap(activities().first)
                 XCTAssertEqual(activity.activityState, .active)
 
@@ -651,7 +657,7 @@ final class LiveActivityTests: XCTestCase {
 
     func testTaskFinishOnDynamicIslandUpdatesActivityWithoutPostingBanner() async throws {
         try await withActiveActivityInBackground(dynamicIsland: true) { app, activity in
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             try await waitForPhase(.working, on: activity)
             clearNotice("poki-reply")
             app.chatTaskEnded(reply: "Sent the note.", session: "finish-island", acted: true)
@@ -666,7 +672,7 @@ final class LiveActivityTests: XCTestCase {
     func testTaskFinishWithoutDynamicIslandPostsBannerEvenWhenActivityRuns() async throws {
         try await withActiveActivityInBackground(dynamicIsland: false) { app, activity in
             XCTAssertEqual(activity.activityState, .active)
-            app.chatTaskBegan()
+            await app.chatTaskBegan()
             try await waitForPhase(.working, on: activity)
             clearNotice("poki-reply")
             app.chatTaskEnded(reply: "Sent the note.", session: "finish-notch", acted: true)
@@ -689,7 +695,7 @@ final class LiveActivityTests: XCTestCase {
                 defer { clearNotice("poki-reply") }
                 try await movePokiToBackground(app)
                 app.startSession()
-                app.chatTaskBegan()
+                await app.chatTaskBegan()
                 XCTAssertTrue(activities().isEmpty)
 
                 clearNotice("poki-reply")
@@ -701,7 +707,7 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
-    private func ensureRunningSession() throws -> RunningSession {
+    private func ensureRunningSession() async throws -> RunningSession {
         if let session = Self.runningSession, session.activities().first != nil {
             return session
         }
@@ -718,7 +724,7 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertTrue(app.setRelay("https://relay.invalid"))
         app.becameActive()
         app.startSession()
-        app.chatTaskBegan()
+        await app.chatTaskBegan()
         let session = RunningSession(app: app, existingIDs: existingIDs) {
             automation.answer(nil)
             for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
@@ -733,7 +739,7 @@ final class LiveActivityTests: XCTestCase {
         _ body: (AppModel, Activity<PokiActivityAttributes>) async throws -> Void
     ) async throws {
         try await withFinishWindow(dynamicIsland: dynamicIsland) {
-            let session = try ensureRunningSession()
+            let session = try await ensureRunningSession()
             let activity = try XCTUnwrap(session.activities().first)
             XCTAssertEqual(activity.activityState, .active)
             defer { clearNotice("poki-reply") }
