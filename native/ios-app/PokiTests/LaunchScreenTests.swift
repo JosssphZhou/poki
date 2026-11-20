@@ -48,28 +48,55 @@ final class LaunchScreenTests: XCTestCase {
         }
     }
 
-    /// The launch screen's picture of the light is the home page's own light at rest, so the home page
-    /// takes over from it without a jump. A change to the light's table without a new picture
-    /// (scripts/make-launch-backdrop.sh) fails here.
+    /// The launch screen's picture of the light is the home page's own light at rest, in light and in
+    /// dark, so the home page takes over from it without a jump. A change to the light's table without
+    /// new pictures (scripts/make-launch-backdrop.sh) fails here.
     func testLaunchBackdropIsTheHomePagesLightAtRest() throws {
-        let launch = try XCTUnwrap(UIImage(named: "LaunchBackdrop")?.cgImage)
-        let renderer = ImageRenderer(content: HomeBackdrop(home: true, working: false, frozen: true)
-            .environment(\.colorScheme, .light).frame(width: 402, height: 874))
-        renderer.scale = 1
-        let home = try XCTUnwrap(renderer.cgImage)
-        let (a, b) = (try samples(launch), try samples(home))
-        var worst = 0
-        for i in a.indices { worst = max(worst, abs(Int(a[i]) - Int(b[i]))) }
-        XCTAssertLessThanOrEqual(worst, 6, "launch picture and home light differ by \(worst) of 255 somewhere")
-        // In both appearances the launch screen's ground is the home page's paper, never white or black.
+        for (style, scheme) in [(UIUserInterfaceStyle.light, ColorScheme.light), (.dark, .dark)] {
+            let traits = UITraitCollection(userInterfaceStyle: style)
+            let launch = try XCTUnwrap(UIImage(named: "LaunchBackdrop", in: .main, compatibleWith: traits)?.cgImage)
+            let renderer = ImageRenderer(content: HomeBackdrop(home: true, working: false, frozen: true)
+                .environment(\.colorScheme, scheme).frame(width: 402, height: 874))
+            renderer.scale = 1
+            let home = try XCTUnwrap(renderer.cgImage)
+            let (a, b) = (try samples(launch), try samples(home))
+            var worst = 0
+            for i in a.indices { worst = max(worst, abs(Int(a[i]) - Int(b[i]))) }
+            XCTAssertLessThanOrEqual(worst, 6, "launch picture and home light differ by \(worst) of 255 somewhere in \(scheme)")
+        }
+        // The launch screen's ground is the home page's paper in light and its blue-black in dark, never
+        // white or black.
         let (controller, view) = try launchView()
-        for style: UIUserInterfaceStyle in [.light, .dark] {
+        for (style, expected) in [(UIUserInterfaceStyle.light, [0xF5, 0xF7, 0xFA, 0xFF] as [CGFloat]), (.dark, [0x05, 0x07, 0x0D, 0xFF])] {
             controller.overrideUserInterfaceStyle = style
             let ground = try XCTUnwrap(view.backgroundColor).resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
             var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
             XCTAssertTrue(ground.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
-            for (actual, expected) in zip([red, green, blue, alpha], [0xF5, 0xF7, 0xFA, 0xFF] as [CGFloat]) {
-                XCTAssertEqual(actual, expected / 255, accuracy: 0.002)
+            for (actual, value) in zip([red, green, blue, alpha], expected) {
+                XCTAssertEqual(actual, value / 255, accuracy: 0.002, "\(style == .dark ? "dark" : "light") ground")
+            }
+        }
+    }
+
+    /// Each launch picture has its own dark picture, so the launch screen is never the light one in
+    /// Dark Mode: the word is pale over the dark light, and the bear has no blue glow under it there.
+    func testLaunchPicturesHaveADarkAppearance() throws {
+        for name in ["LaunchBackdrop", "LaunchWordmark", "LaunchBear"] {
+            let light = try XCTUnwrap(UIImage(named: name, in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: .light)), name)
+            let dark = try XCTUnwrap(UIImage(named: name, in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: .dark)), name)
+            XCTAssertEqual(light.size, dark.size, "\(name) lays out the same in both appearances")
+            XCTAssertFalse(light.pngData() == dark.pngData(), "\(name) has no dark picture")
+        }
+    }
+
+    /// iOS draws the launch screen on the iPhone itself before Poki runs, so its pictures stay small:
+    /// each fits in one 4 MiB piece of the asset catalogue, as the old launch screen's bear did. The
+    /// bear is drawn at 2x for this (scripts/make-launch-art.swift); at 3x it was 1524 by 1010.
+    func testLaunchPicturesStaySmall() throws {
+        for name in ["LaunchBackdrop", "LaunchWordmark", "LaunchBear"] {
+            for style: UIUserInterfaceStyle in [.light, .dark] {
+                let picture = try XCTUnwrap(UIImage(named: name, in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: style))?.cgImage, name)
+                XCTAssertLessThanOrEqual(picture.width * picture.height * 4, 4 << 20, "\(name) is \(picture.width) by \(picture.height)")
             }
         }
     }

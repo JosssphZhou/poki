@@ -9,15 +9,23 @@ light fades into the light itself.
 | File | What | Made by |
 | --- | --- | --- |
 | `LaunchBackdrop.png` | The home page's light at rest, light appearance, 402 by 874 points at one pixel a point | `scripts/make-launch-backdrop.sh`, which has a Debug build draw `HomeBackdrop` itself |
+| `LaunchBackdropDark.png` | The same light in the dark appearance | The same script |
 | `LaunchBear.png` | The bear cut out of the app icon, on a clear ground | The design's own cut-out |
 
-`scripts/make-assets.sh` copies the light into the asset catalogue and draws the word and the bear with
-its shadow from these with `scripts/make-launch-art.swift`. The word's colour and weight are set once,
-at the top of that script. After a change to the home page's light, run `make-launch-backdrop.sh`
-again; `LaunchScreenTests` fails while the picture and the light differ.
+`scripts/make-assets.sh` copies the two lights into the asset catalogue and draws the word (at 3x) and the
+bear (at 2x) from these with `scripts/make-launch-art.swift`, once for each appearance: in dark the word
+is a soft white and the bear has no blue shadow. The word's colours and weight are set once, at the top of
+that script. The ground under the pictures is the `LaunchGround` colour, the home page's paper in light
+and its blue-black in dark. After a change to the home page's light, run
+`make-launch-backdrop.sh` again; `LaunchScreenTests` fails while a picture and the light differ.
 
-The light is drawn for one appearance only. In Dark Mode the launch screen is the same, and the
-curtain fades it into the dark home page.
+iOS draws the launch screen on the iPhone itself before Poki runs, so every picture here stays small:
+each one fits in a single 4 MiB piece of the asset catalogue, as the old launch screen's bear did.
+The bear is drawn at 2x because its cut-out is 1024 pixels wide, fewer than a 3x picture would hold,
+so 3x only made it the largest picture in the app. `LaunchScreenTests` fails if a picture outgrows this.
+
+Every picture has a dark one, so in Dark Mode the launch screen is the dark home page's light with a
+pale word, and the curtain lets it go into the dark home page as it does in light.
 
 ## License
 

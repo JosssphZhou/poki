@@ -71,17 +71,26 @@ bears() {
 bears "$APP"
 
 # The launch screen's pictures (Poki/LaunchArt, see its README): the home page's light as it is, and the
-# word and the bear drawn from the design's values.
+# word and the bear drawn from the design's values, each with its own picture for the dark appearance,
+# and the ground under them, the home page's paper in light and its blue-black in dark.
 LAUNCH="$HERE/Poki/LaunchArt"
+dark='"appearances":[{"appearance":"luminosity","value":"dark"}],'
 mkdir -p "$APP/LaunchBackdrop.imageset"
 cp "$LAUNCH/LaunchBackdrop.png" "$APP/LaunchBackdrop.imageset/picture.png"
-echo '{"images":[{"filename":"picture.png","idiom":"universal","scale":"1x"}],"info":{"version":1,"author":"poki"}}' > "$APP/LaunchBackdrop.imageset/Contents.json"
-for name in LaunchWordmark LaunchBear; do
+cp "$LAUNCH/LaunchBackdropDark.png" "$APP/LaunchBackdrop.imageset/picture-dark.png"
+echo "{\"images\":[{\"filename\":\"picture.png\",\"idiom\":\"universal\",\"scale\":\"1x\"},{${dark}\"filename\":\"picture-dark.png\",\"idiom\":\"universal\",\"scale\":\"1x\"}],\"info\":{\"version\":1,\"author\":\"poki\"}}" > "$APP/LaunchBackdrop.imageset/Contents.json"
+# The word at 3x, the bear at 2x (make-launch-art.swift says why).
+for spec in LaunchWordmark:3 LaunchBear:2; do
+  name="${spec%:*}"
+  scale="${spec#*:}"
   mkdir -p "$APP/$name.imageset"
-  echo '{"images":[{"filename":"picture@3x.png","idiom":"universal","scale":"3x"}],"info":{"version":1,"author":"poki"}}' > "$APP/$name.imageset/Contents.json"
+  echo "{\"images\":[{\"filename\":\"picture@${scale}x.png\",\"idiom\":\"universal\",\"scale\":\"${scale}x\"},{${dark}\"filename\":\"picture-dark@${scale}x.png\",\"idiom\":\"universal\",\"scale\":\"${scale}x\"}],\"info\":{\"version\":1,\"author\":\"poki\"}}" > "$APP/$name.imageset/Contents.json"
 done
 swift "$HERE/scripts/make-launch-art.swift" "$HERE/Shared/Fonts/Geist-SemiBold.ttf" "$LAUNCH/LaunchBear.png" \
-  "$APP/LaunchWordmark.imageset/picture@3x.png" "$APP/LaunchBear.imageset/picture@3x.png"
+  "$APP/LaunchWordmark.imageset/picture@3x.png" "$APP/LaunchBear.imageset/picture@2x.png" \
+  "$APP/LaunchWordmark.imageset/picture-dark@3x.png" "$APP/LaunchBear.imageset/picture-dark@2x.png"
+mkdir -p "$APP/LaunchGround.colorset"
+echo "{\"colors\":[{\"idiom\":\"universal\",\"color\":{\"color-space\":\"srgb\",\"components\":{\"red\":\"0xF5\",\"green\":\"0xF7\",\"blue\":\"0xFA\",\"alpha\":\"1.000\"}}},{${dark}\"idiom\":\"universal\",\"color\":{\"color-space\":\"srgb\",\"components\":{\"red\":\"0x05\",\"green\":\"0x07\",\"blue\":\"0x0D\",\"alpha\":\"1.000\"}}}],\"info\":{\"version\":1,\"author\":\"poki\"}}" > "$APP/LaunchGround.colorset/Contents.json"
 
 WIDGET="$HERE/PokiWidgets/Assets.xcassets"
 catalog "$WIDGET"
