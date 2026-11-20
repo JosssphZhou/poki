@@ -160,6 +160,8 @@ struct PokiFlight: View {
     var places: [PicturePlace: CGRect]
     var pokes: Int
     var tap: () -> Void
+    /// Settings › Models, for the menu's Add Model.
+    var openModel: () -> Void = {}
     /// The bottom of the picture over the greeting, in global points, for Poki's card to open under it.
     var landed: (CGFloat) -> Void = { _ in }
     /// How far the picture rises from over the greeting to the top bar, for the greeting to rise with it.
@@ -169,10 +171,12 @@ struct PokiFlight: View {
     var body: some View {
         let side = home ? sizes.homeAvatar : sizes.avatar
         if let place = places[home ? .home : .top] {
-            Button(action: tap) {
+            // Before a chat has begun the menu opens from the picture. In the conversation the picture
+            // lets the tap through to the top bar, where the menu opens from the pill with Poki's name.
+            PokiMenu(openModel: openModel, tapped: tap) {
                 PokiPicture(mood: status.mood, side: side, pokes: pokes).contentShape(.circle)
             }
-            .buttonStyle(.plain)
+            .allowsHitTesting(home)
             .accessibilityLabel(Text(verbatim: "Poki, " + PokiStatusCopy.word(status)))
             .accessibilityIdentifier("home.poki")
             .accessibilityHidden(!home)
@@ -201,6 +205,10 @@ struct PokiFlight: View {
 struct PokiHead: View {
     var sizes = HomeSizes()
     var home: Bool
+    /// Settings › Models, for the menu's Add Model.
+    var openModel: () -> Void = {}
+    /// A tap on the pill: the bear says hi while the menu opens.
+    var openDetails: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -210,11 +218,17 @@ struct PokiHead: View {
             // its place stays, and the bar keeps its height on both pages.
             ZStack {
                 if !home {
-                    Text(verbatim: "Poki")
-                        .font(.caption.weight(.semibold)).foregroundStyle(Color(.label))
-                        .padding(.horizontal, 12).frame(minHeight: 24)
-                        .glassSurface(in: Capsule())
-                        .glassAppearing()
+                    // The menu is the name pill alone: the system draws its own glass around a menu's
+                    // label in a glass group, and a label that held the picture's place too put the
+                    // whole of Poki in one pill. The glass is on the menu, so it opens from the pill.
+                    PokiMenu(openModel: openModel, tapped: openDetails) {
+                        Text(verbatim: "Poki")
+                            .font(.caption.weight(.semibold)).foregroundStyle(Color(.label))
+                            .padding(.horizontal, 12).frame(minHeight: 24)
+                            .contentShape(Capsule())
+                    }
+                    .glassSurface(in: Capsule())
+                    .glassAppearing()
                 }
             }
             .frame(minHeight: 24)
@@ -248,6 +262,8 @@ struct ChatTopBar: View {
     var newConversation: () -> Void
     /// A tap on Poki: the bear says hi while its card opens.
     var openDetails: () -> Void
+    /// Settings › Models, for the menu's Add Model.
+    var openModel: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Taps on New Conversation on the home page, for a light tap in the hand.
     @State private var homeTaps = 0
@@ -283,13 +299,11 @@ struct ChatTopBar: View {
                 }
             }
             .padding(.top, (sizes.avatar - sizes.button) / 2)
-            Button(action: openDetails) {
-                PokiHead(home: home).contentShape(.rect)
-            }
-            .buttonStyle(.plain)
+            PokiHead(home: home, openModel: openModel, openDetails: openDetails)
             .allowsHitTesting(!home)
             .accessibilityHidden(home)
-            .accessibilityElement(children: .ignore)
+            // Combined, not ignored: the menu inside is what VoiceOver's activate opens.
+            .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: "Poki, " + PokiStatusCopy.word(status)))
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("chat.header.details")

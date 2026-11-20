@@ -22,7 +22,7 @@ struct VoicePage: View {
     var body: some View {
         let face = Self.sample ?? currentFace
         VStack(spacing: 0) {
-            MessageListHeader(dark: true, back: back, openDetails: openDetails)
+            MessageListHeader(dark: true, back: back, openDetails: openDetails, openModel: openModel)
             stage(face).frame(maxHeight: .infinity)
             HoldButton(listening: face == .listening, hint: hint(face))
                 .gesture(hold)
