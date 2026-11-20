@@ -247,7 +247,6 @@ final class ScreenHistoryTests: XCTestCase {
         let treeBlob = Data(#"[[0,"Window","HiddenTreeMarker","",0,0,402,874]]"#.utf8)
 
         HistoryStore.shared.add(at: yesterdayAfternoon, app: "com.apple.weather", title: "Weather", text: "Rain tomorrow in Tokyo")
-        HistoryStore.shared.add(at: morningReadAt, app: "com.apple.mobilesafari", title: "Benchmarks", text: "SQLite WAL 420k ops")
         HistoryStore.shared.add(at: twoAndHalfHoursAgo, app: "com.apple.Maps", title: "Search", text: "Cedar Street Bakery")
         HistoryStore.shared.add(
             at: twentyMinutesAgo,
@@ -296,12 +295,6 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertEqual(lastHourParsed.entries[1].title, "Groceries")
         XCTAssertEqual(lastHourParsed.entries[1].text, "Buy oat milk and figs")
 
-        let morning = await app.runTool("screen_history", arguments: #"{"period":"morning"}"#)
-        XCTAssertFalse(morning.isError, morning.text)
-        let morningParsed = try decodeHistoryJSON(morning.text)
-        XCTAssertTrue(morningParsed.entries.contains(where: { $0.app == "Safari" && $0.text.contains("SQLite WAL 420k ops") }), morning.text)
-        XCTAssertFalse(morningParsed.entries.contains(where: { $0.text.contains("Rain tomorrow in Tokyo") }), morning.text)
-
         let iso = ISO8601DateFormatter()
         let spanArgs = try JSONSerialization.data(withJSONObject: [
             "start": iso.string(from: twoAndHalfHoursAgo.addingTimeInterval(-60)),
@@ -312,6 +305,15 @@ final class ScreenHistoryTests: XCTestCase {
         let spanParsed = try decodeHistoryJSON(span.text)
         XCTAssertEqual(spanParsed.entries.map(\.app), ["Maps"])
         XCTAssertEqual(spanParsed.entries.first?.text, "Cedar Street Bakery")
+
+        // Depending on the wall clock, the morning read can also fall in last_hour or the explicit
+        // span. Seed it after those fixed-count queries.
+        HistoryStore.shared.add(at: morningReadAt, app: "com.apple.mobilesafari", title: "Benchmarks", text: "SQLite WAL 420k ops")
+        let morning = await app.runTool("screen_history", arguments: #"{"period":"morning"}"#)
+        XCTAssertFalse(morning.isError, morning.text)
+        let morningParsed = try decodeHistoryJSON(morning.text)
+        XCTAssertTrue(morningParsed.entries.contains(where: { $0.app == "Safari" && $0.text.contains("SQLite WAL 420k ops") }), morning.text)
+        XCTAssertFalse(morningParsed.entries.contains(where: { $0.text.contains("Rain tomorrow in Tokyo") }), morning.text)
 
         AppLocalization.shared.preference = "zh-Hans"
         let byChineseApp = await app.runTool("screen_history", arguments: #"{"app":"备忘录"}"#)
