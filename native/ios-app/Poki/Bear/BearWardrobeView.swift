@@ -345,13 +345,16 @@ private struct BearMixView: View {
                 .frame(minHeight: 44)
             VStack(alignment: .leading, spacing: 0) {
                 Divider().padding(.leading, 12)
-                Button("Reset Colors") {
+                Button {
                     withAnimation(reduceMotion ? .easeInOut(duration: 0.15) : .easeInOut(duration: 0.3)) {
                         wardrobe.colors = BearOutfitColors()
                     }
+                } label: {
+                    Text("Reset Colors")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .contentShape(.rect)
                 }
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: 44)
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(height: wardrobe.colors != BearOutfitColors() ? resetRowHeight : 0, alignment: .top)
