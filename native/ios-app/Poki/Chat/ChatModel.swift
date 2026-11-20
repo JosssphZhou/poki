@@ -3,6 +3,16 @@ import PiSwiftAI
 import PokiCore
 import SwiftUI
 
+struct TaskMemoryUse: Equatable, Codable {
+    struct Note: Equatable, Codable {
+        var id: String
+        var updatedAtSeconds: Int64
+    }
+
+    var notes: [Note]
+    var skills: [String]
+}
+
 /// One thing in the conversation, in the order it is drawn.
 struct ChatEntry: Identifiable, Equatable, Codable {
     enum Kind: Equatable, Codable {
@@ -37,6 +47,10 @@ struct ChatEntry: Identifiable, Equatable, Codable {
     var ended: Date?
     var total: Int?
     var stopped: Bool?
+    var interrupted: Bool?
+    var saveFailed: Bool?
+    var failed: Bool?
+    var memoryUse: TaskMemoryUse?
     /// The small pictures of the photos and PDFs sent with your message (`ChatAttachment.thumbnail`).
     var attachments: [Data]?
     var textDocuments: [ChatTextDocument]?
@@ -148,8 +162,11 @@ final class ChatModel {
     private var toolCalls = 0
     private var taskCalls: [CallRecord] = []
     private var taskResult: TaskResult?
+    private var offeredMemories: [MemoryNote] = []
+    private var pendingMemoryWrites: [(write: TaskMemoryWrite, skillName: String?)] = []
     /// The task under way as the owner asked it.
     private var taskText = ""
+    private var taskRequestID: UUID?
     private var client: ModelClient?
     private var restoredContext: String?
     /// The plan the model published with report_plan; the bubble shows its steps up to the current one.
@@ -392,7 +409,7 @@ final class ChatModel {
 
     private struct PreparedSend {
         enum Engine {
-            case direct(ModelClient, String)
+            case direct(ModelClient, String, [MemoryNote])
             case pi(Model)
         }
         let text: String
@@ -402,6 +419,7 @@ final class ChatModel {
         let provider: ModelProvider
         let model: String
         let resumedTask: String?
+        let isRetry: Bool
         let inSplitView: Bool
         let images: [Data]
         let namedApps: [String]
@@ -479,8 +497,9 @@ final class ChatModel {
 
     private func prepareSend(_ text: String, again: Bool, thumbnails: [Data], documents: [ChatTextDocument],
                              inSplitView: Bool, chooseWorkspace: Bool) -> PreparedSend? {
-        var resumedTask: String?
-        if kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
+        let previousRequest = again ? entries.last(where: { if case .you = $0.kind { true } else { false } }) : nil
+        var resumedTask = previousRequest?.continuedTask
+        if !again, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
             switch ChatContinuation.resolve(text, current: sessionID, choices: entries.last?.continuationChoices,
                                             sessions: store.sessions) {
             case .newTask: break
@@ -507,17 +526,13 @@ final class ChatModel {
         }
         // A pause of half an hour or more gets its own time line, as in Messages.
         if !again, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
-        let you: ChatEntry
-        if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
-            you = last
-        } else {
-            var entry = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
-            entry.continuedTask = resumedTask
-            if !thumbnails.isEmpty { entry.attachments = thumbnails } else { lastImages = [] }
-            if !documents.isEmpty { entry.textDocuments = documents }
-            you = entry
-            entries.append(you)
-        }
+        var you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+        you.continuedTask = resumedTask
+        if !thumbnails.isEmpty { you.attachments = thumbnails }
+        else if let previousRequest { you.attachments = previousRequest.attachments }
+        else { lastImages = [] }
+        if !documents.isEmpty { you.textDocuments = documents }
+        entries.append(you)
         let message = you.requestText
         usesSplitView = inSplitView
         splitViewSession = inSplitView ? UUID().uuidString : nil
@@ -543,6 +558,7 @@ final class ChatModel {
             Task { if let name = await SessionNamer.name(for: message, provider: provider, model: piModel) { store.setAutoName(id, name) } }
         }
         planID = nil; noteID = nil; cardID = nil; modelPlan = nil
+        taskRequestID = you.id
         taskApp = nil
         taskApps = TaskApps(); taskRequest = resumedTask ?? text; toolRoute = nil
         let continuation = resumedTask.map { "The owner selected this saved task to resume: \($0). Recheck the current screen and continue from the saved progress; do not substitute a task from long-term memory." }
@@ -550,34 +566,40 @@ final class ChatModel {
         let namedApps = chooseWorkspace && kind == .poki && app.canPlanSplitView
             ? AppIconStore.bundleIDs(namedIn: text) : []
         if !inSplitView, namedApps.count < 2, Self.direct, provider == .anthropic || provider == .openai {
-            let instructions = [Harness.instructions(for: resumedTask ?? text), restoredContext, continuation].compactMap { $0 }.joined(separator: "\n\n")
+            let context = Harness.taskInstructions(for: resumedTask ?? text)
+            let instructions = [context.text, restoredContext, continuation].compactMap { $0 }.joined(separator: "\n\n")
             // Another model starts a new conversation on the model's side; the chat on screen stays.
             if client?.signature != "\(provider.rawValue)/\(model)" {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
             }
             guard let client else { return nil }
             return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
-                                resumedTask: resumedTask, inSplitView: inSplitView, images: images, namedApps: namedApps,
-                                engine: .direct(client, instructions))
+                                resumedTask: resumedTask, isRetry: again, inSplitView: inSplitView, images: images, namedApps: namedApps,
+                                engine: .direct(client, instructions, context.notes))
         }
         guard let piModel = provider.piModel(model) else {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("pi has no model \(model) for \(provider.name).")))))
             return nil
         }
         return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
-                            resumedTask: resumedTask, inSplitView: inSplitView, images: images, namedApps: namedApps,
+                            resumedTask: resumedTask, isRetry: again, inSplitView: inSplitView, images: images, namedApps: namedApps,
                             engine: .pi(piModel))
     }
 
     private func executePreparedSend(_ prepared: PreparedSend, token: Int) async {
+        persist()
+        store.flush(sessionID: sessionID)
         switch prepared.engine {
-        case .direct(let client, let instructions):
-            await began("direct", prepared.provider, prepared.model, task: prepared.text)
+        case .direct(let client, let instructions, let notes):
+            await began("direct", prepared.provider, prepared.model, task: prepared.text, isRetry: prepared.isRetry)
             guard runToken == token, !Task.isCancelled else { app.finishTask(switching: false); return }
             awaitingModel = true
             client.say(prepared.message)
-            await run(client, instructions: instructions, delivered: prepared.you.id, token: token)
+            offeredMemories = notes
+            let completed = await run(client, instructions: instructions, delivered: prepared.you.id, token: token)
             let current = runToken == token
+            finishTaskSaves(completed: completed, stopped: stopAsked, token: token)
+            if current { finishPlan(stopped: stopAsked) }
             // The direct engine does not say when its task ends: the quiet wait finishes the run.
             if !current || app.drivesDuoCompanion { app.finishTask() } else { app.chatReleasesRun() }
             logEnd("direct", outcome: nil, session: prepared.runSession, text: prepared.text, stopped: !current)
@@ -608,7 +630,7 @@ final class ChatModel {
                 }
             }
             let splitSession = splitViewSession
-            await began("pi", prepared.provider, prepared.model, task: prepared.text, splitViewSession: splitSession)
+            await began("pi", prepared.provider, prepared.model, task: prepared.text, isRetry: prepared.isRetry, splitViewSession: splitSession)
             guard runToken == token, !Task.isCancelled else { app.finishTask(switching: false); return }
             awaitingModel = true
             if let splitSession, pair.count == 2 {
@@ -636,7 +658,9 @@ final class ChatModel {
             }
             let loop = modelLoop(provider: prepared.provider, model: piModel, inSplitView: splitSession != nil)
             let continuation = prepared.resumedTask.map { "The owner selected this saved task to resume: \($0). Recheck the current screen and continue from the saved progress; do not substitute a task from long-term memory." }
-            let instructions = [Harness.instructions(for: prepared.resumedTask ?? prepared.message, inSplitView: splitSession != nil), restoredContext, continuation].compactMap { $0 }.joined(separator: "\n\n")
+            let context = Harness.taskInstructions(for: prepared.resumedTask ?? prepared.message, inSplitView: splitSession != nil)
+            offeredMemories = context.notes
+            let instructions = [context.text, restoredContext, continuation].compactMap { $0 }.joined(separator: "\n\n")
             let outcome = await loop.run(prepared.message.isEmpty ? Self.picturesOnly : prepared.message, images: prepared.images, instructions: instructions, maxTurns: Self.maxTurns) { [weak self] text in
                 guard let self, self.runToken == token else { return }
                 self.markDelivered(prepared.you.id)
@@ -649,6 +673,7 @@ final class ChatModel {
                 }
             }
             let current = runToken == token
+            finishTaskSaves(completed: outcome == .done, stopped: outcome == .stopped || outcome == .authorizationDeclined, token: token)
             if current { ended(outcome, delivered: prepared.you.id) } else if splitSession == nil { app.finishTask() }
             logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: !current || outcome == .authorizationDeclined)
             guard current else { return }
@@ -786,15 +811,118 @@ final class ChatModel {
     /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
 
-    private func began(_ engine: String, _ provider: ModelProvider, _ model: String, task: String, splitViewSession: String? = nil) async {
+    private func began(_ engine: String, _ provider: ModelProvider, _ model: String, task: String, isRetry: Bool, splitViewSession: String? = nil) async {
         taskStart = Date(); toolCalls = 0; taskResult = nil; taskText = task
         taskCalls.removeAll()
+        offeredMemories.removeAll()
+        pendingMemoryWrites.removeAll()
+        if isRetry { _ = taskCardIndex(create: true) }
         // Split View needs both apps before the first model tool runs.
         if splitViewSession != nil { app.prepareForTask() }
         await app.chatTaskBegan(splitViewSession: splitViewSession)
         // find_app and the task's icons see the phone's current apps.
         InstalledApps.shared.refreshSoon()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
+    }
+
+    private func finishTaskSaves(completed: Bool, stopped: Bool, token: Int) {
+        guard runToken == token else { return }
+        defer {
+            pendingMemoryWrites.removeAll()
+            offeredMemories.removeAll()
+        }
+        guard !Task.isCancelled else { return }
+        let saveFailed = completed && !stopped && taskResult?.success == true && saveTaskMemory(token: token)
+        guard let index = taskCardIndex(create: saveFailed) else { return }
+        if saveFailed { entries[index].saveFailed = true }
+        else if !stopped, !completed || taskResult?.success == false {
+            entries[index].failed = true
+        }
+    }
+
+    private func taskCardIndex(create: Bool) -> Int? {
+        if let planID, let index = entries.firstIndex(where: { $0.id == planID }) { return index }
+        guard create, let taskRequestID, let request = entries.firstIndex(where: { $0.id == taskRequestID }) else { return nil }
+        var card = ChatEntry(.plan([]))
+        card.at = taskStart
+        planID = card.id
+        entries.insert(card, at: request + 1)
+        return request + 1
+    }
+
+    private func recordMemoryUse(_ ids: [String], skill: String? = nil) {
+        guard !ids.isEmpty || skill != nil else { return }
+        var reported = Set(ids.prefix(20))
+        let notes = offeredMemories.reversed().compactMap { note -> TaskMemoryUse.Note? in
+            guard reported.remove(note.id) != nil else { return nil }
+            return TaskMemoryUse.Note(id: note.id, updatedAtSeconds: Int64((note.edited ?? note.at).timeIntervalSince1970))
+        }
+        guard !notes.isEmpty || skill != nil, let index = taskCardIndex(create: true) else { return }
+        let previous = entries[index].memoryUse
+        var use = previous ?? TaskMemoryUse(notes: [], skills: [])
+        for note in notes {
+            if let index = use.notes.firstIndex(where: { $0.id == note.id }) { use.notes[index] = note }
+            else { use.notes.append(note) }
+        }
+        if let skill, !use.skills.contains(skill) { use.skills.append(skill) }
+        guard use != previous else { return }
+        entries[index].memoryUse = use
+        store.flush(sessionID: sessionID)
+    }
+
+    private struct ActionMemory {
+        var direct: [String] = []
+        var steps: [Int: [String]] = [:]
+    }
+
+    private static func takeActionMemory(from action: inout [String: Any], fallback: [String]) -> ActionMemory {
+        let direct = action.removeValue(forKey: "used_memory_ids") as? [String] ?? fallback
+        if action["run"] != nil {
+            guard var run = action["run"] as? [String: Any] else { return ActionMemory() }
+            let ids = run.removeValue(forKey: "step_memory_ids") as? [String: [String]] ?? [:]
+            action["run"] = run
+            var steps: [Int: [String]] = [:]
+            for (key, notes) in ids {
+                guard let number = Int(key), number > 0, String(number) == key else { continue }
+                steps[number - 1] = notes
+            }
+            return ActionMemory(steps: steps)
+        }
+        guard let path = action["path"] else { return ActionMemory(direct: direct) }
+        var options = path as? [String: Any]
+        guard var steps = (options?["steps"] ?? path) as? [[String: Any]] else { return ActionMemory() }
+        var ids: [Int: [String]] = [:]
+        for index in steps.indices {
+            ids[index] = steps[index].removeValue(forKey: "used_memory_ids") as? [String]
+        }
+        if options != nil {
+            options?["steps"] = steps
+            action["path"] = options
+        } else {
+            action["path"] = steps
+        }
+        return ActionMemory(steps: ids)
+    }
+
+    private func saveTaskMemory(token: Int) -> Bool {
+        guard !pendingMemoryWrites.isEmpty, var result = taskResult else { return false }
+        let unsaved = app.saveTaskMemories(pendingMemoryWrites.map(\.write), conversation: sessionID, task: "\(sessionID)#\(token)")
+        guard !unsaved.isEmpty else { return false }
+        let failures = unsaved.map { index in
+            if let name = pendingMemoryWrites[index].skillName {
+                return AppLocalization.text(LocalizedStringResource("Couldn’t save the skill “\(name)”."))
+            }
+            return AppLocalization.text(LocalizedStringResource("Couldn’t save that memory."))
+        }
+        let notice = failures.joined(separator: "\n")
+        add(.poki(notice))
+        let requiredSaveFailed = unsaved.contains { !pendingMemoryWrites[$0].write.optional }
+        if requiredSaveFailed {
+            result.success = false
+            result.summary = notice
+            taskResult = result
+        }
+        return requiredSaveFailed
     }
 
     private func logEnd(_ engine: String, outcome: PiLoop.Outcome?, session: String, text: String, stopped: Bool) {
@@ -940,7 +1068,7 @@ final class ChatModel {
     /// A look or do of this chat is on its way to the phone.
     private var phoneStepUnderWay = false
 
-    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID, token: Int) async {
+    private func run(_ client: ModelClient, instructions: String, delivered youID: UUID, token: Int) async -> Bool {
         // Stop has moved the token on (and said Stopped): this task writes nothing more.
         var stopped: Bool { runToken != token || Task.isCancelled }
         for _ in 0..<Self.maxTurns {
@@ -950,11 +1078,11 @@ final class ChatModel {
                                              tools: Harness.tools)
             } catch {
                 client.forgetUnansweredQuestion()
-                if stopped { return }
+                if stopped { return false }
                 add(.note(.problem(error.localizedDescription)))
-                return
+                return false
             }
-            if stopped { client.forgetUnansweredQuestion(); return }
+            if stopped { client.forgetUnansweredQuestion(); return false }
             markDelivered(youID)
             for text in turn.texts { add(.poki(text)) }
             switch turn.ending {
@@ -971,30 +1099,27 @@ final class ChatModel {
                         ? HistoryCapture.validateAgentAnswer(answer, revision: revision) : answer)
                     authorizationDeclined = answer.automationAuthorizationDeclined
                 }
-                if stopped { return }
+                if stopped { return false }
                 if authorizationDeclined {
                     stopAsked = true
                     ended(.authorizationDeclined, delivered: youID)
-                    return
+                    return false
                 }
             case .again:
                 continue
             case .refused:
-                finishPlan()
                 add(.poki(AppLocalization.text(LocalizedStringResource("The model declined this request."))))
-                return
+                return false
             case .cutOff:
-                finishPlan()
                 add(.note(.problem(AppLocalization.text(LocalizedStringResource("The answer was cut off.")))))
-                return
+                return false
             case .done:
                 // A reply without tools ends the turn, as a chat does: the model may be asking the owner something.
-                finishPlan()
-                return
+                return true
             }
         }
-        finishPlan()
         add(.poki(AppLocalization.text(LocalizedStringResource("I stopped after \(Self.maxTurns) steps. Tell me how to go on."))))
+        return false
     }
 
     /// The phone's tools go to PokiCore; the harness's two are answered here, as task-runner.mjs answers them.
@@ -1015,6 +1140,9 @@ final class ChatModel {
             store.appendCall(record, to: session)
             return answer
         }
+        if runToken == token {
+            offeredMemories.append(contentsOf: answer.offeredMemories)
+        }
         // A launch that went through says which app the task is for; a refused one says nothing.
         if runToken == token, call.name == "do", !answer.isError {
             for app in TaskApps.launches(inArguments: call.arguments) { taskApps.launch(app) }
@@ -1027,6 +1155,7 @@ final class ChatModel {
     }
 
     private func performCall(_ call: ToolCall) async -> PokiCore.ToolAnswer {
+        guard !Task.isCancelled else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
         toolCalls += 1
         let args = (call.arguments.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) }) as? [String: Any] ?? [:]
         if usesSplitView {
@@ -1076,17 +1205,53 @@ final class ChatModel {
             return PokiCore.ToolAnswer(text: Harness.recorded(result, cardShown: card != nil), jpeg: nil, isError: false)
         case let name where WebTools.names.contains(name):
             if let refusal = selectRoute(.web) { return refusal }
+            let ids = args["used_memory_ids"] as? [String] ?? []
+            let taskToken = runToken
             showBrowser(opening: name == "web_open")
-            return await WebTools.perform(name, arguments: call.arguments)
+            return await WebTools.perform(name, arguments: call.arguments, onActionSucceeded: ids.isEmpty ? nil : { [weak self] in
+                guard let self, self.runToken == taskToken, !self.stopAsked else { return }
+                self.recordMemoryUse(ids)
+            })
         case "find_app":
             let found = await InstalledApps.shared.find(name: args["name"] as? String, purpose: args["purpose"] as? String)
             return PokiCore.ToolAnswer(text: found.text, jpeg: nil, isError: found.isError)
+        case "skills", "routines":
+            if let action = args["action"] as? String, action == "save" || action == "remember" {
+                let required = action == "save" ? "name" : "text"
+                guard let value = (args[required] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+                    return PokiCore.ToolAnswer(text: "Give the \(required) to save.", jpeg: nil, isError: true)
+                }
+                let write = TaskMemoryWrite(arguments: call.arguments, optional: args["optional"] as? Bool == true)
+                pendingMemoryWrites.append((write, action == "save" ? value : nil))
+                return PokiCore.ToolAnswer(text: "Queued. This is saved only if the task finishes successfully.", jpeg: nil, isError: false)
+            }
+            return await app.runTool(call.name, arguments: call.arguments, conversation: sessionID)
         case "look", "do":
             if let refusal = selectRoute(.app) { return refusal }
+            var phoneArguments = call.arguments
+            var notesByAction: [ActionMemory] = []
+            if call.name == "do", var actions = args["actions"] as? [[String: Any]] {
+                let singleActionIDs = actions.count == 1 ? args["used_memory_ids"] as? [String] ?? [] : []
+                notesByAction = actions.indices.map { index in
+                    Self.takeActionMemory(from: &actions[index], fallback: singleActionIDs)
+                }
+                var phoneArgs = args
+                phoneArgs.removeValue(forKey: "used_memory_ids")
+                phoneArgs["actions"] = actions
+                if let data = try? JSONSerialization.data(withJSONObject: phoneArgs) {
+                    phoneArguments = String(decoding: data, as: UTF8.self)
+                }
+            }
             phoneStepUnderWay = true
             defer { phoneStepUnderWay = false }
             let taskToken = runToken
-            let response = await app.runTool(call.name, arguments: call.arguments, localSession: splitViewSession, expectedApps: expectedSplitViewApps, localTask: "\(sessionID)#\(taskToken)")
+            let response = await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
+                                             expectedApps: expectedSplitViewApps, localTask: "\(sessionID)#\(taskToken)") { [weak self, notesByAction] index, step, skill in
+                guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
+                let action = notesByAction[index]
+                let ids = step.map { action.steps[$0] ?? [] } ?? action.direct
+                self.recordMemoryUse(ids, skill: skill)
+            }
             guard taskToken == runToken, usesSplitView else { return response }
             let changedLayout = call.name == "look" && lastSplitViewLayout != nil &&
                 response.splitView.map { $0.layout != lastSplitViewLayout } == true
@@ -1102,8 +1267,7 @@ final class ChatModel {
             }
             return response
         default:
-            // A note Poki keeps remembers this conversation: the Memory page links back to it.
-            return await app.runTool(call.name, arguments: call.arguments, conversation: call.name == "skills" || call.name == "routines" ? sessionID : nil)
+            return await app.runTool(call.name, arguments: call.arguments)
         }
     }
 
