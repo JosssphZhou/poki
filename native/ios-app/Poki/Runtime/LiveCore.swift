@@ -24,8 +24,10 @@ final class LiveCore: CoreSession {
         // Read at each step, from the saved choice the Approvals page shows: Never Ask lets optional
         // steps go; payments, deletions and guarded apps still wait.
         config.approvalMode = { ApprovalClassifier.mode }
-        // Apps by name, from the apps Poki knows; the two speed-ups read their Testing Options switch.
-        config.resolveApp = { KnownApps.find($0)?.id }
+        // Apps by name, from the apps Poki knows and the phone's own app list; the two speed-ups read
+        // their Testing Options switch.
+        config.resolveApp = { KnownApps.launchID($0) }
+        config.resolveInstalledApp = { KnownApps.installedLaunchID($0) }
         config.appNames = { SpeedOptions.appNames }
         config.quickRead = { SpeedOptions.quickRead }
         config.screenHistory = HistoryStore.agentSource
@@ -54,13 +56,19 @@ final class LiveCore: CoreSession {
     func accessChanged() { core.accessChanged() }
     /// The app's own MCP tools (ask_poki), after look, do and status.
     func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
+    func saveTaskMemories(_ writes: [TaskMemoryWrite], conversation: String, task: String) -> [Int] {
+        core.saveTaskMemories(writes, conversation: conversation, task: task)
+    }
     func tool(_ name: String, arguments: String) async -> ToolResult { await core.tool(name, arguments: arguments) }
     /// `look`, `do` or `status` for the chat's model loop inside the app.
     /// `conversation`: the chat a `skills` call comes from, kept with a note as where it was heard.
-    func callTool(_ name: String, arguments: String, localSession: String? = nil, expectedApps: Set<String>? = nil, conversation: String? = nil, localTask: String? = nil) async -> PokiCore.ToolAnswer {
-        await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, conversation: conversation, localTask: localTask)
+    func callTool(_ name: String, arguments: String, localSession: String? = nil, expectedApps: Set<String>? = nil, conversation: String? = nil, localTask: String? = nil, onActionSucceeded: PokiCore.ActionSucceeded? = nil) async -> PokiCore.ToolAnswer {
+        await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, conversation: conversation, localTask: localTask, onActionSucceeded: onActionSucceeded)
     }
     func settle(timeout: Double) async -> Bool { await core.settle(timeout: timeout) }
+    func itemPictures(_ requests: [String: ItemPictureRequest], localTask: String) async -> [ItemPictures] {
+        await core.itemPictures(requests, localTask: localTask)
+    }
     func bindCompanionTarget() async -> Bool { await core.bindCompanionTarget() }
     func prepareWorkspace(session: String) async -> Bool { await core.prepareWorkspace(session: session) }
     func discardWorkspace(session: String) async { await core.discardWorkspace(session: session) }
@@ -115,6 +123,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var wake: (@Sendable () -> Void)?
     private var warm: (@Sendable () -> Void)?
     private var retry: (@Sendable () -> Void)?
+    private var autoUnlock: (@Sendable (Double) async -> Bool)?
 
     func update(key: Curve25519.Signing.PrivateKey?, hashes: [String]) { lock.withLock { self.key = key; self.hashes = hashes } }
     func update(runner: RunnerState) { lock.withLock { self.runner = runner } }
@@ -123,6 +132,11 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
     func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
+    func onAutoUnlock(_ action: @escaping @Sendable (Double) async -> Bool) { lock.withLock { autoUnlock = action } }
+    func unlockForLocalTask(timeout: Double) async -> Bool {
+        let unlock = lock.withLock { autoUnlock }
+        return await unlock?(timeout) ?? false
+    }
     /// A tool call found automation failed or not open yet: the app may try again (the in-process session, ESP-152).
     func onRetry(_ action: @escaping @Sendable () -> Void) { lock.withLock { retry = action } }
     /// A connection prepares dependencies without requesting phone automation.

@@ -1,4 +1,3 @@
-import AVFoundation
 import PhotosUI
 import SwiftUI
 
@@ -12,9 +11,6 @@ struct ChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
     var sharedDraft: Binding<String>? = nil
-    /// Opens Poki's card: under Poki's picture over the greeting on the home page (the bottom of the
-    /// picture, in global points), under the top bar in the chat (nil).
-    var openDetails: (_ under: CGFloat?) -> Void
     var openVoice: () -> Void
     var openSetup: () -> Void
     var openSetupStep: (SetupStep) -> Void = { _ in }
@@ -33,8 +29,6 @@ struct ChatView: View {
     private var voice: VoiceModel { model.voice }
     /// The taps on Poki's picture, for the bear to answer.
     @State private var pokes = 0
-    /// Where Poki's picture over the greeting ends, for the card to open under it.
-    @State private var homeBottom: CGFloat?
     /// How far Poki's picture rises from the home page into the top bar.
     @State private var flightRise: CGFloat = 0
     @State private var wardrobeOpen = false
@@ -47,16 +41,18 @@ struct ChatView: View {
         writing = false
         adding = false
         pokes += 1
+    }
+
+    private func openWardrobe() {
+        tapPoki()
         wardrobeOpen = true
     }
 
-    private func showPokiStatus() {
-        openDetails(isGreeting ? homeBottom : nil)
-    }
     /// The message field has the keyboard.
     @State private var writing = false
     /// Plus's ways to add a photo or a file stand over the message field.
     @State private var adding = false
+    @State private var scrollReplyQuestion: UUID?
     @State private var standaloneDraft = ""
     private var draft: Binding<String> { sharedDraft ?? $standaloneDraft }
     /// Taps on New Conversation on the home page, for the message field (`ComposerInputView.restarts`).
@@ -181,7 +177,8 @@ struct ChatView: View {
         .topBar {
             if !bare {
                 ChatTopBar(status: status, home: home, busy: busy, openThreads: openThreads,
-                           newConversation: { if home { restarts += 1 } else { chat.newConversation() } }, openDetails: showPokiStatus)
+                           newConversation: { if home { restarts += 1 } else { chat.newConversation() } }, openDetails: tapPoki, openModel: openModel)
+                    .logStartupAppearance(.topBar)
             }
         }
         .bottomBar(softEdge: true) {
@@ -191,9 +188,33 @@ struct ChatView: View {
                     Label(ActivityWords.local("Waiting for Split View"), systemImage: "rectangle.split.2x1")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                if !busy, let question = chat.countedScrollQuestion {
+                    if scrollReplyQuestion == question {
+                        HStack {
+                            Label("Replying to Poki", systemImage: "arrowshape.turn.up.left")
+                            Spacer()
+                            Button("New message") { scrollReplyQuestion = nil }
+                        }
+                        .font(.footnote)
+                    } else {
+                        Button {
+                            scrollReplyQuestion = question
+                            writing = true
+                        } label: {
+                            Label("Reply to Poki", systemImage: "arrowshape.turn.up.left")
+                                .font(.footnote)
+                        }
+                        .accessibilityIdentifier("chat.counted-scroll.reply")
+                    }
+                }
                 ComposerInputView(input: draft, focused: $writing, adding: $adding, running: busy, progress: progress, restarts: restarts,
-                                  send: { chat.send($0, attachments: $1) }, stop: chat.stop, openVoice: openVoice, openVoiceKey: openVoiceKey,
+                                  send: { text, attachments in
+                                      let reply = scrollReplyQuestion == chat.countedScrollQuestion ? scrollReplyQuestion : nil
+                                      scrollReplyQuestion = nil
+                                      chat.send(text, attachments: attachments, replyingTo: reply)
+                                  }, stop: chat.stop, openVoice: openVoice, openVoiceKey: openVoiceKey,
                                   noticeHeight: max(120, pageHeight * 0.6))
+                    .logStartupAppearance(.composer)
             }
             .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
             .frame(maxWidth: 720) }
@@ -203,7 +224,7 @@ struct ChatView: View {
             GeometryReader { proxy in
                 if !bare {
                     PokiFlight(status: status, home: home, writing: writing, places: anchors.mapValues { proxy[$0] }, pokes: pokes,
-                               tap: tapPoki, statusCard: showPokiStatus, landed: { homeBottom = $0 }, travel: { flightRise = $0 })
+                               tap: tapPoki, openModel: openModel, openOutfits: openWardrobe, travel: { flightRise = $0 })
                         .offset(y: home && wardrobeOpen ? -46 : 0)
                         .animation(reduceMotion ? nil : .spring(duration: 0.38, bounce: 0.14), value: wardrobeOpen)
                 }
@@ -308,7 +329,9 @@ struct ChatView: View {
         for entry in chat.entries.reversed() {
             switch entry.kind {
             case .note(.problem): return false
-            case .plan(let steps): return entry.stopped != true && !steps.contains { $0.state == .failed }
+            case .plan(let steps):
+                return entry.stopped != true && entry.interrupted != true && entry.failed != true && entry.saveFailed != true
+                    && !steps.contains { $0.state == .failed }
             case .you, .request: return false
             default: continue
             }
@@ -340,7 +363,7 @@ extension View {
     /// under it, as under the system's bars), an inset before it.
     @ViewBuilder func bottomBar<Bar: View>(softEdge: Bool = false, @ViewBuilder _ bar: () -> Bar) -> some View {
         if #available(iOS 26.0, *) {
-            safeAreaBar(edge: .bottom, spacing: 0) { GlassEffectContainer(spacing: 8) { bar() } }
+            safeAreaBar(edge: .bottom, spacing: 0) { bar().glassGroup(spacing: 8) }
                 .scrollEdgeEffectStyle(softEdge ? .soft : .automatic, for: .bottom)
         } else {
             safeAreaInset(edge: .bottom, spacing: 0) { bar() }
@@ -780,14 +803,15 @@ struct ChatTranscript<Footer: View>: View {
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
             let ask = asking(at: i)
-            let current = live && isLastPlan(i)
+            let current = live && entry.ended == nil && isLastPlan(i)
             TaskCard(title: entry.title ?? ask.title, steps: steps,
                      state: TaskCardState(steps: steps, live: current, waiting: waiting, handedOver: handedOver,
-                                          stopped: entry.stopped == true),
+                                          stopped: entry.stopped == true, saveFailed: entry.saveFailed == true || entry.failed == true,
+                                          interrupted: entry.interrupted == true),
                      upcoming: current ? Array((plan ?? []).dropFirst(steps.count)) : [],
                      planned: !current || plan != nil,
                      asker: ask.from, app: current ? app : entry.app, usedBrowser: ChatEntry.taskUsedBrowser(in: entries, at: i), started: entry.at, shot: current ? shot : nil,
-                     ended: current ? nil : entry.ended, plannedTotal: entry.total)
+                     ended: current ? nil : entry.ended, plannedTotal: entry.total, resultSummary: entry.resultSummary, memoryUse: entry.memoryUse)
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 26, style: .continuous))
 
                 .padding(.vertical, 6)
@@ -1051,10 +1075,11 @@ struct MessageListHeader: View {
     var subtitle: String? = nil
     var title: String = "Poki"
     var back: (() -> Void)? = nil
-    var openDetails: () -> Void
+    /// Settings › Models, for the menu's Add Model.
+    var openModel: () -> Void = {}
 
     var body: some View {
-        Button(action: openDetails) {
+        PokiMenu(openModel: openModel) {
             VStack(spacing: 4) {
                 PokiAvatar(size: 56)
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
@@ -1770,11 +1795,8 @@ final class FieldDictation {
         guard on, let engine else { return }
         on = false
         self.engine = nil
-        Task {
-            _ = await engine.finish()
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            model.background.resumeAudio()
-        }
+        engine.cancel()
+        model.background.resumeAudio()
     }
 }
 

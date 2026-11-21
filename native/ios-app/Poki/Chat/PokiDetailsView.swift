@@ -88,7 +88,7 @@ struct PokiDetailsView: View {
                     }
                     .accessibilityIdentifier("moreSettings.agentsAndRelay")
                     NavigationLink(value: SettingsRoute.memory) {
-                        SettingsRow(title: "Memory Library", symbol: "bookmark", value: "\(isSample ? 10 : RoutineStore.shared.notes.count + RoutineStore.shared.routines.count)")
+                        SettingsRow(title: "Memory Library", symbol: "bookmark", value: "\(isSample ? 10 : RoutineStore.shared.notes.count + RoutineStore.shared.usableSkills.count)")
                     }
                     .accessibilityIdentifier("moreSettings.memory")
                     NavigationLink(value: DetailsRoute.conversations) {
@@ -369,6 +369,7 @@ struct ConnectionView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
     @State private var guiding = false
+    @State private var showsAutoUnlockPasscode = false
 
     private var on: Bool { model.sessionOn && !model.ownerPaused }
 
@@ -405,10 +406,15 @@ struct ConnectionView: View {
                     } else if !on, !model.sessionStarting, let problem = model.problem {
                         Text(verbatim: AppLocalization.bundle.localizedString(forKey: problem, value: problem, table: nil))
                             .foregroundStyle(.red)
-                    } else if !on, !model.sessionStarting, case .downloaded = model.diskImage.state {
+                    } else if !on, !model.sessionStarting, model.isDone(.pairing), case .downloaded = model.diskImage.state {
                         Text(DiskImageStore.unavailableMessage).foregroundStyle(.orange)
                     }
                 }
+            }
+
+            if model.supportsAutoUnlock || model.autoUnlock.enabled {
+                AutoUnlockSection(setting: model.autoUnlock, canEnable: model.supportsAutoUnlock,
+                                  showsPasscode: $showsAutoUnlockPasscode)
             }
 
             Section {
@@ -435,6 +441,9 @@ struct ConnectionView: View {
         .onAppear { model.loopback.resume(); model.diskImage.notice() }
         .sheet(isPresented: $guiding) {
             SetupGuide(start: SetupStep.shown.first { !model.stepReadyForUse($0) })
+        }
+        .sheet(isPresented: $showsAutoUnlockPasscode) {
+            AutoUnlockPasscodeForm(setting: model.autoUnlock)
         }
     }
 
