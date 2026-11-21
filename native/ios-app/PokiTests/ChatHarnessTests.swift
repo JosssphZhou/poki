@@ -976,6 +976,352 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Attached file: sample.md\n~~~~\n\(content)\n~~~~"))
     }
 
+    /// A live talk goes into the chat as its record, and the live voice already heard and handled what was
+    /// said in it. A talk that ended on a problem (its connection dropped) offers no Try Again: that sent
+    /// the talk's last words to the chat's agent, which did again what the talk had done. A typed task that
+    /// failed after a talk is tried again with its own words, and the agent reads the talk as handled, not
+    /// as the task to resume.
+    func testATalksWordsInTheChatAreNeverSentToTheAgentAgain() async throws {
+        let server = try FakeCompletions(replies: [FakeCompletions.tool("finish_task", ["success": true, "summary": "Safari is open."]),
+                                                   FakeCompletions.text("Safari is open.")])
+        let chat = chat(on: server, kind: .poki)
+        let talk = SessionStore.entries(voice: [
+            VoiceLine(role: .you, text: "Text Mom on my way."),
+            VoiceLine(role: .tool, text: "Using the phone"),
+            VoiceLine(role: .note, text: "Connection lost. Nothing is sent again. Talk again to hear how running steps ended."),
+        ], started: Date())
+        let id = UUID().uuidString
+        defer { SessionStore.shared.delete(id) }
+        let talked = SavedSession(id: id, kind: .poki, title: "Text Mom on my way.", started: Date(), updated: Date(), live: false,
+                                  entries: talk, calls: [])
+        chat.restore(talked)
+        XCTAssertTrue(chat.endedOnProblem, "the bear still trips over the talk's problem")
+        XCTAssertFalse(chat.canRetry, "Try Again for words the live voice already handled")
+        chat.retry()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(chat.running)
+        XCTAssertTrue(server.requests.isEmpty, "Try Again sent the talk's words to the chat's agent")
+        XCTAssertNil(talked.continuationTask, "a talk's words are no chat task to resume")
+        XCTAssertTrue(talked.modelContext.contains("Live talk, already handled. Owner: Text Mom on my way."), talked.modelContext)
+        XCTAssertFalse(talked.modelContext.contains("Latest task: Text Mom"), talked.modelContext)
+
+        // A typed task after the talk, which failed: Try Again sends it, and only it.
+        chat.restore(SavedSession(id: id, kind: .poki, title: "Text Mom on my way.", started: Date(), updated: Date(), live: false,
+                                  entries: talk + [ChatEntry(.you("Open Safari", delivered: false)), ChatEntry(.note(.problem("The model did not answer.")))],
+                                  calls: []))
+        XCTAssertTrue(chat.canRetry)
+        chat.retry()
+        try await waitForTask(chat)
+        let request = try XCTUnwrap(server.requests.first)
+        let asked = (request["messages"] as? [[String: Any]] ?? []).filter { $0["role"] as? String == "user" }.map(Self.messageText)
+        XCTAssertTrue(asked.contains { $0.contains("Open Safari") }, asked.description)
+        XCTAssertFalse(asked.contains { $0.contains("Text Mom") }, asked.description)
+        let context = FakeCompletions.system(request)
+        XCTAssertTrue(context.contains("Live talk, already handled. Owner: Text Mom on my way."), context)
+        XCTAssertTrue(context.contains("Latest task: Open Safari"), context)
+    }
+
+    func testAnUpgradedConversationDoesNotResendSpeechOnRetryOrContinue() async throws {
+        let id = UUID().uuidString
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let suite = "ChatHarnessTests.upgrade.\(id)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+
+        let started = Date(timeIntervalSince1970: 1_700_000_000)
+        let spoken = "Text Mom on my way"
+        var marker = ChatEntry(.time(started))
+        marker.at = started
+        let voice = ChatEntry(.you(spoken, delivered: true))
+        let problem = ChatEntry(.note(.problem("Connection lost. Nothing is sent again. Talk again to hear how running steps ended.")))
+        let old = SavedSession(id: id, kind: .poki, title: spoken, started: started, updated: started,
+                               live: false, outcome: .failed,
+                               entries: [marker, voice, problem], calls: [])
+        try JSONEncoder().encode(old).write(to: folder.appendingPathComponent(id + ".json"))
+
+        let store = SessionStore.launchStore(folder: folder, defaults: defaults)
+        await store.waitUntilLoaded()
+        let server = try FakeCompletions(replies: [FakeCompletions.text("Done."), FakeCompletions.text("Done."),
+                                                   FakeCompletions.text("Safari is open.")])
+        let chat = chat(on: server, kind: .poki, store: store)
+        let restored = try XCTUnwrap(store.session(id))
+        chat.restore(restored)
+        XCTAssertTrue(chat.endedOnProblem)
+        XCTAssertFalse(chat.canRetry)
+        chat.retry()
+        try await waitForTask(chat)
+        XCTAssertTrue(server.requests.isEmpty, "Retry forwarded speech from the old conversation")
+
+        chat.send("Continue \(spoken)")
+        try await waitForTask(chat)
+        XCTAssertTrue(server.requests.isEmpty, "Named Continue forwarded speech from the old conversation")
+
+    }
+
+    func testNormallyEndedLegacyVoiceDoesNotBecomeATextContinuation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "ChatHarnessTests.normalVoice.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+
+        for withEarlierTool in [false, true] {
+            let id = UUID().uuidString
+            let folder = root.appendingPathComponent(id)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let start = Date(timeIntervalSince1970: 1_700_000_000.125)
+            let spoken = "Which train leaves at noon?"
+            var speech = [VoiceLine(role: .you, text: spoken, at: start.addingTimeInterval(4.25)),
+                          VoiceLine(role: .poki, text: "The northbound train.", at: start.addingTimeInterval(5.5))]
+            if withEarlierTool {
+                speech.insert(contentsOf: [
+                    VoiceLine(role: .you, text: "Read the timetable", at: start.addingTimeInterval(1.25)),
+                    VoiceLine(role: .tool, text: "Read the screen", at: start.addingTimeInterval(2.5)),
+                    VoiceLine(role: .poki, text: "I have the timetable.", at: start.addingTimeInterval(3.75)),
+                ], at: 0)
+            }
+            // The old writer used these same timestamps and entry kinds, without the speech flag.
+            let entries = SessionStore.entries(voice: speech, started: start).map { row in
+                var row = row
+                row.spoken = nil
+                return row
+            }
+            let saved = SavedSession(id: id, kind: .poki, title: speech[0].text, started: start, updated: start.addingTimeInterval(6.25),
+                                     live: false, outcome: nil, entries: entries, calls: [])
+            let file = folder.appendingPathComponent(id + ".json")
+            try JSONEncoder().encode(saved).write(to: file)
+            let store = SessionStore.launchStore(folder: folder, defaults: defaults)
+            await store.waitUntilLoaded()
+            let server = try FakeCompletions(replies: [FakeCompletions.text("Done.")])
+            let chat = chat(on: server, kind: .poki, store: store)
+            chat.restore(try XCTUnwrap(store.session(id)))
+            XCTAssertTrue(chat.entries.contains { $0.kind == .poki("The northbound train.") })
+            chat.retry()
+            try await waitForTask(chat)
+            chat.send("Continue \(spoken)")
+            try await waitForTask(chat)
+            XCTAssertTrue(server.requests.isEmpty, "Named Continue sent a normally ended voice request. Earlier tool: \(withEarlierTool)")
+        }
+    }
+
+    func testUpgradedChatDoesNotContinueAnEarlierLegacyCall() async throws {
+        let id = UUID().uuidString
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(id)
+        let suite = "ChatHarnessTests.earlierTalk.\(id)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000.125)
+        let firstTask = "Open the train timetable"
+        let nextTask = "Which train leaves at noon?"
+        let nextStart = start.addingTimeInterval(90)
+        let firstTalk = [VoiceLine(role: .you, text: firstTask, at: start.addingTimeInterval(1)),
+                         VoiceLine(role: .poki, text: "The timetable is open.", at: start.addingTimeInterval(2))]
+        let nextTalk = [VoiceLine(role: .you, text: nextTask, at: nextStart.addingTimeInterval(1)),
+                        VoiceLine(role: .poki, text: "The northbound train.", at: nextStart.addingTimeInterval(2))]
+        let saved = SavedSession(id: id, kind: .poki, title: firstTask, started: start, updated: nextStart.addingTimeInterval(3),
+                                 live: false, outcome: nil, entries: legacyTalk(firstTalk, started: start)
+                                    + legacyTalk(nextTalk, started: nextStart), calls: [])
+        try JSONEncoder().encode(saved).write(to: folder.appendingPathComponent(id + ".json"))
+
+        let store = SessionStore.launchStore(folder: folder, defaults: defaults)
+        await store.waitUntilLoaded()
+        try await assertLegacyTalkIsHistory(id, in: store, request: firstTask, reply: "The timetable is open.")
+    }
+
+    func testOldBackupDoesNotContinueLegacyCallsWithSecondPrecision() async throws {
+        let id = UUID().uuidString
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(id)
+        let suite = "ChatHarnessTests.backupTalk.\(id)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+        let store = SessionStore(folder: folder, defaults: defaults)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        for withEarlierTool in [false, true] {
+            let start = Date(timeIntervalSince1970: 1_700_000_000.125)
+            let request = withEarlierTool ? "Which train leaves at noon?" : "When does the first ferry leave?"
+            let reply = withEarlierTool ? "The northbound train." : "At nine."
+            var lines = [VoiceLine(role: .you, text: request, at: start.addingTimeInterval(4.25)),
+                         VoiceLine(role: .poki, text: reply, at: start.addingTimeInterval(5.5))]
+            if withEarlierTool {
+                lines.insert(contentsOf: [
+                    VoiceLine(role: .you, text: "Open the train timetable", at: start.addingTimeInterval(1.25)),
+                    VoiceLine(role: .tool, text: "Read the screen", at: start.addingTimeInterval(2.5)),
+                    VoiceLine(role: .poki, text: "The timetable is open.", at: start.addingTimeInterval(3.75)),
+                ], at: 0)
+            }
+            let saved = SavedSession(id: UUID().uuidString, kind: .poki, title: request, started: start,
+                                     updated: start.addingTimeInterval(6.25), live: false, outcome: nil,
+                                     entries: legacyTalk(lines, started: start), calls: [])
+            try store.restore(encoder.encode(saved))
+            try await assertLegacyTalkIsHistory(saved.id, in: store, request: request, reply: reply)
+        }
+    }
+
+    private func legacyTalk(_ lines: [VoiceLine], started: Date) -> [ChatEntry] {
+        SessionStore.entries(voice: lines, started: started).map { entry in
+            var entry = entry
+            entry.spoken = nil
+            return entry
+        }
+    }
+
+    private func assertLegacyTalkIsHistory(_ id: String, in store: SessionStore, request: String, reply: String,
+                                           file: StaticString = #filePath, line: UInt = #line) async throws {
+        let server = try FakeCompletions(replies: [FakeCompletions.text("Done.")])
+        let chat = chat(on: server, kind: .poki, store: store)
+        chat.restore(try XCTUnwrap(store.session(id), file: file, line: line))
+        XCTAssertTrue(chat.entries.contains { $0.kind == .poki(reply) }, file: file, line: line)
+        XCTAssertTrue(server.requests.isEmpty, "Reopening the conversation sent a model request", file: file, line: line)
+        chat.send("Continue \(request)")
+        try await waitForTask(chat)
+        XCTAssertTrue(server.requests.isEmpty, "Named Continue sent the old call to the text model", file: file, line: line)
+    }
+
+    func testCompletedLegacyTextTaskCanStillBeContinuedByName() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let start = Date(timeIntervalSince1970: 1_700_000_000.125)
+        let typed = "Show me the ferry timetable"
+        let spoken = "Open the train schedule"
+        let spokenReply = "The train schedule is open."
+        var textTime = ChatEntry(.time(start))
+        textTime.at = start.addingTimeInterval(0.25)
+        var textRequest = ChatEntry(.you(typed, delivered: true))
+        textRequest.at = start.addingTimeInterval(60)
+        var textReply = ChatEntry(.poki("The first ferry is at nine."))
+        textReply.at = start.addingTimeInterval(61)
+        let earlierCall = legacyTalk([VoiceLine(role: .you, text: spoken, at: start.addingTimeInterval(1)),
+                                      VoiceLine(role: .tool, text: "Read the screen", at: start.addingTimeInterval(2)),
+                                      VoiceLine(role: .poki, text: spokenReply, at: start.addingTimeInterval(3))], started: start)
+        let formats = [
+            (name: "voice then text on disk", rows: earlierCall + [textRequest, textReply], backup: false),
+            (name: "text backup", rows: [textTime, textRequest, textReply], backup: true),
+            (name: "text then voice on disk", rows: [textTime, textRequest, textReply]
+                + legacyTalk([VoiceLine(role: .you, text: spoken, at: start.addingTimeInterval(91)),
+                              VoiceLine(role: .poki, text: spokenReply, at: start.addingTimeInterval(92))],
+                             started: start.addingTimeInterval(90)), backup: false),
+        ]
+        for format in formats {
+            let id = UUID().uuidString
+            let folder = root.appendingPathComponent(id)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let suite = "ChatHarnessTests.completedLegacyText.\(id)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+            let saved = SavedSession(id: id, kind: .poki, title: "Travel plans", started: start,
+                                     updated: start.addingTimeInterval(95),
+                                     live: false, outcome: .done, entries: format.rows, calls: [])
+            let encoder = JSONEncoder()
+            let store: SessionStore
+            if format.backup {
+                encoder.dateEncodingStrategy = .iso8601
+                store = SessionStore(folder: folder, defaults: defaults)
+                try store.restore(encoder.encode(saved))
+            } else {
+                try encoder.encode(saved).write(to: folder.appendingPathComponent(id + ".json"))
+                store = SessionStore.launchStore(folder: folder, defaults: defaults)
+                await store.waitUntilLoaded()
+                try await assertLegacyTalkIsHistory(id, in: store, request: spoken, reply: spokenReply)
+            }
+            let server = try FakeCompletions(replies: [FakeCompletions.text("It leaves from the north pier.")])
+            let chat = chat(on: server, kind: .poki, store: store)
+            chat.newConversation()
+            chat.send("Continue \(typed)")
+            try await waitForTask(chat)
+            XCTAssertEqual(chat.sessionID, id, format.name)
+            guard let request = server.requests.first else {
+                XCTFail("Named Continue did not reach the text model: \(format.name)")
+                continue
+            }
+            XCTAssertTrue(FakeCompletions.system(request).contains("The owner selected this saved task to resume: \(typed)"), format.name)
+        }
+    }
+
+    func testLegacyMixedDiskAndTextBackupCanRetryAndContinueTypedTasks() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        for format in ["mixed disk", "text backup"] {
+            let folder = root.appendingPathComponent(format)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let suite = "ChatHarnessTests.legacy.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+
+            let started = Date(timeIntervalSince1970: 1_700_000_000)
+            let task = "Check the train schedule"
+            var time = ChatEntry(.time(started))
+            time.at = format == "mixed disk" ? started : started.addingTimeInterval(0.4)
+            let spoken = "Turn up the brightness"
+            let speech = [ChatEntry(.you(spoken, delivered: true)),
+                          ChatEntry(.step("Using the phone", ok: true)),
+                          ChatEntry(.poki("The brightness is higher."))]
+            let typed = [ChatEntry(.you(task, delivered: true)),
+                         ChatEntry(.poki("I'll look it up.")),
+                         ChatEntry(.note(.problem("The text model did not answer.")))]
+            let id = UUID().uuidString
+            let session = SavedSession(id: id, kind: .poki, title: task, started: started, updated: started,
+                                       live: false, outcome: .failed,
+                                       entries: [time] + (format == "mixed disk" ? speech : []) + typed, calls: [])
+            let store: SessionStore
+            let encoder = JSONEncoder()
+            if format == "mixed disk" {
+                try encoder.encode(session).write(to: folder.appendingPathComponent(id + ".json"))
+                store = SessionStore.launchStore(folder: folder, defaults: defaults)
+                await store.waitUntilLoaded()
+            } else {
+                encoder.dateEncodingStrategy = .iso8601
+                store = SessionStore(folder: folder, defaults: defaults)
+                try store.restore(encoder.encode(session))
+            }
+
+            let restored = try XCTUnwrap(store.session(id))
+            let server = try FakeCompletions(replies: [FakeCompletions.text("The next train is at noon."),
+                                                       FakeCompletions.text("It leaves from platform one.")])
+            let chat = chat(on: server, kind: .poki, store: store)
+            chat.restore(restored)
+            XCTAssertTrue(chat.canRetry, format)
+            chat.retry()
+            try await waitForTask(chat)
+            if let request = server.requests.first {
+                let messages = (request["messages"] as? [[String: Any]] ?? []).filter { $0["role"] as? String == "user" }
+                XCTAssertEqual(messages.map(Self.messageText).last, task, format)
+            } else {
+                XCTFail("Retry never reached the text model for \(format)")
+            }
+
+            let beforeContinue = server.requests.count
+            chat.send("Continue \(task)")
+            try await waitForTask(chat)
+            XCTAssertGreaterThan(server.requests.count, beforeContinue, "Named Continue never reached the text model for \(format)")
+            if let request = server.requests.dropFirst(beforeContinue).first {
+                let prompt = FakeCompletions.system(request)
+                XCTAssertTrue(prompt.contains("The owner selected this saved task to resume: \(task)"), prompt)
+            }
+        }
+    }
+
     private func approvalUserMessage(in server: FakeCompletions) throws -> String {
         let request = try XCTUnwrap(server.requests.last)
         let messages = try XCTUnwrap(request["messages"] as? [[String: Any]])

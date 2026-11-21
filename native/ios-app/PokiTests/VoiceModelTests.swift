@@ -388,6 +388,42 @@ final class VoiceModelTests: XCTestCase {
         h.voice.stop()
     }
 
+    func testLateLiveTranscriptCannotRejectADifferentCommittedItem() async {
+        for speechStart in [false, true] {
+            for lateCaption in [false, true] {
+                var actions: [String] = []
+                let h = Harness(phoneTool: { _, arguments in
+                    actions.append(arguments)
+                    return ("Verified.", false, nil)
+                })
+                await h.liveTalk()
+                let first = UUID().uuidString
+                let second = UUID().uuidString
+                func commit(_ id: String) {
+                    if speechStart { h.link.play(["type": "input_audio_buffer.speech_started", "item_id": id]) }
+                    h.link.play(["type": "input_audio_buffer.committed", "item_id": id])
+                }
+                func request(_ id: String) async {
+                    h.link.play(["type": "session.delegation.created", "delegation": ["id": id]])
+                    h.link.call(id, "do", arguments: id, delegation: id)
+                    await h.time.settle()
+                }
+
+                commit(first)
+                await request("first scroll")
+                commit(second)
+                if lateCaption {
+                    h.link.play(["type": "session.input_transcript.delta", "item_id": first, "delta": "向下滚动"])
+                }
+                await request("second scroll")
+                h.link.play(["type": "session.input_transcript.delta", "item_id": second, "delta": "向下滚动"])
+                XCTAssertEqual(actions, ["first scroll", "second scroll"], "Speech start: \(speechStart), late caption: \(lateCaption)")
+                h.voice.stop()
+                h.link.play(["type": "session.closed", "reason": "confirmed"])
+            }
+        }
+    }
+
     func testLiveDiscardedReplayDoesNotChangeTheNextTurn() async {
         var operations: [String] = []
         let h = Harness(phoneTool: { _, arguments in
@@ -437,7 +473,7 @@ final class VoiceModelTests: XCTestCase {
         await confirmed.liveTalk()
         confirmed.voice.stop()
         confirmed.voice.stop()
-        XCTAssertFalse(confirmed.voice.isOn)
+        XCTAssertTrue(confirmed.voice.isOn, "The call is still open until the server confirms closure")
         XCTAssertEqual(confirmed.link.sent.compactMap { $0["type"] as? String }.filter { $0 == "session.close" }, ["session.close"])
         XCTAssertFalse(confirmed.link.closed)
         XCTAssertEqual(confirmed.microphone, [true])
@@ -447,20 +483,24 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertTrue(confirmed.link.closed)
         XCTAssertEqual(confirmed.microphone, [true, false])
         XCTAssertEqual(confirmed.voice.phase, .off)
+        XCTAssertFalse(confirmed.voice.isOn)
 
         let unconfirmed = Harness()
         await unconfirmed.liveTalk()
         await unconfirmed.time.advance(8)
-        XCTAssertFalse(unconfirmed.voice.isOn, "The idle timer must also request a graceful close.")
+        XCTAssertTrue(unconfirmed.voice.isOn, "The idle timer requests closure without reporting a finished call.")
         XCTAssertFalse(unconfirmed.link.closed)
         XCTAssertEqual(unconfirmed.microphone, [true])
         await unconfirmed.time.advance(10)
         XCTAssertTrue(unconfirmed.link.closed, "The microphone must be released if the server never confirms.")
         XCTAssertEqual(unconfirmed.microphone, [true, false])
+        XCTAssertFalse(unconfirmed.voice.isOn)
     }
 
     func testRealtimeOnlyRequestsOneResponsePerCommittedUserItem() async {
         let h = Harness()
+        let firstItem = UUID().uuidString
+        let secondItem = UUID().uuidString
         await h.connect()
         h.link.play(["type": "session.created", "session": ["audio": ["input": ["turn_detection": ["create_response": false]]]]])
         func commit(_ item: String) {
@@ -470,16 +510,52 @@ final class VoiceModelTests: XCTestCase {
         }
         func responseCount() -> Int { h.link.sent.filter { $0["type"] as? String == "response.create" }.count }
 
-        commit("item-1")
+        commit(firstItem)
         XCTAssertEqual(responseCount(), 1)
         h.link.play(["type": "response.created", "response": ["id": "r1"]],
                     ["type": "response.done", "response": ["id": "r1"]])
-        h.link.play(["type": "input_audio_buffer.committed", "item_id": "item-1"])
+        h.link.play(["type": "input_audio_buffer.committed", "item_id": firstItem])
         XCTAssertEqual(responseCount(), 1)
 
-        commit("item-2")
+        commit(secondItem)
         XCTAssertEqual(responseCount(), 2)
         h.voice.stop()
+    }
+
+    func testManualRealtimeReturnsToListeningAfterReplayedSpeech() async {
+        let item = UUID().uuidString
+        let original = Harness()
+        func open(_ h: Harness) async {
+            await h.connect()
+            h.link.play(["type": "session.created", "session": ["audio": ["input": ["turn_detection": ["create_response": false]]]]])
+        }
+        func commit(_ id: String, on h: Harness) {
+            h.link.play(["type": "input_audio_buffer.speech_started", "item_id": id],
+                        ["type": "input_audio_buffer.speech_stopped", "item_id": id],
+                        ["type": "input_audio_buffer.committed", "item_id": id])
+        }
+        func responses(_ h: Harness) -> Int { h.link.sent.filter { $0["type"] as? String == "response.create" }.count }
+
+        await open(original)
+        commit(item, on: original)
+        XCTAssertEqual(responses(original), 1)
+        original.link.play(["type": "response.created", "response": ["id": "answer"]],
+                           ["type": "response.done", "response": ["id": "answer"]])
+        original.voice.stop()
+
+        let reopened = Harness()
+        await open(reopened)
+        commit(item, on: reopened)
+        XCTAssertEqual(responses(reopened), 0)
+        XCTAssertEqual(reopened.voice.phase, .listening)
+        XCTAssertFalse(reopened.voice.midTurn)
+
+        let fresh = UUID().uuidString
+        commit(fresh, on: reopened)
+        XCTAssertEqual(responses(reopened), 1)
+        XCTAssertEqual(reopened.voice.phase, .thinking)
+        XCTAssertTrue(reopened.voice.midTurn)
+        reopened.voice.stop()
     }
 
     func testLiveStopPreventsTheNextRunnerRequestInAnActiveBatch() async {
@@ -611,6 +687,130 @@ final class VoiceModelTests: XCTestCase {
         h.voice.stop()
     }
 
+    func testCommittedSpeechDoesNotRepeatAnExecutedActionAfterReopeningVoice() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "VoiceModelTests.committedSpeech.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+        for live in [true, false] {
+            let folder = root.appendingPathComponent(live ? "live" : "realtime")
+            let time = FakeTime()
+            var applied: [String] = []
+            let tool: @MainActor (String, String) async -> PhoneAnswer = { _, arguments in
+                await time.clock.sleep(.seconds(1))
+                applied.append(arguments)
+                return ("Draft saved.", false, nil)
+            }
+            let original = Harness(time: time, sessionStore: SessionStore(folder: folder, defaults: defaults), phoneTool: tool)
+            let itemID = UUID().uuidString
+            let arguments = #"{"actions":[{"type":"Draft text"}]}"#
+            func open(_ h: Harness) async {
+                if live { await h.liveTalk() } else { await h.talk() }
+            }
+            func commit(_ id: String, request: String, on h: Harness) {
+                h.link.play(["type": "input_audio_buffer.committed", "item_id": id])
+                if live {
+                    h.link.play(["type": "session.delegation.created", "delegation": ["id": request]])
+                    h.link.call(request, "do", arguments: arguments, delegation: request)
+                } else {
+                    h.link.play(["type": "response.output_item.done", "item": [
+                        "type": "function_call", "call_id": request, "name": "do", "arguments": arguments,
+                    ]])
+                }
+            }
+            func success(_ h: Harness) -> Bool {
+                h.link.sent.contains { ($0["item"] as? [String: Any])?["output"] as? String == "Draft saved." }
+            }
+            func close(_ h: Harness) {
+                h.voice.stop()
+                if live { h.link.play(["type": "session.closed", "reason": "confirmed"]) }
+            }
+
+            await open(original)
+            commit(itemID, request: "original", on: original)
+            await time.settle()
+            XCTAssertFalse(success(original), "The model must wait for the tool result")
+            await time.advance(1)
+            XCTAssertTrue(success(original))
+            XCTAssertEqual(applied, [arguments])
+            close(original)
+
+            let reopened = Harness(time: time, sessionStore: SessionStore(folder: folder, defaults: defaults), phoneTool: tool)
+            await open(reopened)
+            commit(itemID, request: "replayed-with-a-different-tool-id", on: reopened)
+            await time.advance(1)
+            XCTAssertFalse(success(reopened), "The same speech item must not get a fresh success")
+            XCTAssertEqual(applied, [arguments], "The same speech item tried the operation again")
+
+            commit(UUID().uuidString, request: "new-speech-with-same-words", on: reopened)
+            await time.advance(1)
+            XCTAssertTrue(success(reopened))
+            XCTAssertEqual(applied, [arguments, arguments])
+            close(reopened)
+        }
+    }
+
+    func testLiveFinalReplyIsSavedBeforeTheNextCallAndIncludedInItsContext() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let suite = "VoiceModelTests.finalReply.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+        let store = SessionStore(folder: folder, defaults: defaults)
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: PKInProcess.shared())
+
+        for hasTranscript in [true, false] {
+            let chat = ChatModel(app: app, store: store)
+            chat.newConversation()
+            let savedFile = folder.appendingPathComponent(chat.sessionID + ".json")
+            let h = Harness(phoneTool: { _, _ in ("The platform is confirmed.", false, nil) })
+            h.voice.onConversationEnded = { lines, started in chat.appendVoice(lines, started: started) }
+            await h.liveTalk()
+            let first = h.link
+            if hasTranscript {
+                first.play(["type": "session.input_transcript.delta", "delta": "Which platform?", "start_ms": 0, "end_ms": 400])
+            }
+            first.play(["type": "session.output_transcript.delta", "delta": "I'll check.", "start_ms": 1000, "end_ms": 1300])
+            first.call("platform", "look")
+            await h.time.settle()
+            let final = "The train leaves at noon. " + String(repeating: "The timetable has been checked. ", count: 35)
+            let lastWords = "Use platform four."
+            first.play(["type": "session.output_transcript.delta", "delta": final, "start_ms": 2500, "end_ms": 2700])
+            h.voice.stop()
+
+            let next = Task { await h.liveTalk() }
+            await h.time.settle()
+            XCTAssertEqual(h.links.count, 1, "Starting again must wait for the first connection to close")
+            first.play(["type": "session.output_transcript.delta", "delta": lastWords, "start_ms": 2700, "end_ms": 2900],
+                       ["type": "session.closed", "reason": "confirmed"])
+            do {
+                let stored = try JSONDecoder().decode(SavedSession.self, from: Data(contentsOf: savedFile))
+                XCTAssertTrue(stored.entries.contains { $0.kind == .poki(final + lastWords) })
+                if hasTranscript {
+                    XCTAssertTrue(stored.entries.contains {
+                        $0.kind == .you("Which platform?", delivered: true) && $0.spoken == true
+                    })
+                }
+            } catch {
+                XCTFail("The previous call must be on disk before the new connection: \(error)")
+            }
+
+            await h.time.advance(3)
+            await next.value
+            let event = h.link.sent.first { $0["type"] as? String == "session.instructions.append" }
+            let context = try XCTUnwrap(event?["content"] as? String)
+            XCTAssertLessThanOrEqual(context.utf8.count, 480)
+            XCTAssertEqual(context.contains("User: Which platform?"), hasTranscript, context)
+            XCTAssertTrue(context.contains("The train leaves at noon.") && context.contains(lastWords), context)
+            XCTAssertTrue(context.contains("Poki ran look: done"), context)
+            h.voice.stop()
+            h.link.play(["type": "session.closed", "reason": "confirmed"])
+        }
+    }
+
     func testLiveReconnectReportsTheCompletedResultUntilAcknowledged() async throws {
         var executed = 0
         let result = "操作已完成。草稿已保存。"
@@ -717,7 +917,7 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(time: FakeTime? = nil, phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
+        @MainActor init(time: FakeTime? = nil, sessionStore: SessionStore? = nil, phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
             let time = time ?? FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
@@ -725,12 +925,12 @@ final class VoiceModelTests: XCTestCase {
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: { name, arguments, cancellation in
                 await PhoneOperationCancellation.$current.withValue(cancellation) { await phoneTool(name, arguments) }
             }, holdMicrophone: { held($0) },
-                               connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
+                               connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock, sessionStore: sessionStore)
             made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
             // As in the app: an ended conversation goes into the chat, and its lines leave the voice model.
-            voice.onConversationEnded = { _, _ in }
+            voice.onConversationEnded = { _, _ in true }
         }
 
         /// Connected, before the server's session.created.
@@ -930,6 +1130,88 @@ final class VoiceModelTests: XCTestCase {
         let carried = h.link.notes.joined(separator: "\n")
         XCTAssertTrue(carried.contains("Open Settings."), carried)
         XCTAssertTrue(carried.contains("Settings is open."), carried)
+    }
+
+    /// The server transcribes the person's speech on its own time: here after Poki has started a step for
+    /// it and even said the result. Their words still stand before the step and the answer they led to, in
+    /// the talk, the chat it goes into and what the next talk is told, so they never read as a request
+    /// nobody answered.
+    func testWordsTranscribedAfterTheAnswerStandBeforeIt() async {
+        let h = Harness(phoneTool: { _, _ in ("Settings is open", false, nil) })
+        await h.talk()
+        let speech: [String: Any] = ["type": "conversation.item.added",
+                                     "item": ["id": "item_1", "type": "message", "role": "user", "content": [["type": "input_audio"]]]]
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"], speech,
+                    ["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": #"{"actions":[{"launch":"com.apple.Preferences"}]}"#]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                    ["type": "response.output_audio_transcript.done", "transcript": "Settings is open."],
+                    ["type": "conversation.item.input_audio_transcription.completed", "item_id": "item_1", "content_index": 0, "transcript": " Open Settings. "],
+                    ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+        h.link.play(speech, ["type": "conversation.item.input_audio_transcription.completed", "item_id": "item_1", "transcript": "Open Settings."])
+        XCTAssertEqual(h.voice.lines.map(\.role), [.you, .tool, .poki])
+        XCTAssertEqual(h.voice.lines.first?.text, "Open Settings.")
+
+        // Words with no item to place them by (a recorded conversation, another voice model) go at the end.
+        h.link.play(["type": "conversation.item.input_audio_transcription.completed", "transcript": "Thanks."])
+        XCTAssertEqual(h.voice.lines.last?.text, "Thanks.")
+        XCTAssertEqual(h.voice.lines.map(\.role), [.you, .tool, .poki, .you])
+    }
+
+    /// Talking again soon after a talk that was ended before Poki said how the request went (End while it
+    /// spoke, a dropped connection): the new talk gets the person's words back as text, and on their own
+    /// they read as a request still to do. It is told the step already ran and that nothing listed is to
+    /// be answered or run again, and it asks for no answer by itself.
+    func testTheNextTalkIsToldWhatAlreadyRanForARequestWhoseAnswerWasCutOff() async {
+        for transcriptArrived in [true, false] {
+            var actions: [String] = []
+            let h = Harness(phoneTool: { _, arguments in
+                actions.append(arguments)
+                return ("Sent.", false, nil)
+            })
+            await h.talk()
+            let send = #"{"actions":[{"type":"On my way"},{"key":"return"}]}"#
+            let speech = ["type": "conversation.item.input_audio_transcription.completed", "transcript": "Text Mom on my way."]
+            let firstLink = h.link
+            firstLink.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"])
+            if transcriptArrived { firstLink.play(speech) }
+            firstLink.play(["type": "response.created", "response": ["id": "r1"]],
+                           ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": send]],
+                           ["type": "response.done", "response": ["id": "r1"]])
+            await h.time.settle()
+            XCTAssertTrue(firstLink.sent.contains { ($0["item"] as? [String: Any])?["output"] as? String == "Sent." })
+            h.voice.stop()
+
+            await h.time.advance(30)
+            await h.talk()
+            if !transcriptArrived { firstLink.play(speech) }
+            let carried = h.link.notes.joined(separator: "\n")
+            XCTAssertEqual(carried.contains("User: Text Mom on my way."), transcriptArrived, carried)
+            XCTAssertTrue(carried.contains("Poki ran do: done"), carried)
+            XCTAssertFalse(carried.contains(send), carried)
+            XCTAssertTrue(carried.contains("Do not answer, repeat or redo any of it"), carried)
+            XCTAssertFalse(h.link.sent.contains { $0["type"] as? String == "response.create" })
+            XCTAssertEqual(actions, [send])
+            h.voice.stop()
+        }
+    }
+
+    /// What the next talk is told about a step names how it ended, also one still running or one that failed.
+    func testTheCarriedTurnsSayHowEachStepEnded() {
+        let running = VoiceCall(id: "c1", name: "open_app", arguments: #"{"app":"WeChat"}"#, session: 1)
+        var failed = VoiceCall(id: "c2", name: "do", arguments: #"{"actions":[{"tap":3}]}"#, session: 1)
+        failed.state = .failed
+        let note = VoiceModel.carried([VoiceLine(role: .you, text: "Open WeChat."), VoiceLine(role: .tool, text: "Opening an app", call: "c1"),
+                                       VoiceLine(role: .tool, text: "Using the phone", call: "c2"), VoiceLine(role: .poki, text: "WeChat is opening.")],
+                                      calls: [running, failed])
+        XCTAssertTrue(note.hasSuffix("""
+        User: Open WeChat.
+        Poki ran open_app: still running
+        Poki ran do: failed
+        Poki: WeChat is opening.
+        """), note)
     }
 
     /// A step's result is handed over and the server's answer to the request never comes (its error names
@@ -1277,7 +1559,10 @@ extension VoiceModelTests {
             AppLocalization.shared.preference = words.language
             let h = Harness(phoneTool: { _, _ in ("done", false, nil) })
             var said: [VoiceLine] = []
-            h.voice.onConversationEnded = { lines, _ in said = lines }
+            h.voice.onConversationEnded = { lines, _ in
+                said = lines
+                return true
+            }
             await h.connect()
             XCTAssertEqual(h.voice.talkState?.word, words.connecting, words.language)
 

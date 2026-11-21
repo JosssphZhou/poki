@@ -109,7 +109,7 @@ struct PokiStatus: Equatable {
         // An outside agent has the phone (its own MCP session, or a task it handed to Poki).
         if model.currentCaller != nil { return PokiStatus(.onYourPhone) }
         if SetupIssueHint.runnerIssue(model: model) != nil { return PokiStatus(.cantReach) }
-        if chat.canRetry { return PokiStatus(.tripped) }
+        if chat.endedOnProblem { return PokiStatus(.tripped) }
         if DoneLinger.shared.showing { return PokiStatus(.done) }
         // Setup is open, unless only the loopback is missing and Poki can start without it (main's rule for Home).
         if !model.canStartTasks { return PokiStatus(.hello) }

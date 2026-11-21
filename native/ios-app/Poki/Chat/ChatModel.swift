@@ -60,6 +60,10 @@ struct ChatEntry: Identifiable, Equatable, Codable {
     var countedScrollRequestID: UUID?
     /// The item you selected on a result card; nil while it is the one Poki suggested.
     var chosen: String?
+    /// Said or done in a live talk with Poki (`SessionStore.entries(voice:)`), which already heard and
+    /// handled it: a record of the talk in the conversation, never a request for the chat to run again.
+    /// nil in conversations saved before it existed.
+    var spoken: Bool?
     init(_ kind: Kind) { id = UUID(); self.kind = kind }
 
     /// The same delimited owner request for the model, consent evidence and task routing.
@@ -227,7 +231,11 @@ final class ChatModel {
         app.addApprovalModeObserver { [weak self] in self?.approvalsChanged() }
         app.addStopAskingObserver { [weak self] in self?.approvalsStopped() }
         // A live voice conversation is part of this chat: what was said and done stays in its history.
-        if requester == nil { app.voice.onConversationEnded = { [weak self] lines, started in self?.appendVoice(lines, started: started) } }
+        if requester == nil {
+            app.voice.onConversationEnded = { [weak self] lines, started in
+                self?.appendVoice(lines, started: started) ?? false
+            }
+        }
         if let scene = UserDefaults.standard.string(forKey: "pokiChat") { loadSample(scene); return }
         // The last in-app conversation comes back at launch, as in Messages.
         if store.isInitialReady {
@@ -301,8 +309,10 @@ final class ChatModel {
     }
 
     /// A live voice conversation that just ended, into this chat's history (and its saved session).
-    func appendVoice(_ lines: [VoiceLine], started: Date) {
+    func appendVoice(_ lines: [VoiceLine], started: Date) -> Bool {
         entries.append(contentsOf: SessionStore.entries(voice: lines, started: started))
+        guard !isSample, !leavingRemoved else { return false }
+        return store.flush(sessionID: sessionID)
     }
 
     func newConversation() {
@@ -353,7 +363,8 @@ final class ChatModel {
 
     /// The conversation as the Sessions list keeps it. Greeting-only conversations are not saved.
     private func persist() {
-        guard !isSample, !leavingRemoved, hasUserMessages else { return }
+        guard !isSample, !leavingRemoved,
+              hasUserMessages || entries.contains(where: { $0.spoken == true }) else { return }
         store.save(chat: self)
     }
 
@@ -393,15 +404,27 @@ final class ChatModel {
 
     /// The last message again, after a problem (the Retry button under it).
     func retry() {
-        guard !running, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), case .you(let text, _) = last.kind else { return }
+        guard canRetry, let last = retryable, case .you(let text, _) = last.kind else { return }
         while let tail = entries.last, case .note(.problem) = tail.kind { entries.removeLast() }
         send(text, again: true, documents: last.textDocuments ?? [], inSplitView: usesSplitView && expectedSplitViewApps == nil, chooseWorkspace: true)
     }
 
-    /// The conversation ended on a problem the owner can try again.
-    var canRetry: Bool {
+    /// The conversation ended on a problem: its own task's, or a talk's that ended on one (its connection
+    /// dropped, the server stopped answering). The bear trips over either.
+    var endedOnProblem: Bool {
         guard !running, let tail = entries.last, case .note(.problem) = tail.kind else { return false }
         return entries.contains { if case .you = $0.kind { return true }; return false }
+    }
+
+    /// The conversation ended on a problem the owner can try again: one of the chat's own tasks. A talk
+    /// that ended on a problem has nothing to try again here: the live voice already heard and handled
+    /// what was said in it, and sending its words to the chat would do it all a second time.
+    var canRetry: Bool { endedOnProblem && entries.last?.spoken != true && retryable != nil }
+
+    /// What Try Again sends: the owner's last message, unless it was said in a talk.
+    private var retryable: ChatEntry? {
+        guard let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), last.spoken != true else { return nil }
+        return last
     }
 
     /// What the model reads when the owner sent pictures without words.
@@ -519,7 +542,7 @@ final class ChatModel {
     private func prepareSend(_ text: String, again: Bool, thumbnails: [Data], documents: [ChatTextDocument],
                              inSplitView: Bool, chooseWorkspace: Bool, replyingTo: UUID?) -> PreparedSend? {
         let replyRequestID = replyingTo.flatMap { $0 == countedScrollQuestion ? entries.last?.countedScrollRequestID : nil }
-        let previousRequest = again ? entries.last(where: { if case .you = $0.kind { true } else { false } }) : nil
+        let previousRequest = again ? retryable : nil
         var resumedTask = previousRequest?.countedScrollRequestID == nil ? previousRequest?.continuedTask : nil
         if !again, replyRequestID == nil, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
             switch ChatContinuation.resolve(text, current: sessionID, choices: entries.last?.continuationChoices,
@@ -572,6 +595,7 @@ final class ChatModel {
         // A pause of half an hour or more gets its own time line, as in Messages.
         if !again, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
         var you = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+        you.spoken = false
         you.continuedTask = linkedTask
         you.countedScrollRequestID = countedScrollRequestID
         if !thumbnails.isEmpty { you.attachments = thumbnails }
