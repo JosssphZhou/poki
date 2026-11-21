@@ -652,7 +652,12 @@ final class ChatModel {
         switch prepared.engine {
         case .direct(let client, let instructions, let notes):
             await began("direct", prepared.provider, prepared.model, task: prepared.text, countedScroll: prepared.countedScroll, isRetry: prepared.isRetry)
-            guard runToken == token, !Task.isCancelled else { app.finishTask(switching: false); return }
+            guard runToken == token, !Task.isCancelled else {
+                if stoppedTaskTokens.remove(token) == nil {
+                    await app.finishTaskAndWait(switching: false, ownerStopped: true)
+                }
+                return
+            }
             awaitingModel = true
             client.say(prepared.message)
             offeredMemories = notes
@@ -661,8 +666,18 @@ final class ChatModel {
             let current = runToken == token
             finishTaskSaves(completed: completed, stopped: stopAsked || countedScrollReplyQuestion != nil, token: token)
             if current { finishPlan(stopped: stopAsked) }
-            // The direct engine does not say when its task ends: the quiet wait finishes the run.
-            if !current || app.drivesDuoCompanion { app.finishTask() } else { app.chatReleasesRun() }
+            if !current {
+                if stoppedTaskTokens.remove(token) == nil {
+                    await app.finishTaskAndWait(switching: false, ownerStopped: true, settle: true)
+                }
+            } else if app.drivesDuoCompanion {
+                app.finishTask()
+            } else if !completed || stopAsked {
+                app.finishTask(switching: false, ownerStopped: stopAsked)
+            } else {
+                // The direct engine does not say when its task ends: the quiet wait finishes the run.
+                app.chatReleasesRun()
+            }
             logEnd("direct", outcome: nil, session: prepared.runSession, text: prepared.text, stopped: !current)
             if current { running = false; awaitingModel = false }
         case .pi(let piModel):
@@ -674,7 +689,7 @@ final class ChatModel {
                 let plannerTiming = ChatStepTiming(session: prepared.runSession, task: prepared.you.id, flow: "workspace")
                 let choice = await chooseSplitView(text: prepared.text, apps: prepared.namedApps, provider: prepared.provider, model: piModel,
                                                    timing: plannerTiming)
-                guard runToken == token else { return }
+                guard runToken == token else { stoppedTaskTokens.remove(token); return }
                 AppLog.shared.add("chat", "workspace planning took \(plannedAt.duration(to: .now))")
                 switch choice {
                 case .split(let apps):
@@ -697,7 +712,12 @@ final class ChatModel {
             let splitSession = splitViewSession
             await began("pi", prepared.provider, prepared.model, task: prepared.text,
                         countedScroll: prepared.countedScroll, isRetry: prepared.isRetry, splitViewSession: splitSession)
-            guard runToken == token, !Task.isCancelled else { app.finishTask(switching: false); return }
+            guard runToken == token, !Task.isCancelled else {
+                if stoppedTaskTokens.remove(token) == nil {
+                    await app.finishTaskAndWait(switching: false, ownerStopped: true)
+                }
+                return
+            }
             awaitingModel = true
             if let splitSession, pair.count == 2 {
                 phoneStepUnderWay = true
@@ -755,7 +775,9 @@ final class ChatModel {
                             stopped: outcome == .stopped || outcome == .authorizationDeclined || outcome == .waitingForReply,
                             token: token)
             if current { ended(outcome, delivered: prepared.you.id) }
-            else if splitSession == nil { app.finishTask() }
+            else if splitSession == nil, stoppedTaskTokens.remove(token) == nil {
+                await app.finishTaskAndWait(switching: false, ownerStopped: true, settle: true)
+            }
             logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: !current || outcome == .authorizationDeclined)
             guard current else { return }
             running = false
@@ -1111,7 +1133,7 @@ final class ChatModel {
         finishPlan(stopped: stopped || waitingForReply)
         if stopped {
             app.chatTaskStopped()
-            if !usesSplitView { app.finishTask(switching: outcome != .authorizationDeclined) }
+            if !usesSplitView { app.finishTask(switching: false, ownerStopped: outcome == .stopped) }
         } else {
             // A finished run on the Live Activity says what it came to: finish_task's summary when the
             // task succeeded, else the task itself. A failure's summary under Done would read as success.
@@ -1155,6 +1177,9 @@ final class ChatModel {
         guard running else { return }
         stopAsked = true
         waitingForSplitView = false
+        let hadPhoneStep = phoneStepUnderWay
+        let stoppedToken = runToken
+        let inSplitView = usesSplitView
         loop?.stop()
         task?.cancel()
         // A browser step waiting for a page or for the owner ends too.
@@ -1167,14 +1192,20 @@ final class ChatModel {
         running = false
         awaitingModel = false
         let stoppedText = finishMessageScroll(.stopped) ?? AppLocalization.text(LocalizedStringResource("Stopped."))
-        guard phoneStepUnderWay else { add(.poki(stoppedText)); return }
+        guard hadPhoneStep else {
+            add(.poki(stoppedText))
+            if !inSplitView {
+                stoppedTaskTokens.insert(stoppedToken)
+                app.finishTask(switching: false, ownerStopped: true)
+            }
+            return
+        }
         let stopping = ChatEntry(.poki(AppLocalization.text(LocalizedStringResource("Stopping…"))))
         entries.append(stopping)
         let session = sessionID
         let stopped = task
         Task { [weak self] in
             await stopped?.value
-            _ = await self?.app.phoneSettles(within: 30)
             guard let self, self.sessionID == session else {
                 self?.store.finishStopping(stopping.id, in: session, text: stoppedText)
                 return
@@ -1187,6 +1218,8 @@ final class ChatModel {
 
     /// A look or do of this chat is on its way to the phone.
     private var phoneStepUnderWay = false
+    /// Stopped runs whose immediate teardown (`finishTask`) was already started by `stop()`.
+    private var stoppedTaskTokens: Set<Int> = []
     /// Active result-card schema scope for the running task (shared by direct and Pi engines).
     private var taskResultCardMode: Harness.ResultCardMode = .all
 

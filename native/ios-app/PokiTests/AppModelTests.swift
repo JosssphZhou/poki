@@ -18,7 +18,9 @@ final class FakeLauncher: RunnerLauncher, @unchecked Sendable {
 final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private let lock = NSLock()
     private var open = false
+    private var gen: UInt64 = 0
     var isOpen: Bool { lock.withLock { open } }
+    var generation: UInt64 { lock.withLock { gen } }
     private var gate: DispatchSemaphore?
     private var heldOpenStarted = false
     private var answer: [String: Any]?
@@ -47,14 +49,21 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
                 return ["ok": false, "code": "session_unreadable", "detail": "no element tree after resuming", "generation": 1, "seconds": 0.0]
             }
             let reused = open
+            if !reused { gen += 1 }
             open = true
             paused = false
             ready = ProcessInfo.processInfo.systemUptime
-            return ["ok": true, "generation": 1, "reused": reused, "seconds": 0.0]
+            return ["ok": true, "generation": gen, "reused": reused, "seconds": 0.0]
         }
     }
     func close() -> [String: Any] {
-        lock.withLock { defer { if open { closeCalls += 1 }; open = false; paused = false }; return ["closed": open, "generation": 1, "seconds": 0.0] }
+        lock.withLock {
+            let wasOpen = open
+            if open { closeCalls += 1 }
+            open = false
+            paused = false
+            return ["closed": wasOpen, "generation": gen, "seconds": 0.0]
+        }
     }
     /// Automation Mode off with the session kept, as iOS does it: the session stays open until the next prepare turns it on.
     func pauseAutomation() -> [String: Any] {

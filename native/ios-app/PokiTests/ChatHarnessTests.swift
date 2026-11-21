@@ -3433,10 +3433,11 @@ final class FakeCompletions: @unchecked Sendable {
     private var replies: [String]
     private var bodies: [[String: Any]] = []
     private let responseStatus: String
+    private var responseStatuses: [String]
     private let holdFirstReply: (@Sendable () -> Void)?
     private var held: [NWConnection] = []
     /// Replies held back by `holdAfter`, sent by `release()`.
-    private var waiting: [(NWConnection, String)] = []
+    private var waiting: [(NWConnection, String, String)] = []
     private let holdAfter: Int?
     private let onRequest: (@Sendable ([String: Any]) -> Void)?
     private let rejectRequest: (@Sendable ([String: String], [String: Any]) -> (status: String, body: String)?)?
@@ -3446,12 +3447,14 @@ final class FakeCompletions: @unchecked Sendable {
 
     func replaceReplies(_ next: [String]) { lock.withLock { replies = next } }
 
-    init(replies: [String], responseStatus: String = "200 OK", holdFirstReply: (@Sendable () -> Void)? = nil,
+    init(replies: [String], responseStatus: String = "200 OK", responseStatuses: [String] = [],
+         holdFirstReply: (@Sendable () -> Void)? = nil,
          holdAfter: Int? = nil,
          rejectRequest: (@Sendable ([String: String], [String: Any]) -> (status: String, body: String)?)? = nil,
          onRequest: (@Sendable ([String: Any]) -> Void)? = nil) throws {
         self.replies = replies
         self.responseStatus = responseStatus
+        self.responseStatuses = responseStatuses
         self.holdFirstReply = holdFirstReply
         self.holdAfter = holdAfter
         self.onRequest = onRequest
@@ -3470,10 +3473,10 @@ final class FakeCompletions: @unchecked Sendable {
 
     /// Sends the replies `holdAfter` held back: a model answer that comes in late.
     func release() {
-        let due = lock.withLock { () -> [(NWConnection, String)] in defer { waiting = [] }; return waiting }
+        let due = lock.withLock { () -> [(NWConnection, String, String)] in defer { waiting = [] }; return waiting }
         queue.async {
-            for (connection, events) in due {
-                let head = "HTTP/1.1 \(self.responseStatus)\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
+            for (connection, status, events) in due {
+                let head = "HTTP/1.1 \(status)\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
                 connection.send(content: Data((head + events).utf8), completion: .contentProcessed { _ in connection.cancel() })
             }
         }
@@ -3540,16 +3543,18 @@ final class FakeCompletions: @unchecked Sendable {
             connection.send(content: Data((head + rejected.body).utf8), completion: .contentProcessed { _ in connection.cancel() })
             return
         }
-        let events = lock.withLock { () -> String in
+        let (status, events) = lock.withLock { () -> (String, String) in
             bodies.append(json)
-            return replies.isEmpty ? Self.text("No more scripted turns.") : replies.removeFirst()
+            let status = responseStatuses.isEmpty ? responseStatus : responseStatuses.removeFirst()
+            let reply = replies.isEmpty ? Self.text("No more scripted turns.") : replies.removeFirst()
+            return (status, reply)
         }
         onRequest?(json)
         if let holdAfter, requests.count > holdAfter {
-            lock.withLock { held.append(connection); waiting.append((connection, events)) }
+            lock.withLock { held.append(connection); waiting.append((connection, status, events)) }
             return
         }
-        let head = "HTTP/1.1 \(responseStatus)\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
+        let head = "HTTP/1.1 \(status)\r\nContent-Type: text/event-stream\r\nContent-Length: \(events.utf8.count)\r\nConnection: close\r\n\r\n"
         if requests.count == 1, let holdFirstReply {
             holdFirstReply()
             connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in connection.cancel() }

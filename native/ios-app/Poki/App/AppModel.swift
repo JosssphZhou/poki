@@ -342,12 +342,16 @@ final class AppModel {
         return ChatModel.delegatedBusy
     }
 
+    private let simulatorRunnerAnswers: (@Sendable () async -> Bool)?
+
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(),
          automation: InProcessAutomation = PKInProcess.shared(), transport: HTTPTransport? = nil,
          systemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
-         requiresDiskImageCheck: Bool? = nil, imageMounted: @escaping () -> Bool = { AppModel.localDDIMounted }) {
+         requiresDiskImageCheck: Bool? = nil, imageMounted: @escaping () -> Bool = { AppModel.localDDIMounted },
+         simulatorRunnerAnswers: (@Sendable () async -> Bool)? = nil) {
         ActivityController.endAll()
         self.imageMounted = imageMounted
+        self.simulatorRunnerAnswers = simulatorRunnerAnswers
         self.activity = ActivityController()
         self.automation = automation
         self.idleSessionPolicy = .forSystem(systemVersion)
@@ -1293,6 +1297,7 @@ final class AppModel {
         sessionOn = false
         if awaitingAuthorization { host.update(runner: .failed("Poki was turned off", fix: nil)) }
         chatTaskActive = false
+        pendingTaskClose = nil
         stepUnderWay = nil
         runner = .idle
         relayStatus = .off
@@ -1311,8 +1316,9 @@ final class AppModel {
         #if targetEnvironment(simulator)
         // On a simulator, WebDriverAgent runs from Xcode on the Mac (`xcodebuild test` of
         // WebDriverAgentRunner, as in .github/workflows/ios-core.yml) and answers on 127.0.0.1:8100.
-        Task { [weak self] in
-            let up = await RunnerProbe.answers()
+        Task { [weak self, simulatorRunnerAnswers] in
+            let up: Bool
+            if let simulatorRunnerAnswers { up = await simulatorRunnerAnswers() } else { up = await RunnerProbe.answers() }
             self?.runnerChanged(up ? RunnerStatus(state: "running") :
                 RunnerStatus(state: "failed", detail: "WebDriverAgent is not answering on 127.0.0.1:8100", fix: "Start WebDriverAgentRunner on this simulator from Xcode"))
         }
@@ -1344,12 +1350,13 @@ final class AppModel {
     /// must show there.
     func stopFromOutside(_ reason: String) {
         let chat = AskPoki.app === self ? AskPoki.chat : nil
+        let delegated = AskPoki.app === self ? AskPoki.liveSessionID.flatMap { AskPoki.live($0) } : nil
         // A Split View task stops at once, even right after an approval (as in `pauseRunner`).
         if chat?.isRunningInSplitView != true, isApprovalTapEcho(reason) {
             log.add("runner", "a Stop from the Live Activity right after an approval was ignored")
             return
         }
-        let busy = chat?.running == true || stepUnderWay != nil || !approvals.isEmpty
+        let busy = chat?.running == true || delegated?.running == true || stepUnderWay != nil || !approvals.isEmpty
         if voice.isOn { voice.stop() }
         guard busy || reason == Self.liveActivityStop else {
             log.add("session", "\(reason): the talk ends")
@@ -1357,6 +1364,7 @@ final class AppModel {
         }
         log.add("session", "\(reason): the talk and the task stop")
         if let chat, chat.running { chat.stop() }
+        else if let delegated, delegated.running { delegated.stop() }
         else { activity.stopRun() }
         for approval in approvals { resolve(approval, approved: false) }
         pauseRunner(reason: reason, fromOutside: true)
@@ -1380,6 +1388,7 @@ final class AppModel {
         guard approvals.isEmpty || splitChat != nil || fromOutside else { return }
         if byOwner { activity.stopRun() }
         ownerPaused = byOwner
+        pendingTaskClose = nil
         if runnerPaused {
             if automationPath == .inProcess { closeInProcess("stopped by the owner") }
             return
@@ -1530,13 +1539,52 @@ final class AppModel {
         standBy(reason: nil, keepingDone: true)
     }
 
-    private func closeAfterTask(_ why: String) {
-        guard automationPath == .inProcess, sessionOn, !runnerPaused, !chatTaskActive, approvals.isEmpty,
-              handoffText == nil, activityText == "Idle" else { return }
+    /// A task-end close waiting for queued core events (`.toolFinished`, `.handoffEnded`,
+    /// `.approvalEnded`) to drain onto the main actor.
+    private var pendingTaskClose: (why: String, forceClose: Bool)?
+
+    private func closeAfterTask(_ why: String, forceClose: Bool = false, then: (@MainActor () -> Void)? = nil) {
+        guard automationPath == .inProcess, sessionOn else {
+            pendingTaskClose = nil
+            then?()
+            return
+        }
+        guard !chatTaskActive, endingTasks == 0 else {
+            if chatTaskActive { pendingTaskClose = nil }
+            then?()
+            return
+        }
+        if !forceClose, !approvals.isEmpty || handoffText != nil || activityText != "Idle" || stepUnderWay != nil {
+            if pendingTaskClose == nil {
+                log.add("runner", "\(why): deferring automation close until in-flight step/events finish")
+            }
+            pendingTaskClose = (why, false)
+            then?()
+            return
+        }
+        pendingTaskClose = nil
+        if runnerPaused {
+            // Already stood by (e.g. pauseRunner on Live Activity Stop, or closeBecausePokiOpened).
+            // Still close when the owner stopped (full close on iOS 26, or cleaning up a session
+            // reopened by an in-flight step retrying after pauseRunner).
+            if forceClose || ownerPaused {
+                log.add("runner", "\(why): closing the automation session at once; the banner goes with it")
+                closeInProcess(why, keepingSession: false, then: then)
+            } else {
+                then?()
+            }
+            return
+        }
         log.add("runner", "\(why): closing the automation session at once; the banner goes with it")
-        ownerPaused = false
-        closeInProcess("the end of the task", keepingSession: idleSessionPolicy == .pauseAutomation)
+        if !forceClose { ownerPaused = false }
+        let keep = !forceClose && idleSessionPolicy == .pauseAutomation
+        closeInProcess(forceClose ? why : "the end of the task", keepingSession: keep, then: then)
         standBy(reason: nil, keepingDone: true)
+    }
+
+    private func retryPendingTaskClose() {
+        guard let pending = pendingTaskClose else { return }
+        closeAfterTask(pending.why, forceClose: pending.forceClose)
     }
 
     /// A talk ended (End, the Action Button again, or silence): the automation its steps used closes
@@ -1560,6 +1608,7 @@ final class AppModel {
     /// Starts a paused runner again (the next agent request, or the owner).
     func wakeRunner(asked: String = "an agent asked") {
         ownerPaused = false
+        pendingTaskClose = nil
         guard sessionOn else { return }
         if automationPath == .inProcess {
             if case .closing = inProcessSession {
@@ -1867,6 +1916,13 @@ final class AppModel {
             activity.setThumbnail(thumbnail)
             if let thumbnail, let image = UIImage(data: thumbnail) { lastShot = image }
             closeAfterTalk()
+            if pendingTaskClose != nil {
+                retryPendingTaskClose()
+            } else if automationPath == .inProcess, sessionOn, runnerPaused, !chatTaskActive,
+                      approvals.isEmpty, handoffText == nil {
+                log.add("runner", "step finished after stop: closing the automation session")
+                closeInProcess("step finished after stop", keepingSession: !ownerPaused && idleSessionPolicy == .pauseAutomation)
+            }
         case .approvalRequested(let approval):
             switch ApprovalClassifier.route(approval, voiceOn: voice.isOn) {
             case .allow:
@@ -1896,7 +1952,8 @@ final class AppModel {
                 askOwner(approval)
             }
         case .approvalEnded(let id, let approved):
-            lastApprovalAnswered = Date()
+            let answeredByOwner = approved != nil && !ApprovalClassifier.modelAnswered(id) && approvals.contains(where: { $0.id == id })
+            if answeredByOwner { lastApprovalAnswered = Date() }
             if let approval = approvals.first(where: { $0.id == id }) {
                 record(approval, approved: approved)
             } else if let approval = checking.first(where: { $0.id == id }) {
@@ -1910,6 +1967,7 @@ final class AppModel {
             activity.update { state in
                 if state.approval?.id == id { state.approval = nil; state.phase = .working; state.headline = approved == true ? "Continuing" : "Step skipped" }
             }
+            retryPendingTaskClose()
         case .handoffRequested(let id, let kind, let text, let app):
             lastAgentActivity = Date(); lastStepAt = Date()
             let shown = PokiActivityAttributes.Handoff.Kind(rawValue: kind) ?? .other
@@ -1938,6 +1996,7 @@ final class AppModel {
                     }
                 }
             }
+            retryPendingTaskClose()
         }
     }
 
@@ -1946,36 +2005,62 @@ final class AppModel {
     /// A tool call from the chat's model loop. Poki turns on first when it is off (the runner then starts
     /// on this call, like for an agent's first request); when it cannot, the answer says why.
     /// The chat's turn ended: the phone goes back to the app the task began in, and the log says how.
-    func finishTask(switching: Bool = true, then: (@MainActor () -> Void)? = nil) {
+    func finishTask(switching: Bool = true, ownerStopped: Bool = false, settle: Bool = false, then: (@MainActor () -> Void)? = nil) {
         chatReleasesRun()
         if chatTaskActive { lastAgentActivity = Date() }
         chatTaskActive = false
         lastShot = nil
         let companion = duoCompanionTask
+        // Avoid asking PokiCore to return to the origin app when the owner stopped or when the
+        // in-process session is already closed/paused (for example after Poki came to the front);
+        // otherwise returnToOrigin hits the transport and silently reopens automation.
+        let shouldSwitch = switching && !ownerStopped && companion == nil && (
+            automationPath != .inProcess || (!runnerPaused && inProcessSession == .open)
+        )
         // The phone goes back to where the task began first: that still needs the session.
         endingTasks += 1
         Task { [weak self, core, log] in
-            if let line = await core.finishTask(switching: switching && companion == nil) { log.add("runner", line) }
+            if settle { _ = await core.settle(timeout: 30) }
+            if let line = await core.finishTask(switching: shouldSwitch) { log.add("runner", line) }
             if let companion, self?.duoCompanionTask == companion {
                 PKInProcess.shared().endDuoCompanionTask()
                 self?.duoCompanionTask = nil
             }
-            self?.endingTasks -= 1
-            self?.closeAfterTask("the task ended")
-            then?()
+            guard let self else { then?(); return }
+            self.endingTasks -= 1
+            if ownerStopped, self.automationPath == .inProcess, self.sessionOn {
+                self.closeAfterTask("the task was stopped", forceClose: true, then: then)
+            } else {
+                self.closeAfterTask(ownerStopped ? "the task was stopped" : "the task ended", forceClose: ownerStopped)
+                then?()
+            }
+        }
+    }
+
+    func finishTaskAndWait(switching: Bool = true, ownerStopped: Bool = false, settle: Bool = false) async {
+        await withCheckedContinuation { continuation in
+            finishTask(switching: switching, ownerStopped: ownerStopped, settle: settle) {
+                continuation.resume()
+            }
         }
     }
 
     func finishSplitViewTask(localSession: String, pairConfirmed: Bool = true, authorizationDeclined: Bool = false, cancelled: () -> Bool = { false }) async {
+        let wasCancelled = cancelled()
         if authorizationDeclined {
             await core.discardWorkspace(session: localSession)
         } else {
             _ = await core.settle(timeout: 30)
-            if let line = await core.finishTask(switching: pairConfirmed, localSession: localSession) { log.add("runner", line) }
+            let shouldSwitch = pairConfirmed && !wasCancelled && (
+                automationPath != .inProcess || (!runnerPaused && inProcessSession == .open)
+            )
+            if let line = await core.finishTask(switching: shouldSwitch, localSession: localSession) { log.add("runner", line) }
         }
         if chatTaskActive { lastAgentActivity = Date() }
         chatTaskActive = false
-        if !authorizationDeclined { closeAfterTask("the Split View task ended") }
+        if !authorizationDeclined {
+            closeAfterTask(wasCancelled ? "the Split View task was stopped" : "the Split View task ended", forceClose: wasCancelled)
+        }
         guard activitySplitViewSession == localSession else { return }
         activitySplitViewSession = nil
         lastAgentActivity = Date()
@@ -2017,6 +2102,7 @@ final class AppModel {
     /// model thinks, never reads as the end of the run (ESP-954).
     func chatTaskBegan(splitViewSession: String? = nil) async {
         log.add("session-timing", String(format: "task_submitted uptime=%.6f", ProcessInfo.processInfo.systemUptime))
+        pendingTaskClose = nil
         chatTaskActive = automationPath == .inProcess
         if chatTaskActive { lastAgentActivity = Date() }
         if automationPath == .inProcess {
