@@ -74,6 +74,8 @@ struct TalkBar: View {
     var since: Date?
     var muted: Bool
     var toggleMute: () -> Void
+    var microphoneMuted: Bool?
+    var toggleMicrophoneMute: () -> Void
     var interrupt: () -> Void
     var end: () -> Void
     var retry: () -> Void
@@ -119,6 +121,9 @@ struct TalkBar: View {
                     if let since, !state.isFailed {
                         Text(since, style: .timer).font(.footnote).monospacedDigit().foregroundStyle(Color(.secondaryLabel))
                     }
+                    if microphoneMuted == true {
+                        Text("Microphone muted").font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
@@ -139,6 +144,10 @@ struct TalkBar: View {
             if state == .speaking {
                 round("hand.raised.fill", label: "Interrupt", identifier: "composer.talk.interrupt", action: interrupt)
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+            if let microphoneMuted {
+                round(microphoneMuted ? "mic.slash.fill" : "mic.fill", label: microphoneMuted ? "Unmute Microphone" : "Mute Microphone",
+                      identifier: "composer.talk.microphone", action: toggleMicrophoneMute)
             }
             round(muted ? "speaker.slash.fill" : "speaker.wave.2.fill", label: muted ? "Unmute Poki’s Voice" : "Mute Poki’s Voice",
                   identifier: "composer.talk.mute", action: toggleMute)
