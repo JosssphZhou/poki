@@ -46,6 +46,7 @@ final class LiveCore: CoreSession {
     func start(relay: RelayAddress) { core.start(relay: relay) }
     func stop() { core.stop(); continuation.yield(.relay(.off)) }
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
+    var hasPendingDecision: Bool { core.pendingApproval != nil || core.handoff != nil }
     /// The person finished a handed-off screen (Done on the Live Activity): PokiCore lets inputs through again.
     func handoffDone(id: String) { core.handoffDone(id: id) }
     func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
@@ -114,6 +115,8 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var paused = false
     private var wake: (@Sendable () -> Void)?
     private var warm: (@Sendable () -> Void)?
+    private var taskReturning: (@Sendable (String) async -> Void)?
+    private var taskFinished: (@Sendable (String) async -> Void)?
     private var retry: (@Sendable () -> Void)?
 
     func update(key: Curve25519.Signing.PrivateKey?, hashes: [String]) { lock.withLock { self.key = key; self.hashes = hashes } }
@@ -123,6 +126,20 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func onRestart(_ action: @escaping @Sendable () -> Void) { lock.withLock { restart = action } }
     func onWake(_ action: @escaping @Sendable () -> Void) { lock.withLock { wake = action } }
     func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
+    func onExternalTaskReturning(_ action: @escaping @Sendable (String) async -> Void) {
+        lock.withLock { taskReturning = action }
+    }
+    func externalTaskReturning(session: String) async {
+        let action = lock.withLock { taskReturning }
+        await action?(session)
+    }
+    func onExternalTaskFinished(_ action: @escaping @Sendable (String) async -> Void) {
+        lock.withLock { taskFinished = action }
+    }
+    func externalTaskFinished(session: String) async {
+        let action = lock.withLock { taskFinished }
+        await action?(session)
+    }
     /// A tool call found automation failed or not open yet: the app may try again (the in-process session, ESP-152).
     func onRetry(_ action: @escaping @Sendable () -> Void) { lock.withLock { retry = action } }
     /// A connection prepares dependencies without requesting phone automation.

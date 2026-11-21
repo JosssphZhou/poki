@@ -458,11 +458,18 @@ struct ConnectionView: View {
 struct AdvancedSettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var runLog: URL?
+    @AppStorage(ActivityController.capturePermissionKey) private var allowAgentToHideLiveActivity = true
 
     var body: some View {
         @Bindable var model = model
         let voice = model.voice
         List {
+            Section {
+                Toggle("Let Poki Hide the Live Activity", isOn: $allowAgentToHideLiveActivity)
+            } footer: {
+                Text("Poki can hide its Live Activity for a screenshot or recording. It returns after the task ends and you reopen Poki. Approvals and hand-offs still appear in notifications.")
+            }
+
             // Main's Runner section. The in-process path has no Poki Runner to start or stop (ESP-152).
             if model.automationPath == .runner {
                 Section {
