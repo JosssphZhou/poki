@@ -7,6 +7,10 @@ struct PokiApp: App {
     @State private var chat: ChatModel
     @State private var inDuoSplitView = false
     @Environment(\.scenePhase) private var scenePhase
+    private let startupLog: StartupLog?
+    #if POKI_WATCH
+    private let watchVoice: WatchVoicePhone
+    #endif
 
     @discardableResult
     static func scheduleStartupWork(routines: RoutineStore = .shared) -> Task<String?, Never> {
@@ -14,6 +18,7 @@ struct PokiApp: App {
     }
 
     init() {
+        startupLog = StartupLog.begin()
         // PokiLauncher (Rust) and the relay write to sockets the other side may have closed. In an app,
         // unlike a Rust executable, nothing ignores SIGPIPE, and it would end the whole app.
         signal(SIGPIPE, SIG_IGN)
@@ -54,11 +59,15 @@ struct PokiApp: App {
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
         AskPoki.install(app: model, chat: chat)
+        #if POKI_WATCH
+        watchVoice = WatchVoicePhone(app: model, chat: chat)
+        #endif
     }
 
     var body: some Scene {
         WindowGroup {
             RootView().environment(model).environment(chat)
+                .environment(\.startupLog, startupLog)
                 .environment(\.inDuoSplitView, inDuoSplitView)
                 .environment(\.locale, AppLocalization.locale)
                 .environment(\.layoutDirection, AppLocalization.locale.language.characterDirection == .rightToLeft ? .rightToLeft : .leftToRight)
@@ -93,6 +102,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.startupLog) private var startupLog
     var sessionStore: SessionStore = .shared
     var shortcutStore: HomeShortcutStore = .shared
     @State private var sidebarWidth: CGFloat?
@@ -110,10 +120,6 @@ struct RootView: View {
     @State private var wide: HomeRoute = .chat
     @State private var threadsOpen = false
     @State private var detailsOpen = false
-    /// Poki's card under its picture: the model, the way of asking, Pause or Resume.
-    @State private var statusOpen = false
-    /// Where the card opens: under Poki's picture on the home page (global points), or under the top bar.
-    @State private var cardUnder: CGFloat?
     @State private var detailsPath = NavigationPath()
     /// The first run is up, over everything (`FirstRunGuide`).
     @State private var welcoming = false
@@ -125,6 +131,9 @@ struct RootView: View {
     @Namespace private var profile
     /// The launch screen is still over the first frame, letting go (`LaunchCurtain`).
     @State private var curtain = true
+    @State private var firstFrameDisplayed = false
+    @State private var sceneHasBeenActive = false
+    private var glassDeferred: Bool { !firstFrameDisplayed || !sceneHasBeenActive }
 
     enum HomeRoute: Hashable { case chat, session(String), voice, setup }
 
@@ -171,10 +180,6 @@ struct RootView: View {
     private func chatPage(split: Bool) -> some View {
         ChatView(
             sharedDraft: $draft,
-            openDetails: { under in
-                cardUnder = under
-                statusOpen = true
-            },
             openVoice: openLiveVoice,
             openSetup: { fix(.setup, split: split) },
             openSetupStep: { fix(.step($0), split: split) },
@@ -187,7 +192,7 @@ struct RootView: View {
             shortcutStore: shortcutStore
         )
         // The bear stops drawing where it is out of sight: behind the open drawer or the profile over the
-        // chat. Poki's card opens beside the picture and leaves it in sight.
+        // chat.
         .environment(\.bearCovered, threadsOpen || welcoming || (detailsOpen && !showsSidebar))
     }
 
@@ -199,10 +204,6 @@ struct RootView: View {
             // The voice page keeps its own header and blue ground (not redrawn in ESP-340's first batch).
             VoicePage(
                 back: split ? nil : { show(.chat) },
-                openDetails: {
-                    cardUnder = nil
-                    statusOpen = true
-                },
                 openModel: { openDetails([DetailsRoute.model]) },
                 select: { target in if target == .chat { show(.chat) } }
             )
@@ -248,7 +249,6 @@ struct RootView: View {
             // Settings opens from the bottom of the conversations.
             .environment(\.openPokiSettings, { openDetails() })
             .environment(\.pokiDetailsOpen, detailsOpen)
-            .pokiStatusCard(isPresented: $statusOpen, under: cardUnder, leading: sidebarWidth.map { $0 + 1 } ?? 0, openModel: { openDetails([DetailsRoute.model]) })
             // Settings covers the whole screen on iPhone (ESP-469: nothing of the chat shows around it), with
             // its Close button; beside the list on iPad it stays a sheet at a page's width (ESP-376).
             .fullScreenCover(isPresented: Binding(get: { detailsOpen && !showsSidebar }, set: { detailsOpen = $0 })) {
@@ -291,7 +291,17 @@ struct RootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tint.page.ignoresSafeArea())
         .overlay {
-            if curtain { LaunchCurtain(done: { curtain = false }).ignoresSafeArea().allowsHitTesting(false) }
+            if curtain {
+                LaunchCurtain(firstFrame: { timestamp in
+                    startupLog?.frameDisplayed(at: timestamp, glassDeferred: glassDeferred)
+                    firstFrameDisplayed = true
+                }, done: {
+                    curtain = false
+                    startupLog?.finish()
+                })
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
         }
         .onGeometryChange(for: CGFloat?.self) { geometry in
             let width = geometry.size.width
@@ -300,7 +310,12 @@ struct RootView: View {
             let windowWidth = width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
             return min(Self.regularSidebarWidth, max(Self.minimumDuoSidebarWidth, windowWidth / 3))
         } action: { sidebarWidth = $0 }
-        .fullScreenCover(isPresented: $welcoming) { FirstRunGuide(link: $welcomeLink, done: { welcoming = false }) }
+        .fullScreenCover(isPresented: $welcoming) {
+            FirstRunGuide(link: $welcomeLink, done: { welcoming = false })
+                .logStartupAppearance(.welcome)
+                .modifier(LinkAskAlert())
+        }
+        .modifier(LinkAskAlert(active: !welcoming))
         .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
         .alert(model.connectionAsk.map { AppLocalization.text(LocalizedStringResource("Allow \($0.client) to connect?")) } ?? "",
                isPresented: Binding(get: { model.connectionAsk != nil }, set: { if !$0 { model.answerConnection(false) } }),
@@ -318,6 +333,7 @@ struct RootView: View {
         .modifier(AutomationNotices(enabled: !detailsOpen))
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active {
+                sceneHasBeenActive = true
                 model.becameActive()
                 HistoryCapture.shared.appDidBecomeActive()
                 AskPoki.refresh()
@@ -357,6 +373,7 @@ struct RootView: View {
             }
         }
         .onAppear(perform: openLaunchScreen)
+        .environment(\.pokiGlassDeferred, glassDeferred)
         // A conversation archived or deleted (in the list or in Settings) is not left open on screen.
         .onChange(of: SessionStore.shared.removed) { _, removed in
             if let removed { leave(removed.id) }
@@ -376,14 +393,18 @@ struct RootView: View {
         AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
         // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
         guard !model.pairingUnderWay else { return }
+        let opening = model.open(link: url)
+        guard opening != .ignored else { return }
         // During the first run a pairing file or a setup link opens its step there; nothing else moves.
         if welcoming {
-            if let step = model.open(link: url) { welcomeLink = step }
+            if case .showSetup(let step) = opening { welcomeLink = step }
             return
         }
         // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
         // setup at that step, where the result is shown.
-        if let step = model.open(link: url) {
+        // Settings covers the screen on iPhone and would hide the question a link raised.
+        if model.linkAsk != nil { detailsOpen = false }
+        if case .showSetup(let step) = opening {
             detailsOpen = false
             threadsOpen = false
             if showsSidebar { openDetails([DetailsRoute.connection, step]) } else { home = NavigationPath([step]) }
@@ -438,7 +459,6 @@ struct RootView: View {
     private func takeEntry() {
         guard scenePhase == .active, let request = PokiEntry.shared.take(), !model.pairingUnderWay, !FirstRun.isDue() else { return }
         detailsOpen = false
-        statusOpen = false
         if let handoff = AskPoki.liveSessionID { show(.session(handoff)); return }
         show(.chat)
         guard request == .talk, !chat.running, !model.voice.isOn else { return }
@@ -497,9 +517,6 @@ struct RootView: View {
         case "moreSettings", "details", "status":
             // More Settings is gone: its rows are on Poki's profile, by what they are about.
             openDetails()
-        case "statusCard":
-            cardUnder = nil
-            statusOpen = true
         case "hands", "connection":
             openDetails([DetailsRoute.connection])
         case "rules", "approvals":

@@ -1,0 +1,50 @@
+# Opt-in development build. Poki Setup does not provision watchOS bundles.
+include: project.yml
+name: PokiWithWatch
+options:
+  deploymentTarget:
+    watchOS: "11.0"
+targets:
+  Poki:
+    dependencies:
+      - target: PokiWatch
+        embed: true
+    sources:
+      - WatchVoice
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) POKI_APP POKI_WATCH
+  PokiWatch:
+    type: application
+    platform: watchOS
+    sources: [PokiWatch, WatchVoice]
+    dependencies:
+      - target: PokiWatchFace
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Poki
+        INFOPLIST_KEY_WKApplication: YES
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: $(POKI_BUNDLE_ID)
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Poki records your request and sends it to your paired iPhone.
+  PokiWatchFace:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: PokiWatchFace
+        excludes: [Info.plist]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).watchkitapp.face
+        TARGETED_DEVICE_FAMILY: "4"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        INFOPLIST_FILE: PokiWatchFace/Info.plist
+schemes:
+  PokiWatch:
+    build:
+      targets:
+        PokiWatch: all
+    run:
+      config: Debug
