@@ -31,6 +31,13 @@ final class BridgeStub: URLProtocol {
                     ? #"{"text":"Second screen description"}"# : #"{"text":"Unrecognized screenshot"}"#
             default: body = #"{"live":true,"model":"gpt-live-1.1","local_tools":["get_ios_version","look","open_app","do"]}"#
             }
+        } else if request.url?.lastPathComponent == "tool" {
+            let payload = (try? JSONSerialization.jsonObject(with: requestBody(request))) as? [String: Any]
+            if payload?["checked"] != nil {
+                body = #"{"state":"done","output":"Tap dispatched"}"#
+            } else {
+                body = #"{"state":"check","app":{"bundle_id":"example.shop","name":"Shop"},"target":{"text":"确认","says":"确认 = primary_action","evidence":{"snapshot":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","control":"确认","pressed":{"role":"Button","label":"确认","identifier":"primary_action"},"buttonLabels":["¥48.20"]}}}"#
+            }
         } else {
             body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version","look","do"]}"#
         }
@@ -589,6 +596,64 @@ final class VoiceModelTests: XCTestCase {
         h.voice.stop()
     }
 
+    func testRealtimeToolWaitsForItsOwnLateTranscript() async {
+        var instructions: [String?] = []
+        let h = Harness(phoneTool: { _, _ in
+            instructions.append(OwnerApprovalInstruction.current?.text)
+            return ("", false, nil)
+        })
+        await h.connect()
+        h.link.play(["type": "session.created", "session": ["audio": ["input": ["turn_detection": ["create_response": false]]]]])
+        h.link.play(
+            ["type": "input_audio_buffer.speech_started", "item_id": "first"],
+            ["type": "input_audio_buffer.committed", "item_id": "first"],
+            ["type": "response.created", "response": ["id": "r1"]],
+            ["type": "response.output_item.done", "response_id": "r1",
+             "item": ["type": "function_call", "call_id": "submit", "name": "do"]],
+            ["type": "response.done", "response": ["id": "r1", "status": "completed", "output": [["type": "function_call"]]]]
+        )
+        await h.time.settle()
+        XCTAssertTrue(instructions.isEmpty)
+        h.link.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "older", "transcript": "Send something else"])
+        await h.time.settle()
+        XCTAssertTrue(instructions.isEmpty)
+        h.link.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "first", "transcript": "Send Riley: Ready at noon"])
+        await h.time.settle()
+        XCTAssertEqual(instructions, ["Send Riley: Ready at noon"])
+        h.voice.stop()
+    }
+
+    func testIndependentVoiceAsksBeforeTappingConfirmationWithAnAmountChild() async {
+        let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
+        let requested = expectation(description: "payment approval")
+        let events = Task {
+            for await event in core.events {
+                if case .approvalRequested(let approval) = event {
+                    XCTAssertTrue(approval.reason.hasPrefix("a payment"), approval.reason)
+                    core.resolveApproval(id: approval.id, approved: false)
+                    requested.fulfill()
+                    break
+                }
+            }
+        }
+        defer { events.cancel() }
+        let finished = expectation(description: "the tap was declined")
+        let h = Harness(clearTap: { label, app, name, evidence in
+            let result = await core.clearTap(on: label, inApp: app, named: name, waiting: 1, evidence: evidence)
+            XCTAssertFalse(result.mayTap)
+            finished.fulfill()
+            return result
+        })
+        await h.talk()
+        h.link.play(["type": "response.output_item.done", "item": [
+            "type": "function_call", "call_id": "independent-pay", "name": "tap_text", "arguments": #"{"text":"确认"}"#,
+        ]])
+        await fulfillment(of: [requested, finished], timeout: 2)
+        await h.time.settle()
+        XCTAssertTrue(h.voice.calls.last?.output.contains("user declined") == true, h.voice.calls.last?.output ?? "")
+        h.voice.stop()
+    }
+
     func testLiveStopPreventsTheNextRunnerRequestInAnActiveBatch() async {
         let firstStarted = expectation(description: "the first phone request entered the runner")
         let batchFinished = expectation(description: "the batch reported its result")
@@ -824,12 +889,14 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(time: FakeTime? = nil, approvalTurn: OwnerApprovalTurn? = nil, phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
+        @MainActor init(time: FakeTime? = nil, approvalTurn: OwnerApprovalTurn? = nil,
+                        clearTap: @escaping @MainActor (String, String?, String?, VoiceTapEvidence?) async -> TapClearance = { _, _, _, _ in .clear },
+                        phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
             let time = time ?? FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
-            voice = VoiceModel(clearTap: { _, _, _, _ in .clear }, phoneTool: { name, arguments, cancellation in
+            voice = VoiceModel(clearTap: clearTap, phoneTool: { name, arguments, cancellation in
                 await PhoneOperationCancellation.$current.withValue(cancellation) { await phoneTool(name, arguments) }
             }, holdMicrophone: { held($0) },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock, approvalTurn: approvalTurn)

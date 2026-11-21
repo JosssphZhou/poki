@@ -449,8 +449,10 @@ final class ApprovalTests: XCTestCase {
 
     func testIndependentVoiceTapOnPaymentAsksBeforeProceeding() async {
         let (core, _, _) = makeCore()
-        let clearance = await core.clearTap(on: "Payment", inApp: "com.example.shop", named: "Shop", waiting: 0)
-        XCTAssertFalse(clearance.mayTap)
+        for label in ["Payment", "确认 = primary_action"] {
+            let clearance = await core.clearTap(on: label, inApp: "com.example.shop", named: "Shop", waiting: 0)
+            XCTAssertFalse(clearance.mayTap, label)
+        }
     }
 
     func testOrdinaryContentWithPaymentWordsDoesNotAskForApproval() async {
@@ -496,6 +498,72 @@ final class ApprovalTests: XCTestCase {
             let retry = await core.call("do", arguments)
             XCTAssertNotEqual(try XCTUnwrap(core.pendingApproval, retry.text).id, declined.id)
             XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, retry.text)
+        }
+    }
+
+    func testSwitchingSubmissionControlsRequiresAFreshApproval() async {
+        for (kind, bundle, first, second) in [
+            (OwnerApprovalIntent.Kind.message, "com.tencent.xin", "Send", "Return"),
+            (.deletion, "com.apple.mobilenotes", "Delete", "Remove"),
+            (.payment, "example.store", "Pay $24", "Confirm $24"),
+        ] {
+            let wda = FakeWDA()
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle)]]) }
+            let subject = "Cedar"
+            let draft = "Ready at noon"
+            let message = kind == .message
+            let amount = kind == .payment ? "$24" : nil
+            let show: @Sendable (String) -> Void = { control in
+                let button = Node("Button", control, [260, 400, 115, 44])
+                if message {
+                    wda.tree([
+                        Node("NavigationBar", subject, [0, 40, 390, 44]),
+                        Node("TextView", "Message", [15, 400, 230, 44], value: draft, focused: true),
+                        button,
+                    ])
+                } else {
+                    wda.tree([Node("Alert", subject, [0, 320, 390, 200], [button])])
+                }
+            }
+            show(first)
+            wda.set("POST /wda/tap") { _ in
+                show(second)
+                return (200, ["value": .null])
+            }
+            let (core, _, _) = makeCore(wda) {
+                $0.approvalWait = 0
+                $0.ownerApprovalIntent = { _ in OwnerApprovalIntent(kind: kind, target: subject, message: message ? draft : nil, amount: amount) }
+            }
+            let instruction = OwnerApprovalInstruction(id: UUID(), text: "\(first) \(subject): \(draft).")
+            _ = await core.callTool("look", arguments: "{}")
+            await OwnerApprovalInstruction.$current.withValue(instruction) {
+                let tapped = await core.callTool("do", arguments: #"{"actions":[{"tap":[295,422]}]}"#)
+                XCTAssertNil(core.pendingApproval, tapped.text)
+                let retry = await core.callTool("do", arguments: message ? #"{"actions":[{"key":"return"}]}"# : #"{"actions":[{"tap":[295,422]}]}"#)
+                XCTAssertNotNil(core.pendingApproval, retry.text)
+                XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, retry.text)
+                XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty, retry.text)
+            }
+        }
+    }
+
+    func testBrowsingShopAndPointsDoesNotApproveAnUnrelatedClearControl() async {
+        for (label, attempts) in [("街角面馆 免配送费 库存已清空", 4), ("积分专区 月末积分将清空", 2)] {
+            let wda = FakeWDA()
+            wda.tree([
+                Node("Cell", label, [12, 320, 366, 84]),
+                Node("Button", "清空购物车", [12, 510, 366, 50]),
+            ])
+            let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+            for attempt in 1...attempts {
+                _ = await core.call("look", [:])
+                let browse = await core.call("do", ["actions": [["tap": 1]]])
+                XCTAssertNil(core.pendingApproval, browse.text)
+                XCTAssertEqual(wda.bodies("POST /wda/tap").count, attempt, browse.text)
+            }
+            let clear = await core.call("do", ["actions": [["tap": 2]]])
+            XCTAssertNotNil(core.pendingApproval, clear.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, attempts, clear.text)
         }
     }
 
