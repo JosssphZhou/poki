@@ -1,8 +1,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
 import sharp from 'sharp';
 import { fixture, value } from './fixture.mjs';
+
+test('take_screenshot can save the original and attach images only when requested in a batch', async t => {
+  const f = await fixture(t);
+  const path = join(f.dir, 'original.png');
+  const saved = await f.call('take_screenshot', { path });
+  assert.equal(saved.isError, undefined);
+  assert.deepEqual(saved.content.map(item => item.type), ['text']);
+  assert.equal(value(saved).path, path);
+  assert.deepEqual(await readFile(path), await readFile(f.image));
+
+  await writeFile(path, 'existing');
+  assert.equal((await f.call('take_screenshot', { path })).isError, true);
+  assert.equal(await readFile(path, 'utf8'), 'existing');
+  const result = await f.call('batch_commands', { commands: [
+    { tool: 'take_screenshot', arguments: { path, overwrite: true } },
+    { tool: 'take_screenshot', arguments: { path: join(f.dir, 'attached.png'), include_image: true } },
+  ] });
+  assert.equal(result.isError, undefined);
+  assert.equal(result.content.filter(item => item.type === 'image').length, 1);
+  assert.deepEqual(await readFile(path), await readFile(f.image));
+  assert.deepEqual(await readFile(join(f.dir, 'attached.png')), await readFile(f.image));
+});
+
+test('full_resolution attaches the captured PNG byte for byte with logical coordinates', async t => {
+  const f = await fixture(t);
+  const source = join(f.dir, 'retina.png');
+  await sharp({ create: { width: 300, height: 600, channels: 3, background: 'blue' } }).png().toFile(source);
+  await f.set({ defaultScreenshot: source, screenScale: 3 });
+  const path = join(f.dir, 'full.png');
+  const reply = await f.call('take_screenshot', { full_resolution: true, path, include_image: true });
+  assert.equal(reply.isError, undefined);
+  const image = reply.content.find(block => block.type === 'image');
+  assert.equal(image?.mimeType, 'image/png');
+  assert.deepEqual(Buffer.from(image.data, 'base64'), await readFile(source));
+  assert.deepEqual(await readFile(path), await readFile(source));
+  const { width, height, units } = value(reply).observation;
+  assert.deepEqual([width, height, units], [100, 200, 'points']);
+});
 
 test('observe_device omits PNG only when requested', async t => {
   const f = await fixture(t);

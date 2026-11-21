@@ -69,7 +69,7 @@ test('stdio reaches the authenticated local MCP service and rejects an absent de
         const { tools } = await transportClient.listTools();
         t.diagnostic(`default tools/list: ${tools.length} tools, ${JSON.stringify({ tools }).length} characters`);
         assert.deepEqual(tools.map(tool => tool.name).sort(), [
-          'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot',
+          'poki_mcp_status', 'list_devices', 'select_device', 'list_elements', 'take_screenshot', 'save_screenshot',
           'get_foreground_app', 'launch_app', 'open_url', 'tap', 'tap_text', 'fill', 'type_text',
           'scroll', 'swipe', 'press_key', 'go_back', 'wait_for', 'handle_alert', 'batch_commands',
           'long_press', 'double_tap', 'drag', 'hide_keyboard', 'press_button',

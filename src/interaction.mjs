@@ -4,10 +4,13 @@ import { screenIdentity } from './screen-identity.mjs';
 import { flagOn } from './element-flags.mjs';
 
 const behavior = JSON.parse(readFileSync(new URL('./data/interaction.json', import.meta.url), 'utf8'));
-import { pause, deadline, checkWork, stopped, remaining } from './work.mjs';
+import { pause, deadline, checkWork, stopped, remaining, phase, timingCount, timingsSince } from './work.mjs';
 export { pause } from './work.mjs';
 export const justReadMs = 500;
-const patienceMs = 5000, ocrAfterMs = 1000, ocrEveryMs = 2000, pollMs = 100, quietMs = 3000, stableWithinMs = 2500, focusWithinMs = 2000, screenTextLimit = 80;
+const patienceMs = 5000, ocrAfterMs = 1000, ocrEveryMs = 2000, pollMs = 100, quietMs = 3000, focusWithinMs = 2000, screenTextLimit = 80;
+export const settleMinMs = 500;
+const settleQuietMs = 250, settleMaxMs = 3000;
+const unchangedMs = 1400, foregroundUnchangedMs = 2500;
 // Recognizing a phone-sized screen takes seconds on a small host; only a screen accessibility
 // cannot read at all is given this much more time before the search is called off.
 const ocrAllowanceMs = 12000;
@@ -18,6 +21,14 @@ const cjk = '\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff';
 const betweenCjk = new RegExp(`(?<=[${cjk}])\\s+(?=[${cjk}])`, 'gu');
 const normalize = v => v.normalize('NFKC').toLocaleLowerCase().trim().replace(betweenCjk, '');
 const visible = e => flagOn(e.visible);
+const loadingRole = /^(?:AX|XCUIElementType)?(?:ActivityIndicator|Skeleton|SkeletonView)$/i;
+const progressRole = /^(?:AX|XCUIElementType)?(?:ProgressIndicator|ProgressView)$/i;
+const loadingText = /^(?:loading(?:\s+(?:page|content))?|please wait|加载中|載入中|正在加载|正在載入|请稍候|請稍候)[\s.…!?！。]*$/iu;
+const loadingElement = element => visible(element) && (element.busy === true || element.busy === 1 ||
+  loadingRole.test(element.type ?? element.role ?? '') ||
+  progressRole.test(element.type ?? element.role ?? '') && !/^100(?:\.0+)?\s*%?$/.test(String(element.value).trim()) ||
+  [element.label, element.text].some(text => typeof text === 'string' && loadingText.test(text.trim())) ||
+  /^(?:loading|skeleton|busy)(?:$|[_. -])/i.test(element.identifier ?? ''));
 // Alert and prompt text is compared against the Chinese entries in data/interaction.json, and
 // a recognizer writes spaces between those characters, so it needs the same normalisation as
 // every other comparison. Without it "允 许" never matched "允许", and a purchase prompt could
@@ -154,7 +165,7 @@ async function locate(ctx, find, describe, mustHold, verify = true) {
         await pause(pollMs);
         // An alert reports its final place at once but ignores touches for about 500 ms, so the read that
         // decides comes after the app has had time to react to the last input.
-        await ctx.settle();
+        await ctx.waitUntilTouchReady();
       }
       throw new DOMException('The search window ended without a confirmed target.', 'TimeoutError');
     });
@@ -202,12 +213,20 @@ export function whatMoved(before, after) {
 }
 
 const describeElement = element => {
-  const value = typeof element.value === 'string' && element.value !== element.placeholder ? element.value : undefined;
+  const role = element.type ?? element.role ?? 'Element';
+  const control = /^(?:AX|XCUIElementType)?(?:Slider|Switch|Toggle|CheckBox|ProgressIndicator|ProgressView)$/i.test(role);
+  const rawValue = element.value;
+  let value;
+  if (typeof rawValue === 'string' && rawValue !== element.placeholder) value = rawValue;
+  else if (typeof rawValue === 'number' && Number.isFinite(rawValue)) value = String(rawValue);
+  else if (typeof rawValue === 'boolean') value = rawValue ? 'on' : 'off';
+  if (control && !value) value = rawValue === '' ? '(empty value)' : '(unknown value)';
   const label = element.label ?? element.text;
   const parts = [label, value !== label ? value : undefined].filter(part => typeof part === 'string' && part);
   if (isTextInput(element) && !value && element.placeholder) parts.push(`(empty, placeholder ${JSON.stringify(element.placeholder)})`);
-  if (!parts.length) return undefined;
-  return `${element.type ?? element.role ?? 'Element'}: ${parts.join(' = ')}${element.focused ? ' (focused)' : ''}`;
+  const disabled = !flagOn(element.enabled);
+  if (!parts.length) return disabled ? `${role} (disabled)` : undefined;
+  return `${role}: ${parts.join(' = ')}${disabled ? ' (disabled)' : ''}${element.focused ? ' (focused)' : ''}`;
 };
 
 // The reply's view of one read: what is visible, in which app, and any system prompt on it.
@@ -227,46 +246,74 @@ export function describeScreen(seen, elements = seen.elements, source = 'accessi
   };
 }
 
-// What the screen shows once it has stopped changing: a list still coasting after a scroll would
-// otherwise report a position it is about to leave. `compared` is false when accessibility could not
-// read it, because OCR text alone cannot say whether anything moved. Over a slow connection one read
-// can take seconds, so the reads stop when another would not finish inside the caller's deadline, and
-// the last one is reported with screen_stable false rather than lost.
-export async function readScreen(ctx, { once = false, before, confirmation, structured = false, structuredVisual = false } = {}) {
-  await ctx.settle();
+async function settledStructure(ctx, { once = false, before, foregroundBefore } = {}) {
+  if (once) {
+    await ctx.waitUntilTouchReady();
+    return { seen: await readStructure(ctx, 0), stable: false };
+  }
   const started = performance.now();
-  const cost = () => ctx.readCost?.() ?? 0;
-  // A batch that ends on a touch has just read the screen to see whether it changed.
-  let seen = await readStructure(ctx, once ? 0 : justReadMs), stable = false;
-  // A delayed confirming read may be a new object yet represent the same stable AX tree.
-  let reuseStable = false;
-  // A read that began before the last input shows the screen the input was sent to, never the current one.
-  if (seen.startedAt < ctx.lastInputAt) seen = await readStructure(ctx, 0);
-  const window = Math.max(stableWithinMs, 2 * cost() + pollMs);
-  while (!once && performance.now() - started < window) {
-    if (remaining() < cost() + pollMs) break;
-    await pause(pollMs);
-    const next = await readStructure(ctx, 0);
-    const same = next.signature === seen.signature;
-    seen = next;
-    if (same) { stable = true; break; }
-  }
-  reuseStable = stable;
-  if (before !== undefined && seen.elements.length && seen.signature === before) {
-    const confirmed = await confirmUnchanged(ctx, before, seen, confirmation);
-    if (confirmed !== seen) {
-      // A later AX read with an unchanged signature can be reused; keep
-      // the original screen_stable reporting independent of this receipt gate.
-      reuseStable = confirmed.elements?.length > 0 && confirmed.signature === seen.signature &&
-        Number.isFinite(confirmed.startedAt) && confirmed.startedAt >= seen.startedAt;
-      seen = confirmed; stable = false;
+  const recentInput = started - ctx.lastInputAt < settleMaxMs;
+  const inputAt = recentInput ? ctx.lastInputAt : started - settleMinMs;
+  const window = () => Math.max(settleMaxMs, 2 * ctx.readCost() + settleQuietMs + 2 * pollMs);
+  let stopAt = inputAt + window();
+  let last, quietSince;
+  try {
+    while (performance.now() < stopAt) {
+      const began = performance.now();
+      const seen = await deadline(stopAt - began, async () => {
+        let sample = await readStructure(ctx, last ? 0 : justReadMs);
+        if (sample.startedAt < ctx.lastInputAt) sample = await readStructure(ctx, 0);
+        if (!sample.elements.length) sample.frame = await ctx.capture();
+        return sample;
+      });
+      if (seen.settledAfterInput && before === undefined) return { seen, stable: true };
+      stopAt = Math.max(stopAt, inputAt + window());
+
+      const observed = seen.frame ? began : seen.startedAt;
+      const same = last && (seen.frame
+        ? last.frame?.data.equals(seen.frame.data)
+        : !last.frame && seen.signature === last.signature);
+      const loading = seen.elements.some(loadingElement);
+      if (!same || loading || last?.loading) quietSince = observed;
+      seen.loading = loading;
+      const front = seen.foreground;
+      const awaitingForeground = (foregroundBefore?.pid || foregroundBefore?.bundle_id) && (!front || (front.pid && foregroundBefore.pid
+        ? front.pid === foregroundBefore.pid : front.bundle_id === foregroundBefore.bundle_id));
+      const unchanged = awaitingForeground || before !== undefined && (seen.signature === before || !seen.elements.length);
+      const readyAt = Math.max(inputAt + settleMinMs, quietSince + settleQuietMs,
+        unchanged ? inputAt + (foregroundBefore ? foregroundUnchangedMs : unchangedMs) : 0);
+      last = seen;
+      const now = performance.now();
+      if (!loading && same && observed >= quietSince + settleQuietMs && now >= readyAt) {
+        if (seen.frame) {
+          try { seen.loading = (await deadline(stopAt - now, () => ctx.ocr(seen.frame))).some(loadingElement); }
+          catch (error) { if (stopped(error)) throw error; }
+        }
+        if (!seen.loading) {
+          if (recentInput && seen.elements.length) seen.settledAfterInput = true;
+          return { seen, stable: true };
+        }
+      }
+      // Start the second read early enough to overlap the minimum wait.
+      const nextRead = Math.max(quietSince + settleQuietMs, inputAt + settleMinMs - ctx.readCost());
+      const wait = Math.max(unchanged ? settleQuietMs : pollMs, nextRead - now);
+      await pause(Math.max(0, Math.min(wait, stopAt - performance.now())));
     }
+    throw new DOMException('The screen did not settle before the observation deadline.', 'TimeoutError');
+  } catch (error) {
+    if (error.name !== 'TimeoutError' || !last) throw error;
+    checkWork();
+    return { seen: last, stable: false, reason: 'The screen did not settle before the observation deadline.' };
   }
+}
+
+export async function readScreen(ctx, { once = false, before, foregroundBefore, structured = false, structuredVisual = false } = {}) {
+  const { seen, stable, reason } = await settledStructure(ctx, { once, before, foregroundBefore });
   const compared = seen.elements.length > 0;
-  const elements = compared ? seen.elements : (await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER })).elements;
+  const elements = compared ? seen.elements : (await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER }, seen.frame)).elements;
   let warning = promptWarning(elements);
   let structuredObservation;
-  if (structured && reuseStable && compared && seen.structure_started_at && seen.structure_completed_at &&
+  if (structured && stable && compared && seen.structure_started_at && seen.structure_completed_at &&
       Date.parse(seen.structure_started_at) >= Date.parse(ctx.lastInputCompletedAt) &&
       seen.revision === ctx.coordinator.revision(seen.device) &&
       ctx.size?.device === seen.device && elements.length <= 400) {
@@ -292,58 +339,26 @@ export async function readScreen(ctx, { once = false, before, confirmation, stru
         }
       }
       warning ??= prompt.warning;
-      const observation = ctx.observationFromStructure(seen, frame);
-      if (observation) {
-        ctx.elements = elements.map(element => ({ ...element, ref: `e${++ctx.nextRef}` }));
-        ctx.elementsAt = Date.now();
-        if (!frame) ctx.structureViewport = {
-          device: seen.device, revision: seen.revision,
-          width: observation.width, height: observation.height,
-          // If AX did not identify an unambiguous full-screen root,
-          // the next coordinate/ref action must capture to verify size.
-          rootVerified: seen.rootVerified === true,
-        };
-        structuredObservation = { observation, source: 'accessibility', foreground: seen.foreground,
-          elements: ctx.elements, total: ctx.elements.length, truncated: false, prompt };
+      const bound = ctx.bindStructureRefs(seen, elements, frame);
+      if (bound) {
+        structuredObservation = { ...bound, source: 'accessibility', foreground: seen.foreground,
+          total: bound.elements.length, truncated: false, prompt };
       }
     }
   }
   return {
-    signature: compared ? seen.signature : undefined,
+    signature: compared && (stable || before !== seen.signature) ? seen.signature : undefined,
     ...(structuredObservation ? { structuredObservation } : {}),
     screen: { ...describeScreen(seen, elements, compared ? 'accessibility' : 'ocr'),
-      ...(compared && !stable ? { screen_stable: false } : {}),
+      ...(!stable ? { screen_stable: false } : {}),
+      ...(reason ? { partial: true, reason } : {}),
       ...(warning ? { prompt: warning } : {}) },
   };
 }
 
-// Whether the screen differs from the one an input was sent to. One differing read settles it; a
-// matching read is confirmed by a second, the same two reads readScreen needs to call a screen still.
-export async function screenChanged(ctx, before, confirmation) {
-  await ctx.settle();
-  let seen;
-  for (let read = 0; read < 2; read++) {
-    if (read) await pause(pollMs);
-    seen = await readStructure(ctx, 0);
-    if (!seen.elements.length) return undefined;
-    if (seen.signature !== before) return true;
-  }
-  return (await confirmUnchanged(ctx, before, seen, confirmation)).signature !== before;
-}
-
-// Two matching reads can still be the old screen: an app opening from the Home Screen keeps
-// reporting the Home Screen's tree for a moment after the touch. So "unchanged" waits once more,
-// and longer, polling, when the touch was on an app icon. It costs time only when nothing changed.
-export const confirmAfterMs = 700, launchWithinMs = 2500, launchPollMs = 300;
-async function confirmUnchanged(ctx, before, seen, { intervalMs = confirmAfterMs, withinMs = confirmAfterMs } = {}) {
-  const started = performance.now(), cost = ctx.readCost?.() ?? 0;
-  while (seen.signature === before && performance.now() - started < withinMs) {
-    if (remaining() < intervalMs + cost) break;
-    await pause(intervalMs);
-    const next = await readStructure(ctx, 0);
-    if (next.elements.length) seen = next;
-  }
-  return seen;
+export async function screenChanged(ctx, before, foregroundBefore) {
+  const { seen, stable } = await settledStructure(ctx, { before, foregroundBefore });
+  return stable && seen.elements.length ? seen.signature !== before : undefined;
 }
 
 // An app icon is a touch that should bring another app to the front.
@@ -351,6 +366,74 @@ const opensApp = (element, seen) => {
   const role = element.type ?? element.role ?? '';
   return /^(?:AX|XCUIElementType)?Icon$/i.test(role) || seen?.foreground?.bundle_id === 'com.apple.springboard' && /^(?:AX|XCUIElementType)?Button$/i.test(role);
 };
+
+async function waitForText(ctx, args) {
+  const started = performance.now(), timeout = (args.timeout ?? args.timeout_seconds ?? 10) * 1000;
+  const timingStart = timingCount();
+  const candidates = { accessibility: [], ocr: [] };
+  let absentSince;
+  const remember = (source, elements) => {
+    candidates[source] = closestTo(args.text, elements.filter(visible).flatMap(strings)).slice(0, 5)
+      .map(text => ({ text, source }));
+  };
+  const result = (elements, source, observation, frame) => ({
+    matched: true, gone: args.gone ?? false, elapsed_seconds: (performance.now() - started) / 1000,
+    elements, source, observation, ...(frame ? { frame } : {}),
+  });
+  try {
+    return await deadline(timeout, async () => {
+      while (remaining() > 0) {
+        const sampledAt = performance.now();
+        let seen;
+        try { seen = await ctx.structure(0, { visibleText: true }); }
+        catch (error) { if (stopped(error)) throw error; }
+        checkWork();
+        const matches = matching(seen?.elements ?? [], args.text, args.exact);
+        if (matches.length && !args.gone) {
+          const frame = seen.viewportFrame ?? (args.include_image === true ? await ctx.capture() : undefined);
+          checkWork();
+          const bound = ctx.bindStructureRefs(seen, matches, frame);
+          if (bound) return result(bound.elements, 'accessibility', bound.observation, args.include_image === true ? frame : undefined);
+        } else if (!matches.length) {
+          let recognized;
+          try { recognized = await ctx.recognize({ source: 'ocr', max_elements: Number.MAX_SAFE_INTEGER }, seen?.viewportFrame); }
+          catch (error) { if (stopped(error)) throw error; }
+          checkWork();
+          if (recognized) {
+            const found = matching(recognized.elements, args.text, args.exact);
+            remember('ocr', recognized.elements);
+            const frame = ctx.frame;
+            const image = args.include_image === false ? undefined : frame;
+            if (!args.gone && found.length) return result(found, 'ocr', recognized.observation, image);
+            if (args.gone && !recognized.truncated && !found.length) {
+              absentSince ??= sampledAt;
+              if (sampledAt - absentSince >= settleQuietMs && performance.now() - started >= settleMinMs) {
+                return result([], 'ocr', recognized.observation, image);
+              }
+            } else {
+              absentSince = undefined;
+            }
+          } else absentSince = undefined;
+        } else {
+          absentSince = undefined;
+        }
+        if (seen) remember('accessibility', seen.elements);
+        await phase('polling', () => pause(Math.min(400, Math.max(0, remaining()))));
+      }
+      throw new DOMException('Timed out waiting for the requested text condition.', 'TimeoutError');
+    });
+  } catch (error) {
+    if (error.name !== 'TimeoutError') throw error;
+    checkWork();
+    const timing_ms = { accessibility: 0, screen_capture: 0, ocr: 0, polling: 0 };
+    for (const entry of timingsSince(timingStart)) {
+      if (Object.hasOwn(timing_ms, entry.phase)) timing_ms[entry.phase] += entry.elapsed_ms;
+    }
+    return { matched: false, gone: args.gone ?? false, isError: true, stop_reason: 'timeout',
+      error: 'Timed out waiting for the requested text condition.',
+      elapsed_seconds: (performance.now() - started) / 1000, candidates: [...candidates.ocr, ...candidates.accessibility], timing_ms };
+  }
+}
 
 export async function interaction(ctx, name, args) {
   const frame = () => ctx.screenSize();
@@ -615,7 +698,7 @@ export async function interaction(ctx, name, args) {
     }
     case 'go_back': {
       const f = await frame();
-      await ctx.settle();
+      await ctx.waitUntilTouchReady();
       const { elements } = await readStructure(ctx, 0);
       const back = elements.filter(e => /^(back|返回|上一页|上一頁)$/i.test(e.label ?? e.text ?? '') && (e.frame?.x ?? e.x) < f.width / 2);
       if (back.length === 1) return ctx.input({ op: 'tap', ...center(back[0]), duration_ms: 50 });
@@ -655,22 +738,7 @@ export async function interaction(ctx, name, args) {
       const result = await ctx.input({ op: 'tap', ...center(button), duration_ms: 50 });
       return { ...result, ...(warning ? { prompt: warning } : {}) };
     }
-    case 'wait_for': {
-      const started = performance.now(), timeout = (args.timeout ?? args.timeout_seconds ?? 10) * 1000;
-      return deadline(timeout, async () => {
-        while (performance.now() - started < timeout) {
-          checkWork();
-          const result = await findText(args.text, args.exact);
-          checkWork();
-          if (performance.now() - started >= timeout) break;
-          const found = result.matches;
-          const complete = result.truncated === false && (result.source === 'ocr' || result.source === 'accessibility' && result.elements.length > 0);
-          if (args.gone ? complete && found.length === 0 : found.length > 0) return { matched: true, gone: args.gone ?? false, elapsed_seconds: (performance.now() - started) / 1000, elements: found, source: result.source, observation: result.observation };
-          await pause(Math.min(400, Math.max(0, timeout - (performance.now() - started))));
-        }
-        throw new DOMException('Timed out waiting for the requested text condition.', 'TimeoutError');
-      });
-    }
+    case 'wait_for': return waitForText(ctx, args);
     case 'request_human_action': return askHuman(args.reason, args.timeout_seconds ?? 300);
     case 'wait': await pause(args.seconds * 1000); return { waited: args.seconds };
     default: return undefined;

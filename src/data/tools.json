@@ -71,7 +71,7 @@
     },
     {
       "name": "take_screenshot",
-      "description": "Capture the current display and return a JPEG image with screen dimensions and a prompt warning check. max_width resizes the image only; interaction coordinates remain logical points. The compatibility lossless argument does not change this JPEG response. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Capture the current display. By default, attach a JPEG with screen dimensions and a prompt check. Set full_resolution=true to attach the original PNG and ignore max_width. With path, save the full-resolution capture on the MCP host and return its path and byte count only. Set include_image=true to also attach an image, or include_image=false to save to the default Pictures/Poki MCP directory when path is omitted. The file extension controls encoding. Existing files require overwrite=true. max_width resizes the JPEG attachment only; coordinates remain logical points. The compatibility lossless argument does not change the encoding. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -82,6 +82,22 @@
             "type": "number",
             "minimum": 1,
             "maximum": 16384
+          },
+          "full_resolution": {
+            "type": "boolean",
+            "description": "Attach the original PNG instead of a resized JPEG when attaching an image."
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute PNG or JPEG path or directory on the MCP host."
+          },
+          "include_image": {
+            "type": "boolean",
+            "description": "Attach an image from this capture. Defaults to false when path is supplied and true otherwise."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Allow replacing an existing screenshot file."
           },
           "lossless": {
             "type": "boolean"
@@ -1317,7 +1333,7 @@
     },
     {
       "name": "wait_for",
-      "description": "Poll visible text until it appears, or disappears when gone=true. timeout_seconds defaults to ten. Disappearance requires a complete readable result; unreadable or truncated content is not proof of absence. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
+      "description": "Wait for visible text to appear, or disappear when gone=true. Check accessibility first and use image text recognition when the tree has no match. A tree match omits the image unless include_image=true. Disappearance requires a complete readable result. Timeouts report nearby text and stage durations. timeout_seconds defaults to ten. Optional device selects an id or name; otherwise the session selection or sole available device is used.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1329,6 +1345,14 @@
           },
           "gone": {
             "type": "boolean"
+          },
+          "exact": {
+            "type": "boolean",
+            "description": "Require a whole text match."
+          },
+          "include_image": {
+            "type": "boolean",
+            "description": "Attach a matching screenshot. By default only image recognition results attach one."
           },
           "timeout_seconds": {
             "type": "number",
