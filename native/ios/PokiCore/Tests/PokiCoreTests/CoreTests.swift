@@ -343,6 +343,49 @@ final class ToolTests: XCTestCase {
 }
 
 final class ApprovalTests: XCTestCase {
+    private func assertApprovalForControl(_ node: Node, reason: String, file: StaticString = #filePath, line: UInt = #line) async {
+        let wda = FakeWDA()
+        wda.tree([node])
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": [185, 422]]]])
+        XCTAssertTrue(core.pendingApproval?.reason.hasPrefix(reason) == true, result.text, file: file, line: line)
+        XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, result.text, file: file, line: line)
+    }
+
+    func testPrefixedChinesePaymentButtonWaitsBeforeTouch() async {
+        await assertApprovalForControl(Node("Button", "使用账户余额为当前商品订单支付", [16, 400, 358, 44]), reason: "a payment")
+    }
+
+    func testPaymentNamedButtonWaitsBeforeTouch() async {
+        await assertApprovalForControl(Node("Button", "Payment", [16, 400, 358, 44]), reason: "a payment")
+    }
+
+    func testConfirmButtonWithSeparateAmountLabelWaitsBeforeTouch() async {
+        let amount = Node("StaticText", "¥48.20", [230, 406, 70, 30])
+        await assertApprovalForControl(Node("Button", "确认", [16, 400, 358, 44], [amount]), reason: "a payment")
+    }
+
+    func testTransferAmountInOrdinaryContentDoesNotAskForApproval() async {
+        let wda = FakeWDA()
+        wda.tree([Node("StaticText", "转账 ¥48.20", [16, 400, 358, 44])])
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["tap": [185, 422]]]])
+        XCTAssertNil(core.pendingApproval, result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, result.text)
+    }
+
+    func testPrefixedLongChineseDeleteButtonWaitsBeforeTouch() async {
+        await assertApprovalForControl(Node("Button", "从此账户永久删除当前所选的全部文件", [16, 400, 358, 44]), reason: "deleting")
+    }
+
+    func testIndependentVoiceTapOnPaymentAsksBeforeProceeding() async {
+        let (core, _, _) = makeCore()
+        let clearance = await core.clearTap(on: "Payment", inApp: "com.example.shop", named: "Shop", waiting: 0)
+        XCTAssertFalse(clearance.mayTap)
+    }
+
     func testOrdinaryContentWithPaymentWordsDoesNotAskForApproval() async {
         let cases: [(app: String, node: Node, action: JSON, endpoint: String)] = [
             ("WeChat", Node("Other", "聊天记录 转账", [0, 90, 390, 680]), ["swipe": "up"], "POST /wda/pressAndDragWithVelocity"),
