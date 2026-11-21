@@ -988,6 +988,9 @@ final class ChatHarnessTests: XCTestCase {
 
             XCTAssertEqual(requests, allowed ? 0 : 1, request)
             XCTAssertEqual(transport.touches, allowed ? 1 : 0, request)
+            let action = try XCTUnwrap(chat.savedCalls.first { $0.name == "do" })
+            let expectedResult = allowed ? (message ? "Message sent" : "List deleted") : "the owner declined"
+            XCTAssertTrue(action.answer.contains(expectedResult), action.answer)
             let decision = try XCTUnwrap(server.requests.first { FakeCompletions.system($0).contains("single current owner instruction") })
             let messages = try XCTUnwrap(decision["messages"] as? [[String: Any]])
             let input = try XCTUnwrap(messages.last { $0["role"] as? String == "user" })
@@ -3344,8 +3347,12 @@ private final class ApprovalScreenTransport: HTTPTransport, @unchecked Sendable 
             let title = message ? "Riley" : "Weekend list"
             let control = message ? "Send" : "Delete Weekend list"
             let draft = message ? #"<XCUIElementTypeTextView label="Message" value="Meet at noon" x="12" y="420" width="250" height="45"/>"# : ""
-            value = .string(#"<AppiumAUT><XCUIElementTypeApplication x="0" y="0" width="390" height="844"><XCUIElementTypeNavigationBar label="\#(title)" x="0" y="40" width="390" height="44"/>\#(draft)<XCUIElementTypeButton label="\#(control)" x="280" y="420" width="88" height="45"/></XCUIElementTypeApplication></AppiumAUT>"#)
-        case "/wda/tap":
+            let result = message ? "Message sent" : "List deleted"
+            let contents = touches > 0
+                ? #"<XCUIElementTypeStaticText label="\#(result)" x="16" y="120" width="350" height="45"/>"#
+                : #"\#(draft)<XCUIElementTypeButton label="\#(control)" x="280" y="420" width="88" height="45"/>"#
+            value = .string(#"<AppiumAUT><XCUIElementTypeApplication x="0" y="0" width="390" height="844"><XCUIElementTypeNavigationBar label="\#(title)" x="0" y="40" width="390" height="44"/>\#(contents)</XCUIElementTypeApplication></AppiumAUT>"#)
+        case "/wda/tap", "/actions":
             lock.withLock { taps += 1 }
             value = .null
         default:
