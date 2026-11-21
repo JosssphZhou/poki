@@ -16,6 +16,7 @@ public struct ToolResult: Sendable {
     var offeredMemories: [MemoryNote] = []
     var readApp: String?
     var automationAuthorizationDeclined = false
+    var manualUnlockRequired = false
     var screenEvidence: ScreenEvidence? = nil
     var numberedScreen: PokiCore.NumberedScreen? = nil
     var itemPictureSource: ItemPictureSource?
@@ -38,6 +39,14 @@ struct ActionFailure: Error, CustomStringConvertible {
 /// some actions and then reads the screen once; the answer is facts only, and the model decides what
 /// happened. Every step has a deadline, so a call always answers within `toolDeadline`.
 final class Computer: @unchecked Sendable {
+    static let stoppedResult = ToolResult(text: "Task stopped. No further input will be sent.", jpeg: nil, isError: true)
+    private static let manualUnlock = ToolResult(
+        text: "Automatic unlock could not be confirmed. Nothing was sent. Ask the owner to unlock the iPhone manually and start a new task.",
+        jpeg: nil, isError: true, manualUnlockRequired: true)
+
+    private static var unlockFailed: ToolResult {
+        PhoneOperationCancellation.stopped ? stoppedResult : manualUnlock
+    }
     let runner: Runner
     let host: CoreHost
     let config: CoreConfig
@@ -574,6 +583,8 @@ final class Computer: @unchecked Sendable {
 
     func lookNow(full: Bool, pane: String? = nil, session: String? = nil, local: Bool = false, expectedApps: Set<String>? = nil, localTask: String? = nil) async -> ToolResult {
         if local { authorizationRead = nil }
+        let earlyUnlock = await unlockBeforeSession(forLocalTask: local && localTask != nil, session: session)
+        if earlyUnlock == false { return Self.unlockFailed }
         let until: Double
         let revision: UInt64?
         switch await waitForRunner(until: now() + config.toolDeadline, authorization: local ? .ready : .none) {
@@ -583,9 +594,10 @@ final class Computer: @unchecked Sendable {
         if let selectedPane, selectedPane.session != session, (hasLocalWorkspace || !beginsTask() || pane == nil) { return workspaceInUse() }
         async let locked = isLocked()
         var unlocked = false
-        if localTask != nil, await locked {
+        if localTask != nil, await locked, approvals.pending == nil, !handoffWaiting {
+            guard earlyUnlock == nil else { return Self.unlockFailed }
             unlocked = await unlockForLocalTask(until: until)
-            if !unlocked { unlocked = await !isLocked() }
+            guard unlocked else { return Self.unlockFailed }
         }
         if let pane, !(await locked) || unlocked {
             if let failure = await selectPane(pane, session: session, until: until) { return failure }
@@ -641,7 +653,7 @@ final class Computer: @unchecked Sendable {
         if begins, let app = lastForeground { origin = (app, session, now()) } else if origin?.session == session { origin?.lastCall = now() }
         if begins, let line = skillsLine() { result.text += "\n" + line }
         if await locked, !unlocked { return lockedScreen(result) }
-        if local, let revision, !Task.isCancelled, !result.isError, let evidence = result.screenEvidence,
+        if local, let revision, !PhoneOperationCancellation.stopped, !result.isError, let evidence = result.screenEvidence,
            host.currentRunner.automationRevision == revision {
             authorizationRead = (revision, localTask, evidence)
         }
@@ -860,10 +872,22 @@ final class Computer: @unchecked Sendable {
         (try? await runner.raw("GET", "/wda/locked", timeout: 1, countsAsMiss: false))?.bool ?? false
     }
 
+    /// The in-process transport can see the Lock Screen before the normal session can read it.
+    /// Give the opted-in host that opportunity before asking it to start the normal session.
+    private func unlockBeforeSession(forLocalTask: Bool, session: String?) async -> Bool? {
+        guard forLocalTask, runner.transport.reportsLockBeforeSession, !host.currentRunner.isRunning,
+              selectedPane == nil || selectedPane?.session == session,
+              approvals.pending == nil, !handoffWaiting, !PhoneOperationCancellation.stopped, await isLocked() else { return nil }
+        return await unlockForLocalTask(until: now() + config.toolDeadline)
+    }
+
     private func unlockForLocalTask(until: Double) async -> Bool {
         let timeout = min(16, until - now() - config.readTimeout)
-        guard timeout > 0, approvals.pending == nil, !handoffWaiting, !Task.isCancelled else { return false }
-        let unlocked = await host.unlockForLocalTask(timeout: timeout)
+        guard timeout > 0, approvals.pending == nil, !handoffWaiting, !PhoneOperationCancellation.stopped else { return false }
+        let unlocked = (try? await withDeadline(timeout, "automatic unlock") { [host] in
+            await host.unlockForLocalTask(timeout: timeout)
+        }) == true
+        guard !PhoneOperationCancellation.stopped else { return false }
         if selectedPane != nil {
             invalidateWorkspaceRead()
             selectedPane = nil
@@ -885,12 +909,13 @@ final class Computer: @unchecked Sendable {
     }
 
     private func waitForRunner(until: Double, authorization: AuthorizationWait) async -> RunnerReadiness {
+        guard !PhoneOperationCancellation.stopped else { return .blocked(Self.stoppedResult) }
         var state = host.runnerState()
         let wasStarting = state.isStarting
         let startupDeadline = min(now() + config.runnerWait, until - config.readTimeout - 1)
         var authorizationDeadline: Double?
         var waitedForOwner = false
-        while state.isStarting, !Task.isCancelled {
+        while state.isStarting, !PhoneOperationCancellation.stopped {
             if authorization != .none {
                 if state.isWaitingForAutomation, authorizationDeadline == nil {
                     authorizationDeadline = now() + Self.authorizationWait
@@ -901,9 +926,7 @@ final class Computer: @unchecked Sendable {
             await sleep(seconds: 0.25)
             state = host.currentRunner
         }
-        if Task.isCancelled {
-            return .blocked(ToolResult(text: "Task stopped. Nothing was sent.", jpeg: nil, isError: true))
-        }
+        guard !PhoneOperationCancellation.stopped else { return .blocked(Self.stoppedResult) }
         if wasStarting { runner.forgetRunner() }
         if let authorizationDeadline, now() >= authorizationDeadline {
             return .blocked(ToolResult(text: "Poki stopped waiting for automation to be ready. Nothing was sent.", jpeg: nil, isError: true))
@@ -930,7 +953,7 @@ final class Computer: @unchecked Sendable {
 
     func bindCompanionTarget() async -> Bool {
         guard case .ready = await waitForRunner(until: now() + config.toolDeadline, authorization: .ready),
-              !Task.isCancelled else { return false }
+              !PhoneOperationCancellation.stopped else { return false }
         return (try? await runner.call("POST", "/poki/companion-target", timeout: 4, countsAsMiss: false))?.bool == true
     }
 
@@ -1125,11 +1148,17 @@ final class Computer: @unchecked Sendable {
         var until: Double
         let revision: UInt64?
         let needsCurrentScreen = actions.contains { !hasRequiredScreenEvidence($0, evidence: []) }
+        let harmless = actions.allSatisfy { $0["wait"] != nil || $0["wait_until"] != nil || $0["handoff"] != nil }
+        let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
         let authorization: AuthorizationWait = local ? (needsCurrentScreen ? .freshScreen : .ready) : .none
+        let earlyUnlock = await unlockBeforeSession(forLocalTask: local && localTask != nil && !harmless && !onlyButtons, session: session)
+        if earlyUnlock == false { return Self.unlockFailed }
+        if earlyUnlock == true { started = now() }
         switch await waitForRunner(until: started + config.toolDeadline, authorization: authorization) {
         case .ready(let deadline, let readyRevision): (until, revision) = (deadline, readyRevision)
         case .blocked(let result): return result
         }
+        if earlyUnlock == true, needsCurrentScreen { return readRequiredAfterAuthorization() }
         if local, let revision {
             let read = authorizationRead
             let evidence = read?.revision == revision && read?.task == localTask ? read?.evidence ?? [] : []
@@ -1158,7 +1187,6 @@ final class Computer: @unchecked Sendable {
 
         // While a step is handed to the owner, nothing is sent (they may be typing a password):
         // the model sees the screen, waits, or takes the step back.
-        let harmless = actions.allSatisfy { $0["wait"] != nil || $0["wait_until"] != nil || $0["handoff"] != nil }
         if let action = actions.first, let drag = action["drag"], drag["to_pane"] != nil,
            let from = try? point(drag["from"]), let attempted = workspaceDrag(from: from),
            workspaceDrags.contains(where: { $0.matches(attempted) }) {
@@ -1170,15 +1198,11 @@ final class Computer: @unchecked Sendable {
             result.waitingForOwner = true
             return result
         }
-        let onlyButtons = actions.allSatisfy { $0["button"] != nil || $0["wait"] != nil }
         if !onlyButtons, await isLocked() {
             guard localTask != nil, !harmless else {
                 return ToolResult(text: "screen: locked. Nothing was sent. The owner has to unlock the phone; call look once they have.", jpeg: nil, isError: true, waitingForOwner: true)
             }
-            guard await unlockForLocalTask(until: until) else {
-                let result = await readAndReply(until: until, full: true, error: "Automatic unlock could not be confirmed. Nothing was sent. Call look before choosing the next action.")
-                return await isLocked() ? lockedScreen(result) : result
-            }
+            guard earlyUnlock == nil, await unlockForLocalTask(until: until) else { return Self.unlockFailed }
             if needsCurrentScreen {
                 return await readAndReply(until: until, full: true, error: "The iPhone unlocked. No requested action was sent. Call look before acting on the new screen.")
             }
@@ -1269,7 +1293,7 @@ final class Computer: @unchecked Sendable {
                 approvalWaited += waited
                 // The caller gave up while the owner was being waited for (the relay sent `cancel`): the
                 // model will send these actions again, so nothing is sent for this call, whatever the owner does.
-                if Task.isCancelled {
+                if PhoneOperationCancellation.stopped {
                     approvals.discardWorkspaceDecisions(session: workspaceSession)
                     return ToolResult(text: "cancelled: the caller stopped waiting before the owner answered; nothing was sent from action \(at + 1).", jpeg: nil, isError: true)
                 }
@@ -1596,7 +1620,7 @@ final class Computer: @unchecked Sendable {
             let recorded = recordable(action)
             let afterInput: Runner.AfterInput? = onActionSucceeded.map { notify in
                 { @MainActor @Sendable step in
-                    guard !Task.isCancelled, now() <= min(actionsUntil, step?.deadline ?? actionsUntil) else { return }
+                    guard !PhoneOperationCancellation.stopped, now() <= min(actionsUntil, step?.deadline ?? actionsUntil) else { return }
                     notify(index, step?.index, step?.skill)
                 }
             }

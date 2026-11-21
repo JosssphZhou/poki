@@ -98,6 +98,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
     private var lanes: LocalRunner!
     let usesDynamicScreenSize = true
     let supportsPaneSelection = true
+    let reportsLockBeforeSession = true
     private let readGeometry = OSAllocatedUnfairLock<(display: PKDisplayGeometry, pane: CGRect)?>(initialState: nil)
     private var routes: [String: Route] = [:]
     /// The focused field from the latest `/element/active`, for the value and frame asked right after.
@@ -144,7 +145,7 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         return result
     }
 
-    init() {
+    init(openingSessions: DispatchGroup? = nil) {
         routes = [
             "POST /session": { [unowned self] _, _ in
                 // The owner cancelled iOS's passcode screen: no new open (and no new screen) until they
@@ -315,7 +316,13 @@ final class InProcessWDA: HTTPTransport, @unchecked Sendable {
         // The phone side's own request it gave up on (a pid that has not answered), which testmanagerd
         // still serves: LocalRunner sends nothing that needs testmanagerd until it is through.
         lanes = LocalRunner(serve: { [unowned self] request in
-            self.answer(request.key, session: request.session, element: request.element, body: request.body, route: self.routes[request.key], refreshViewport: !request.whileHeld)
+            let opening = request.key == "POST /session" ? openingSessions : nil
+            opening?.enter()
+            defer { opening?.leave() }
+            guard !request.isStopped() else {
+                return (500, (["value": ["error": "unknown error", "message": "Task stopped. Nothing was sent."]] as JSON).data())
+            }
+            return self.answer(request.key, session: request.session, element: request.element, body: request.body, route: self.routes[request.key], refreshViewport: !request.whileHeld)
         }, unanswered: { [unowned self] in
             guard let held = self.native.unanswered(), let seconds = held["seconds"] as? Double else { return nil }
             let pid = held["pid"] as? Int ?? 0

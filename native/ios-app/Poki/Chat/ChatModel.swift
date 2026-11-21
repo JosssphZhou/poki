@@ -646,6 +646,12 @@ final class ChatModel {
     }
 
     private func executePreparedSend(_ prepared: PreparedSend, token: Int) async {
+        await PhoneOperationCancellation.$automation.withValue(app.host.automationCancellation) {
+            await executePreparedSendInAutomationScope(prepared, token: token)
+        }
+    }
+
+    private func executePreparedSendInAutomationScope(_ prepared: PreparedSend, token: Int) async {
         persist()
         store.flush(sessionID: sessionID)
         switch prepared.engine {
@@ -660,7 +666,7 @@ final class ChatModel {
             finishTaskSaves(completed: completed, stopped: stopAsked || countedScrollReplyQuestion != nil, token: token)
             if current { finishPlan(stopped: stopAsked) }
             // The direct engine does not say when its task ends: the quiet wait finishes the run.
-            if !current || app.drivesDuoCompanion { app.finishTask() } else { app.chatReleasesRun() }
+            if !current || app.drivesDuoCompanion { app.finishTask(switching: current && !stopAsked) } else { app.chatReleasesRun() }
             logEnd("direct", outcome: nil, session: prepared.runSession, text: prepared.text, stopped: !current)
             if current { running = false; awaitingModel = false }
         case .pi(let piModel):
@@ -698,14 +704,17 @@ final class ChatModel {
                 let preparation = await openSplitViewPair(pair, session: splitSession, token: token)
                 phoneStepUnderWay = false
                 guard runToken == token, preparation == .confirmed else {
-                    let declined = preparation == .authorizationDeclined
+                    let declined = preparation == .authorizationDeclined || preparation == .manualUnlockRequired
                     await app.finishSplitViewTask(localSession: splitSession, pairConfirmed: false, authorizationDeclined: declined) {
                         self.runToken != token || Task.isCancelled
                     }
                     if runToken == token {
-                        let outcome: PiLoop.Outcome = declined
-                            ? .authorizationDeclined
-                            : .failed(Self.splitViewSetupMessage(pair[0], pair[1]))
+                        let outcome: PiLoop.Outcome
+                        switch preparation {
+                        case .manualUnlockRequired: outcome = .manualUnlockRequired
+                        case .authorizationDeclined: outcome = .authorizationDeclined
+                        default: outcome = .failed(Self.splitViewSetupMessage(pair[0], pair[1]))
+                        }
                         ended(outcome, delivered: prepared.you.id)
                         logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: declined)
                         running = false
@@ -728,18 +737,18 @@ final class ChatModel {
                 if self.messageScroll == nil { self.add(.poki(text)) }
             }
             if let splitSession {
-                await app.finishSplitViewTask(localSession: splitSession, authorizationDeclined: outcome == .authorizationDeclined) {
+                await app.finishSplitViewTask(localSession: splitSession, authorizationDeclined: outcome == .authorizationDeclined || outcome == .manualUnlockRequired) {
                     self.runToken != token || Task.isCancelled || outcome == .stopped
                 }
             }
             let current = runToken == token
             if current { _ = finishMessageScroll(outcome) }
             finishTaskSaves(completed: outcome == .done,
-                            stopped: outcome == .stopped || outcome == .authorizationDeclined || outcome == .waitingForReply,
+                            stopped: outcome == .stopped || outcome == .authorizationDeclined || outcome == .manualUnlockRequired || outcome == .waitingForReply,
                             token: token)
             if current { ended(outcome, delivered: prepared.you.id) }
-            else if splitSession == nil { app.finishTask() }
-            logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: !current || outcome == .authorizationDeclined)
+            else if splitSession == nil { app.finishTask(switching: false) }
+            logEnd("pi", outcome: outcome, session: prepared.runSession, text: prepared.text, stopped: !current || outcome == .authorizationDeclined || outcome == .manualUnlockRequired)
             guard current else { return }
             running = false
             awaitingModel = false
@@ -749,7 +758,13 @@ final class ChatModel {
 
     private enum WorkspaceChoice { case split([String]), normal, failed(String) }
 
-    private enum PairCheck { case confirmed, unavailable, differentPair, stopped, authorizationDeclined }
+    private enum PairCheck { case confirmed, unavailable, differentPair, stopped, authorizationDeclined, manualUnlockRequired }
+
+    private func phoneSetupInterruption(_ answer: PokiCore.ToolAnswer) -> PairCheck? {
+        if answer.automationAuthorizationDeclined { return .authorizationDeclined }
+        if answer.manualUnlockRequired { return .manualUnlockRequired }
+        return nil
+    }
 
     private func openSplitViewPair(_ pair: [String], session: String, token: Int) async -> PairCheck {
         guard await app.reserveSplitViewWorkspace(session: session), !Task.isCancelled else { return .unavailable }
@@ -761,23 +776,23 @@ final class ChatModel {
         // destination, then open the source beside it, preserving the destination's last window.
         let anchor = pair[1]
         let source = pair[0]
-        if (await activateForSplitView(anchor, session: session)).automationAuthorizationDeclined { return .authorizationDeclined }
+        if let reason = phoneSetupInterruption(await activateForSplitView(anchor, session: session)) { return reason }
         let initial = await confirmSplitViewPair(expected, session: session, token: token, seconds: 12)
         switch initial {
-        case .confirmed, .stopped, .authorizationDeclined: return initial
+        case .confirmed, .stopped, .authorizationDeclined, .manualUnlockRequired: return initial
         case .unavailable, .differentPair: break
         }
         guard runToken == token, !Task.isCancelled, let target = KnownApps.find(anchor) else { return .unavailable }
         guard await app.clearSplitViewPaneForSetup(session: session), runToken == token, !Task.isCancelled else { return .unavailable }
         AppLog.shared.add("chat", "opening the requested apps through the system Split View menu")
-        if (await activateForSplitView("com.apple.springboard", session: session)).automationAuthorizationDeclined { return .authorizationDeclined }
+        if let reason = phoneSetupInterruption(await activateForSplitView("com.apple.springboard", session: session)) { return reason }
         do {
             guard try await selectLauncherItem([target.english, target.simplified, target.traditional], menu: false, session: session) else { return .unavailable }
             guard try await selectLauncherItem(["Open in Split View", "以分屏浏览打开", "以分割顯示方式打開", "以分割顯示打開"], menu: true, session: session) else { return .unavailable }
             try await Task.sleep(for: .seconds(1))
         } catch { return .unavailable }
         guard runToken == token, !Task.isCancelled else { return .stopped }
-        if (await activateForSplitView(source, session: session)).automationAuthorizationDeclined { return .authorizationDeclined }
+        if let reason = phoneSetupInterruption(await activateForSplitView(source, session: session)) { return reason }
         return await confirmSplitViewPair(expected, session: session, token: token, seconds: 35)
     }
 
@@ -805,7 +820,7 @@ final class ChatModel {
         var pane = "left"
         while runToken == token, !Task.isCancelled, ContinuousClock.now < deadline {
             let read = await app.runTool("look", arguments: "{\"pane\":\"\(pane)\"}", localSession: session, expectedApps: pair)
-            if read.automationAuthorizationDeclined { return .authorizationDeclined }
+            if let reason = phoneSetupInterruption(read) { return reason }
             if read.text.contains("screen: locked") { return .stopped }
             if read.text.contains("do not match the planned Split View pair") { return .differentPair }
             // Keep the initial layout so a rotation before the model's first read also triggers recovery.
@@ -1056,7 +1071,7 @@ final class ChatModel {
     static var delegatedBusy: String?
 
     private func ended(_ outcome: PiLoop.Outcome, delivered youID: UUID) {
-        let stopped = outcome == .stopped || outcome == .authorizationDeclined
+        let stopped = outcome == .stopped || outcome == .authorizationDeclined || outcome == .manualUnlockRequired
         // The turn is over: the phone goes back to the app the task began in (Poki's chat, where the
         // reply is), or stays where it is and the reply goes out as a notification that can be answered
         // there (Advanced › When a Task Ends).
@@ -1076,6 +1091,9 @@ final class ChatModel {
                 reply = entries.reversed().lazy.compactMap { entry -> String? in if case .poki(let text) = entry.kind { return text }; return nil }.first
             case .waitingForReply: break
             case .stopped, .authorizationDeclined: add(.poki(AppLocalization.text(LocalizedStringResource("Stopped."))))
+            case .manualUnlockRequired:
+                reply = Self.manualUnlockMessage
+                add(.poki(Self.manualUnlockMessage))
             case .overTurns:
                 reply = AppLocalization.text(LocalizedStringResource("I stopped after \(Self.maxTurns) steps. Tell me how to go on."))
                 add(.poki(reply ?? ""))
@@ -1090,7 +1108,8 @@ final class ChatModel {
         finishPlan(stopped: stopped || waitingForReply)
         if stopped {
             app.chatTaskStopped()
-            if !usesSplitView { app.finishTask(switching: outcome != .authorizationDeclined) }
+            if outcome == .manualUnlockRequired { app.stopForManualUnlock(Self.manualUnlockMessage) }
+            if !usesSplitView { app.finishTask(switching: outcome == .stopped) }
         } else {
             // A finished run on the Live Activity says what it came to: finish_task's summary when the
             // task succeeded, else the task itself. A failure's summary under Done would read as success.
@@ -1108,6 +1127,7 @@ final class ChatModel {
         case .done: reason = nil
         case .waitingForReply: return nil
         case .stopped, .authorizationDeclined: reason = AppLocalization.text(LocalizedStringResource("The task was stopped."))
+        case .manualUnlockRequired: reason = Self.manualUnlockMessage
         case .overTurns: reason = AppLocalization.text(LocalizedStringResource("I stopped after \(Self.maxTurns) steps."))
         case .stuck: reason = stuckWords()
         case .failed(let words): reason = words
@@ -1115,6 +1135,10 @@ final class ChatModel {
         let result = TaskResult(success: verified, summary: messageScroll.summary(success: verified, reason: reason))
         recordTaskResult(result)
         return result.summary
+    }
+
+    private static var manualUnlockMessage: String {
+        AppLocalization.text(LocalizedStringResource("Poki could not confirm the unlock. Unlock your iPhone manually and check your saved passcode."))
     }
 
     /// Where the task is stuck: the app it was working in, when it is one Poki can name.
@@ -1129,7 +1153,9 @@ final class ChatModel {
     /// is sent to the model or the phone. A step under way stops before its next action; the action
     /// the phone is doing finishes, and until then the chat says Stopping, not Stopped. The next task
     /// waits for it.
-    func stop() {
+    func stop() { stop(endingAutomation: true) }
+
+    func stop(endingAutomation: Bool) {
         if isDemo { stopDemo(); return }
         guard running else { return }
         stopAsked = true
@@ -1145,6 +1171,7 @@ final class ChatModel {
         runToken += 1
         running = false
         awaitingModel = false
+        if endingAutomation { app.pauseRunner(fromOutside: true) }
         let stoppedText = finishMessageScroll(.stopped) ?? AppLocalization.text(LocalizedStringResource("Stopped."))
         guard phoneStepUnderWay else { add(.poki(stoppedText)); return }
         let stopping = ChatEntry(.poki(AppLocalization.text(LocalizedStringResource("Stopping…"))))
@@ -1190,9 +1217,9 @@ final class ChatModel {
             if messageScroll == nil { for text in turn.texts { add(.poki(text)) } }
             switch turn.ending {
             case .tools:
-                var authorizationDeclined = false
+                var phoneStop: PiLoop.Outcome?
                 for call in turn.calls {
-                    if stopped || authorizationDeclined {
+                    if stopped || phoneStop != nil {
                         client.answer(call, PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true))
                         continue
                     }
@@ -1200,7 +1227,8 @@ final class ChatModel {
                     let answer = await perform(call)
                     client.answer(call, call.name == "screen_history"
                         ? HistoryCapture.validateAgentAnswer(answer, revision: revision) : answer)
-                    authorizationDeclined = answer.automationAuthorizationDeclined
+                    if answer.automationAuthorizationDeclined { phoneStop = .authorizationDeclined }
+                    if answer.manualUnlockRequired { phoneStop = .manualUnlockRequired }
                 }
                 if stopped { return false }
                 if countedScrollReplyQuestion != nil {
@@ -1208,9 +1236,9 @@ final class ChatModel {
                     finishPlan(stopped: true)
                     return false
                 }
-                if authorizationDeclined {
+                if let phoneStop {
                     stopAsked = true
-                    ended(.authorizationDeclined, delivered: youID)
+                    ended(phoneStop, delivered: youID)
                     return false
                 }
             case .again:
@@ -1268,7 +1296,7 @@ final class ChatModel {
     }
 
     private func performCall(_ call: ToolCall) async -> PokiCore.ToolAnswer {
-        guard !Task.isCancelled else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
+        guard !PhoneOperationCancellation.stopped else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
         toolCalls += 1
         if countedScrollReplyQuestion != nil {
             return PokiCore.ToolAnswer(text: "Waiting for the owner's reply. No action was sent.", jpeg: nil, isError: true)
@@ -1491,7 +1519,7 @@ final class ChatModel {
             let pane = otherRead == nil ? otherSide : side
             let read = await app.runTool("look", arguments: #"{"pane":"\#(pane)","full":true}"#,
                                          localSession: session, expectedApps: expected, localTask: "\(sessionID)#\(token)")
-            if read.automationAuthorizationDeclined { return read }
+            if read.automationAuthorizationDeclined || read.manualUnlockRequired { return read }
             guard runToken == token, !Task.isCancelled else { break }
             guard !read.isError, read.jpeg != nil, let observed = read.splitView, observed.side == pane else {
                 otherRead = nil

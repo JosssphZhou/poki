@@ -30,9 +30,21 @@ public struct RunnerError: Error, CustomStringConvertible, Sendable {
     public var description: String { message }
 }
 
-/// Carries a stop request through all runner requests belonging to one voice tool.
+/// Carries cancellation across tool tasks and queued phone requests.
 public final class PhoneOperationCancellation: Sendable {
     @TaskLocal public static var current: PhoneOperationCancellation?
+    @TaskLocal public static var automation: PhoneOperationCancellation?
+
+    public static var stopped: Bool {
+        Task.isCancelled || current?.isCancelled == true || automation?.isCancelled == true
+    }
+
+    /// Dispatch queues do not inherit task-local values.
+    public static func stopCheck() -> @Sendable () -> Bool {
+        let operation = current
+        let epoch = automation
+        return { operation?.isCancelled == true || epoch?.isCancelled == true }
+    }
 
     private let cancelled = LockedBox(false)
     public init() {}
@@ -45,12 +57,15 @@ public protocol HTTPTransport: Sendable {
     /// In-process reads may change their coordinate space as the owner moves or resizes a window.
     var usesDynamicScreenSize: Bool { get }
     var supportsPaneSelection: Bool { get }
+    /// The lock-state request can run without opening an automation session.
+    var reportsLockBeforeSession: Bool { get }
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data)
 }
 
 public extension HTTPTransport {
     var usesDynamicScreenSize: Bool { false }
     var supportsPaneSelection: Bool { false }
+    var reportsLockBeforeSession: Bool { false }
 }
 
 public enum TransportError: Error, Sendable {
@@ -335,7 +350,7 @@ public final class Runner: @unchecked Sendable {
 
     /// A step whose effect is confirmed can report its sources through the current action.
     func confirmInput() async {
-        guard !Task.isCancelled, let afterInput = Self.afterInput else { return }
+        guard !PhoneOperationCancellation.stopped, let afterInput = Self.afterInput else { return }
         await afterInput(Self.replayStep)
     }
 
@@ -366,7 +381,7 @@ public final class Runner: @unchecked Sendable {
         let receiptDeadline = now() + timeout + 0.5
         do {
             result = try await withDeadline(timeout + 0.5, "the runner's answer to \(method) \(Self.short(path))") { [transport] in
-                guard PhoneOperationCancellation.current?.isCancelled != true else {
+                guard !PhoneOperationCancellation.stopped else {
                     throw RunnerError(message: "The user cancelled the task. This request was not sent.", delivery: .notSent)
                 }
                 let payload = body?.data()

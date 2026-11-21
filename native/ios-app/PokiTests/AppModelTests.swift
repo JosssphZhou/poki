@@ -19,10 +19,22 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
     private let lock = NSLock()
     private var open = false
     var isOpen: Bool { lock.withLock { open } }
+    private var screenLocked = false
+    var isScreenLocked: Bool { lock.withLock { screenLocked } }
+    func lockScreen() { lock.withLock { screenLocked = true } }
+    func submitUnlockPasscode(_ passcode: String, timeout: TimeInterval, allowed: @escaping () -> Bool) -> PKUnlockResult {
+        guard allowed() else { return .unavailable }
+        return lock.withLock {
+            guard open, screenLocked else { return .unavailable }
+            screenLocked = false
+            return .unlocked
+        }
+    }
     private var gate: DispatchSemaphore?
     private var heldOpenStarted = false
     private var answer: [String: Any]?
     var onPrepare: (@Sendable () -> Void)?
+    var onClose: (@Sendable () -> Void)?
     var openingDelay: TimeInterval = 0
     private var requested: TimeInterval = 0
     private var ready: TimeInterval = 0
@@ -54,7 +66,12 @@ final class FakeAutomation: InProcessAutomation, @unchecked Sendable {
         }
     }
     func close() -> [String: Any] {
-        lock.withLock { defer { if open { closeCalls += 1 }; open = false; paused = false }; return ["closed": open, "generation": 1, "seconds": 0.0] }
+        let result: [String: Any] = lock.withLock {
+            defer { if open { closeCalls += 1 }; open = false; paused = false }
+            return ["closed": open, "generation": 1, "seconds": 0.0]
+        }
+        onClose?()
+        return result
     }
     /// Automation Mode off with the session kept, as iOS does it: the session stays open until the next prepare turns it on.
     func pauseAutomation() -> [String: Any] {
@@ -1108,8 +1125,11 @@ final class InProcessPasscodeTests: XCTestCase {
         session.setAuthorizationWait(4)
         model.checkIdle(now: Date().addingTimeInterval(6))
         XCTAssertTrue(model.passcodeHint, "Poki's home asks the owner for the passcode")
-        let waiting = model.host.currentRunner.describe
-        XCTAssertTrue(waiting.contains("owner to enter the iPhone passcode"), waiting)
+        let waiting = model.host.currentRunner
+        guard case .awaitingAutomationAuthorization(let detail) = waiting else {
+            return XCTFail(waiting.describe)
+        }
+        XCTAssertTrue(detail.contains("owner to allow UI automation"), detail)
         try await captureSessionState("passcode")
         session.answer(["ok": false, "code": "com.apple.dt.XCTest.XCTFuture 1000", "detail": "Timed out while enabling automation mode.", "seconds": 60.0])
         await waitFor("iOS gave up on the passcode") { !self.model.passcodeHint && !self.model.host.currentRunner.describe.hasPrefix("starting") }
@@ -1408,6 +1428,73 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertFalse(session.isOpen)
         XCTAssertEqual(session.closes, 1)
         XCTAssertEqual(session.pauses, 0)
+    }
+
+    func testStopClosesAutomationThatOpensAfterTheFirstClose() async {
+        await prepareWithoutPhoneTask()
+        session.holdNextOpen()
+        model.wakeRunner()
+        await waitFor("an automation open is under way") { self.session.isHoldingOpen }
+
+        let firstClose = expectation(description: "Stop asks iOS to close while the open is still waiting")
+        firstClose.assertForOverFulfill = false
+        session.onClose = { firstClose.fulfill() }
+        model.stopFromOutside(AppModel.liveActivityStop)
+        await fulfillment(of: [firstClose], timeout: 5)
+        session.onClose = nil
+        session.answer(nil)
+        await waitFor("the delayed open answered") { self.session.prepares == 1 }
+        await waitFor("the delayed automation session was closed") { !self.session.isOpen }
+        XCTAssertTrue(model.sessionOn, "Stopping the task should leave Poki on")
+    }
+
+    #if targetEnvironment(simulator)
+    func testNewLocalTaskUnlocksAfterStopWhileTheOldTaskStaysStopped() async throws {
+        try XCTSkipUnless(!model.autoUnlock.enabled, "Use a simulator without a saved automatic unlock setting")
+        try model.autoUnlock.save("135790")
+        defer { try? model.autoUnlock.disable() }
+        await openSessionForATask()
+        let stoppedTask = try XCTUnwrap(model.host.automationCancellation)
+        model.stopFromOutside(AppModel.liveActivityStop)
+        await waitFor("Stop closed automation") { self.model.lastInProcessClose?.closed == true }
+
+        let transport = SessionScreenTransport(session: session, reportsLockBeforeSession: true)
+        let core = PokiCore(config: CoreConfig(), host: model.host, transport: transport)
+        model.prepareForTask()
+        session.lockScreen()
+        let late = await PhoneOperationCancellation.$automation.withValue(stoppedTask) {
+            await core.callTool("look", arguments: "{}", localTask: "stopped task")
+        }
+        XCTAssertTrue(late.text.contains("Task stopped"), late.text)
+        XCTAssertTrue(session.isScreenLocked)
+        XCTAssertFalse(session.isOpen, "The old task must leave automation closed")
+
+        await finishPreparing()
+        let next = await core.callTool("look", arguments: "{}", localTask: "new task")
+        XCTAssertFalse(next.isError, next.text)
+        XCTAssertFalse(session.isScreenLocked, "A new local task should unlock after Stop")
+        XCTAssertTrue(next.text.contains("General"), next.text)
+    }
+    #endif
+
+    func testStopCancelsAReopenAlreadyRequestedDuringClose() async {
+        useSystem(26)
+        await openSessionForATask()
+        let pausing = expectation(description: "Automation is still closing for standby")
+        session.holdNextPause { pausing.fulfill() }
+        model.checkIdle(now: Date().addingTimeInterval(Double(model.idleStopSeconds) + 60))
+        await fulfillment(of: [pausing], timeout: 5)
+
+        model.wakeRunner()
+        model.stopFromOutside(AppModel.liveActivityStop)
+        session.releasePause()
+
+        await waitFor("Stop closed the pending session") { self.model.lastInProcessClose != nil }
+        XCTAssertTrue(model.runnerPaused, "The reopen requested before Stop must be discarded")
+        XCTAssertFalse(session.isOpen)
+
+        await lookForTheNextTask()
+        XCTAssertTrue(session.isOpen, "A new request after Stop can still open automation")
     }
 
     func testOnIOS26ClosingDuringAPauseDoesNotKeepTheSession() async {

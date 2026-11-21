@@ -13,6 +13,7 @@ final class FakeWDA: HTTPTransport, @unchecked Sendable {
 
     let usesDynamicScreenSize: Bool
     let supportsPaneSelection: Bool
+    var reportsLockBeforeSession = false
 
     init(dynamicSize: Bool = false, paneSelection: Bool = false) {
         usesDynamicScreenSize = dynamicSize
@@ -145,14 +146,22 @@ final class FakeHost: CoreHost, @unchecked Sendable {
     let widths = LockedBox<[Int]>([])
     let warmUps = LockedBox(0)
     let unlock = LockedBox<(@Sendable (Double) -> Bool)?>(nil)
-    func unlockForLocalTask(timeout: Double) async -> Bool { unlock.value?(timeout) ?? false }
+    let waitForUnlock = LockedBox<(@Sendable () async -> Bool)?>(nil)
+    let onRunnerState = LockedBox<(@Sendable () -> Void)?>(nil)
+    func unlockForLocalTask(timeout: Double) async -> Bool {
+        if let wait = waitForUnlock.value { return await wait() }
+        return unlock.value?(timeout) ?? false
+    }
     func warmUp() { warmUps.update { $0 += 1 } }
     func recognizeText(inPNG png: Data) async -> [RecognizedText]? { texts.value }
     func signingKey() throws -> RelayKey { FakeKey() }
     func accessHashes() -> [String] { ["abc123"] }
     func jpeg(fromPNG png: Data, width: Int, quality: Double) throws -> Data { widths.update { $0.append(width) }; return Data("jpeg:\(png.count)".utf8) }
     var currentRunner: RunnerState { readRunnerState.value?() ?? state.value }
-    func runnerState() -> RunnerState { state.value }
+    func runnerState() -> RunnerState {
+        onRunnerState.value?()
+        return state.value
+    }
     func restartRunner() { restarts.update { $0 += 1 } }
     let ownScreenshot = LockedBox<Data?>(nil)
     func screenshotWithoutRunner() async -> Data? { ownScreenshot.value }

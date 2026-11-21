@@ -181,6 +181,8 @@ public protocol CoreHost: AnyObject, Sendable {
     func jpeg(fromPNG png: Data, width: Int, quality: Double) throws -> Data
     /// The last known state, without waking or retrying phone automation.
     var currentRunner: RunnerState { get }
+    /// A new value after Stop. In-flight work retains the stopped value.
+    var automationCancellation: PhoneOperationCancellation? { get }
     func runnerState() -> RunnerState
     func restartRunner()
     /// An agent connected (MCP initialize): get ready for its first look now, not during it.
@@ -203,6 +205,7 @@ public protocol CoreHost: AnyObject, Sendable {
 
 extension CoreHost {
     public var currentRunner: RunnerState { runnerState() }
+    public var automationCancellation: PhoneOperationCancellation? { nil }
     public func unlockForLocalTask(timeout: Double) async -> Bool { false }
     public func screenshotWithoutRunner() async -> Data? { nil }
     public func approveConnection(client: String, callback: String, connector: String) async -> Bool { false }
@@ -613,12 +616,14 @@ public final class PokiCore: @unchecked Sendable {
         /// Handoff, a locked phone, or runner startup requires waiting rather than model progress.
         public let waitingForOwner: Bool
         public let automationAuthorizationDeclined: Bool
+        public let manualUnlockRequired: Bool
         public let numberedScreen: NumberedScreen?
         public let offeredMemories: [MemoryNote]
-        public init(text: String, jpeg: Data?, isError: Bool, splitView: SplitViewRead? = nil, splitViewNeedsRead: Bool = false, screen: String? = nil, waitingForOwner: Bool = false, automationAuthorizationDeclined: Bool = false, numberedScreen: NumberedScreen? = nil, offeredMemories: [MemoryNote] = []) {
+        public init(text: String, jpeg: Data?, isError: Bool, splitView: SplitViewRead? = nil, splitViewNeedsRead: Bool = false, screen: String? = nil, waitingForOwner: Bool = false, automationAuthorizationDeclined: Bool = false, manualUnlockRequired: Bool = false, numberedScreen: NumberedScreen? = nil, offeredMemories: [MemoryNote] = []) {
             self.text = text; self.jpeg = jpeg; self.isError = isError; self.splitView = splitView
             self.splitViewNeedsRead = splitViewNeedsRead; self.screen = screen; self.waitingForOwner = waitingForOwner
             self.automationAuthorizationDeclined = automationAuthorizationDeclined
+            self.manualUnlockRequired = manualUnlockRequired
             self.numberedScreen = numberedScreen
             self.offeredMemories = offeredMemories
         }
@@ -635,6 +640,7 @@ public final class PokiCore: @unchecked Sendable {
         return ToolAnswer(text: output.text, jpeg: output.jpeg, isError: output.isError, splitView: output.splitView,
                           splitViewNeedsRead: output.splitViewNeedsRead, screen: output.screen, waitingForOwner: output.waitingForOwner,
                           automationAuthorizationDeclined: output.automationAuthorizationDeclined,
+                          manualUnlockRequired: output.manualUnlockRequired,
                           numberedScreen: output.numberedScreen, offeredMemories: output.offeredMemories)
     }
 
@@ -680,7 +686,7 @@ public final class PokiCore: @unchecked Sendable {
     public func prepareWorkspace(session: String) async -> Bool {
         guard runner.transport.supportsPaneSelection, await gate.enter(waiting: config.busyWait) else { return false }
         defer { gate.leave() }
-        guard !Task.isCancelled else { return false }
+        guard !PhoneOperationCancellation.stopped else { return false }
         return computer.reserveWorkspace(session: session)
     }
 
@@ -695,7 +701,7 @@ public final class PokiCore: @unchecked Sendable {
     public func clearWorkspacePaneForSetup(session: String) async -> Bool {
         guard await gate.enter(waiting: config.busyWait) else { return false }
         defer { gate.leave() }
-        guard !Task.isCancelled else { return false }
+        guard !PhoneOperationCancellation.stopped else { return false }
         return await computer.clearWorkspacePaneForSetup(session: session)
     }
 
@@ -709,13 +715,23 @@ public final class PokiCore: @unchecked Sendable {
     public func workspaceLauncherStep(session: String, request: JSON) async throws -> JSON {
         guard runner.transport.supportsPaneSelection, await gate.enter(waiting: config.busyWait) else { throw CancellationError() }
         defer { gate.leave() }
-        try Task.checkCancellation()
+        guard !PhoneOperationCancellation.stopped else { throw CancellationError() }
         guard computer.hasLocalWorkspace, !computer.heldByLocalTask(otherThan: session), !computer.handoffWaiting else { throw CancellationError() }
         return try await runner.call("POST", "/poki/workspace-launcher", request, timeout: 12, countsAsMiss: false)
     }
 
     func call(_ name: String, _ args: JSON, session: String? = nil, answerBy: Double? = nil, local: Bool = false, expectedApps: Set<String>? = nil, conversation: String? = nil, byOwnersVoice: Bool = false, localTask: String? = nil, onActionSucceeded: ActionSucceeded? = nil) async -> ToolResult {
+        let cancellation = PhoneOperationCancellation.automation ?? host?.automationCancellation
+        return await PhoneOperationCancellation.$automation.withValue(cancellation) {
+            await callInAutomationScope(name, args, session: session, answerBy: answerBy, local: local,
+                                        expectedApps: expectedApps, conversation: conversation, byOwnersVoice: byOwnersVoice,
+                                        localTask: localTask, onActionSucceeded: onActionSucceeded)
+        }
+    }
+
+    private func callInAutomationScope(_ name: String, _ args: JSON, session: String?, answerBy: Double?, local: Bool, expectedApps: Set<String>?, conversation: String?, byOwnersVoice: Bool, localTask: String?, onActionSucceeded: ActionSucceeded?) async -> ToolResult {
         if name == "status" { return status() }
+        guard !PhoneOperationCancellation.stopped else { return Computer.stoppedResult }
         if name == "screen_history" { return await screenHistoryCall(args) }
         if let tool = hostTools.value.first(where: { $0.name == name }) {
             // Outside the gate: the app's tool makes its own look and do calls, one at a time as any.
@@ -740,6 +756,7 @@ public final class PokiCore: @unchecked Sendable {
         let activity = ToolActivity(id: UUID().uuidString, name: name, summary: name == "do" ? computer.labels(actions) : "Look at the screen", started: Date(), session: local ? nil : session)
         // One tool call at a time per phone; a second waits briefly, then says what the first is doing.
         guard await gate.enter(waiting: config.busyWait) else {
+            guard !PhoneOperationCancellation.stopped else { return Computer.stoppedResult }
             if host?.currentRunner.isWaitingForAutomation == true {
                 return ToolResult(text: "Poki is waiting for automation to be ready. Nothing was sent.", jpeg: nil, waitingForOwner: true)
             }
@@ -749,6 +766,10 @@ public final class PokiCore: @unchecked Sendable {
             // The screenshot is served apart from the runner's queue, so a busy answer still shows
             // the screen (the owner's rule: every answer carries the picture while the runner is up).
             return await computer.withPicture("busy: another call is still running (\(gate.current ?? "a tool")); nothing was sent. Call again in a moment.", timeout: 3, remember: false, isErrorWithoutPicture: false)
+        }
+        if PhoneOperationCancellation.stopped {
+            gate.leave()
+            return Computer.stoppedResult
         }
         if computer.heldByLocalTask(otherThan: session) {
             gate.leave()
@@ -776,6 +797,7 @@ public final class PokiCore: @unchecked Sendable {
             // Never reached in practice (every step has its own deadline), but a call always answers.
             output = ToolResult(text: "error: \(error); what was sent is unknown. Call look to see the screen.", jpeg: nil, isError: true)
         }
+        if PhoneOperationCancellation.stopped { output = Computer.stoppedResult }
         if local, session == nil, let localTask, localTask == computer.recordingTask,
            !output.isError, let app = output.readApp?.lowercased(), app != "com.apple.springboard",
            let memory = computer.memory, computer.memoryAppsOffered.insert(app).inserted {

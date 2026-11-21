@@ -25,6 +25,7 @@ public final class LocalRunner: HTTPTransport, @unchecked Sendable {
         public var session: String?
         public var element: String?
         public var body: JSON?
+        public internal(set) var isStopped: @Sendable () -> Bool = { false }
         /// An earlier request is held: a screenshot then takes the picture and nothing more (no
         /// lookup of the app in front, which would wait behind the held request).
         public var whileHeld = false
@@ -111,11 +112,14 @@ public final class LocalRunner: HTTPTransport, @unchecked Sendable {
         if key == "GET /status" { return status() }
         let picture = key == "GET /screenshot"
         let lane = picture ? pictures : queue
+        let stopped = PhoneOperationCancellation.stopCheck()
+        request.isStopped = stopped
         let asked = now()
         // The moment the caller gives up (Runner waits for its timeout and half a second).
         let givesUp = asked + timeout + 0.5
         return try await withCheckedThrowingContinuation { continuation in
             lane.async { [self] in
+                guard !stopped() else { continuation.resume(throwing: CancellationError()); return }
                 let began = now()
                 // Its caller gave up while it waited its turn: nobody would read the answer, and an
                 // action would land after the agent was told it failed.
@@ -145,7 +149,7 @@ public final class LocalRunner: HTTPTransport, @unchecked Sendable {
                 let done = DispatchSemaphore(value: 0)
                 let out = LockedBox<(status: Int, body: Data)?>(nil)
                 DispatchQueue.global(qos: .userInitiated).async { [request] in
-                    let answer = self.serve(request)
+                    let answer = stopped() ? Self.refused("Task stopped. Nothing was sent.") : self.serve(request)
                     out.value = answer
                     // Through after its caller gave up: no longer held.
                     self.state.update { s in

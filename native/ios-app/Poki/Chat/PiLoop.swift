@@ -13,7 +13,7 @@ import PokiCore
 /// carries the messages over; pi converts them between providers.
 @MainActor
 final class PiLoop {
-    enum Outcome: Equatable { case done, waitingForReply, stopped, authorizationDeclined, overTurns, stuck, failed(String) }
+    enum Outcome: Equatable { case done, waitingForReply, stopped, authorizationDeclined, manualUnlockRequired, overTurns, stuck, failed(String) }
 
     /// This many steps in a row with the same call and the same screen end the task as stuck.
     nonisolated static let stallSteps = 6
@@ -57,7 +57,12 @@ final class PiLoop {
                 // `signal`: cancelling the call stops a `do` before its next action.
                 let revision = spec.name == "screen_history" ? HistoryCapture.agentQueryRevision : nil
                 if spec.name == "screen_history" { grants.record(id, revision: revision) }
-                let call = Task { @MainActor in await perform(ToolCall(id: id, name: spec.name, arguments: arguments)) }
+                let call = Task { @MainActor in
+                    guard !gate.stopped, !PhoneOperationCancellation.stopped else {
+                        return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)
+                    }
+                    return await perform(ToolCall(id: id, name: spec.name, arguments: arguments))
+                }
                 let forget = signal?.onCancel { call.cancel() }
                 defer { forget?() }
                 let rawAnswer = await call.value
@@ -69,6 +74,8 @@ final class PiLoop {
                     gate.end(.waitingForReply)
                 } else if answer.automationAuthorizationDeclined {
                     gate.end(.authorizationDeclined)
+                } else if answer.manualUnlockRequired {
+                    gate.end(.manualUnlockRequired)
                 } else if answer.waitingForOwner {
                     stall.reset()
                 } else if stall.record(call: "\(spec.name)\n\(arguments)", screen: answer.screen ?? answer.text) {
@@ -175,6 +182,7 @@ final class PiLoop {
             switch gate.ending {
             case .waitingForReply: return .waitingForReply
             case .authorizationDeclined: return .authorizationDeclined
+            case .manualUnlockRequired: return .manualUnlockRequired
             case .overTurns: return .overTurns
             case .stuck: return .stuck
             default: return .stopped
@@ -265,7 +273,7 @@ final class HistoryDeliveryGrants: @unchecked Sendable {
 
 /// Set by stop(), the turn limit or the stall watch, read by the tools on pi's tasks.
 private final class StopGate: @unchecked Sendable {
-    enum Ending { case stopped, waitingForReply, authorizationDeclined, overTurns, stuck }
+    enum Ending { case stopped, waitingForReply, authorizationDeclined, manualUnlockRequired, overTurns, stuck }
     private let lock = NSLock()
     private var first: Ending?
     func reset() { lock.withLock { first = nil } }

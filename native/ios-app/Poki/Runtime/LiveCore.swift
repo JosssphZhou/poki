@@ -124,6 +124,15 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     private var warm: (@Sendable () -> Void)?
     private var retry: (@Sendable () -> Void)?
     private var autoUnlock: (@Sendable (Double) async -> Bool)?
+    private var automationEpoch = PhoneOperationCancellation()
+
+    var automationCancellation: PhoneOperationCancellation? { lock.withLock { automationEpoch } }
+    func invalidateAutomation() {
+        lock.withLock {
+            automationEpoch.cancel()
+            automationEpoch = PhoneOperationCancellation()
+        }
+    }
 
     func update(key: Curve25519.Signing.PrivateKey?, hashes: [String]) { lock.withLock { self.key = key; self.hashes = hashes } }
     func update(runner: RunnerState) { lock.withLock { self.runner = runner } }
@@ -134,8 +143,12 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     func onWarmUp(_ action: @escaping @Sendable () -> Void) { lock.withLock { warm = action } }
     func onAutoUnlock(_ action: @escaping @Sendable (Double) async -> Bool) { lock.withLock { autoUnlock = action } }
     func unlockForLocalTask(timeout: Double) async -> Bool {
-        let unlock = lock.withLock { autoUnlock }
-        return await unlock?(timeout) ?? false
+        guard !PhoneOperationCancellation.stopped else { return false }
+        guard let unlock = lock.withLock({ autoUnlock }) else {
+            await MainActor.run { AppLog.shared.add("auto-unlock", "request skipped: no handler registered") }
+            return false
+        }
+        return await unlock(timeout)
     }
     /// A tool call found automation failed or not open yet: the app may try again (the in-process session, ESP-152).
     func onRetry(_ action: @escaping @Sendable () -> Void) { lock.withLock { retry = action } }
@@ -163,6 +176,7 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
     /// which waits for it: the call that heard the failure has already ended without asking.
     func runnerState() -> RunnerState {
         let (state, then) = lock.withLock { () -> (RunnerState, (@Sendable () -> Void)?) in
+            guard !PhoneOperationCancellation.stopped else { return (runner, nil) }
             guard paused else {
                 // Failed, or still starting: the app is asked to (re)open its session. Opening is
                 // idempotent and the app ignores the ask while an open is under way, so a call that
@@ -184,11 +198,13 @@ final class AppCoreHost: CoreHost, @unchecked Sendable {
         return state
     }
     func restartRunner() {
-        let (wasPaused, wake, restart) = lock.withLock { () -> (Bool, (@Sendable () -> Void)?, (@Sendable () -> Void)?) in
-            let was = paused; paused = false
-            return (was, self.wake, self.restart)
+        let action = lock.withLock { () -> (@Sendable () -> Void)? in
+            guard !PhoneOperationCancellation.stopped else { return nil }
+            let action = paused ? wake : restart
+            paused = false
+            return action
         }
-        if wasPaused { wake?() } else { restart?() }
+        action?()
     }
 
     func jpeg(fromPNG png: Data, width: Int, quality: Double) throws -> Data {

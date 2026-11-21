@@ -3279,6 +3279,7 @@ private actor PasteReceiptTransport: HTTPTransport {
 
 final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
     private let session: FakeAutomation
+    let reportsLockBeforeSession: Bool
     private let beforeRequest: (@Sendable () async -> Void)?
     private let screenLabel: @Sendable () -> String
     private let beforeActivation: (@Sendable (String) async -> Void)?
@@ -3293,8 +3294,10 @@ final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
     init(session: FakeAutomation, beforeRequest: (@Sendable () async -> Void)? = nil,
          beforeActivation: (@Sendable (String) async -> Void)? = nil, unavailableApp: String? = nil,
          onRefusal: (@Sendable (String) -> Void)? = nil,
+         reportsLockBeforeSession: Bool = false,
          screenLabel: @escaping @Sendable () -> String = { "General" }) {
         self.session = session
+        self.reportsLockBeforeSession = reportsLockBeforeSession
         self.screenLabel = screenLabel
         self.beforeRequest = beforeRequest
         self.beforeActivation = beforeActivation
@@ -3304,8 +3307,11 @@ final class SessionScreenTransport: HTTPTransport, @unchecked Sendable {
 
     func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
         await beforeRequest?()
-        guard session.isOpen else { throw URLError(.cannotConnectToHost) }
         let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
+        if path == "/wda/locked", reportsLockBeforeSession {
+            return (200, (["value": .bool(session.isScreenLocked)] as JSON).data())
+        }
+        guard session.isOpen else { throw URLError(.cannotConnectToHost) }
         let value: JSON
         switch path {
         case "/wda/apps/activate":
