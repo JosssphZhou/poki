@@ -25,6 +25,7 @@ final class LiveCore: CoreSession {
         // steps go; payments, deletions and guarded apps still wait.
         config.approvalMode = { ApprovalClassifier.mode }
         config.ownerApprovalIntent = { request in await ApprovalClassifier.extractOwnerIntent(request) }
+        config.ownerApprovalApps = { request in await MainActor.run { AppIconStore.bundleIDs(namedIn: request) } }
         // Apps by name, from the apps Poki knows and the phone's own app list; the two speed-ups read
         // their Testing Options switch.
         config.resolveApp = { KnownApps.launchID($0) }
@@ -51,8 +52,8 @@ final class LiveCore: CoreSession {
     func resolveApproval(id: String, approved: Bool) { core.resolveApproval(id: id, approved: approved) }
     /// The person finished a handed-off screen (Done on the Live Activity): PokiCore lets inputs through again.
     func handoffDone(id: String) { core.handoffDone(id: id) }
-    func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
-        await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds)
+    func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double, evidence: VoiceTapEvidence? = nil) async -> TapClearance {
+        await core.clearTap(on: text, inApp: bundleID, named: name, waiting: seconds, evidence: evidence)
     }
     func accessChanged() { core.accessChanged() }
     /// The app's own MCP tools (ask_poki), after look, do and status.

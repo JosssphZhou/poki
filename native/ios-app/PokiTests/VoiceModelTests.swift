@@ -543,6 +543,52 @@ final class VoiceModelTests: XCTestCase {
         h.voice.stop()
     }
 
+    func testRealtimeAuthorizationFollowsOnlyTheCurrentCommittedUtterance() async {
+        let turn = OwnerApprovalTurn()
+        var instructions: [String?] = []
+        let h = Harness(approvalTurn: turn, phoneTool: { _, _ in
+            instructions.append(OwnerApprovalInstruction.current?.text)
+            return ("", false, nil)
+        })
+        await h.connect()
+        h.link.play(["type": "session.created", "session": ["audio": ["input": ["turn_detection": ["create_response": false]]]]])
+        func start(_ item: String) {
+            h.link.play(["type": "input_audio_buffer.speech_started", "item_id": item],
+                        ["type": "input_audio_buffer.speech_stopped", "item_id": item],
+                        ["type": "input_audio_buffer.committed", "item_id": item])
+        }
+        func transcript(_ item: String, _ text: String) {
+            h.link.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": item, "transcript": text])
+        }
+        func tool(_ id: String, response: String) {
+            h.link.play(["type": "response.output_item.done", "response_id": response,
+                         "item": ["type": "function_call", "call_id": id, "name": "do"]])
+        }
+
+        start("item-1")
+        transcript("item-1", "Delete the Weekend list")
+        h.link.play(["type": "response.created", "response": ["id": "r1"]])
+        tool("matching", response: "r1")
+        await h.time.settle()
+        h.link.play(["type": "response.done", "response": ["id": "r1", "status": "completed", "output": [["type": "function_call"]]]],
+                    ["type": "response.created", "response": ["id": "continuation"]])
+        tool("same-utterance", response: "continuation")
+        await h.time.settle()
+
+        start("item-2")
+        tool("old-response", response: "continuation")
+        await h.time.settle()
+        let typed = turn.begin(text: "Show the Weekend list")
+        transcript("item-2", "Send Riley a message")
+        h.link.play(["type": "response.done", "response": ["id": "continuation"]],
+                    ["type": "response.created", "response": ["id": "r2"]])
+        tool("late-transcript", response: "r2")
+        await h.time.settle()
+        XCTAssertTrue(typed.isActive)
+        XCTAssertEqual(instructions, ["Delete the Weekend list", "Delete the Weekend list", nil, nil])
+        h.voice.stop()
+    }
+
     func testLiveStopPreventsTheNextRunnerRequestInAnActiveBatch() async {
         let firstStarted = expectation(description: "the first phone request entered the runner")
         let batchFinished = expectation(description: "the batch reported its result")
@@ -783,7 +829,7 @@ final class VoiceModelTests: XCTestCase {
             self.time = time
             var made: (() -> FakeConnection)!
             var held: ((Bool) -> Void)!
-            voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: { name, arguments, cancellation in
+            voice = VoiceModel(clearTap: { _, _, _, _ in .clear }, phoneTool: { name, arguments, cancellation in
                 await PhoneOperationCancellation.$current.withValue(cancellation) { await phoneTool(name, arguments) }
             }, holdMicrophone: { held($0) },
                                connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock, approvalTurn: approvalTurn)

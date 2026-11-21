@@ -134,7 +134,6 @@ final class Computer: @unchecked Sendable {
     var typedInto: (ref: Int, text: String)?
     /// The text this task last typed (not a password), for the send check after Return in a chat app.
     var typedText: String?
-    private var usedOwnerApproval: (turn: UUID, steps: Set<OwnerApprovalStep>)?
     /// How much of the picture changed in the latest read while the elements did not (nil when the
     /// elements changed too, or nothing did): a whole new picture over an unchanged tree is the old
     /// app's tree under the new app's screen (gym: Photos launched from Safari).
@@ -1867,12 +1866,6 @@ final class Computer: @unchecked Sendable {
             guard read.foreground.bundleID == front else { return nil }
             let elements = read.all
             let listed = listable(elements, screen)
-            let frames = listed.filter { ["NavigationBar", "Alert", "Sheet", "Menu"].contains($0.type) }
-            if kind == .message, frames.filter({ $0.type == "NavigationBar" }).count != 1 { return nil }
-            let subject = listed.filter { element in
-                !element.isSecure && !element.fromPicture
-                    && (frames.contains(element) || (element.type == "StaticText" && frames.contains { $0.contains(element) }))
-            }
             let fields = listed.filter { Self.fieldTypes.contains($0.type) && !$0.fromPicture }
             let focused = fields.filter(\.keyboardFocused)
             let target: Element
@@ -1903,21 +1896,74 @@ final class Computer: @unchecked Sendable {
             }
             let control = button?.text ?? "Return in the message composer"
             let buttonContents = button.map { parent in listed.filter { parent.contains($0) && !$0.isSecure } } ?? []
+            let ancestors = elements.filter { $0.contains(target) }
+            let subject = Self.approvalSubject(kind: kind, target: target, ancestors: ancestors, elements: listed)
             let targets = subject.map(\.text)
             let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [control] + buttonContents.map(\.text)) : []
             let step = OwnerApprovalStep(kind: kind, app: front, control: control, targets: targets, draft: composer?.value, amounts: amounts)
-            return OwnerApprovalObservation(step: step, target: target, ancestors: elements.filter { $0.contains(target) },
+            return OwnerApprovalObservation(step: step, target: target, ancestors: ancestors,
                                             subject: subject, composer: composer, buttonContents: buttonContents)
         }
 
         guard let proposed = observation(in: before), !proposed.step.targets.isEmpty else { return false }
-        if usedOwnerApproval?.turn == instruction.id, usedOwnerApproval?.steps.contains(proposed.step) == true { return false }
         guard let intent = await extract(instruction.text), proposed.step.matches(intent, in: instruction.text),
+              await matchesApprovalApp(intent, instruction: instruction.text, bundleID: front),
               let after = await settledRead(until: min(until, now() + Self.settleWindow)), observation(in: after) == proposed,
               instruction.isActive, !Task.isCancelled, PhoneOperationCancellation.current?.isCancelled != true else { return false }
-        if usedOwnerApproval?.turn != instruction.id { usedOwnerApproval = (instruction.id, []) }
-        usedOwnerApproval?.steps.insert(proposed.step)
-        return true
+        return instruction.consume(proposed.step)
+    }
+
+    func authorizeVoiceTap(_ evidence: VoiceTapEvidence, reason: String, bundleID: String) async -> Bool {
+        guard let instruction = OwnerApprovalInstruction.current, instruction.isActive,
+              let extract = config.ownerApprovalIntent, let kind = OwnerApprovalIntent.Kind(reason: reason),
+              evidence.snapshot.count == 64, !evidence.control.isEmpty, evidence.control.count <= 512 else { return false }
+        let subject = kind == .message ? evidence.recipient : evidence.subject
+        guard let subject = subject ?? (kind == .deletion ? Self.deletionSubject(in: evidence.control) : nil),
+              !subject.isEmpty, subject.count <= 512 else { return false }
+        let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [evidence.control]) : []
+        let step = OwnerApprovalStep(kind: kind, app: bundleID, control: evidence.control, targets: [subject], draft: evidence.draft, amounts: amounts)
+        guard let intent = await extract(instruction.text), step.matches(intent, in: instruction.text),
+              await matchesApprovalApp(intent, instruction: instruction.text, bundleID: bundleID), !Task.isCancelled else { return false }
+        return instruction.consume(step)
+    }
+
+    private func matchesApprovalApp(_ intent: OwnerApprovalIntent, instruction: String, bundleID: String) async -> Bool {
+        let named = Set(await config.ownerApprovalApps(instruction).map { $0.lowercased() })
+        let actual = bundleID.lowercased()
+        if let app = intent.app {
+            guard !app.isEmpty, instruction.contains(app),
+                  let resolved = config.resolveApp(app) ?? config.resolveInstalledApp(app), resolved.lowercased() == actual else { return false }
+        }
+        return named.isEmpty || named == [actual]
+    }
+
+    private static func approvalSubject(kind: OwnerApprovalIntent.Kind, target: Element, ancestors: [Element], elements: [Element]) -> [Element] {
+        let containers: Set<String> = ["Cell", "Alert", "Sheet", "Menu"]
+        if let owner = ancestors.last(where: { containers.contains($0.type) }) {
+            if !owner.text.isEmpty { return [owner] }
+            let labels = elements.filter { $0.type == "StaticText" && !$0.fromPicture && owner.contains($0) && !target.contains($0) }
+            return labels.count == 1 ? labels : []
+        }
+        if kind == .message {
+            guard !elements.contains(where: { containers.contains($0.type) && $0.type != "Cell" }) else { return [] }
+            let bars = elements.filter { $0.type == "NavigationBar" && !$0.fromPicture }
+            return bars.count == 1 ? bars : []
+        }
+        if kind == .deletion, let label = target.label, let name = deletionSubject(in: label) {
+            var bound = target
+            bound.label = name
+            bound.value = nil
+            return [bound]
+        }
+        return []
+    }
+
+    private static func deletionSubject(in label: String) -> String? {
+        let prefixes = ["Delete ", "Remove ", "删除", "刪除"]
+        guard let prefix = prefixes.first(where: { label.lowercased().hasPrefix($0.lowercased()) }) else { return nil }
+        let name = String(label.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !["conversation", "note", "message", "备忘录", "備忘錄"].contains(name.lowercased()) else { return nil }
+        return name
     }
 
     /// Whether an input action would run with Poki in front: the app of the latest read, followed through

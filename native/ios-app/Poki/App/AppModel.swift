@@ -363,7 +363,9 @@ final class AppModel {
         let core = LiveCore(host: host, transport: transport ?? (automationPath == .inProcess ? InProcessWDA() : URLSessionTransport()))
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
-        voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
+        voice = VoiceModel(clearTap: { text, bundle, name, evidence in
+            await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait, evidence: evidence)
+        },
                            phoneTool: { name, arguments, cancellation in
                                #if DEBUG && targetEnvironment(simulator)
                                if TalkRehearsal.asked { return await TalkRehearsal.step() }

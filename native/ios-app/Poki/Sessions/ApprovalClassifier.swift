@@ -77,8 +77,9 @@ enum ApprovalClassifier {
         questions, examples, quotes, contradictions, negations, preparation, or requests to view. For a
         message, the exact draft must appear in the instruction. For a payment, a literal currency and
         amount must appear. The target, message, and amount must be exact substrings of this JSON string's
-        decoded text. Do not add or infer a target. Return just one JSON object with keys kind (message,
-        deletion, or payment), target, and message or amount as applicable, or return null.
+        decoded text. If an app is explicitly specified, include its exact name as app. Do not infer an app
+        or target. Return one JSON object with keys kind (message, deletion or payment), target, app if
+        specified, and message or amount as applicable. Return null when the app or target is ambiguous.
         """
         guard let answer = await modelAnswer(prompt: String(decoding: data, as: UTF8.self), instructions: instructions, singleBlock: true) else { return nil }
         return try? JSONDecoder().decode(OwnerApprovalIntent.self, from: Data(answer.utf8))
@@ -253,6 +254,7 @@ private final class Once {
 @MainActor
 final class OwnerApprovalTurn {
     private var current: OwnerApprovalInstruction?
+    private(set) var generation = UUID()
 
     func begin(id: UUID = UUID(), text: String) -> OwnerApprovalInstruction {
         invalidate()
@@ -264,5 +266,6 @@ final class OwnerApprovalTurn {
     func invalidate() {
         current?.invalidate()
         current = nil
+        generation = UUID()
     }
 }
