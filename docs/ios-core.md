@@ -829,7 +829,7 @@ PR #11 for HID input; this is its counterpart for the phone's own XCTest path.
 | Rule | Default |
 |---|---|
 | Typing into a secure text field | approval |
-| Pressing a payment control (Pay, Payment, 支付, 付款, …), including a confirmation button with an amount in a child label | approval. Read the tapped element and its enclosing button. A transfer amount in ordinary content does not ask. A swipe, scroll or Back that would hit a payment control stops before input without asking for payment |
+| Pressing a payment control (Pay, Payment, 支付, 付款, …), including a confirmation button with an amount in a child label | approval. Read the tapped element and its enclosing button. A transfer amount in ordinary content does not ask. A generic confirmation button requires manual approval when its effect is unclear. A swipe, scroll or Back that would hit a payment control stops before input without asking for payment |
 | Deleting (Delete, Remove, Erase, Reset, 删除, 移除, 抹掉, …) | approval |
 | Sending a message or mail (Send, 发送 in Messages, Mail, WeChat, WhatsApp, Telegram, …) | approval |
 | Apps on a list (banking, wallets; by bundle id) | approval for every tap, long press, typing, key, drag, pinch and `back`, and for running a skill there; waiting, handing the screen to the owner, swipes, `scroll_to`, the hardware buttons, Home and launches go without asking |

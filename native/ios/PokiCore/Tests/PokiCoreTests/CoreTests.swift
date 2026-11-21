@@ -366,6 +366,10 @@ final class ApprovalTests: XCTestCase {
         await assertApprovalForControl(Node("Button", "确认", [16, 400, 358, 44], [amount]), reason: "a payment")
     }
 
+    func testAmbiguousConfirmationWaitsBeforeTouch() async {
+        await assertApprovalForControl(Node("Button", "Confirm", [16, 400, 358, 44]), reason: "a confirmation button")
+    }
+
     func testTransferAmountInOrdinaryContentDoesNotAskForApproval() async {
         let wda = FakeWDA()
         wda.tree([Node("StaticText", "转账 ¥48.20", [16, 400, 358, 44])])

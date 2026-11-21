@@ -1589,7 +1589,7 @@ final class Computer: @unchecked Sendable {
             defer { if let kind = ActionKind(action), kind.changesScreen(action) { moved = true; changed = (kind.rawValue, now()) } }
             let check = moved
                 ? await pressNow(action, after: changed, approved: approved[index], until: until - config.readTimeout - 0.5)
-                : (problem: navigationPaymentProblem(action), backTarget: nil)
+                : (problem: navigationConfirmationProblem(action), backTarget: nil)
             if let held = check.problem {
                 did.append("\(action.serialized()) (not_sent)")
                 error = "action \(index + 1) was not sent: \(held)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
@@ -1696,7 +1696,7 @@ final class Computer: @unchecked Sendable {
         let scan = SensitiveScan(front: elements.foreground, secureOnScreen: false, elements: listable(elements.all, screen), tree: elements.all)
         for press in presses(kind, action, scan, unread: false, backTarget: backTarget) {
             guard let reason = pressReason(press, in: scan, rules: rules), reason != approved else { continue }
-            if Self.isNavigationPayment(action, reason: reason) { return (Self.navigationPaymentRefusal, nil) }
+            if Self.isNavigationConfirmation(action, reason: reason) { return (Self.navigationConfirmationRefusal, nil) }
             return ("the action before it may have changed the screen, and where it touches now it needs the owner's approval (\(reason)). Choose the remaining actions from the fresh screen below and send them in a new do", nil)
         }
         return (nil, backTarget)
@@ -1992,7 +1992,7 @@ final class Computer: @unchecked Sendable {
         var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
         var matches: [(at: Int, reason: String)] = []
         for (at, action) in actions.enumerated() {
-            if let reason = sensitive(action, &scan, under: rules), !Self.isNavigationPayment(action, reason: reason) {
+            if let reason = sensitive(action, &scan, under: rules), !Self.isNavigationConfirmation(action, reason: reason) {
                 matches.append((at, reason))
             }
         }
@@ -2014,18 +2014,18 @@ final class Computer: @unchecked Sendable {
     /// alone, since a swipe in Phone or Wallet scrolls rather than calls or pays.
     enum Press { case tap, button, stroke }
 
-    private static let navigationPaymentRefusal = "this navigation gesture would touch a payment button. Choose a different area, or tap the payment button explicitly."
+    private static let navigationConfirmationRefusal = "this navigation gesture would touch a confirmation control. Choose a different area or tap the control explicitly."
 
-    private static func isNavigationPayment(_ action: JSON, reason: String) -> Bool {
-        guard reason.hasPrefix("a payment ("), let kind = ActionKind(action) else { return false }
+    private static func isNavigationConfirmation(_ action: JSON, reason: String) -> Bool {
+        guard reason.hasPrefix("a payment (") || reason == SensitivityRules.unclearConfirmation, let kind = ActionKind(action) else { return false }
         return kind == .swipe || kind == .scrollTo || kind == .back
     }
 
-    private func navigationPaymentProblem(_ action: JSON) -> String? {
+    private func navigationConfirmationProblem(_ action: JSON) -> String? {
         guard let kind = ActionKind(action), kind == .swipe || kind == .scrollTo || kind == .back else { return nil }
         var scan = SensitiveScan(front: lastForeground, secureOnScreen: false)
-        guard let reason = sensitive(action, &scan), Self.isNavigationPayment(action, reason: reason) else { return nil }
-        return Self.navigationPaymentRefusal
+        guard let reason = sensitive(action, &scan), Self.isNavigationConfirmation(action, reason: reason) else { return nil }
+        return Self.navigationConfirmationRefusal
     }
 
     private func pressReason(_ press: (element: Element?, atPoint: Bool, judged: Press), in scan: SensitiveScan, rules: SensitivityRules) -> String? {

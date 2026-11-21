@@ -136,13 +136,19 @@ public struct SensitivityRules: Sendable, Equatable {
     static let currencyAmount = #"(?:[¥￥$€£]\s*[0-9][0-9,.]*|[0-9][0-9,.]*\s*(?:元|圆|圓|USD|HKD|CNY|RMB|EUR|GBP))"#
     private static let paymentConfirm = #"^(?:确认|確認|确定|確定|confirm)\s*[:：]?\s*"# + currencyAmount
     private static let paymentVerb = #"^(?:(?:确认|確認|立即|现在|現在|马上|馬上|完成)\s*)?(?:确认支付|確認支付|支付|付款|转账|轉帳|轉賬|购买|購買|订阅|訂閱|下单|下單)(?=$|\s|[¥￥$€£0-9:：]|确认|確認)"#
+    static let unclearConfirmation = "a confirmation button whose effect is unclear"
+
+    private static func isBareConfirmation(_ text: String) -> Bool {
+        let label = text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ":："))).lowercased()
+        return ["confirm", "confirm action", "确认", "確認", "确定", "確定", "确认操作", "確認操作"].contains(label)
+    }
 
     func paymentReason(on element: Element?, buttonLabels: [String] = []) -> String? {
         guard let element else { return nil }
         let isButton = element.type == "Button"
         let labels = [element.text, element.identifier ?? ""] + buttonLabels
         let amountLabel = labels.contains { $0.range(of: Self.currencyAmount, options: .regularExpression) != nil }
-        if isButton, amountLabel, labels.contains(where: { $0.range(of: #"^(?:确认|確認|确定|確定|confirm)\s*[:：]?$"#, options: [.caseInsensitive, .regularExpression]) != nil }) {
+        if isButton, amountLabel, labels.contains(where: Self.isBareConfirmation) {
             return "a payment (\"confirm amount\")"
         }
         for raw in labels {
@@ -197,6 +203,10 @@ public struct SensitivityRules: Sendable, Equatable {
         if let word = match(calling) { return "a call (\"\(word)\")" }
         if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = match(sending) {
             return "sending a message (\"\(word)\")"
+        }
+        if let button = paymentButton ?? (element.type == "Button" ? element : nil),
+           ([button.text] + buttonLabels).contains(where: Self.isBareConfirmation) {
+            return Self.unclearConfirmation
         }
         return nil
     }
