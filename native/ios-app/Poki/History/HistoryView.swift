@@ -43,6 +43,20 @@ struct HistorySpan: Identifiable, Hashable {
 enum HistoryNames {
     static func app(_ id: String) -> String { AppIconStore.name(id) ?? id }
 
+    static func recordingStatus(_ status: HistoryCapture.Status, enabled: Bool) -> LocalizedStringKey {
+        guard enabled else { return "Off" }
+        return switch status {
+        case .off, .waiting, .finished, .stopped: "Starting recording…"
+        case .reading: "Recording"
+        case .locked: "Unlock this iPhone to resume recording."
+        case .task: "Automation is using the screen. Recording resumes when it releases the screen."
+        case .noConnection: "Recording needs the local connection. Connect to Wi-Fi and check Local Connection in Settings."
+        case .notPaired: "Pair this iPhone in Settings › Connection to start recording."
+        case .backgroundExpired: "iOS paused background recording. Open Poki to resume."
+        case .paused, .readFailed: "Poki couldn’t read the screen. It will try again."
+        }
+    }
+
     static func status(_ status: HistoryCapture.Status) -> String {
         switch status {
         case .off: "Off"
@@ -55,6 +69,8 @@ enum HistoryNames {
         case .noConnection: "No Local Connection"
         case .notPaired: "Not Paired"
         case .paused: "Paused, Waiting to Resume"
+        case .backgroundExpired: "iOS Paused Background Recording"
+        case .readFailed: "Screen Read Failed"
         }
     }
 
@@ -131,11 +147,6 @@ struct ScreenHistorySettingsView: View {
         return count > 0 ? "\(count)" : nil
     }
 
-    private var recordingStatus: LocalizedStringKey {
-        if !capture.enabled { return "Off" }
-        return capture.status == .reading ? "Recording" : "Paused, Waiting to Resume"
-    }
-
     var body: some View {
         List {
             Section {
@@ -143,7 +154,11 @@ struct ScreenHistorySettingsView: View {
                     SettingsRow(title: "Screen History", symbol: "rectangle.stack")
                 }
                 .accessibilityIdentifier("screenHistory.enabled")
-                SettingsRow(title: "Status", caption: recordingStatus, symbol: "dot.radiowaves.left.and.right")
+                SettingsRow(
+                    title: "Status",
+                    caption: HistoryNames.recordingStatus(capture.status, enabled: capture.enabled),
+                    symbol: "dot.radiowaves.left.and.right"
+                )
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("screenHistory.status")
             } footer: {

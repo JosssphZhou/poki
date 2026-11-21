@@ -71,6 +71,7 @@ final class HistoryCapture: ObservableObject {
     /// Includes the values written by earlier versions so their observing records still display.
     enum Status: String {
         case off, waiting, reading, finished, stopped, locked, task, noConnection, notPaired, paused
+        case backgroundExpired, readFailed
     }
 
     enum ListMode: String, CaseIterable, Identifiable {
@@ -229,11 +230,11 @@ final class HistoryCapture: ObservableObject {
     }
 
     private func unavailable(_ model: AppModel) -> Status? {
-        if model.hasOpenInProcessSession { return .task }
         #if !targetEnvironment(simulator)
         if model.pairingPath == nil { return .notPaired }
         if !model.loopback.isWorking { return .noConnection }
         #endif
+        if model.hasOpenInProcessSession { return .task }
         return nil
     }
 
@@ -265,6 +266,10 @@ final class HistoryCapture: ObservableObject {
         reconcile()
     }
 
+    func appDidEnterBackground() {
+        if isRunning, background == .invalid { waitForActivation() }
+    }
+
     private func reconcile() {
         guard enabled, !needsActivation, let model else { return }
         if lockedOrDark { pause(.locked); return }
@@ -273,22 +278,32 @@ final class HistoryCapture: ObservableObject {
         run += 1
         let me = run
         background = UIApplication.shared.beginBackgroundTask(withName: "poki-screen-history") { [weak self] in
-            guard let self, self.run == me else { return }
+            guard let self, self.run == me, self.isRunning else { return }
             AppLog.shared.add("history", "iOS ended the background time")
-            self.waitForActivation()
+            if UIApplication.shared.applicationState == .active {
+                self.endBackgroundTask()
+            } else {
+                self.waitForActivation()
+            }
         }
-        guard background != .invalid else { waitForActivation(); return }
+        if background == .invalid, UIApplication.shared.applicationState == .background {
+            waitForActivation()
+            return
+        }
         HistoryLock.shared.readStarting()
         prune()
         set(.waiting)
         captureTask = Task {
-            if !Task.isCancelled { await collect(run: me, model: model) }
-            captureTask = nil
-            if Task.isCancelled {
-                reconcile()
-            } else {
-                waitForActivation()
+            while !Task.isCancelled {
+                await collect(run: me, model: model)
+                guard !Task.isCancelled else { break }
+                if lockedOrDark { pause(.locked); break }
+                if let reason = unavailable(model) { pause(reason); break }
+                set(.readFailed)
+                try? await Task.sleep(for: .seconds(Self.interval))
             }
+            captureTask = nil
+            reconcile()
         }
     }
 
@@ -316,7 +331,7 @@ final class HistoryCapture: ObservableObject {
 
     private func waitForActivation() {
         needsActivation = true
-        pause(.paused)
+        pause(.backgroundExpired)
     }
 
     private func pause(_ reason: Status) {
@@ -325,10 +340,13 @@ final class HistoryCapture: ObservableObject {
             HistoryBridge.cancel()
         }
         set(reason)
-        if background != .invalid {
-            UIApplication.shared.endBackgroundTask(background)
-            background = .invalid
-        }
+        endBackgroundTask()
+    }
+
+    private func endBackgroundTask() {
+        guard background != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(background)
+        background = .invalid
     }
 
     /// Monitor device lock independently of a recording run. The observer lives for the
@@ -361,7 +379,7 @@ final class HistoryCapture: ObservableObject {
         guard me == run, isRunning, !lockedOrDark,
               let line = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
         if let reason = unavailable(model) { pause(reason); return }
-        guard line["ok"] as? Bool == true else { set(.paused); return }
+        guard line["ok"] as? Bool == true else { set(.readFailed); return }
         set(.reading)
         keep(line)
     }
@@ -442,7 +460,7 @@ final class HistoryCapture: ObservableObject {
             }
             guard !Task.isCancelled, !lockedOrDark else { return }
             if let reason = unavailable(model) { pause(reason); return }
-            set(snapshot == nil ? .paused : .reading)
+            set(snapshot == nil ? .readFailed : .reading)
             if let snapshot, snapshot.app != lastApp || snapshot.lines != lastLines {
                 lastApp = snapshot.app
                 lastLines = snapshot.lines

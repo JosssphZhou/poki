@@ -1,4 +1,5 @@
 import PokiCore
+import SwiftUI
 import UIKit
 import XCTest
 @testable import Poki
@@ -75,6 +76,23 @@ final class ScreenHistoryTests: XCTestCase {
     /// A read as the launcher reports it for a screen whose text changed.
     private func read(_ app: String, _ text: [String]) -> [String: Any] {
         ["ok": true, "app": app, "title": "", "text": text, "changed": true]
+    }
+
+    func testRecordingStatusTellsTheOwnerWhatLetsRecordingResume() {
+        let captions: [(HistoryCapture.Status, LocalizedStringKey)] = [
+            (.noConnection, "Recording needs the local connection. Connect to Wi-Fi and check Local Connection in Settings."),
+            (.notPaired, "Pair this iPhone in Settings › Connection to start recording."),
+            (.task, "Automation is using the screen. Recording resumes when it releases the screen."),
+            (.locked, "Unlock this iPhone to resume recording."),
+            (.backgroundExpired, "iOS paused background recording. Open Poki to resume."),
+            (.readFailed, "Poki couldn’t read the screen. It will try again."),
+            (.waiting, "Starting recording…"),
+            (.reading, "Recording"),
+        ]
+        for (status, caption) in captions {
+            XCTAssertEqual(HistoryNames.recordingStatus(status, enabled: true), caption, status.rawValue)
+        }
+        XCTAssertEqual(HistoryNames.recordingStatus(.noConnection, enabled: false), "Off")
     }
 
     func testALeftOutAppAndTheHomeScreenLeaveNothingInTheStore() async {

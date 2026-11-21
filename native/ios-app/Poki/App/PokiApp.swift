@@ -325,6 +325,7 @@ struct RootView: View {
                 model.signer.maintain()
                 Task { await model.verifyPairing() }
             } else if phase == .background {
+                HistoryCapture.shared.appDidEnterBackground()
                 model.wentToBackground()
             }
         }
