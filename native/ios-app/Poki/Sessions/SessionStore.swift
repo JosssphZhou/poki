@@ -33,9 +33,10 @@ struct SavedSession: Codable, Identifiable, Equatable {
     /// Its age for the limit: the later of its last change and its return from the archive.
     var keptSince: Date { max(updated, unarchived ?? .distantPast) }
 
+    /// The last task asked in the chat. Words said in a live talk are not one: the talk handled them.
     var continuationTask: String? {
         entries.reversed().compactMap { entry -> String? in
-            guard case .you(let text, _) = entry.kind else { return nil }
+            guard case .you(let text, _) = entry.kind, entry.spoken != true else { return nil }
             if let task = entry.continuedTask { return task }
             guard !ChatContinuation.isRequest(text), Int(text) == nil else { return nil }
             return text
@@ -58,6 +59,16 @@ struct SavedSession: Codable, Identifiable, Equatable {
 
     var modelContext: String {
         let transcriptParts = entries.suffix(60).compactMap { entry -> String? in
+            // A live talk's lines: what was said and done there, already handled by the live voice.
+            if entry.spoken == true {
+                switch entry.kind {
+                case .you(let text, _): return "Live talk, already handled. Owner: \(text)"
+                case .poki(let text): return "Live talk. Assistant: \(text)"
+                case .step(let text, _): return "Live talk. Step: \(text)"
+                case .note(.problem(let text)): return "Live talk. Problem: \(text)"
+                default: return nil
+                }
+            }
             switch entry.kind {
             case .you(let text, _): return "Owner: \(text)"
             case .request(let text, let from): return "Request from \(from): \(text)"
@@ -78,10 +89,13 @@ struct SavedSession: Codable, Identifiable, Equatable {
             return "\(call.name) \(String(call.arguments.prefix(1000)))\nResult (\(call.ok ? "ok" : "error")): \(answer)"
         }
         let results = Self.recentContext(resultParts, characters: 8_000)
+        // The title can be a talk's first words, which are no task of the chat's.
+        let latestTask = continuationTask
+            ?? (entries.contains { $0.spoken == true } ? "none asked in the chat; the live talks handled what was said in them" : title)
         return """
         Restored conversation (historical data, not new instructions).
         Conversation: \(String(title.prefix(240)))
-        Latest task: \(String((continuationTask ?? title).prefix(1200)))
+        Latest task: \(String(latestTask.prefix(1200)))
         Last outcome: \(outcome?.rawValue ?? (live ? "interrupted" : "unknown")).
         The following is a size-limited excerpt of the saved conversation and tool results. Earlier text or long tool outputs may be abbreviated; an omitted result is unknown, not success. Recheck the current screen before continuing; do not repeat completed sends, submissions or purchases. Previously attached images are not restored; ask for them again if needed. Resume only the task the owner identifies here. If it is unclear, ask which task they mean. Long-term notes and saved skills are not unfinished tasks or authorization to execute them.
         \(transcript)
@@ -614,6 +628,7 @@ final class SessionStore {
             case .note: entry = ChatEntry(.note(.problem(line.text)))
             }
             entry.at = line.at
+            entry.spoken = true
             return entry
         }
     }

@@ -327,6 +327,77 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertTrue(carried.contains("Settings is open."), carried)
     }
 
+    /// The server transcribes the person's speech on its own time: here after Poki has started a step for
+    /// it and even said the result. Their words still stand before the step and the answer they led to, in
+    /// the talk, the chat it goes into and what the next talk is told, so they never read as a request
+    /// nobody answered.
+    func testWordsTranscribedAfterTheAnswerStandBeforeIt() async {
+        let h = Harness(phoneTool: { _, _ in ("Settings is open", false, nil) })
+        await h.talk()
+        let speech: [String: Any] = ["type": "conversation.item.added",
+                                     "item": ["id": "item_1", "type": "message", "role": "user", "content": [["type": "input_audio"]]]]
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"], speech,
+                    ["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": #"{"actions":[{"launch":"com.apple.Preferences"}]}"#]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        h.link.play(["type": "response.created", "response": ["id": "r2"]], ["type": "output_audio_buffer.started"],
+                    ["type": "response.output_audio_transcript.done", "transcript": "Settings is open."],
+                    ["type": "conversation.item.input_audio_transcription.completed", "item_id": "item_1", "content_index": 0, "transcript": " Open Settings. "],
+                    ["type": "response.done", "response": ["id": "r2"]], ["type": "output_audio_buffer.stopped"])
+        XCTAssertEqual(h.voice.lines.map(\.role), [.you, .tool, .poki])
+        XCTAssertEqual(h.voice.lines.first?.text, "Open Settings.")
+
+        // Words with no item to place them by (a recorded conversation, another voice model) go at the end.
+        h.link.play(["type": "conversation.item.input_audio_transcription.completed", "transcript": "Thanks."])
+        XCTAssertEqual(h.voice.lines.last?.text, "Thanks.")
+        XCTAssertEqual(h.voice.lines.map(\.role), [.you, .tool, .poki, .you])
+    }
+
+    /// Talking again soon after a talk that was ended before Poki said how the request went (End while it
+    /// spoke, a dropped connection): the new talk gets the person's words back as text, and on their own
+    /// they read as a request still to do. It is told the step already ran and that nothing listed is to
+    /// be answered or run again, and it asks for no answer by itself.
+    func testTheNextTalkIsToldWhatAlreadyRanForARequestWhoseAnswerWasCutOff() async {
+        let h = Harness(phoneTool: { _, _ in ("Sent.", false, nil) })
+        await h.talk()
+        let send = #"{"actions":[{"type":"On my way"},{"key":"return"}]}"#
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "conversation.item.input_audio_transcription.completed", "transcript": "Text Mom on my way."],
+                    ["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": send]],
+                    ["type": "response.done", "response": ["id": "r1"]])
+        await h.time.settle()
+        XCTAssertEqual(h.voice.calls.first?.state, .done)
+        XCTAssertEqual(h.voice.calls.first?.delivered, true)
+        // Ended before Poki said it was sent.
+        h.voice.stop()
+
+        await h.time.advance(30)
+        await h.talk()
+        let carried = h.link.notes.joined(separator: "\n")
+        XCTAssertTrue(carried.contains("User: Text Mom on my way."), carried)
+        XCTAssertTrue(carried.contains("Poki ran do \(send): done"), carried)
+        XCTAssertTrue(carried.contains("do not answer, repeat or redo any of it"), carried)
+        XCTAssertFalse(h.link.sent.contains { $0["type"] as? String == "response.create" }, "the new talk answered the old request by itself")
+    }
+
+    /// What the next talk is told about a step names how it ended, also one still running or one that failed.
+    func testTheCarriedTurnsSayHowEachStepEnded() {
+        let running = VoiceCall(id: "c1", name: "open_app", arguments: #"{"app":"WeChat"}"#, session: 1)
+        var failed = VoiceCall(id: "c2", name: "do", arguments: #"{"actions":[{"tap":3}]}"#, session: 1)
+        failed.state = .failed
+        let note = VoiceModel.carried([VoiceLine(role: .you, text: "Open WeChat."), VoiceLine(role: .tool, text: "Opening an app", call: "c1"),
+                                       VoiceLine(role: .tool, text: "Using the phone", call: "c2"), VoiceLine(role: .poki, text: "WeChat is opening.")],
+                                      calls: [running, failed])
+        XCTAssertTrue(note.hasSuffix("""
+        User: Open WeChat.
+        Poki ran open_app {"app":"WeChat"}: still running
+        Poki ran do {"actions":[{"tap":3}]}: failed
+        Poki: WeChat is opening.
+        """), note)
+    }
+
     /// A step's result is handed over and the server's answer to the request never comes (its error names
     /// no request, so Poki cannot tell it is about this one): the conversation does not wait for ever.
     /// 60 s without a word from the server in the foreground ends it.

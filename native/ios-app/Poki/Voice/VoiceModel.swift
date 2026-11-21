@@ -216,6 +216,8 @@ struct VoiceLine: Identifiable, Equatable {
     let role: Role
     let text: String
     var at = Date()
+    /// A step's line (`.tool`): the call_id of the call it shows, so the next talk can be told how it ended.
+    var call: String? = nil
 }
 
 enum VoicePhase: Equatable {
@@ -292,6 +294,12 @@ final class VoiceModel {
     /// in leaves both as they were.
     private var lastEnd: Date?
     private var lastLines: [VoiceLine] = []
+    /// Where the person's words go in `lines`, by the conversation item that holds their speech. The
+    /// server transcribes speech on its own time, after Poki may have started on it or even answered it,
+    /// and the words belong before the steps and the answer they led to: the chat, the Live Activity's
+    /// result and the next talk read the lines in order, and words after their answer read as a request
+    /// nobody answered.
+    private var spokenAt: [String: Int] = [:]
     private var inBackground = UIApplication.shared.applicationState == .background
 
     /// How long the conversation waits after an answer for the person to go on before it ends.
@@ -584,12 +592,13 @@ final class VoiceModel {
         stallWatch?.cancel()
         stallWatch = nil
         if ready, let from = transcript?.from {
-            let said = lines[min(from, lines.count)...].filter { $0.role == .you || $0.role == .poki }
-            if !said.isEmpty {
+            let talk = lines[min(from, lines.count)...]
+            if talk.contains(where: { $0.role == .you || $0.role == .poki }) {
                 lastEnd = time.now()
-                lastLines = said
+                lastLines = talk.filter { $0.role != .note }
             }
         }
+        spokenAt.removeAll()
         if let link {
             link.close()
             // Whether the shared audio session let go of the microphone after WebRTC closed.
@@ -678,9 +687,35 @@ final class VoiceModel {
     /// A conversation opened soon after the last one hears what was said last, so it goes on from there.
     private func carryOver(_ link: VoiceConnection) {
         guard let lastEnd, time.now().timeIntervalSince(lastEnd) < Self.carryOver else { return }
-        let turns = lastLines.suffix(Self.carriedLines)
-        let said = turns.map { "\($0.role == .you ? "User" : "Poki"): \($0.text)" }.joined(separator: "\n")
-        link.send(Self.note("This continues a conversation from a few minutes ago. What was said, oldest first. Use it only as context for what the user says next; do not answer or repeat it.\n" + said))
+        link.send(Self.note(Self.carried(lastLines, calls: calls)))
+    }
+
+    /// What a talk is told about the one before it: its last turns, oldest first, with the steps Poki took
+    /// for them and how they ended. The person's words come back here as text (transcribed), and the
+    /// last of them often has no answer after it (the talk was ended while Poki spoke, or the connection
+    /// dropped once the step had run), so on its own it reads as a request still to do. Everything in
+    /// it was handled in that talk: the model is told so, and what already ran.
+    static func carried(_ lines: [VoiceLine], calls: [VoiceCall]) -> String {
+        let said = lines.indices.filter { lines[$0].role == .you || lines[$0].role == .poki }
+        let from = said.suffix(carriedLines).first ?? lines.endIndex
+        let turns = lines[from...].compactMap { line -> String? in
+            switch line.role {
+            case .you: return "User: \(line.text)"
+            case .poki: return "Poki: \(line.text)"
+            case .note: return nil
+            case .tool:
+                guard let call = calls.first(where: { $0.id == line.call }) else { return nil }
+                let ended: String
+                switch call.state {
+                case .running: ended = "still running"
+                case .done: ended = "done"
+                case .failed: ended = "failed"
+                }
+                return "Poki ran \(call.name) \(call.arguments.prefix(300)): \(ended)"
+            }
+        }
+        return "This continues a conversation from a few minutes ago. What was said and done in it, oldest first. All of it was handled in that conversation, also a request whose answer was cut off: do not answer, repeat or redo any of it, and never run a step again because it is listed here. Use it only as context for what the user says next.\n"
+            + turns.joined(separator: "\n")
     }
 
     // MARK: Dictation
@@ -805,9 +840,12 @@ final class VoiceModel {
             awaitingAnswer = true
             clock = TurnClock(said: Date())
         case "conversation.item.added":
-            if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
+            guard let item = event["item"] as? [String: Any], item["role"] as? String == "user" else { return }
+            clock.heard = clock.heard ?? Date()
+            if let id = item["id"] as? String, Self.holdsSpeech(item) { spokenAt[id] = lines.count }
         case "conversation.item.input_audio_transcription.completed":
-            if let text = event["transcript"] as? String, !text.isEmpty { lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines))) }
+            let anchor = (event["item_id"] as? String).flatMap { spokenAt.removeValue(forKey: $0) }
+            if let text = (event["transcript"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty { hear(text, at: anchor) }
         case "response.created":
             activeResponse = (event["response"] as? [String: Any])?["id"] as? String
             keepOpen()
@@ -856,6 +894,20 @@ final class VoiceModel {
         }
     }
 
+    /// The person's words, transcribed: in `lines` where their speech was taken as a turn (`spokenAt`), or
+    /// at the end when the connection names no item (a recorded conversation, another voice model).
+    private func hear(_ text: String, at anchor: Int?) {
+        let line = VoiceLine(role: .you, text: text)
+        guard let anchor, anchor >= (transcript?.from ?? 0), anchor < lines.count else { lines.append(line); return }
+        lines.insert(line, at: anchor)
+        for (item, at) in spokenAt where at >= anchor { spokenAt[item] = at + 1 }
+    }
+
+    /// The person's speech, as the server adds it to the conversation (not Poki's screenshot or a note).
+    private static func holdsSpeech(_ item: [String: Any]) -> Bool {
+        (item["content"] as? [[String: Any]])?.contains { $0["type"] as? String == "input_audio" } ?? false
+    }
+
     /// Runs a call once. The same call_id again (a repeated event) is ignored.
     private func run(_ call: VoiceCall) {
         guard !calls.contains(where: { $0.id == call.id }) else { return }
@@ -863,7 +915,7 @@ final class VoiceModel {
         clock.call = clock.call ?? Date()
         clock.callNames.append(call.name)
         phase = .thinking
-        lines.append(VoiceLine(role: .tool, text: Self.describe(call)))
+        lines.append(VoiceLine(role: .tool, text: Self.describe(call), call: call.id))
         log.add("voice", "tool \(call.name) \(call.arguments)")
         let local = localTools.contains(call.name)
         let bridge = bridge
