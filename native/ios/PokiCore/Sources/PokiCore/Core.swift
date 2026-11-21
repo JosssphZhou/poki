@@ -9,8 +9,18 @@ public struct CoreConfig: Sendable {
     /// The owner's way of asking (the app's Approvals page), which `sensitive` is narrowed by
     /// (`SensitivityRules.asked`). Read at each step, so a change counts from the next one.
     public var approvalMode: @Sendable () -> ApprovalMode = { .confirm }
+    public var ownerApprovalIntent: (@Sendable (String) async -> OwnerApprovalIntent?)?
+    public var ownerApprovalApps: @Sendable (String) async -> [String] = { _ in [] }
     /// The rules a step is judged by now: `sensitive` as the way of asking narrows it.
-    var rules: SensitivityRules { sensitive.asked(approvalMode()) }
+    var rules: SensitivityRules { rules(for: approvalMode()) }
+    func rules(for mode: ApprovalMode) -> SensitivityRules {
+        var rules = sensitive.asked(mode)
+        if ownerApprovalIntent != nil {
+            rules.sending = sensitive.sending
+            rules.messagingApps = sensitive.messagingApps
+        }
+        return rules
+    }
     /// How long `do` holds for an approval before answering approval_required. Owners took 42 to 47 s
     /// to approve on the phone, so this is as long as a request lives (`Approvals.lifetime`, 120 s)
     /// less a margin; a relay that gives up sooner shortens it for the call (`RelayRequest.answerBy`).
@@ -419,7 +429,7 @@ public final class PokiCore: @unchecked Sendable {
     /// when they say so, waits for the owner's OK on the phone, with the same approval (card, Live
     /// Activity, notification). A request still open after `seconds` is withdrawn. A tap in Poki itself
     /// is refused.
-    public func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double) async -> TapClearance {
+    public func clearTap(on text: String, inApp bundleID: String?, named name: String?, waiting seconds: Double, evidence: VoiceTapEvidence? = nil) async -> TapClearance {
         guard !computer.hasLocalWorkspace else { return .refused("Another task is using Split View.") }
         let app = Foreground(bundleID: bundleID, name: name)
         // The approval card is in Poki: a tap there is refused, and the request waiting stays for the owner.
@@ -427,16 +437,29 @@ public final class PokiCore: @unchecked Sendable {
         // Like `do`: a tap withdraws the request still waiting, so two taps never wait side by side. A
         // granted approval the agent has not used yet stays for the agent's own `do`.
         approvals.withdrawPending()
-        let element = Element(type: "Other", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        let legacyLabels = text.components(separatedBy: " = ")
+        let element = evidence?.pressed?.element ?? Element(type: "Button", label: text, value: nil, identifier: nil,
+                                                              frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        let button = evidence?.button?.element ?? (element.type == "Button" ? element : nil)
+        let labels = evidence?.pressed == nil ? legacyLabels : evidence?.buttonLabels ?? []
         // No readable text: the rules cannot tell what it does, so the owner is asked.
         let unreadable = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard let reason = unreadable && config.sensitive.enabled ? "a tap on something with no readable text" : config.rules.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }
+        func check(_ rules: SensitivityRules) -> String? {
+            if unreadable && rules.enabled { return "a tap on something with no readable text" }
+            return rules.reason(touching: element, typing: false, app: app, secureOnScreen: false,
+                                paymentButton: button, buttonLabels: labels)
+        }
+        guard let reason = check(config.rules) else { return .clear }
+        if let evidence, let bundleID, await computer.authorizeVoiceTap(evidence, reason: reason, bundleID: bundleID) {
+            return .coveredByInstruction
+        }
         // Never Ask would not stop a tap the rules cannot read, nor one they hold back whatever the way of asking.
-        let stopsWhenOff = !unreadable && config.sensitive.asked(.off).reason(touching: element, typing: false, app: app, secureOnScreen: false) == nil
+        let stopsWhenOff = check(config.rules(for: .off)) == nil
         let approval = approvals.request(app: app.describe, summary: unreadable ? "Tap something with no text" : "Tap “\(text)”", reason: reason, scope: ApprovalScope(actions: "tap:\(UUID().uuidString)"), stopsWhenOff: stopsWhenOff)
         switch await approvals.wait(id: approval.id, seconds: seconds) {
         case .approved?:
             _ = approvals.consumeGrant(scope: approval.scope)
+            OwnerApprovalInstruction.current?.recordSubmission(approvedReason: reason)
             return .approved(reason)
         case .declined?:
             return .declined(reason)

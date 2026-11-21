@@ -1203,7 +1203,7 @@ final class Computer: @unchecked Sendable {
             var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
             for (at, action) in actions.enumerated() {
                 if scan.moved, let kind = ActionKind(action), presses(kind, action, scan, unread: false).contains(where: \.atPoint) {
-                    var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy, byOwnersVoice: byOwnersVoice, onActionSucceeded: onActionSucceeded)
+                    var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy, byOwnersVoice: byOwnersVoice, local: local, localTask: localTask, onActionSucceeded: onActionSucceeded)
                     result.text += "\nnot_sent from action \(at + 1): a coordinate action needs a fresh read after an earlier action that could change the screen. This check runs before the final screen comparison. Choose the remaining actions from the screen above and send them in a new do call. Do not repeat actions already sent."
                     return result
                 }
@@ -1232,21 +1232,24 @@ final class Computer: @unchecked Sendable {
         var did: [String] = []
         var error: String?
         var lastKind: String?
-        var toRun = actions
         // What the screen said before these actions, for the send check: a message that was already there does not count as sent.
         let textsBefore = lastAll.filter { !$0.fromPicture && !Self.fieldTypes.contains($0.type) }.map(\.text)
         var approvedNote: String?
-        let steps = sensitiveSteps(actions)
-        let sensitive = firstSensitive(actions)
+        var ownerApprovedAt: Int?
+        let proposedSteps = sensitiveSteps(actions)
+        let end = proposedSteps.filter { SensitivityRules.isSubmission($0.reason) }.dropFirst().first?.at ?? actions.count
+        let steps = proposedSteps.filter { $0.at < end }
+        var toRun = Array(actions[..<end])
+        let sensitive = firstSensitive(in: steps)
         let workspaceSession = workspaceOwner.value
-        let matchingScope = sensitive.map { approvalScope(Array(actions[$0.at...]), afterPrefix: Array(actions[..<$0.at])) }
+        let matchingScope = sensitive.map { approvalScope(Array(actions[$0.at..<end]), afterPrefix: Array(actions[..<$0.at])) }
         // Any other actions withdraw an unconsumed request or grant so stale approvals never carry over.
         // The owner's voice leaves the agent's unused grant in place.
         approvals.withdrawMismatching(scope: matchingScope, workspaceSession: workspaceSession, keepingGrant: byOwnersVoice)
         // The gated actions on their own, on the screen the model saw, before anything is sent.
-        let gatedAlone = sensitive.map { approvalScope(Array(actions[$0.at...])) }
+        let gatedAlone = sensitive.map { approvalScope(Array(actions[$0.at..<end])) }
         if let (at, reason) = sensitive {
-            let tail = Array(actions[at...])
+            let tail = Array(actions[at..<end])
             let scope = matchingScope!
             if approvals.consumeGrant(scope: scope, workspaceSession: workspaceSession) != nil {
                 approvedNote = "approval: approved on the phone (\(reason))"
@@ -1257,56 +1260,77 @@ final class Computer: @unchecked Sendable {
                         return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: ["action \(at + 1) and the actions after it were not sent (they would have needed the owner's approval: \(reason))"])
                     }
                 }
-                let approval = approvals.pending.flatMap { $0.covers(scope, workspaceSession: workspaceSession) ? $0 : nil }
-                    ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, scope: scope, workspaceSession: workspaceSession,
-                                           stopsWhenOff: sensitiveSteps(actions, under: config.sensitive.asked(.off)).isEmpty)
-                // The time the owner takes is not the actions' time: the clock starts again after it.
-                let asked = now()
-                let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
-                let waited = now() - asked
-                until += waited
-                started += waited
-                approvalWaited += waited
-                // The caller gave up while the owner was being waited for (the relay sent `cancel`): the
-                // model will send these actions again, so nothing is sent for this call, whatever the owner does.
-                if Task.isCancelled {
-                    approvals.discardWorkspaceDecisions(session: workspaceSession)
-                    return ToolResult(text: "cancelled: the caller stopped waiting before the owner answered; nothing was sent from action \(at + 1).", jpeg: nil, isError: true)
-                }
-                // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
-                // Nothing of the owner's can have done that while the request is still unanswered, and
-                // the time is the answer's.
-                if outcome != nil, let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
-                let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
-                let again = at > 0 ? "send action \(at + 1)\(tail.count > 1 ? " to \(actions.count)" : "") again, on their own" : "send the same actions again"
-                switch outcome {
-                case .approved? where answerBy.map({ now() + timeToFinish(tail, until: until) + Self.relayMargin > $0 }) == true:
-                    // Too late for the relay: the actions would run after it answered its caller with a 504, and
-                    // the model would send them again. The approval stays; the same actions sent again run at once.
-                    return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner approved on the phone, but too late for this call to send the actions and read the screen before the relay gives up on it.\(sentFirst) The approval is kept: \(again) and they run at once (within \(Int(approvals.lifetime / 60)) minutes).")
-                case .approved?:
-                    guard approvals.consumeGrant(scope: scope, workspaceSession: workspaceSession) != nil else {
-                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The approval went to another call with the same actions, so nothing was sent from this one.\(sentFirst) To run them, \(again) and ask again.")
-                    }
-                    approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
+                if local, end == at + 1, steps.count == 1,
+                   actions[..<at].allSatisfy({ ActionKind($0) == .type || ActionKind($0)?.changesScreen($0) == false }),
+                   await directlyAuthorized(tail[0], reason: reason, until: until) {
+                    if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
+                    approvedNote = "approval: matched the owner's current instruction (\(reason))"
+                    ownerApprovedAt = at
                     toRun = tail
-                case .declined?:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)")
-                case .expired?:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the approval request ended unanswered (\(reason)).\(sentFirst)")
-                case nil:
-                    return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone.\(sentFirst) When they approve, \(again) (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.")
+                } else {
+                    let requestReason = if end < actions.count, let batch = firstSensitive(in: proposedSteps) {
+                        batch.reason + ". This approval only covers actions through \(end)."
+                    } else {
+                        reason
+                    }
+                    let approval = approvals.pending.flatMap { $0.covers(scope, workspaceSession: workspaceSession) ? $0 : nil }
+                        ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: requestReason, scope: scope, workspaceSession: workspaceSession,
+                                               stopsWhenOff: sensitiveSteps(Array(actions[..<end]), under: config.rules(for: .off)).isEmpty)
+                    // The time the owner takes is not the actions' time: the clock starts again after it.
+                    let asked = now()
+                    let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
+                    let waited = now() - asked
+                    until += waited
+                    started += waited
+                    approvalWaited += waited
+                    // The caller gave up while the owner was being waited for (the relay sent `cancel`): the
+                    // model will send these actions again, so nothing is sent for this call, whatever the owner does.
+                    if Task.isCancelled {
+                        approvals.discardWorkspaceDecisions(session: workspaceSession)
+                        return ToolResult(text: "cancelled: the caller stopped waiting before the owner answered; nothing was sent from action \(at + 1).", jpeg: nil, isError: true)
+                    }
+                    // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
+                    // Nothing of the owner's can have done that while the request is still unanswered, and
+                    // the time is the answer's.
+                    if outcome != nil, let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
+                    let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
+                    let again = at > 0 ? "send action \(at + 1)\(tail.count > 1 ? " to \(actions.count)" : "") again, on their own" : "send the same actions again"
+                    switch outcome {
+                    case .approved? where answerBy.map({ now() + timeToFinish(tail, until: until) + Self.relayMargin > $0 }) == true:
+                        // Too late for the relay: the actions would run after it answered its caller with a 504, and
+                        // the model would send them again. The approval stays; the same actions sent again run at once.
+                        return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner approved on the phone, but too late for this call to send the actions and read the screen before the relay gives up on it.\(sentFirst) The approval is kept: \(again) and they run at once (within \(Int(approvals.lifetime / 60)) minutes).")
+                    case .approved?:
+                        guard approvals.consumeGrant(scope: scope, workspaceSession: workspaceSession) != nil else {
+                            return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The approval went to another call with the same actions, so nothing was sent from this one.\(sentFirst) To run them, \(again) and ask again.")
+                        }
+                        approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
+                        toRun = tail
+                    case .declined?:
+                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)")
+                    case .expired?:
+                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the approval request ended unanswered (\(reason)).\(sentFirst)")
+                    case nil:
+                        return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone.\(sentFirst) When they approve, \(again) (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.")
+                    }
                 }
             }
         }
 
+        if approvedNote != nil, ownerApprovedAt == nil, let instruction = OwnerApprovalInstruction.current {
+            for step in steps { instruction.recordSubmission(approvedReason: step.reason) }
+        }
         let actionsStarted = now()
         let approved = approvedNote == nil ? [:] : Dictionary(steps.map { ($0.at, $0.reason) }, uniquingKeysWith: { a, _ in a })
-        let movedBefore = actions[..<(actions.count - toRun.count)].contains { ActionKind($0)?.changesScreen($0) == true }
-        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved, onActionSucceeded: onActionSucceeded)
+        let offset = end - toRun.count
+        let movedBefore = actions[..<offset].contains { ActionKind($0)?.changesScreen($0) == true }
+        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: offset, moved: movedBefore, approved: approved, ownerApprovedAt: ownerApprovedAt, onActionSucceeded: onActionSucceeded)
         let actionsTook = now() - actionsStarted
         did += moreDid
         error = moreError
+        if error == nil, end < actions.count {
+            error = "action \(end + 1) was not sent. It needs its own approval. Read the result of the first submission before deciding whether to ask again."
+        }
         lastKind = moreKind ?? lastKind
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
@@ -1564,7 +1588,7 @@ final class Computer: @unchecked Sendable {
     /// deadline. Stops at the first that fails.
     /// `moved`: an action sent before these may have changed the screen (`ActionKind.changesScreen`). `approved`: why the owner
     /// approved an action, by its number in the do.
-    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0, moved: Bool = false, approved: [Int: String] = [:], onActionSucceeded: PokiCore.ActionSucceeded?) async -> (did: [String], error: String?, lastKind: String?) {
+    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0, moved: Bool = false, approved: [Int: String] = [:], ownerApprovedAt: Int? = nil, onActionSucceeded: PokiCore.ActionSucceeded?) async -> (did: [String], error: String?, lastKind: String?) {
         var did: [String] = []
         var error: String?
         var logError: String?
@@ -1578,7 +1602,7 @@ final class Computer: @unchecked Sendable {
             defer { if let kind = ActionKind(action), kind.changesScreen(action) { moved = true; changed = (kind.rawValue, now()) } }
             let check = moved
                 ? await pressNow(action, after: changed, approved: approved[index], until: until - config.readTimeout - 0.5)
-                : (problem: nil, backTarget: nil)
+                : (problem: navigationConfirmationProblem(action), backTarget: nil)
             if let held = check.problem {
                 did.append("\(action.serialized()) (not_sent)")
                 error = "action \(index + 1) was not sent: \(held)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
@@ -1602,7 +1626,10 @@ final class Computer: @unchecked Sendable {
             }
             do {
                 let (kind, text) = try await withDeadline(left, "action \(index + 1)") { [self] in
-                    try await Runner.$afterInput.withValue(afterInput) {
+                    guard ownerApprovedAt != index || OwnerApprovalInstruction.current?.isActive == true else {
+                        throw ActionFailure(message: "the owner's instruction expired. Ask again before sending this step", delivery: .notSent)
+                    }
+                    return try await Runner.$afterInput.withValue(afterInput) {
                         try await perform(action, until: actionsUntil, backTarget: check.backTarget)
                     }
                 }
@@ -1679,9 +1706,10 @@ final class Computer: @unchecked Sendable {
         }
         skillStepApp = elements.foreground.bundleID
         let backTarget = kind == .back ? BackTarget(in: elements.all) : nil
-        let scan = SensitiveScan(front: elements.foreground, secureOnScreen: false, elements: listable(elements.all, screen))
+        let scan = SensitiveScan(front: elements.foreground, secureOnScreen: false, elements: listable(elements.all, screen), tree: elements.all)
         for press in presses(kind, action, scan, unread: false, backTarget: backTarget) {
-            guard let reason = rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front, secureOnScreen: false), reason != approved else { continue }
+            guard let reason = pressReason(press, in: scan, rules: rules), reason != approved else { continue }
+            if Self.isNavigationConfirmation(action, reason: reason) { return (Self.navigationConfirmationRefusal, nil) }
             return ("the action before it may have changed the screen, and where it touches now it needs the owner's approval (\(reason)). Choose the remaining actions from the fresh screen below and send them in a new do", nil)
         }
         return (nil, backTarget)
@@ -1833,6 +1861,135 @@ final class Computer: @unchecked Sendable {
 
     // MARK: Sensitivity
 
+    private struct OwnerApprovalObservation: Equatable {
+        let step: OwnerApprovalStep
+        let target: Element
+        let ancestors: [Element]
+        let subject: [Element]
+        let composer: Element?
+        let buttonContents: [Element]
+    }
+
+    private func directlyAuthorized(_ action: JSON, reason: String, until: Double) async -> Bool {
+        guard let instruction = OwnerApprovalInstruction.current, instruction.isActive, !instruction.text.isEmpty,
+              let extract = config.ownerApprovalIntent, let kind = OwnerApprovalIntent.Kind(reason: reason),
+              let screen = size, let front = lastForeground?.bundleID,
+              let before = await settledRead(until: min(until, now() + Self.settleWindow)) else { return false }
+
+        func observation(in read: (all: [Element], foreground: Foreground)) -> OwnerApprovalObservation? {
+            guard read.foreground.bundleID == front else { return nil }
+            let elements = read.all
+            let listed = listable(elements, screen)
+            let fields = listed.filter { Self.fieldTypes.contains($0.type) && !$0.fromPicture }
+            let focused = fields.filter(\.keyboardFocused)
+            let target: Element
+            let button: Element?
+            if ActionKind(action) == .tap, let p = try? point(action["tap"]), let actual = element(at: p, in: listed),
+               let expected = self.target(action["tap"]), !actual.fromPicture, actual == expected {
+                let scan = SensitiveScan(front: read.foreground, secureOnScreen: false, elements: listed, tree: elements)
+                guard pressReason((actual, false, .tap), in: scan, rules: config.rules) == reason else { return nil }
+                target = actual
+                button = actual.type == "Button" ? actual : elements.last { $0.type == "Button" && $0.contains(actual) }
+                guard let button, elements.filter({ $0.type == "Button" && $0.text == button.text }).count == 1 else { return nil }
+            } else if ActionKind(action) == .key, Self.isReturn(action), kind == .message,
+                      focused.count == 1, let field = focused.first, !field.isSecure, !Self.isSearch(field) {
+                target = field
+                button = nil
+            } else {
+                return nil
+            }
+
+            let composer: Element?
+            if kind == .message {
+                let candidates = focused.isEmpty && button != nil ? fields : focused
+                guard candidates.count == 1, let field = candidates.first, !field.isSecure, !Self.isSearch(field),
+                      let draft = field.value, !draft.isEmpty, draft.count <= 2000 else { return nil }
+                composer = field
+            } else {
+                composer = nil
+            }
+            let control = button?.text ?? "Return in the message composer"
+            let buttonContents = button.map { parent in listed.filter { parent.contains($0) && !$0.isSecure } } ?? []
+            let ancestors = elements.filter { $0.contains(target) }
+            let subject = Self.approvalSubject(kind: kind, target: target, ancestors: ancestors, elements: listed)
+            let targets = subject.map(\.text)
+            let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [control] + buttonContents.map(\.text)) : []
+            let stage = Self.deletionStage(kind: kind, label: button?.label, inDialog: ancestors.contains { ["Alert", "Sheet"].contains($0.type) })
+            let step = OwnerApprovalStep(kind: kind, app: front, targets: targets, draft: composer?.value, amounts: amounts, deletionStage: stage)
+            return OwnerApprovalObservation(step: step, target: target, ancestors: ancestors,
+                                            subject: subject, composer: composer, buttonContents: buttonContents)
+        }
+
+        guard let proposed = observation(in: before), !proposed.step.targets.isEmpty else { return false }
+        guard let intent = await extract(instruction.text), proposed.step.matches(intent, in: instruction.text),
+              await matchesApprovalApp(intent, instruction: instruction.text, bundleID: front),
+              let after = await settledRead(until: min(until, now() + Self.settleWindow)), observation(in: after) == proposed,
+              instruction.isActive, !Task.isCancelled, PhoneOperationCancellation.current?.isCancelled != true else { return false }
+        return instruction.consume(proposed.step, target: intent.target.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    func authorizeVoiceTap(_ evidence: VoiceTapEvidence, reason: String, bundleID: String) async -> Bool {
+        guard let instruction = OwnerApprovalInstruction.current, instruction.isActive,
+              let extract = config.ownerApprovalIntent, let kind = OwnerApprovalIntent.Kind(reason: reason),
+              evidence.snapshot?.count == 64, !evidence.control.isEmpty, evidence.control.count <= 512 else { return false }
+        let subject = kind == .message ? evidence.recipient : evidence.subject
+        guard let subject = subject ?? (kind == .deletion ? Self.deletionSubject(in: evidence.control) : nil),
+              !subject.isEmpty, subject.count <= 512 else { return false }
+        let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [evidence.control] + (evidence.buttonLabels ?? [])) : []
+        let step = OwnerApprovalStep(kind: kind, app: bundleID, targets: [subject], draft: evidence.draft, amounts: amounts)
+        guard let intent = await extract(instruction.text), step.matches(intent, in: instruction.text),
+              await matchesApprovalApp(intent, instruction: instruction.text, bundleID: bundleID), !Task.isCancelled else { return false }
+        return instruction.consume(step, target: intent.target.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func deletionStage(kind: OwnerApprovalIntent.Kind, label: String?, inDialog: Bool) -> OwnerApprovalStep.DeletionStage {
+        guard kind == .deletion else { return .submits }
+        if inDialog { return .confirms }
+        guard let label = label?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              label.range(of: #"^(?:delete|remove|删除|刪除)\s*(?:…|\.\.\.)$"#, options: .regularExpression) != nil else { return .submits }
+        // Only a native control that explicitly indicates another step can prepare without spending the submission.
+        return .opensConfirmation
+    }
+
+    private func matchesApprovalApp(_ intent: OwnerApprovalIntent, instruction: String, bundleID: String) async -> Bool {
+        let named = Set(await config.ownerApprovalApps(instruction).map { $0.lowercased() })
+        let actual = bundleID.lowercased()
+        if let app = intent.app {
+            guard !app.isEmpty, instruction.contains(app),
+                  let resolved = config.resolveApp(app) ?? config.resolveInstalledApp(app), resolved.lowercased() == actual else { return false }
+        }
+        return named.isEmpty || named == [actual]
+    }
+
+    private static func approvalSubject(kind: OwnerApprovalIntent.Kind, target: Element, ancestors: [Element], elements: [Element]) -> [Element] {
+        let containers: Set<String> = ["Cell", "Alert", "Sheet", "Menu"]
+        if let owner = ancestors.last(where: { containers.contains($0.type) }) {
+            if !owner.text.isEmpty { return [owner] }
+            let labels = elements.filter { $0.type == "StaticText" && !$0.fromPicture && owner.contains($0) && !target.contains($0) }
+            return labels.count == 1 ? labels : []
+        }
+        if kind == .message {
+            guard !elements.contains(where: { containers.contains($0.type) && $0.type != "Cell" }) else { return [] }
+            let bars = elements.filter { $0.type == "NavigationBar" && !$0.fromPicture }
+            return bars.count == 1 ? bars : []
+        }
+        if kind == .deletion, let label = target.label, let name = deletionSubject(in: label) {
+            var bound = target
+            bound.label = name
+            bound.value = nil
+            return [bound]
+        }
+        return []
+    }
+
+    private static func deletionSubject(in label: String) -> String? {
+        let prefixes = ["Delete ", "Remove ", "删除", "刪除"]
+        guard let prefix = prefixes.first(where: { label.lowercased().hasPrefix($0.lowercased()) }) else { return nil }
+        let name = String(label.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !["conversation", "note", "message", "备忘录", "備忘錄"].contains(name.lowercased()) else { return nil }
+        return name
+    }
+
     /// Whether an input action would run with Poki in front: the app of the latest read, followed through
     /// the launches and Home presses before it.
     func landsInPoki(_ actions: [JSON]) -> Bool {
@@ -1895,6 +2052,7 @@ final class Computer: @unchecked Sendable {
         var secureOnScreen: Bool
         /// The elements to look under a point in; nil for the latest read (and its numbers).
         var elements: [Element]?
+        var tree: [Element]?
     }
 
     /// Each action of a batch that needs the owner's approval, and why, judged on the latest read.
@@ -1904,14 +2062,19 @@ final class Computer: @unchecked Sendable {
         var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
         var matches: [(at: Int, reason: String)] = []
         for (at, action) in actions.enumerated() {
-            if let reason = sensitive(action, &scan, under: rules) { matches.append((at, reason)) }
+            if let reason = sensitive(action, &scan, under: rules), !Self.isNavigationConfirmation(action, reason: reason) {
+                matches.append((at, reason))
+            }
         }
         return matches
     }
 
     /// Where approval begins, with every reason the remaining batch must wait.
     func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
-        let matches = sensitiveSteps(actions)
+        firstSensitive(in: sensitiveSteps(actions))
+    }
+
+    private func firstSensitive(in matches: [(at: Int, reason: String)]) -> (at: Int, reason: String)? {
         guard let first = matches.first else { return nil }
         guard matches.count > 1 else { return first }
         let reasons = matches.map { "action \($0.at + 1): \($0.reason)" }.joined(separator: "; ")
@@ -1923,6 +2086,30 @@ final class Computer: @unchecked Sendable {
     /// taps the top-left button of the latest read). `stroke`: by the element's own words
     /// alone, since a swipe in Phone or Wallet scrolls rather than calls or pays.
     enum Press { case tap, button, stroke }
+
+    private static let navigationConfirmationRefusal = "this navigation gesture would touch a confirmation control. Choose a different area or tap the control explicitly."
+
+    private static func isNavigationConfirmation(_ action: JSON, reason: String) -> Bool {
+        guard reason.hasPrefix("a payment (") || reason == SensitivityRules.unclearConfirmation, let kind = ActionKind(action) else { return false }
+        return kind == .swipe || kind == .scrollTo || kind == .back
+    }
+
+    private func navigationConfirmationProblem(_ action: JSON) -> String? {
+        guard let kind = ActionKind(action), kind == .swipe || kind == .scrollTo || kind == .back else { return nil }
+        var scan = SensitiveScan(front: lastForeground, secureOnScreen: false)
+        guard let reason = sensitive(action, &scan), Self.isNavigationConfirmation(action, reason: reason) else { return nil }
+        return Self.navigationConfirmationRefusal
+    }
+
+    private func pressReason(_ press: (element: Element?, atPoint: Bool, judged: Press), in scan: SensitiveScan, rules: SensitivityRules) -> String? {
+        let tree = scan.tree ?? scan.elements ?? lastAll
+        let button = press.element.flatMap { element in
+            element.type == "Button" ? element : tree.last { $0.type == "Button" && $0.contains(element) }
+        }
+        let labels = button.map { button in tree.filter { button.contains($0) && !$0.isSecure }.map(\.text) } ?? []
+        return rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front,
+                            secureOnScreen: scan.secureOnScreen, paymentButton: button, buttonLabels: labels)
+    }
 
     /// Where an action puts a finger down and lifts it on one element, which a control takes as a press
     /// whatever the action is called. A swipe or scroll_to presses what holds both ends of its first
@@ -1937,6 +2124,10 @@ final class Computer: @unchecked Sendable {
         func isPhotoContent(_ element: Element?) -> Bool {
             scan.front?.bundleID == "com.apple.mobileslideshow" && element?.type == "Image"
         }
+        func isScreenContent(_ element: Element) -> Bool {
+            guard element.type != "Button", let screen = size, screen.width > 0, screen.height > 0 else { return false }
+            return element.frame.width * element.frame.height > 0.5 * screen.width * screen.height
+        }
         // On a screen read after the numbers were given, a number is judged by what lies where it is touched.
         func under(_ p: (x: Double, y: Double)?) -> Element? { p.flatMap { element(at: $0, in: scan.elements) } }
         func at(_ spec: JSON?) -> (element: Element?, atPoint: Bool, judged: Press)? {
@@ -1947,7 +2138,7 @@ final class Computer: @unchecked Sendable {
         }
         func stroke(in spec: JSON?, _ direction: String, _ distance: String) -> [(element: Element?, atPoint: Bool, judged: Press)] {
             guard !unread, let screen = size, let path = try? swipePath(try area(spec, screen), direction, distance),
-                  let down = element(at: (path.0, path.1), in: scan.elements), !isPhotoContent(down),
+                  let down = element(at: (path.0, path.1), in: scan.elements), !isPhotoContent(down), !isScreenContent(down),
                   down == element(at: (path.2, path.3), in: scan.elements) else { return [] }
             return [(down, false, .stroke)]
         }
@@ -1985,9 +2176,9 @@ final class Computer: @unchecked Sendable {
            destination != "com.apple.mobilenotes" { return "dropping content into \(destination)" }
         if kind == .tap { scan.typingTarget = unread ? nil : target(spec, in: scan.elements) }
         for press in presses(kind, action, scan, unread: unread) {
-            if let r = rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front, secureOnScreen: scan.secureOnScreen) { return r }
+            if let r = pressReason(press, in: scan, rules: rules) { return r }
             guard press.judged == .tap else { continue }
-            if unread, messaging { return "sending a message (a tap in \(app) on a screen not read yet)" }
+            if unread, messaging, config.ownerApprovalIntent == nil { return "sending a message (a tap in \(app) on a screen not read yet)" }
             // After a launch or a run nothing of the app's screen was read: a Delete there reads as nothing.
             // The home screen after Home opens apps, which ask for themselves.
             if !scan.read, scan.front != nil { return "a tap on a screen not read yet (in \(app))" }

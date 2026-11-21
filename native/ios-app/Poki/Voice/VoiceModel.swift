@@ -43,7 +43,7 @@ struct VoiceBridge: Equatable {
         var app: App?
         var target: Target?
         struct App: Decodable { let bundle_id: String?; let name: String? }
-        struct Target: Decodable { let text: String; let says: String }
+        struct Target: Decodable { let text: String; let says: String; let evidence: VoiceTapEvidence? }
 
         enum CodingKeys: CodingKey { case state, output, replayed, app, target }
         init(state: String, output: String) { self.state = state; self.output = output }
@@ -212,6 +212,7 @@ struct VoiceCall: Identifiable, Equatable {
     /// The connection that asked for it. Only that connection can take a function_call_output for it.
     let session: Int
     var delegation: String? = nil
+    var realtimeItem: String? = nil
     var state = State.running
     var output = ""
     /// The screen when the call finished (look, do, open_app): the model sees it next to the output.
@@ -336,6 +337,21 @@ final class VoiceModel {
         }
     }
     private var liveDelegations: [String: LiveDelegationState] = [:]
+    private let approvalTurn: OwnerApprovalTurn
+    private var liveApprovalInstruction: (delegation: String, instruction: OwnerApprovalInstruction)?
+    private var liveSpeechApprovalGeneration: UUID?
+    private struct RealtimeApproval {
+        let item: String
+        let generation: UUID
+        var committed = false
+        var response: String?
+        var instruction: OwnerApprovalInstruction?
+        var transcriptionEnded = false
+    }
+    private var realtimeApproval: RealtimeApproval?
+    private var realtimeApprovalWaiters: [CheckedContinuation<OwnerApprovalInstruction?, Never>] = []
+    private var requestedRealtimeApprovalItem: String?
+    private var realtimeContinuation: String?
     private var liveHasCancellation = false
     private struct LiveCallerSpeech {
         struct Transcript: Equatable {
@@ -449,7 +465,7 @@ final class VoiceModel {
     private var wantsResponse = false
     private var manualRealtimeTurns = false
     private var committedRealtimeItems: Set<String> = []
-    private var pendingRealtimeTurns = 0
+    private var pendingRealtimeTurns: [String] = []
     /// An answer is expected (the person stopped speaking, or response.create went out) and the server
     /// has not started it yet.
     private var awaitingAnswer = false
@@ -486,7 +502,7 @@ final class VoiceModel {
     private var screenItem: String?
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
-    private let clearTap: @MainActor (String, String?, String?) async -> TapClearance
+    private let clearTap: @MainActor (String, String?, String?, VoiceTapEvidence?) async -> TapClearance
 
     /// How long a tap waits for the owner's OK on the phone: about as long as the card says it lasts.
     static let approvalWait: Double = 115
@@ -502,16 +518,17 @@ final class VoiceModel {
     private let connection: @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection
     private let time: VoiceClock
 
-    init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
+    init(clearTap: @escaping @MainActor (String, String?, String?, VoiceTapEvidence?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String, PhoneOperationCancellation?) async -> PhoneAnswer,
          holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
          connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) },
-         time: VoiceClock = VoiceClock()) {
+         time: VoiceClock = VoiceClock(), approvalTurn: OwnerApprovalTurn? = nil) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
         self.holdMicrophone = holdMicrophone
         self.connection = connection
         self.time = time
+        self.approvalTurn = approvalTurn ?? OwnerApprovalTurn()
         // Poki in the background goes on with the talk (the owner, 2026-11-13): you speak to it from the
         // app you went to, and the Live Activity says what it is doing and carries End. It ends there as
         // it does in front, when nobody speaks for `followUp` after an answer. Only the wait for a server
@@ -770,6 +787,8 @@ final class VoiceModel {
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
         guard liveCloseTimeout == nil else { return }
+        invalidateLiveApproval()
+        beginRealtimeApproval(item: nil)
         if let dictation {
             dictation.cancel()
             self.dictation = nil
@@ -823,6 +842,8 @@ final class VoiceModel {
         liveDelegations.removeAll()
         liveHasCancellation = false
         liveCallerSpeech = LiveCallerSpeech()
+        invalidateLiveApproval()
+        beginRealtimeApproval(item: nil)
         liveUsageSeconds = nil
         liveScreenDescription = nil
         liveResultReceipts.removeAll()
@@ -854,7 +875,7 @@ final class VoiceModel {
         activeResponse = nil
         wantsResponse = false
         manualRealtimeTurns = false
-        pendingRealtimeTurns = 0
+        pendingRealtimeTurns = []
         committedRealtimeItems.removeAll()
         awaitingAnswer = false
         requestedAnswer = nil
@@ -868,7 +889,7 @@ final class VoiceModel {
     var midTurn: Bool { isOn && (answerDue || phase == .thinking) }
 
     private var answerDue: Bool {
-        awaitingAnswer || liveAwaitingPlayback || !liveResultReceipts.isEmpty || activeResponse != nil || wantsResponse || pendingRealtimeTurns > 0
+        awaitingAnswer || liveAwaitingPlayback || !liveResultReceipts.isEmpty || activeResponse != nil || wantsResponse || !pendingRealtimeTurns.isEmpty
             || phase == .hearing || phase == .speaking || calls.contains { $0.state == .running }
     }
 
@@ -876,7 +897,7 @@ final class VoiceModel {
     /// that is running is not the server's to answer for, and it has its own time limits.
     private var waitingOnServer: Bool {
         !ready || (awaitingAnswer || liveAwaitingPlayback || !liveResultReceipts.isEmpty || activeResponse != nil || wantsResponse
-            || pendingRealtimeTurns > 0 || phase == .hearing || phase == .speaking)
+            || !pendingRealtimeTurns.isEmpty || phase == .hearing || phase == .speaking)
             && !calls.contains { $0.state == .running }
     }
 
@@ -1187,7 +1208,8 @@ final class VoiceModel {
                     liveDelegations[id] = .duplicate
                     return
                 }
-                let parts = Self.liveSpeechParts(liveCallerSpeech.text)
+                let transcript = liveCallerSpeech.text
+                let parts = Self.liveSpeechParts(transcript)
                 let audio = liveCallerSpeech.pending?.audio
                 let fallback = liveCallerSpeech.pendingTextReceipt
                 liveCallerSpeech.markHandled()
@@ -1204,6 +1226,11 @@ final class VoiceModel {
                 } else {
                     liveDelegations[id] = .active
                 }
+                if newRequest, liveDelegations[id]?.canRunTools == true,
+                   liveSpeechApprovalGeneration == approvalTurn.generation {
+                    invalidateLiveApproval()
+                    liveApprovalInstruction = (id, approvalTurn.begin(text: transcript))
+                }
             }
             link.send(["type": "session.thinking.append", "event_id": UUID().uuidString, "delegation_id": NSNull(), "content": ""])
         case "session.commentary.appended":
@@ -1219,6 +1246,11 @@ final class VoiceModel {
                kind != "response.output_item.done" { return }
             switch kind {
             case "response.completed", "response.failed", "response.incomplete":
+                let output = (backend["response"] as? [String: Any])?["output"] as? [[String: Any]]
+                if let delegation = event["delegation_id"] as? String, delegation == liveApprovalInstruction?.delegation,
+                   kind != "response.completed" || output?.contains(where: { $0["type"] as? String == "function_call" }) != true {
+                    invalidateLiveApproval()
+                }
                 backend["type"] = "response.done"
                 backend["live_failed"] = kind != "response.completed"
             case "response.created", "response.output_item.done":
@@ -1237,11 +1269,16 @@ final class VoiceModel {
                 }
                 liveCallerSpeech.hasSpeechStartEvents = true
                 let itemID = event["item_id"] as? String
+                beginApprovalSpeech()
                 liveCallerSpeech.recordInput(id: itemID ?? eventID)
                 liveCallerSpeech.begin(itemID: itemID)
                 endIfDone()
                 return
             }
+            let item = event["item_id"] as? String
+            if let item, item == realtimeApproval?.item || committedRealtimeItems.contains(item) { return }
+            approvalTurn.invalidate()
+            beginRealtimeApproval(item: item)
             if phase != .hearing { log.add("voice", "speech started") }
             // Spoken over Poki's answer: the server drops the answer's audio, and the talk says so.
             if phase == .speaking { markInterrupted() }
@@ -1253,21 +1290,40 @@ final class VoiceModel {
             clock = TurnClock(said: Date())
         case "input_audio_buffer.committed":
             if usesLive {
+                let revision = liveCallerSpeech.inputRevision
                 liveCallerSpeech.recordInput(id: (event["item_id"] as? String) ?? (event["event_id"] as? String))
+                if liveCallerSpeech.inputRevision != revision, liveApprovalInstruction != nil { beginApprovalSpeech() }
                 return
             }
-            guard manualRealtimeTurns, let item = event["item_id"] as? String, !item.isEmpty,
+            guard let item = event["item_id"] as? String, !item.isEmpty,
                   committedRealtimeItems.insert(item).inserted else { return }
-            pendingRealtimeTurns += 1
+            if realtimeApproval?.item == item { realtimeApproval?.committed = true }
+            guard manualRealtimeTurns else { return }
+            pendingRealtimeTurns.append(item)
             flush()
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
-            if let text = event["transcript"] as? String, !text.isEmpty { lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines))) }
+            let words = (event["transcript"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !words.isEmpty {
+                lines.append(VoiceLine(role: .you, text: words))
+            }
+            if !usesLive, let item = event["item_id"] as? String, item == realtimeApproval?.item {
+                finishRealtimeTranscription(words)
+            }
+        case "conversation.item.input_audio_transcription.failed":
+            if !usesLive, let item = event["item_id"] as? String, item == realtimeApproval?.item {
+                finishRealtimeTranscription("")
+            }
         case "response.created":
             guard !usesLive || !liveSpeechStopped else { return }
             let id = (event["response"] as? [String: Any])?["id"] as? String
             if usesLive, awaitingAnswer, let id, id == liveContinuationAfter { return }
+            if !usesLive, let id, let turn = realtimeApproval, turn.committed, turn.response == nil,
+               activeResponse == nil, (requestedAnswer == nil ? !manualRealtimeTurns : requestedRealtimeApprovalItem == turn.item) {
+                realtimeApproval?.response = id
+            }
+            requestedRealtimeApprovalItem = nil
             activeResponse = id
             keepOpen()
             awaitingAnswer = false
@@ -1276,6 +1332,14 @@ final class VoiceModel {
         case "response.done":
             let response = event["response"] as? [String: Any]
             if let usage = response?["usage"] as? [String: Any] { clock.add(usage: usage) }
+            if !usesLive, let id = response?["id"] as? String, id == realtimeApproval?.response {
+                let output = response?["output"] as? [[String: Any]]
+                if response?["status"] as? String == "completed", output?.contains(where: { $0["type"] as? String == "function_call" }) == true {
+                    realtimeApproval?.response = nil
+                } else {
+                    beginRealtimeApproval(item: nil)
+                }
+            }
             if response?["id"] as? String == activeResponse {
                 activeResponse = nil
                 if !awaitingAnswer, event["live_failed"] as? Bool == true { liveAwaitingPlayback = false }
@@ -1300,7 +1364,7 @@ final class VoiceModel {
             guard let item = event["item"] as? [String: Any], item["type"] as? String == "function_call",
                   let id = item["call_id"] as? String, let name = item["name"] as? String else { return }
             run(VoiceCall(id: id, name: name, arguments: item["arguments"] as? String ?? "{}", session: number,
-                          delegation: event["delegation_id"] as? String))
+                          delegation: event["delegation_id"] as? String), responseID: event["response_id"] as? String)
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? "unknown error"
             log.add("voice", "realtime error: \(message)")
@@ -1320,7 +1384,7 @@ final class VoiceModel {
             } else if requestedAnswer == nil, !usesLive || about == nil {
                 awaitingAnswer = false
             }
-            if manualRealtimeTurns, pendingRealtimeTurns > 0 { flush() }
+            if manualRealtimeTurns, !pendingRealtimeTurns.isEmpty { flush() }
             endIfDone()
         default:
             break
@@ -1357,7 +1421,9 @@ final class VoiceModel {
     private static let liveBackchannels: Set<String> = ["嗯", "哦", "好的", "好", "uh-huh", "mm-hmm"]
 
     private func appendLiveSpeech(_ text: String, audio: Range<Int>?, itemID: String?) {
+        if liveCallerSpeech.pending == nil { beginApprovalSpeech() }
         if let itemID, itemID != liveCallerSpeech.itemID {
+            beginApprovalSpeech()
             liveCallerSpeech.begin(itemID: itemID)
         } else if !liveCallerSpeech.hasSpeechStartEvents, liveCallerSpeech.itemID == nil, let audio,
                   liveCallerSpeech.end > 0, audio.lowerBound >= liveCallerSpeech.end {
@@ -1366,6 +1432,7 @@ final class VoiceModel {
             let afterAcknowledgment = preceding.allSatisfy(Self.liveBackchannels.contains) && !joined.allSatisfy(Self.liveBackchannels.contains)
             let afterStop = Self.liveRequestsStop(preceding) && !Self.liveRequestsStop(joined)
             if preceding.isEmpty || afterAcknowledgment || afterStop || audio.lowerBound - liveCallerSpeech.end >= 600 {
+                beginApprovalSpeech()
                 liveCallerSpeech.begin(itemID: nil)
             }
         }
@@ -1385,6 +1452,7 @@ final class VoiceModel {
     }
 
     private func cancelLiveTask() {
+        invalidateLiveApproval()
         liveDelegations = liveDelegations.mapValues { $0.canRunTools ? .cancelled : $0 }
         liveHasCancellation = true
         for operation in livePhoneOperations.values { operation.cancel() }
@@ -1412,6 +1480,56 @@ final class VoiceModel {
 
     private static let stoppedStep = "The user cancelled the task. This step did not run."
 
+    private func beginApprovalSpeech() {
+        invalidateLiveApproval()
+        approvalTurn.invalidate()
+        liveSpeechApprovalGeneration = approvalTurn.generation
+    }
+
+    private func invalidateLiveApproval() {
+        liveApprovalInstruction?.instruction.invalidate()
+        liveApprovalInstruction = nil
+    }
+
+    private func beginRealtimeApproval(item: String?) {
+        realtimeApproval?.instruction?.invalidate()
+        resumeRealtimeApprovalWaiters(with: nil)
+        realtimeApproval = item.flatMap { $0.isEmpty ? nil : RealtimeApproval(item: $0, generation: approvalTurn.generation) }
+        requestedRealtimeApprovalItem = nil
+        realtimeContinuation = nil
+    }
+
+    private func resumeRealtimeApprovalWaiters(with instruction: OwnerApprovalInstruction?) {
+        let waiters = realtimeApprovalWaiters
+        realtimeApprovalWaiters.removeAll()
+        for waiter in waiters { waiter.resume(returning: instruction) }
+    }
+
+    private func finishRealtimeTranscription(_ text: String) {
+        guard let turn = realtimeApproval, !turn.transcriptionEnded else { return }
+        realtimeApproval?.transcriptionEnded = true
+        let instruction = !text.isEmpty && turn.generation == approvalTurn.generation ? approvalTurn.begin(text: text) : nil
+        realtimeApproval?.instruction = instruction
+        resumeRealtimeApprovalWaiters(with: instruction)
+    }
+
+    private func realtimeInstruction(for call: VoiceCall) async -> OwnerApprovalInstruction? {
+        guard let item = call.realtimeItem, let turn = realtimeApproval, turn.item == item else { return nil }
+        if turn.transcriptionEnded { return turn.instruction }
+        guard call.name == "do" || call.name == "tap_text", turn.generation == approvalTurn.generation else { return nil }
+        return await withCheckedContinuation { continuation in
+            if realtimeApprovalWaiters.isEmpty {
+                // Realtime can ask for a tool before ASR finishes. Wait briefly for this audio item.
+                Task { [weak self, time] in
+                    await time.sleep(.seconds(2))
+                    guard let self, self.realtimeApproval?.generation == turn.generation else { return }
+                    self.finishRealtimeTranscription("")
+                }
+            }
+            realtimeApprovalWaiters.append(continuation)
+        }
+    }
+
     private func resumeLiveAudio(_ link: VoiceConnection) {
         guard liveSpeechStopped else { return }
         liveSpeechStopped = false
@@ -1419,7 +1537,7 @@ final class VoiceModel {
     }
 
     /// Runs a call once. The same call_id again (a repeated event) is ignored.
-    private func run(_ call: VoiceCall) {
+    private func run(_ call: VoiceCall, responseID: String?) {
         guard !calls.contains(where: { $0.id == call.id }) else { return }
         if usesLive, let refusal = call.delegation.flatMap({ liveDelegations[$0] })?.refusal {
             completeLiveControl(call, state: .failed, output: refusal)
@@ -1435,6 +1553,9 @@ final class VoiceModel {
             return
         }
         var call = call
+        if !usesLive, let responseID, responseID == realtimeApproval?.response, let turn = realtimeApproval {
+            call.realtimeItem = turn.item
+        }
         call.silentResult = usesLive && liveSpeechStopped
         calls.append(call)
         clock.call = clock.call ?? Date()
@@ -1446,6 +1567,7 @@ final class VoiceModel {
         let bridge = bridge
         let live = usesLive
         let describeScreen = liveScreenDescription
+        let liveCandidate = live && call.delegation == liveApprovalInstruction?.delegation ? liveApprovalInstruction?.instruction : nil
         Task {
             if stopped(call) {
                 completeLiveControl(call, state: .failed, output: Self.stoppedStep)
@@ -1473,8 +1595,16 @@ final class VoiceModel {
             var state = VoiceCall.State.done
             var output: String
             var screen: Data?
+            let candidate = live ? liveCandidate : await realtimeInstruction(for: call)
+            if !live, let item = call.realtimeItem, item != realtimeApproval?.item {
+                finish(call.id, state: .failed, output: "The voice request changed before the step ran.")
+                return
+            }
+            let instruction = call.session == session ? candidate.flatMap { $0.isActive ? $0 : nil } : nil
             if local, Self.phoneTools.contains(call.name) {
-                let answer = await phoneTool(call.name, call.arguments, operation)
+                let answer = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                    await phoneTool(call.name, call.arguments, operation)
+                }
                 output = answer.text.count > 6000 ? String(answer.text.prefix(6000)) + "…" : answer.text
                 screen = answer.screen
                 if answer.failed { state = .failed }
@@ -1491,7 +1621,9 @@ final class VoiceModel {
                         }
                         // A tap: Poki's approval rules first, and the owner's OK on the phone when they ask for it.
                         let app = result.app
-                        let clearance = await clearTap(target.says, app?.bundle_id, app?.name)
+                        let clearance = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                            await clearTap(target.says, app?.bundle_id, app?.name, target.evidence)
+                        }
                         if stopped(call) {
                             completeLiveControl(call, state: .failed, output: Self.stoppedStep)
                             return
@@ -1500,6 +1632,14 @@ final class VoiceModel {
                             if case .approved(let why) = clearance { note = "The user allowed it on the phone (\(why)). "; log.add("voice", "tap approved: \(why)") }
                             var checked = ["text": target.text]
                             checked["app"] = app?.bundle_id
+                            checked["snapshot"] = target.evidence?.snapshot
+                            if case .approved = clearance { checked["restore"] = "true" }
+                            if clearance == .coveredByInstruction {
+                                guard instruction?.isActive == true, checked["snapshot"] != nil else {
+                                    finish(call.id, state: .failed, output: "The owner's instruction changed. Nothing was tapped.")
+                                    return
+                                }
+                            }
                             result = try await bridge.run(callID: call.id, name: call.name, arguments: call.arguments, checked: checked)
                         } else {
                             result = Self.refused(clearance)
@@ -1573,6 +1713,9 @@ final class VoiceModel {
             return
         }
         wantsResponse = sameSession || !usesLive
+        if !usesLive, sameSession, let item = call.realtimeItem, item == realtimeApproval?.item {
+            realtimeContinuation = item
+        }
         flush()
     }
 
@@ -1617,12 +1760,15 @@ final class VoiceModel {
 
     /// Asks for a response once none is active (the API takes one at a time).
     private func flush() {
-        guard wantsResponse || pendingRealtimeTurns > 0,
+        guard wantsResponse || !pendingRealtimeTurns.isEmpty,
               usesLive || (activeResponse == nil && requestedAnswer == nil), ready, let link else { return }
         let id = UUID().uuidString
         guard link.send(["type": "response.create", "event_id": id]) else { return }
+        if !usesLive {
+            requestedRealtimeApprovalItem = pendingRealtimeTurns.isEmpty ? realtimeContinuation : pendingRealtimeTurns.removeFirst()
+            realtimeContinuation = nil
+        }
         wantsResponse = false
-        if pendingRealtimeTurns > 0 { pendingRealtimeTurns -= 1 }
         awaitingAnswer = true
         requestedAnswer = id
         if usesLive {
@@ -1692,7 +1838,7 @@ final class VoiceModel {
         case .declined(let why): output = "not_sent: the user declined on the phone (\(why)). Nothing was tapped."
         case .unanswered(let why): output = "not_sent: the user did not allow it on the phone in time (\(why)). Nothing was tapped."
         case .refused(let why): output = "not_sent: \(why). Nothing was tapped."
-        case .clear, .approved: output = ""
+        case .clear, .approved, .coveredByInstruction: output = ""
         }
         return VoiceBridge.ToolResult(state: "failed", output: output)
     }
