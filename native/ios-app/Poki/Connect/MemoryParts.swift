@@ -180,6 +180,9 @@ struct MemoryItemDetail: View {
             if item.runs > 0 {
                 rows.append(("Worked", AnyView(Text("\(item.ok) of \(item.runs) times").font(.subheadline).foregroundStyle(Color(.label)))))
             }
+            if item.fixes > 0 {
+                rows.append(("Fixed", AnyView(Text("\(item.fixes) steps").font(.subheadline).foregroundStyle(Color(.label)))))
+            }
             if let ms = item.lastMs {
                 rows.append(("Last", AnyView(Text("\(Int((Double(ms) / 1000).rounded())) s").font(.subheadline).foregroundStyle(Color(.label)))))
             }

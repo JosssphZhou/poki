@@ -38743,6 +38743,168 @@
           }
         }
       }
+    },
+    "Decision" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "决策"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "決策"
+          }
+        }
+      }
+    },
+    "Decision Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "决策模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "決策模型"
+          }
+        }
+      }
+    },
+    "Apple Intelligence" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 智能"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Intelligence"
+          }
+        }
+      }
+    },
+    "Decisions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "决策"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "決策"
+          }
+        }
+      }
+    },
+    "A small, fast model works best. It helps a skill go on when a prompt is in the way or a button was renamed, acts only when the answer is clear and never taps anything that needs your approval. It gets the goal of the task and the names of the elements on screen, with no screenshot. Only one decision model is in use at a time." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小而快的模型效果最好。它在弹出提示或按钮改名时帮助技能继续进行，只有答案明确时才会操作，且绝不会轻点需要你批准的内容。它会收到任务目标和屏幕上各元素的名称，不含截屏。同一时间只使用一个决策模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "小而快的模型效果最好。它在跳出提示或按鈕改名時幫助技能繼續進行，只有答案明確時才會操作，且絕不會點按需要你批准的內容。它會收到任務目標和螢幕上各元素的名稱，不含截圖。同一時間只使用一個決策模型。"
+          }
+        }
+      }
+    },
+    "Local Models" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本機模型"
+          }
+        }
+      }
+    },
+    "Use This Model For" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将此模型用于"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將此模型用於"
+          }
+        }
+      }
+    },
+    "Models on this iPhone. What they are asked never leaves the phone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这部 iPhone 上的模型。向它们提出的内容不会离开手机。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這部 iPhone 上的模型。向它們提出的內容不會離開手機。"
+          }
+        }
+      }
+    },
+    "As the decision model it helps a skill go on when a prompt is in the way or a button was renamed. It acts only when the answer is clear and never taps anything that needs your approval. Only one decision model is in use at a time." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作为决策模型，它在弹出提示或按钮改名时帮助技能继续进行。只有答案明确时才会操作，且绝不会轻点需要你批准的内容。同一时间只使用一个决策模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作為決策模型，它在跳出提示或按鈕改名時幫助技能繼續進行。只有答案明確時才會操作，且絕不會點按需要你批准的內容。同一時間只使用一個決策模型。"
+          }
+        }
+      }
+    },
+    "Fixed" : {
+      "comment" : "A skill's detail row on the Memory page: how many of its steps were fixed on the way and kept.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "途中修复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "途中修復"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

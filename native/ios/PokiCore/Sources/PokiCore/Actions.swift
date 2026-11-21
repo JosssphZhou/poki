@@ -11,7 +11,8 @@ import Foundation
 //   {launch: "bundle" | {bundle, fresh?}}      {wait: ms}       {back: true}
 //   {handoff: {kind, text}} hands a step to the owner on the phone (no input until Done, or {handoff: false})
 //   {wait_until: "text" | {text, gone?, ms?} | {settled: true, ms?}}
-//   {path: {goal, steps: [{tap: "text"}, {type: "…", into?: "text"}, …]}} steps written ahead, by text
+//   {path: {goal, steps: [{tap: "text", intent?}, {type: "…", into?: "text"}, …]}} steps written ahead, by text
+//   intent: "why" on any action is kept with the step a routine saves
 
 /// Every action `do` sends and a routine replays. An action is the first of these keys it holds, in
 /// this order: `perform` sends it as that and the approval check (`Computer.sensitive`) judges it as
