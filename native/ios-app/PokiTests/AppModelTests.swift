@@ -380,12 +380,12 @@ final class ApprovalDefaultTests: XCTestCase {
     }
 
     /// A phone that never chose (a new install, or an owner of an earlier version who never opened
-    /// Approvals) is not asked: the Send tap in Messages goes through, and the page reads Never Ask.
-    func testAPhoneThatNeverChoseIsNotAsked() async {
+    /// Approvals) is asked: the Send tap in Messages waits for the owner, and the page reads With Confirmation.
+    func testAPhoneThatNeverChoseIsAsked() async {
         let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
         let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
-        XCTAssertEqual(tap, .clear)
-        XCTAssertEqual(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).approvalMode, .off)
+        XCTAssertFalse(tap.mayTap, "\(tap)")
+        XCTAssertEqual(AppModel(launcher: FakeLauncher(), pairer: FakePairing()).approvalMode, .confirm)
     }
 
     /// An owner who chose a way of asking, here or on 0.3.1, is still asked after updating.
