@@ -186,12 +186,11 @@ static BOOL checkPictureWithoutWindow(PKDisplayGeometry scene) {
         NSLog(@"confirmed companion refused without an AX window: %@", reason);
         return NO;
     }
-    if (![runner screenshot:&reason refreshViewport:YES]) { NSLog(@"missing companion picture: %@", reason); return NO; }
     NSDictionary *observation = nil;
-    if (![runner screenshot:&reason refreshViewport:NO observation:&observation] ||
+    if (![runner screenshot:&reason refreshViewport:YES observation:&observation] ||
         ![observation[@"identity"] isEqual:pane[@"identity"]] ||
         ![observation[@"bundleId"] isEqual:pane[@"bundleId"]]) {
-        NSLog(@"missing held-read companion picture or confirmation: %@", reason);
+        NSLog(@"missing companion picture or confirmation without an AX window: %@", reason);
         return NO;
     }
     [runner selectPane:@"auto" code:NULL];
@@ -201,7 +200,7 @@ static BOOL checkPictureWithoutWindow(PKDisplayGeometry scene) {
     }
     runner = companion(scene);
     if ([runner sourceXML:NULL code:&reason]) return NO;
-    if (![runner screenshot:&reason refreshViewport:NO]) { NSLog(@"missing automatic picture for a confirmed companion: %@", reason); return NO; }
+    if (![runner screenshot:&reason refreshViewport:YES]) { NSLog(@"missing automatic picture for a confirmed companion: %@", reason); return NO; }
     runner = companion(scene);
     runner.missTarget = YES;
     if ([runner selectPane:@"right" code:&reason] || [runner screenshot:&reason refreshViewport:YES]) {
@@ -359,15 +358,36 @@ static BOOL checkCompanionBindingRetry(PKDisplayGeometry scene, CGSize crop) {
     return checkShot(runner, 2, crop, 255, @"first read retries the startup binding", YES);
 }
 
-static BOOL checkCompanionTaskHeldPicture(PKDisplayGeometry scene, CGSize crop) {
+static BOOL checkCompanionTaskPictureAfterSnapshotFailure(PKDisplayGeometry scene, CGSize crop) {
     CompanionFixture *runner = companion(scene);
     if (![runner beginDuoCompanionTask] || ![runner bindDuoCompanionTarget]) return NO;
-    if ([runner screenshot:NULL refreshViewport:NO]) {
-        NSLog(@"a held picture was returned without a confirmed front read");
-        return NO;
-    }
     if ([runner sourceXML:NULL code:NULL]) return NO;
-    return checkShot(runner, 2, crop, 255, @"held AX read preserves the confirmed task pane picture", NO);
+    return checkShot(runner, 2, crop, 255, @"confirmed task pane after a missing AX snapshot", YES);
+}
+
+static BOOL checkHeldReadAfterTargetReplacement(PKDisplayGeometry scene, CGSize crop, CGSize inner, NSString *mode) {
+    CompanionFixture *runner = companion(scene);
+    if ([mode isEqualToString:@"selected"] && ![runner selectPane:@"right" code:NULL]) return NO;
+    if ([mode isEqualToString:@"task"] &&
+        (![runner beginDuoCompanionTask] || ![runner bindDuoCompanionTarget])) return NO;
+    NSString *baseline = [mode stringByAppendingString:@": Calculator before replacement"];
+    if (!checkShot(runner, 2, crop, 255, baseline, YES)) return NO;
+
+    runner.target = [AXNode new];
+    runner.target.processIdentifier = getpid() + 2;
+    XCUIScreen *screen = panels.lastObject;
+    NSData *calculator = screen.pixels;
+    screen.pixels = panel(screen.displayID, screen.bounds.size, inner, UIColor.blackColor).pixels;
+    NSString *reason = nil;
+    NSDictionary *observation = nil;
+    NSData *picture = [runner screenshot:&reason refreshViewport:NO observation:&observation];
+    screen.pixels = calculator;
+
+    printf("%s: held read after same-size app replacement: %s, gray %d, bundle %s\n", mode.UTF8String,
+           picture ? "returned pixels" : reason.UTF8String ?: "no screenshot",
+           picture ? graySample([UIImage imageWithData:picture].CGImage) : -1,
+           [observation[@"bundleId"] UTF8String] ?: "none");
+    return !picture && !observation && [reason isEqualToString:@"target_pane_unconfirmed"];
 }
 
 int main(void) {
@@ -428,8 +448,12 @@ int main(void) {
         BOOL afterSwitch = checkCompanionAfterSwitch(geometry, crop, NO);
         BOOL switchBeforeRead = checkCompanionAfterSwitch(geometry, crop, YES);
         BOOL bindingRetry = checkCompanionBindingRetry(geometry, crop);
-        BOOL heldTaskPicture = checkCompanionTaskHeldPicture(geometry, crop);
+        BOOL recoveredTaskPicture = checkCompanionTaskPictureAfterSnapshotFailure(geometry, crop);
+        BOOL replacementSafe = YES;
+        for (NSString *mode in @[@"selected", @"task", @"automatic"]) {
+            replacementSafe &= checkHeldReadAfterTargetReplacement(geometry, crop, inner, mode);
+        }
         return launchPlacement && recoveredEdge && picture && inset && activation && afterSwitch && switchBeforeRead &&
-            bindingRetry && heldTaskPicture ? 0 : 1;
+            bindingRetry && recoveredTaskPicture && replacementSafe ? 0 : 1;
     }
 }
