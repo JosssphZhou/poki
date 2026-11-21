@@ -181,6 +181,12 @@ const runners = {
   // Only with `checked`, the app and element text the phone cleared (see runTool).
   async tap_text(mcp, a, checked) {
     if (isPoki(checked.app)) throw new Error(ownAppRefusal);
+    if (!checked.snapshot || checked.restore === 'true') {
+      // The owner may have opened Poki to answer the approval.
+      const front = await mcp.call('get_foreground_app', {}).then(result => JSON.parse(text(result)), () => null);
+      if (checked.app && front?.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
+      else if (!checked.app && isPoki(front?.bundle_id)) throw new Error(ownAppRefusal);
+    }
     if (checked.snapshot) {
       const { app, ref, target } = await tapTarget(mcp, checked.text, true);
       if (!ref || app.bundle_id !== checked.app || target.evidence?.snapshot !== checked.snapshot) {
@@ -188,11 +194,6 @@ const runners = {
       }
       return clip(text(await mcp.call('tap', { ref })));
     }
-    // Unknown when the screen names no app; then the checked app is opened again.
-    const front = await mcp.call('get_foreground_app', {}).then(result => JSON.parse(text(result)), () => null);
-    // The owner may have opened Poki to allow it; the tap belongs to the app that was checked.
-    if (checked.app && front?.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
-    else if (!checked.app && isPoki(front?.bundle_id)) throw new Error(ownAppRefusal);
     return clip(text(await mcp.call('tap_text', { text: checked.text, exact: true })));
   },
   go_home: async mcp => clip(text(await mcp.call('press_button', { button: 'home' }))),
@@ -217,19 +218,20 @@ const ownAppRefusal = "only the phone's owner can approve, by tapping it on the 
 // Every name tap_text matches on (src/interaction.mjs), so the phone checks what the tap would match.
 const names = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(s => typeof s === 'string' && s.trim());
 const role = e => (e.role ?? e.type ?? '').replace(/^(AX|XCUIElementType)/, '');
+const controlFields = e => ({ role: role(e), label: e.label ?? e.text ?? e.placeholder, value: e.value, identifier: e.identifier });
 const subjectRoles = new Set(['Cell', 'Alert', 'Sheet', 'Menu']);
 
 // Native parent indices refer to the unfiltered tree. Keep raw screen text out of the
 // acknowledgement sent back to this bridge: it carries only the snapshot digest.
 async function tapEvidence(mcp, screen, selected) {
-  if (!selected.object_id || role(selected) !== 'Button' || !screen.foreground?.bundle_id || !screen.observation?.device) return {};
+  if (!selected.object_id || !screen.foreground?.bundle_id || !screen.observation?.device) return {};
   const tree = JSON.parse(text(await mcp.call('list_elements', { source: 'accessibility', include_offscreen: true, max_elements: 5000 })));
   if (tree.truncated || tree.observation?.device !== screen.observation.device ||
       tree.foreground?.bundle_id !== screen.foreground.bundle_id || tree.foreground?.pid !== screen.foreground.pid) return {};
   const index = tree.elements.findIndex(element => element.object_id === selected.object_id);
-  const button = tree.elements[index];
-  if (!button || role(button) !== 'Button' || !button.label || button.label !== selected.label ||
-      JSON.stringify(button.frame) !== JSON.stringify(selected.frame)) return {};
+  const pressed = tree.elements[index];
+  if (!pressed || JSON.stringify(controlFields(pressed)) !== JSON.stringify(controlFields(selected)) ||
+      JSON.stringify(pressed.frame) !== JSON.stringify(selected.frame)) return {};
 
   const visible = element => {
     const box = element.frame;
@@ -240,12 +242,20 @@ async function tapEvidence(mcp, screen, selected) {
     const parent = tree.elements[child]?.parent;
     return Number.isInteger(parent) && parent >= 0 && parent < child ? parent : -1;
   };
-  const ownerOf = child => {
+  const ancestor = (child, matches) => {
     for (let i = parentOf(child); i >= 0; i = parentOf(i)) {
-      if (subjectRoles.has(role(tree.elements[i]))) return i;
+      if (matches(tree.elements[i])) return i;
     }
     return -1;
   };
+  if (!visible(pressed)) return {};
+  const buttonIndex = role(pressed) === 'Button' ? index : ancestor(index, element => role(element) === 'Button');
+  const button = tree.elements[buttonIndex];
+  const buttonLabels = button ? tree.elements.flatMap((element, i) => (
+    i > buttonIndex && role(element) !== 'SecureTextField' && visible(element) && ancestor(i, parent => parent === button) === buttonIndex
+      ? [element.label ?? element.text, element.value].filter(label => typeof label === 'string') : []
+  )) : [];
+  const ownerOf = child => ancestor(child, element => subjectRoles.has(role(element)));
   const ownerIndex = ownerOf(index);
   const owner = tree.elements[ownerIndex];
   const bars = tree.elements.filter(element => role(element) === 'NavigationBar' && visible(element));
@@ -255,13 +265,13 @@ async function tapEvidence(mcp, screen, selected) {
   const scopedField = field && ownerOf(tree.elements.indexOf(field)) === ownerIndex ? field : undefined;
   const subject = owner?.label;
   const recipient = owner ? subject : !overlay && bars.length === 1 ? bars[0].label : undefined;
-  const evidence = { control: button.label, subject, recipient, draft: scopedField?.value };
-  if (!subject && !recipient && !/^(delete |remove |删除|刪除)/i.test(button.label)) return {};
+  const evidence = { control: button?.label ?? names(pressed)[0] ?? '', pressed: controlFields(pressed),
+    button: button ? controlFields(button) : undefined, buttonLabels, subject, recipient, draft: scopedField?.value };
   const snapshot = createHash('sha256').update(JSON.stringify([
-    tree.observation.device, tree.foreground, button.object_id, button.frame, names(button),
+    tree.observation.device, tree.foreground, pressed.object_id, pressed.frame, button?.object_id,
     owner?.object_id, bars.map(bar => bar.object_id), scopedField?.object_id, evidence,
   ])).digest('hex');
-  return { ref: button.ref, evidence: { ...evidence, snapshot } };
+  return { ref: pressed.ref, evidence: { ...evidence, snapshot } };
 }
 
 // What tap_text would tap, read without touching the phone: Poki MCP's own matching on the screen.
@@ -279,7 +289,8 @@ async function tapTarget(mcp, wanted, exact = false) {
   const [first, ...rest] = names(found[0]);
   const { ref, evidence } = await tapEvidence(mcp, screen, found[0]).catch(() => ({}));
   return { app: { bundle_id: screen.foreground?.bundle_id ?? null, name: screen.foreground?.name ?? null },
-    target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = '), evidence }, ref };
+    target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = '),
+      evidence: evidence ?? { snapshot: '', control: first ?? wanted, pressed: controlFields(found[0]) } }, ref };
 }
 
 async function bridgeSecret() {

@@ -5,26 +5,61 @@ public struct OwnerApprovalInstruction: Sendable {
     @TaskLocal public static var current: OwnerApprovalInstruction?
     public let id: UUID
     public let text: String
-    private let unused = LockedBox<Set<OwnerApprovalStep>?>([])
-    public var isActive: Bool { unused.value != nil }
+    private enum Use: Equatable {
+        case available
+        case preparingDeletion(app: String, target: String)
+        case submitted
+        case expired
+    }
+    private let use = LockedBox<Use>(.available)
+    public var isActive: Bool { use.value != .expired }
 
     public init(id: UUID, text: String) {
         self.id = id
         self.text = text
     }
 
-    public func invalidate() { unused.value = nil }
+    public func invalidate() { use.value = .expired }
 
-    func consume(_ step: OwnerApprovalStep) -> Bool {
-        unused.update { $0?.insert(step).inserted == true }
+    func consume(_ step: OwnerApprovalStep, target: String) -> Bool {
+        let preparation = Use.preparingDeletion(app: step.app.lowercased(), target: target.lowercased())
+        return use.update { state in
+            if step.deletionStage == .opensConfirmation {
+                guard state == .available else { return false }
+                state = preparation
+            } else {
+                guard state == .available || (step.deletionStage == .confirms && state == preparation) else { return false }
+                state = .submitted
+            }
+            return true
+        }
+    }
+
+    func recordSubmission(approvedReason reason: String) {
+        guard SensitivityRules.isSubmission(reason) else { return }
+        use.update { if $0 != .expired { $0 = .submitted } }
     }
 }
 
-/// A legacy voice tap can use the current instruction when its bridge identified the selected
-/// object in the native tree. The bridge verifies the snapshot again before sending the tap.
+/// The control the voice bridge read. A snapshot also binds the press to its app and selected object.
 public struct VoiceTapEvidence: Decodable, Sendable {
-    public let snapshot: String
+    struct Control: Decodable, Sendable {
+        let role: String
+        let label: String?
+        let value: String?
+        let identifier: String?
+
+        var element: Element {
+            Element(type: role, label: label, value: value, identifier: identifier,
+                    frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        }
+    }
+
+    public let snapshot: String?
     let control: String
+    let pressed: Control?
+    let button: Control?
+    let buttonLabels: [String]?
     let subject: String?
     let recipient: String?
     let draft: String?
@@ -49,13 +84,14 @@ public struct OwnerApprovalIntent: Decodable, Sendable {
     public let amount: String?
 }
 
-struct OwnerApprovalStep: Hashable, Sendable {
+struct OwnerApprovalStep: Equatable, Sendable {
+    enum DeletionStage { case opensConfirmation, confirms, submits }
     let kind: OwnerApprovalIntent.Kind
     let app: String
-    let control: String
     let targets: [String]
     let draft: String?
     let amounts: Set<String>
+    var deletionStage: DeletionStage = .submits
 
     func matches(_ intent: OwnerApprovalIntent, in instruction: String) -> Bool {
         let target = intent.target.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,7 +183,12 @@ public struct SensitivityRules: Sendable, Equatable {
     private static let explicitPayment = #"(?:(?:确认|確認|立即|马上|馬上|完成)\s*(?:支付|付款|转账|轉帳|轉賬)|\b(?:confirm|complete|make) (?:the |a |this )?payment\b)"#
     private static let paymentInformation = #"\b(?:payment|pay)[\s_-]+(?:methods?|options?|history|details|receipts?|settings|offers?)\b|(?:支付|付款|转账|轉帳|轉賬)\s*(?:优惠|優惠|方式|记录|記錄|详情|詳情)(?=$|[\s:：，。])"#
     private static let transferAmount = #"^(?:转账|轉帳|轉賬|transfer)\s*"# + currencyAmount + #"\s*$"#
+    private static let clearStatus = #"(?:库存|名额|积分|余额|额度|庫存|名額|積分|餘額|額度)\s*(?:已经|已被|已|即将|即將|将被|將被|将|將|会被|會被)\s*(?:自动|自動)?\s*(?:清空)(?=$|[\s，。！；、,.!;])"#
     static let unclearConfirmation = "a confirmation button whose effect is unclear"
+
+    static func isSubmission(_ reason: String) -> Bool {
+        OwnerApprovalIntent.Kind(reason: reason) != nil || reason == unclearConfirmation
+    }
 
     private static func isBareConfirmation(_ text: String) -> Bool {
         let label = text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ":："))).lowercased()
@@ -157,9 +198,11 @@ public struct SensitivityRules: Sendable, Equatable {
     func paymentReason(on element: Element?, buttonLabels: [String] = []) -> String? {
         guard let element else { return nil }
         let isButton = element.type == "Button"
-        let labels = [element.text, element.identifier ?? ""] + buttonLabels
+        let labels = [element.label, element.value, element.identifier].compactMap { $0 } + buttonLabels
         let amountLabel = labels.contains { $0.range(of: Self.currencyAmount, options: .regularExpression) != nil }
-        if isButton, amountLabel, labels.contains(where: Self.isBareConfirmation) {
+        if isButton, amountLabel, labels.contains(where: {
+            Self.isBareConfirmation($0) || $0.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare("OK") == .orderedSame
+        }) {
             return "a payment (\"confirm amount\")"
         }
         for raw in labels {
@@ -200,7 +243,12 @@ public struct SensitivityRules: Sendable, Equatable {
             texts.lazy.compactMap { Self.matches($0, words, elementType: element.type) }.first
         }
         if let reason = paymentReason(on: paymentButton, buttonLabels: buttonLabels) ?? paymentReason(on: element) { return reason }
-        if let word = match(deletions) ?? paymentButton.flatMap({ Self.matches($0.text, deletions, elementType: $0.type) }) {
+        func deletion(on control: Element) -> String? {
+            let label = control.text.replacingOccurrences(of: Self.clearStatus, with: "", options: .regularExpression)
+            return Self.matches(label, deletions, elementType: control.type)
+                ?? control.identifier.flatMap { Self.matches($0, deletions, elementType: control.type) }
+        }
+        if let word = deletion(on: element) ?? paymentButton.flatMap(deletion) {
             return "deleting (\"\(word)\")"
         }
         if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
@@ -208,7 +256,8 @@ public struct SensitivityRules: Sendable, Equatable {
         if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = match(sending) {
             return "sending a message (\"\(word)\")"
         }
-        if ([paymentButton?.text ?? element.text] + buttonLabels).contains(where: Self.isBareConfirmation) {
+        if ([paymentButton?.label ?? element.label, paymentButton?.value ?? element.value].compactMap { $0 } + buttonLabels)
+            .contains(where: Self.isBareConfirmation) {
             return Self.unclearConfirmation
         }
         return nil

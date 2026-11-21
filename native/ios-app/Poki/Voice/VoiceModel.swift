@@ -346,8 +346,10 @@ final class VoiceModel {
         var committed = false
         var response: String?
         var instruction: OwnerApprovalInstruction?
+        var transcriptionEnded = false
     }
     private var realtimeApproval: RealtimeApproval?
+    private var realtimeApprovalWaiters: [CheckedContinuation<OwnerApprovalInstruction?, Never>] = []
     private var requestedRealtimeApprovalItem: String?
     private var realtimeContinuation: String?
     private var liveHasCancellation = false
@@ -1302,13 +1304,16 @@ final class VoiceModel {
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
-            if let text = event["transcript"] as? String, !text.isEmpty {
-                let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let words = (event["transcript"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !words.isEmpty {
                 lines.append(VoiceLine(role: .you, text: words))
-                if !usesLive, let item = event["item_id"] as? String, let turn = realtimeApproval, turn.item == item,
-                   turn.generation == approvalTurn.generation, turn.instruction == nil, !words.isEmpty {
-                    realtimeApproval?.instruction = approvalTurn.begin(text: words)
-                }
+            }
+            if !usesLive, let item = event["item_id"] as? String, item == realtimeApproval?.item {
+                finishRealtimeTranscription(words)
+            }
+        case "conversation.item.input_audio_transcription.failed":
+            if !usesLive, let item = event["item_id"] as? String, item == realtimeApproval?.item {
+                finishRealtimeTranscription("")
             }
         case "response.created":
             guard !usesLive || !liveSpeechStopped else { return }
@@ -1488,9 +1493,41 @@ final class VoiceModel {
 
     private func beginRealtimeApproval(item: String?) {
         realtimeApproval?.instruction?.invalidate()
+        resumeRealtimeApprovalWaiters(with: nil)
         realtimeApproval = item.flatMap { $0.isEmpty ? nil : RealtimeApproval(item: $0, generation: approvalTurn.generation) }
         requestedRealtimeApprovalItem = nil
         realtimeContinuation = nil
+    }
+
+    private func resumeRealtimeApprovalWaiters(with instruction: OwnerApprovalInstruction?) {
+        let waiters = realtimeApprovalWaiters
+        realtimeApprovalWaiters.removeAll()
+        for waiter in waiters { waiter.resume(returning: instruction) }
+    }
+
+    private func finishRealtimeTranscription(_ text: String) {
+        guard let turn = realtimeApproval, !turn.transcriptionEnded else { return }
+        realtimeApproval?.transcriptionEnded = true
+        let instruction = !text.isEmpty && turn.generation == approvalTurn.generation ? approvalTurn.begin(text: text) : nil
+        realtimeApproval?.instruction = instruction
+        resumeRealtimeApprovalWaiters(with: instruction)
+    }
+
+    private func realtimeInstruction(for call: VoiceCall) async -> OwnerApprovalInstruction? {
+        guard let item = call.realtimeItem, let turn = realtimeApproval, turn.item == item else { return nil }
+        if turn.transcriptionEnded { return turn.instruction }
+        guard call.name == "do" || call.name == "tap_text", turn.generation == approvalTurn.generation else { return nil }
+        return await withCheckedContinuation { continuation in
+            if realtimeApprovalWaiters.isEmpty {
+                // Realtime can ask for a tool before ASR finishes. Wait briefly for this audio item.
+                Task { [weak self, time] in
+                    await time.sleep(.seconds(2))
+                    guard let self, self.realtimeApproval?.generation == turn.generation else { return }
+                    self.finishRealtimeTranscription("")
+                }
+            }
+            realtimeApprovalWaiters.append(continuation)
+        }
     }
 
     private func resumeLiveAudio(_ link: VoiceConnection) {
@@ -1530,14 +1567,7 @@ final class VoiceModel {
         let bridge = bridge
         let live = usesLive
         let describeScreen = liveScreenDescription
-        let candidate: OwnerApprovalInstruction?
-        if live, call.delegation == liveApprovalInstruction?.delegation {
-            candidate = liveApprovalInstruction?.instruction
-        } else if !live, let responseID, responseID == realtimeApproval?.response {
-            candidate = realtimeApproval?.instruction
-        } else {
-            candidate = nil
-        }
+        let liveCandidate = live && call.delegation == liveApprovalInstruction?.delegation ? liveApprovalInstruction?.instruction : nil
         Task {
             if stopped(call) {
                 completeLiveControl(call, state: .failed, output: Self.stoppedStep)
@@ -1565,6 +1595,11 @@ final class VoiceModel {
             var state = VoiceCall.State.done
             var output: String
             var screen: Data?
+            let candidate = live ? liveCandidate : await realtimeInstruction(for: call)
+            if !live, let item = call.realtimeItem, item != realtimeApproval?.item {
+                finish(call.id, state: .failed, output: "The voice request changed before the step ran.")
+                return
+            }
             let instruction = call.session == session ? candidate.flatMap { $0.isActive ? $0 : nil } : nil
             if local, Self.phoneTools.contains(call.name) {
                 let answer = await OwnerApprovalInstruction.$current.withValue(instruction) {
@@ -1597,12 +1632,13 @@ final class VoiceModel {
                             if case .approved(let why) = clearance { note = "The user allowed it on the phone (\(why)). "; log.add("voice", "tap approved: \(why)") }
                             var checked = ["text": target.text]
                             checked["app"] = app?.bundle_id
+                            checked["snapshot"] = target.evidence?.snapshot
+                            if case .approved = clearance { checked["restore"] = "true" }
                             if clearance == .coveredByInstruction {
-                                guard instruction?.isActive == true, let evidence = target.evidence else {
+                                guard instruction?.isActive == true, checked["snapshot"] != nil else {
                                     finish(call.id, state: .failed, output: "The owner's instruction changed. Nothing was tapped.")
                                     return
                                 }
-                                checked["snapshot"] = evidence.snapshot
                             }
                             result = try await bridge.run(callID: call.id, name: call.name, arguments: call.arguments, checked: checked)
                         } else {

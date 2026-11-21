@@ -1232,22 +1232,24 @@ final class Computer: @unchecked Sendable {
         var did: [String] = []
         var error: String?
         var lastKind: String?
-        var toRun = actions
         // What the screen said before these actions, for the send check: a message that was already there does not count as sent.
         let textsBefore = lastAll.filter { !$0.fromPicture && !Self.fieldTypes.contains($0.type) }.map(\.text)
         var approvedNote: String?
         var ownerApprovedAt: Int?
-        let steps = sensitiveSteps(actions)
-        let sensitive = firstSensitive(actions)
+        let proposedSteps = sensitiveSteps(actions)
+        let end = proposedSteps.filter { SensitivityRules.isSubmission($0.reason) }.dropFirst().first?.at ?? actions.count
+        let steps = proposedSteps.filter { $0.at < end }
+        var toRun = Array(actions[..<end])
+        let sensitive = firstSensitive(in: steps)
         let workspaceSession = workspaceOwner.value
-        let matchingScope = sensitive.map { approvalScope(Array(actions[$0.at...]), afterPrefix: Array(actions[..<$0.at])) }
+        let matchingScope = sensitive.map { approvalScope(Array(actions[$0.at..<end]), afterPrefix: Array(actions[..<$0.at])) }
         // Any other actions withdraw an unconsumed request or grant so stale approvals never carry over.
         // The owner's voice leaves the agent's unused grant in place.
         approvals.withdrawMismatching(scope: matchingScope, workspaceSession: workspaceSession, keepingGrant: byOwnersVoice)
         // The gated actions on their own, on the screen the model saw, before anything is sent.
-        let gatedAlone = sensitive.map { approvalScope(Array(actions[$0.at...])) }
+        let gatedAlone = sensitive.map { approvalScope(Array(actions[$0.at..<end])) }
         if let (at, reason) = sensitive {
-            let tail = Array(actions[at...])
+            let tail = Array(actions[at..<end])
             let scope = matchingScope!
             if approvals.consumeGrant(scope: scope, workspaceSession: workspaceSession) != nil {
                 approvedNote = "approval: approved on the phone (\(reason))"
@@ -1258,7 +1260,7 @@ final class Computer: @unchecked Sendable {
                         return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: ["action \(at + 1) and the actions after it were not sent (they would have needed the owner's approval: \(reason))"])
                     }
                 }
-                if local, actions.count == at + 1, steps.count == 1,
+                if local, end == at + 1, steps.count == 1,
                    actions[..<at].allSatisfy({ ActionKind($0) == .type || ActionKind($0)?.changesScreen($0) == false }),
                    await directlyAuthorized(tail[0], reason: reason, until: until) {
                     if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
@@ -1266,9 +1268,14 @@ final class Computer: @unchecked Sendable {
                     ownerApprovedAt = at
                     toRun = tail
                 } else {
+                    let requestReason = if end < actions.count, let batch = firstSensitive(in: proposedSteps) {
+                        batch.reason + ". This approval only covers actions through \(end)."
+                    } else {
+                        reason
+                    }
                     let approval = approvals.pending.flatMap { $0.covers(scope, workspaceSession: workspaceSession) ? $0 : nil }
-                        ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, scope: scope, workspaceSession: workspaceSession,
-                                               stopsWhenOff: sensitiveSteps(actions, under: config.rules(for: .off)).isEmpty)
+                        ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: requestReason, scope: scope, workspaceSession: workspaceSession,
+                                               stopsWhenOff: sensitiveSteps(Array(actions[..<end]), under: config.rules(for: .off)).isEmpty)
                     // The time the owner takes is not the actions' time: the clock starts again after it.
                     let asked = now()
                     let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
@@ -1310,13 +1317,20 @@ final class Computer: @unchecked Sendable {
             }
         }
 
+        if approvedNote != nil, ownerApprovedAt == nil, let instruction = OwnerApprovalInstruction.current {
+            for step in steps { instruction.recordSubmission(approvedReason: step.reason) }
+        }
         let actionsStarted = now()
         let approved = approvedNote == nil ? [:] : Dictionary(steps.map { ($0.at, $0.reason) }, uniquingKeysWith: { a, _ in a })
-        let movedBefore = actions[..<(actions.count - toRun.count)].contains { ActionKind($0)?.changesScreen($0) == true }
-        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved, ownerApprovedAt: ownerApprovedAt, onActionSucceeded: onActionSucceeded)
+        let offset = end - toRun.count
+        let movedBefore = actions[..<offset].contains { ActionKind($0)?.changesScreen($0) == true }
+        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: offset, moved: movedBefore, approved: approved, ownerApprovedAt: ownerApprovedAt, onActionSucceeded: onActionSucceeded)
         let actionsTook = now() - actionsStarted
         did += moreDid
         error = moreError
+        if error == nil, end < actions.count {
+            error = "action \(end + 1) was not sent. It needs its own approval. Read the result of the first submission before deciding whether to ask again."
+        }
         lastKind = moreKind ?? lastKind
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
@@ -1900,7 +1914,8 @@ final class Computer: @unchecked Sendable {
             let subject = Self.approvalSubject(kind: kind, target: target, ancestors: ancestors, elements: listed)
             let targets = subject.map(\.text)
             let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [control] + buttonContents.map(\.text)) : []
-            let step = OwnerApprovalStep(kind: kind, app: front, control: control, targets: targets, draft: composer?.value, amounts: amounts)
+            let stage = Self.deletionStage(kind: kind, label: button?.label, inDialog: ancestors.contains { ["Alert", "Sheet"].contains($0.type) })
+            let step = OwnerApprovalStep(kind: kind, app: front, targets: targets, draft: composer?.value, amounts: amounts, deletionStage: stage)
             return OwnerApprovalObservation(step: step, target: target, ancestors: ancestors,
                                             subject: subject, composer: composer, buttonContents: buttonContents)
         }
@@ -1910,21 +1925,30 @@ final class Computer: @unchecked Sendable {
               await matchesApprovalApp(intent, instruction: instruction.text, bundleID: front),
               let after = await settledRead(until: min(until, now() + Self.settleWindow)), observation(in: after) == proposed,
               instruction.isActive, !Task.isCancelled, PhoneOperationCancellation.current?.isCancelled != true else { return false }
-        return instruction.consume(proposed.step)
+        return instruction.consume(proposed.step, target: intent.target.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     func authorizeVoiceTap(_ evidence: VoiceTapEvidence, reason: String, bundleID: String) async -> Bool {
         guard let instruction = OwnerApprovalInstruction.current, instruction.isActive,
               let extract = config.ownerApprovalIntent, let kind = OwnerApprovalIntent.Kind(reason: reason),
-              evidence.snapshot.count == 64, !evidence.control.isEmpty, evidence.control.count <= 512 else { return false }
+              evidence.snapshot?.count == 64, !evidence.control.isEmpty, evidence.control.count <= 512 else { return false }
         let subject = kind == .message ? evidence.recipient : evidence.subject
         guard let subject = subject ?? (kind == .deletion ? Self.deletionSubject(in: evidence.control) : nil),
               !subject.isEmpty, subject.count <= 512 else { return false }
-        let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [evidence.control]) : []
-        let step = OwnerApprovalStep(kind: kind, app: bundleID, control: evidence.control, targets: [subject], draft: evidence.draft, amounts: amounts)
+        let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [evidence.control] + (evidence.buttonLabels ?? [])) : []
+        let step = OwnerApprovalStep(kind: kind, app: bundleID, targets: [subject], draft: evidence.draft, amounts: amounts)
         guard let intent = await extract(instruction.text), step.matches(intent, in: instruction.text),
               await matchesApprovalApp(intent, instruction: instruction.text, bundleID: bundleID), !Task.isCancelled else { return false }
-        return instruction.consume(step)
+        return instruction.consume(step, target: intent.target.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func deletionStage(kind: OwnerApprovalIntent.Kind, label: String?, inDialog: Bool) -> OwnerApprovalStep.DeletionStage {
+        guard kind == .deletion else { return .submits }
+        if inDialog { return .confirms }
+        guard let label = label?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              label.range(of: #"^(?:delete|remove|删除|刪除)\s*(?:…|\.\.\.)$"#, options: .regularExpression) != nil else { return .submits }
+        // Only a native control that explicitly indicates another step can prepare without spending the submission.
+        return .opensConfirmation
     }
 
     private func matchesApprovalApp(_ intent: OwnerApprovalIntent, instruction: String, bundleID: String) async -> Bool {
@@ -2047,7 +2071,10 @@ final class Computer: @unchecked Sendable {
 
     /// Where approval begins, with every reason the remaining batch must wait.
     func firstSensitive(_ actions: [JSON]) -> (at: Int, reason: String)? {
-        let matches = sensitiveSteps(actions)
+        firstSensitive(in: sensitiveSteps(actions))
+    }
+
+    private func firstSensitive(in matches: [(at: Int, reason: String)]) -> (at: Int, reason: String)? {
         guard let first = matches.first else { return nil }
         guard matches.count > 1 else { return first }
         let reasons = matches.map { "action \($0.at + 1): \($0.reason)" }.joined(separator: "; ")

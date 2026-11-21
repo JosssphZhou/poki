@@ -363,7 +363,9 @@ final class ApprovalTests: XCTestCase {
 
     func testConfirmButtonWithSeparateAmountLabelWaitsBeforeTouch() async {
         let amount = Node("StaticText", "¥48.20", [230, 406, 70, 30])
-        await assertApprovalForControl(Node("Button", "确认", [16, 400, 358, 44], [amount]), reason: "a payment")
+        for title in ["确认", "OK"] {
+            await assertApprovalForControl(Node("Button", title, [16, 400, 358, 44], [amount]), reason: "a payment")
+        }
     }
 
     func testAmbiguousConfirmationWaitsBeforeTouch() async {
@@ -501,7 +503,7 @@ final class ApprovalTests: XCTestCase {
         }
     }
 
-    func testSwitchingSubmissionControlsRequiresAFreshApproval() async {
+    func testSwitchingSubmissionControlsRequiresAFreshApproval() async throws {
         for (kind, bundle, first, second) in [
             (OwnerApprovalIntent.Kind.message, "com.tencent.xin", "Send", "Return"),
             (.deletion, "com.apple.mobilenotes", "Delete", "Remove"),
@@ -535,6 +537,10 @@ final class ApprovalTests: XCTestCase {
                 $0.ownerApprovalIntent = { _ in OwnerApprovalIntent(kind: kind, target: subject, message: message ? draft : nil, amount: amount) }
             }
             let instruction = OwnerApprovalInstruction(id: UUID(), text: "\(first) \(subject): \(draft).")
+            let evidence = try JSONDecoder().decode(VoiceTapEvidence.self, from: JSON.object([
+                "snapshot": .string(String(repeating: "d", count: 64)), "control": .string(first),
+                "subject": .string(subject), "recipient": .string(subject), "draft": .string(draft),
+            ]).data())
             _ = await core.callTool("look", arguments: "{}")
             await OwnerApprovalInstruction.$current.withValue(instruction) {
                 let tapped = await core.callTool("do", arguments: #"{"actions":[{"tap":[295,422]}]}"#)
@@ -543,8 +549,26 @@ final class ApprovalTests: XCTestCase {
                 XCTAssertNotNil(core.pendingApproval, retry.text)
                 XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, retry.text)
                 XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty, retry.text)
+                let fromVoice = await core.clearTap(on: first, inApp: bundle, named: nil, waiting: 0, evidence: evidence)
+                XCTAssertFalse(fromVoice.mayTap)
             }
         }
+    }
+
+    func testOneApprovalCardCannotSendTwoSubmissionsFromABatch() async throws {
+        let wda = FakeWDA()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.tencent.xin"]]) }
+        wda.tree([Node("TextView", "Message", [10, 420, 240, 44], value: "Ready at noon", focused: true)])
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+        let actions: JSON = ["actions": [["key": "return"], ["key": "return"]]]
+        let asked = await core.call("do", actions)
+        let approval = try XCTUnwrap(core.pendingApproval, asked.text)
+        XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty)
+        core.resolveApproval(id: approval.id, approved: true)
+        let result = await core.call("do", actions)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, result.text)
+        XCTAssertTrue(result.text.contains("own approval"), result.text)
     }
 
     func testBrowsingShopAndPointsDoesNotApproveAnUnrelatedClearControl() async {
@@ -564,6 +588,34 @@ final class ApprovalTests: XCTestCase {
             let clear = await core.call("do", ["actions": [["tap": 2]]])
             XCTAssertNotNil(core.pendingApproval, clear.text)
             XCTAssertEqual(wda.bodies("POST /wda/tap").count, attempts, clear.text)
+        }
+    }
+
+    func testToolbarTransitionChecksTheNewTargetBeforeTappingAndTyping() async {
+        for opensComposer in [false, true] {
+            let wda = FakeWDA()
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.tencent.xin"]]) }
+            let toolbar = Node("Button", "Open toolbar", [12, 120, 80, 44])
+            wda.tree([toolbar, Node("Button", "More", [12, 220, 260, 44])])
+            wda.set("POST /wda/tap") { [wda] _ in
+                let focused = wda.bodies("POST /wda/tap").count == 2
+                wda.tree([toolbar, Node(opensComposer ? "Button" : "SearchField",
+                                        opensComposer ? "Send" : "Search", [12, 220, 260, 44], focused: focused)])
+                return (200, ["value": .null])
+            }
+            let (core, _, _) = makeCore(wda) {
+                $0.approvalWait = 0
+                $0.ownerApprovalIntent = { _ in nil }
+            }
+            _ = await core.callTool("look", arguments: "{}")
+            let result = await core.callTool("do", arguments: #"{"actions":[{"tap":1},{"tap":2},{"type":"Bakeries"}]}"#)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, opensComposer ? 1 : 2, result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/keys").count, opensComposer ? 0 : 1, result.text)
+            if opensComposer {
+                XCTAssertTrue(result.text.contains("needs the owner's approval"), result.text)
+            } else {
+                XCTAssertNil(core.pendingApproval, result.text)
+            }
         }
     }
 
@@ -781,7 +833,7 @@ final class ApprovalTests: XCTestCase {
     }
 
     func testBothDeletionStepsMustNameTheSameAuthorizedConversation() async {
-        for title in ["Riley", "Jordan"] {
+        for (entry, title, confirms) in [("Delete…", "Riley", true), ("Delete…", "Jordan", false), ("Delete", "Riley", false)] {
             let wda = FakeWDA()
             wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.MobileSMS"]]) }
             let show: @Sendable (String, String, String) -> Void = { role, name, control in
@@ -790,7 +842,7 @@ final class ApprovalTests: XCTestCase {
                     Node(role, name, [0, 300, 390, 220], [Node("Button", control, [16, 400, 358, 44])]),
                 ])
             }
-            show("Cell", "Riley", "Delete")
+            show("Cell", "Riley", entry)
             wda.set("POST /wda/tap") { [wda] _ in
                 if wda.bodies("POST /wda/tap").count == 1 {
                     show("Alert", title, "Delete Conversation")
@@ -811,8 +863,8 @@ final class ApprovalTests: XCTestCase {
                 return (first, confirm)
             }
             XCTAssertTrue(results.0.text.contains("Delete Conversation"), results.0.text)
-            XCTAssertEqual(core.pendingApproval != nil, title == "Jordan", results.1.text)
-            XCTAssertEqual(wda.bodies("POST /wda/tap").count, title == "Riley" ? 2 : 1, results.1.text)
+            XCTAssertEqual(core.pendingApproval != nil, !confirms, results.1.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, confirms ? 2 : 1, results.1.text)
         }
     }
 

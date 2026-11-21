@@ -189,6 +189,22 @@ test('a voice tap cleared by the instruction only reaches the same app, recipien
   assert.equal(await taps(), 1);
 });
 
+test('a voice confirmation sends its button and its amount child for approval', async t => {
+  const f = await fixture(t);
+  await f.set({ bundleId: 'example.shop', elements: [
+    { role: 'Button', label: 'Confirm', identifier: 'primary_action', object_id: 'o1', parent: null,
+      frame: { x: 10, y: 50, width: 80, height: 35 } },
+    { role: 'StaticText', label: '$24', object_id: 'o2', parent: 0, frame: { x: 50, y: 55, width: 30, height: 20 } },
+    { role: 'StaticText', label: '$90', object_id: 'o3', parent: null, frame: { x: 50, y: 100, width: 30, height: 20 } },
+  ] });
+  const tool = await bridge(t, f);
+  const check = await tool({ call_id: 'confirmation', name: 'tap_text', arguments: { text: 'Confirm' } });
+  assert.equal(check.state, 'check', JSON.stringify(check));
+  assert.deepEqual(check.target.evidence.pressed, { role: 'Button', label: 'Confirm', identifier: 'primary_action' });
+  assert.deepEqual(check.target.evidence.buttonLabels, ['$24']);
+  assert.equal((await f.events()).filter(e => e.op === 'tap').length, 0);
+});
+
 test('a voice tap_text on an element known only by its identifier shows the phone that name', async t => {
   const f = await fixture(t);
   await f.set({ elements: [{ role: 'Button', identifier: 'Send', frame: { x: 10, y: 10, width: 40, height: 20 } }] });
