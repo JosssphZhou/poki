@@ -114,7 +114,7 @@ enum Harness {
     /// The current permission determines which ones are declared for each request.
     static func toolSpecs(inSplitView: Bool, includeScreenHistory: Bool) -> [ToolSpec] {
         if !inSplitView {
-            return catalogTools(includeScreenHistory: includeScreenHistory) + [findApp] + WebTools.specs.map(withActionMemoryIDs) + taskTools
+            return catalogTools(includeScreenHistory: includeScreenHistory) + [findApp, getScreenshot] + WebTools.specs.map(withActionMemoryIDs) + taskTools
         }
         return [
             ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
@@ -163,6 +163,10 @@ enum Harness {
         ["type": "object", "properties": properties, "required": required, "additionalProperties": false]
     }
     private static let string: [String: Any] = ["type": "string"]
+    private static let getScreenshot = ToolSpec(
+        name: "get_screenshot",
+        description: "Retrieve an earlier screenshot from this task by its screenshot_id. Use it to compare with the current screen or find a result card image box. Use a current read for taps.",
+        schema: object(["screenshot_id": string], ["screenshot_id"]))
     private static let taskTools = [reportPlan, countMessages, waitForCountedScrollReply, finishTask]
 
     static let reportPlan = ToolSpec(

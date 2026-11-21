@@ -366,7 +366,11 @@ final class Computer: @unchecked Sendable {
         var assigned = [Int?](repeating: nil, count: shown.count)
         var moved = Set<Int>()
         for (i, e) in shown.enumerated() where !e.fromPicture {
-            if let r = exact["\(e.key)@\(e.frame.described)"]?.first(where: { !used.contains($0) }) { assigned[i] = r; used.insert(r) }
+            if let r = exact["\(e.key)@\(e.frame.described)"]?.first(where: { !used.contains($0) }) {
+                assigned[i] = r
+                used.insert(r)
+                if let previous = refs[r], previous.isDisabled != e.isDisabled { moved.insert(r) }
+            }
         }
         // Only a countdown in its text ran on, in the same place: the same control, listed as changed
         // so the model reads the new text.
@@ -417,6 +421,7 @@ final class Computer: @unchecked Sendable {
             if tag.isEmpty, let size, coversScreenAlone(e, in: reading.elements, screen: size) {
                 tag = " (one element covering \(Int((e.frame.width * e.frame.height * 100 / (size.width * size.height)).rounded())) % of the screen with no parts in the tree: tap a point on the picture, not its number)"
             }
+            if e.isDisabled { tag += " [disabled]" }
             return "\(mark)\(ref) \(e.type) \"\(text)\" \(e.frame.described)\(tag)"
         }
         var body: [String] = []
@@ -500,9 +505,9 @@ final class Computer: @unchecked Sendable {
         var itemPictureSource: ItemPictureSource?
         let pokiPane = reading.foreground?.pokiPane
         if !inWorkspace, reading.screenshotCompanion == nil, pokiPane != "left", pokiPane != "right",
-           let png = reading.png, jpeg != nil, let size {
+           let png = reading.png, let jpeg, let size {
             let images = reading.elements.filter { $0.type == "Image" && !$0.fromPicture }.map(\.frame)
-            itemPictureSource = ItemPictureSource(png: png, screen: size, images: images)
+            itemPictureSource = ItemPictureSource(png: png, jpeg: jpeg, screen: size, images: images)
         }
         // A screenshot helps the caller recover from a failed action without hiding the failure.
         return ToolResult(text: (header + body + footer).joined(separator: "\n"), jpeg: jpeg, isError: error != nil,
