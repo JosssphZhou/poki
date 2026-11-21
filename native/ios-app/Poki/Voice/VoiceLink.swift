@@ -6,15 +6,19 @@ import WebRTC
 protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws
     @MainActor func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws
+    @MainActor func startOpeningCapture(session: Int) throws -> OpeningVoiceCapture?
+    @MainActor func useOpeningCapture(_ capture: OpeningVoiceCapture?)
     func hasRemoteSpeech() async -> Bool
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
-    func diagnose(_ write: @escaping @MainActor (String) -> Void)
+    @MainActor func diagnose(_ write: @escaping @MainActor (String) -> Void)
     @MainActor func close()
 }
 
 extension VoiceConnection {
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws { throw VoiceError.noWebRTC }
+    func startOpeningCapture(session: Int) throws -> OpeningVoiceCapture? { nil }
+    func useOpeningCapture(_ capture: OpeningVoiceCapture?) {}
     func hasRemoteSpeech() async -> Bool { false }
 }
 
@@ -52,6 +56,8 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     private var peer: RTCPeerConnection?
     private var channel: RTCDataChannel?
     @MainActor private var holdsAudioSession = false
+    @MainActor private var openingCapture: OpeningVoiceCapture?
+    @MainActor private var diagnostics: (@MainActor (String) -> Void)?
     /// WebRTC calls the delegate methods on its own threads and the app calls in from the main actor,
     /// so these three are only touched under `lock`.
     private let lock = NSLock()
@@ -64,6 +70,19 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     init(onEvent: @escaping @MainActor ([String: Any]) -> Void, onClosed: @escaping @MainActor (String) -> Void) {
         self.onEvent = onEvent
         self.onClosed = onClosed
+    }
+
+    @MainActor func startOpeningCapture(session: Int) throws -> OpeningVoiceCapture? {
+        let audio = OpeningVoiceAudio(session: session)
+        try audio.startCapture()
+        let capture = OpeningVoiceCapture(audio: audio)
+        useOpeningCapture(capture)
+        diagnostics?("opening microphone started; \(Self.audioSession())")
+        return capture
+    }
+
+    @MainActor func useOpeningCapture(_ capture: OpeningVoiceCapture?) {
+        openingCapture = capture
     }
 
     /// `microphone: false` (test runs) sends no audio track and needs no microphone permission; the
@@ -89,11 +108,22 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
 
     @MainActor
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws {
+        let factory: RTCPeerConnectionFactory
+        if let openingCapture {
+            factory = openingCapture.factory
+            if direct {
+                let options = RTCPeerConnectionFactoryOptions()
+                options.ignoreVPNNetworkAdapter = true
+                options.ignoreLoopbackNetworkAdapter = true
+                factory.setOptions(options)
+            }
+        } else {
         #if DEBUG
-        let factory = !microphone ? Self.silentFactory : direct ? Self.directFactory : Self.factory
+            factory = !microphone ? Self.silentFactory : direct ? Self.directFactory : Self.factory
         #else
-        let factory = direct ? Self.directFactory : Self.factory
+            factory = direct ? Self.directFactory : Self.factory
         #endif
+        }
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
@@ -103,22 +133,27 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         config.continualGatheringPolicy = .gatherContinually
         guard let peer = factory.peerConnection(with: config, constraints: constraints, delegate: self) else { throw VoiceError.noWebRTC }
         self.peer = peer
-        if microphone {
+        if microphone, openingCapture == nil {
             // Poki's background keep-alive may have left the shared session in .playback, which cannot
             // record; set voice chat explicitly before the microphone track starts.
             let session = RTCAudioSession.sharedInstance()
-            session.lockForConfiguration()
-            defer { session.unlockForConfiguration() }
             do {
-                // WebRTC can activate the session even if configuring a preference throws.
-                try session.setConfiguration(RTCAudioSessionConfiguration.webRTC())
-            } catch {
-                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+                session.lockForConfiguration()
+                defer { session.unlockForConfiguration() }
+                do {
+                    // WebRTC can activate the session even if configuring a preference throws.
+                    try session.setConfiguration(RTCAudioSessionConfiguration.webRTC())
+                } catch {
+                    try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+                }
+                try session.setActive(true)
             }
-            try session.setActive(true)
             holdsAudioSession = true
+        }
+        if microphone {
             let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
             peer.add(mic, streamIds: ["poki-voice"])
+            diagnostics?("microphone track enabled; \(Self.audioSession())")
         } else {
             let receiveOnly = RTCRtpTransceiverInit()
             receiveOnly.direction = .recvOnly
@@ -149,6 +184,7 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
             try await Task.sleep(for: .milliseconds(20))
         }
         lock.withLock { opened = true }
+        if microphone { diagnoseCapture() }
     }
 
     func hasRemoteSpeech() async -> Bool {
@@ -179,14 +215,17 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     /// The shared audio session: category, mode, routes, and whether WebRTC counts it active.
     static func audioSession() -> String {
         let av = AVAudioSession.sharedInstance()
-        return "audio session \(av.category.rawValue) \(av.mode.rawValue), input available \(av.isInputAvailable), input channels \(av.inputNumberOfChannels), input \(av.currentRoute.inputs.map { "\($0.portType.rawValue) \($0.portName)" }.joined(separator: ", ")), output \(av.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")), webrtc active \(RTCAudioSession.sharedInstance().isActive), record permission \(AVAudioApplication.shared.recordPermission == .granted)"
+        return "audio session \(av.category.rawValue) \(av.mode.rawValue), input available \(av.isInputAvailable), input channels \(av.inputNumberOfChannels), input \(av.currentRoute.inputs.map { $0.portType.rawValue }.joined(separator: ", ")), output \(av.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ", ")), webrtc active \(RTCAudioSession.sharedInstance().isActive), record permission \(AVAudioApplication.shared.recordPermission == .granted)"
     }
 
-    /// One log line about the audio session now, and one ~3 s later about what the microphone sent:
-    /// media-source totalSamplesDuration stays 0 when nothing is captured, whatever the room sounds like.
+    @MainActor
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {
-        let now = Self.audioSession()
-        Task { @MainActor in write(now) }
+        diagnostics = write
+    }
+
+    /// A source with zero totalSamplesDuration has captured nothing, whatever the room sounds like.
+    @MainActor private func diagnoseCapture() {
+        guard let write = diagnostics else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let peer = self?.peer else { return }
             peer.statistics { report in
@@ -232,12 +271,14 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         // An interruption can make the session inactive before we give up our activation.
         guard holdsAudioSession else { return }
         holdsAudioSession = false
+        diagnostics?("microphone track closed")
         let session = RTCAudioSession.sharedInstance()
         session.lockForConfiguration()
         defer { session.unlockForConfiguration() }
         do {
             try session.setActive(false)
         } catch {
+            diagnostics?("audio session release failed")
             AppLog.shared.add("voice", "could not deactivate the realtime audio session: \(error.localizedDescription)")
         }
     }

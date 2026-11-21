@@ -401,6 +401,7 @@ extension PokiState {
             if let voice {
                 let (line, hint, bear): (String, String, ActivityBear) = switch voice {
                 case .listening: (StatusWord.listening.text, String(activity: "Talk with Poki"), .ready)
+                case .finishingOpening: (StatusWord.listening.text, String(activity: "Run Poki Anytime again to send as text."), .ready)
                 case .thinking: (StatusWord.thinking.text, String(activity: "Working out the next step."), .thinking)
                 case .speaking: (StatusWord.speaking.text, String(activity: "Talk with Poki"), .ready)
                 }
@@ -410,6 +411,7 @@ extension PokiState {
                     meta: .none,
                     content: line,
                     subtitle: hint,
+                    subtitleLines: voice == .finishingOpening ? 2 : 1,
                     bottom: .none,
                     compact: .symbol("waveform", .accent))
             }
