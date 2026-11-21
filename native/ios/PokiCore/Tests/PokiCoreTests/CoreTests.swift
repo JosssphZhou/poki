@@ -343,6 +343,40 @@ final class ToolTests: XCTestCase {
 }
 
 final class ApprovalTests: XCTestCase {
+    func testOrdinaryContentWithPaymentWordsDoesNotAskForApproval() async {
+        let cases: [(app: String, node: Node, action: JSON, endpoint: String)] = [
+            ("WeChat", Node("Other", "聊天记录 转账", [0, 90, 390, 680]), ["swipe": "up"], "POST /wda/pressAndDragWithVelocity"),
+            ("Trip.com", Node("Button", "白银贵宾 参与活动享航司特权 支付优惠", [0, 140, 390, 85]), ["tap": 1], "POST /wda/tap"),
+            ("DiDi", Node("Cell", "合计费用 49.71 元 已优惠 支付方式", [0, 600, 390, 90]), ["tap": 1], "POST /wda/tap"),
+            ("Meituan", Node("Cell", "储蓄卡 前往金融服务 支付方式", [0, 390, 390, 80]), ["tap": 1], "POST /wda/tap"),
+        ]
+        for sample in cases {
+            let wda = FakeWDA()
+            wda.tree([sample.node], app: sample.app)
+            let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+            _ = await core.call("look", [:])
+
+            let result = await core.call("do", ["actions": [sample.action]])
+
+            XCTAssertNil(core.pendingApproval, "\(sample.app): \(result.text)")
+            XCTAssertEqual(wda.bodies(sample.endpoint).count, 1, "\(sample.app): \(result.text)")
+        }
+    }
+
+    func testAmountConfirmationAndPaymentButtonWaitBeforeTouch() async {
+        for label in ["确认 ¥30", "立即付款", "转账确认", "支付 ¥30"] {
+            let wda = FakeWDA()
+            wda.tree([Node("Button", label, [16, 380, 358, 44])], app: "Shop")
+            let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+            _ = await core.call("look", [:])
+
+            let result = await core.call("do", ["actions": [["tap": 1]]])
+
+            XCTAssertTrue(core.pendingApproval?.reason.hasPrefix("a payment") == true, "\(label): \(result.text)")
+            XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "\(label): \(result.text)")
+        }
+    }
+
     func screenWithDelete() -> FakeWDA {
         let wda = FakeWDA()
         wda.source([("Button", "Delete Photo"), ("Button", "Share")], app: "Photos")
