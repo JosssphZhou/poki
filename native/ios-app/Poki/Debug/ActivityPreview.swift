@@ -71,6 +71,12 @@ struct ActivityPreview: View {
         }
         .task {
             Self.registerPreviewObserver()
+            #if DEBUG && targetEnvironment(simulator)
+            if let sequence = UserDefaults.standard.string(forKey: "pokiVoiceSequence") {
+                Task.detached { await DemoActivity.runVoiceSequence(mode: sequence) }
+                return
+            }
+            #endif
             if let demo, let state = Self.makeSamples().first(where: { $0.0 == demo })?.1 {
                 // Detached: going to the background must not cancel the demo's wait for its alert.
                 Task.detached { await DemoActivity.run(state) }
@@ -111,10 +117,14 @@ struct ActivityPreview: View {
         case "pairing": AppLocalization.text(LocalizedStringResource("Pairing"))
         case "code": AppLocalization.text(LocalizedStringResource("Pairing Code"))
         case "setup": AppLocalization.text(LocalizedStringResource("Setup"))
-        case "voice": AppLocalization.text(LocalizedStringResource("Voice"))
-        case "voicethinking": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(StatusWord.thinking.text)"
-        case "voicespeaking": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(StatusWord.speaking.text)"
-        case "voiceworking": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(AppLocalization.text(LocalizedStringResource("Working")))"
+        case "voiceconnecting": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.connecting"))"
+        case "voicelistening": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.listening")) (Ready)"
+        case "voice": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.listening"))"
+        case "voicethinking": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.thinking"))"
+        case "voiceworking": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.working"))"
+        case "voicespeaking": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.responding"))"
+        case "voicefailed": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.failed"))"
+        case "voiceended": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(String(activity: "voice.status.ended"))"
         case "voiceapproval": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(AppLocalization.text(LocalizedStringResource("Approval")))"
         case "voicedeciding": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(AppLocalization.text(LocalizedStringResource("Approved")))"
         case "voicehandoff": "\(AppLocalization.text(LocalizedStringResource("Voice"))) › \(AppLocalization.text(LocalizedStringResource("Your Turn")))"
@@ -228,15 +238,24 @@ struct ActivityPreview: View {
         // The runner on its way up: one main line, the stage under it.
         let waking = PokiState(phase: .idle, headline: "Checking pairing", thumbnailVersion: 0)
 
+        var voiceConnecting = PokiState(phase: .idle, headline: "Connecting", thumbnailVersion: 0)
+        voiceConnecting.voice = .connecting
+        var voiceListening = PokiState(phase: .idle, headline: "Listening", thumbnailVersion: 0)
+        voiceListening.voice = .listening
         var voice = PokiState(phase: .idle, headline: "Listening", thumbnailVersion: 0)
-        voice.voice = .listening
+        voice.voice = .hearing
+        voice.voiceLevel = 1
         var voiceThinking = PokiState(phase: .idle, headline: "Thinking", thumbnailVersion: 0)
         voiceThinking.voice = .thinking
-        var voiceSpeaking = PokiState(phase: .idle, headline: "Speaking", thumbnailVersion: 0)
-        voiceSpeaking.voice = .speaking
-        // A step of the talk has Poki in another app: Stop for the step, End for the talk.
         var voiceWorking = working
-        voiceWorking.voice = .thinking
+        voiceWorking.voice = .working
+        voiceWorking.voiceStep = "3/4"
+        var voiceSpeaking = PokiState(phase: .idle, headline: "Responding", thumbnailVersion: 0)
+        voiceSpeaking.voice = .speaking
+        var voiceFailed = PokiState(phase: .idle, headline: "Connection failed", thumbnailVersion: 0)
+        voiceFailed.voice = .failed
+        var voiceEnded = PokiState(phase: .idle, headline: "Ended", thumbnailVersion: 0)
+        voiceEnded.voice = .ended
         // An approval during a talk keeps the card and the island to itself.
         var voiceApproval = approval
         voiceApproval.voice = .listening
@@ -249,9 +268,11 @@ struct ActivityPreview: View {
 
         let all = [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
                    ("plan", plan), ("plannext", planNext), ("plandone", planDone),
-                   ("ready", ready), ("waking", waking), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup), ("voice", voice),
-                   ("voicethinking", voiceThinking), ("voicespeaking", voiceSpeaking),
-                   ("voiceworking", voiceWorking), ("voiceapproval", voiceApproval), ("voicedeciding", voiceDeciding), ("voicehandoff", voiceHandoff), ("voicedone", voiceDone),
+                   ("ready", ready), ("waking", waking), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup),
+                   ("voiceconnecting", voiceConnecting), ("voicelistening", voiceListening), ("voice", voice),
+                   ("voicethinking", voiceThinking), ("voiceworking", voiceWorking), ("voicespeaking", voiceSpeaking),
+                   ("voicefailed", voiceFailed), ("voiceended", voiceEnded),
+                   ("voiceapproval", voiceApproval), ("voicedeciding", voiceDeciding), ("voicehandoff", voiceHandoff), ("voicedone", voiceDone),
                    ("donejust", doneJust), ("donelong", doneLong), ("doneresult", doneResult), ("donetask", doneTask), ("yourturnjust", yourTurnJust), ("problemjust", problemJust),
                    ("codejust", codeJust), ("pairedjust", pairedJust)]
         // `-pokiActivityCaller "Claude Code"`: every sample as an outside agent's, to see where its badge goes.
@@ -453,4 +474,67 @@ enum DemoActivity {
                               alertConfiguration: AlertConfiguration(title: "Poki", body: "\(state.headline)", sound: .default))
         AppLog.shared.add("activity", "demo alert sent")
     }
+
+    #if DEBUG && targetEnvironment(simulator)
+    /// Plays a full voice call sequence on a real Live Activity on the simulator, from connecting to ended.
+    static func runVoiceSequence(mode: String) async {
+        for old in Activity<PokiActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) }
+        let task = UIApplication.shared.beginBackgroundTask(withName: "voice sequence demo")
+        defer { UIApplication.shared.endBackgroundTask(task) }
+
+        func make(_ voice: PokiState.Voice, level: Int? = nil, step: String? = nil) -> ActivityContent<PokiState> {
+            var state = PokiState(phase: .idle, headline: voice.rawValue, thumbnailVersion: 0)
+            state.voice = voice
+            state.voiceLevel = level
+            state.voiceStep = step
+            return .init(state: state, staleDate: nil, relevanceScore: 100)
+        }
+
+        guard let activity = try? Activity.request(
+            attributes: PokiActivityAttributes(deviceName: "iPhone"),
+            content: make(.connecting),
+            pushType: nil
+        ) else {
+            AppLog.shared.add("activity", "voice sequence demo did not start")
+            return
+        }
+
+        // Wait until SpringBoard shows the compact island in the background before advancing.
+        if UIApplication.shared.applicationState != .background {
+            for await _ in NotificationCenter.default.notifications(named: UIApplication.didEnterBackgroundNotification) {
+                break
+            }
+        }
+
+        let steps: [(PokiState.Voice, Int?, String?, Double)] = mode == "failed" ? [
+            (.connecting, nil, nil, 2.5),
+            (.failed, nil, nil, 3.0),
+        ] : [
+            (.connecting, nil, nil, 2.0),
+            (.listening, nil, nil, 1.8),
+            (.hearing, 0, nil, 1.0),
+            (.hearing, 1, nil, 1.1),
+            (.hearing, 2, nil, 1.1),
+            (.thinking, nil, nil, 1.8),
+            (.working, nil, "1/4", 0.9),
+            (.working, nil, "2/4", 0.9),
+            (.working, nil, "3/4", 1.2),
+            (.speaking, 0, nil, 1.2),
+            (.speaking, 1, nil, 1.2),
+            (.hearing, 1, nil, 1.6),
+            (.thinking, nil, nil, 1.4),
+            (.speaking, 0, nil, 1.8),
+            (.listening, nil, nil, 1.6),
+            (.ended, nil, nil, 3.0),
+        ]
+
+        for (index, item) in steps.enumerated() {
+            if index > 0 {
+                await activity.update(make(item.0, level: item.1, step: item.2))
+            }
+            try? await Task.sleep(for: .seconds(item.3))
+        }
+        await activity.end(nil, dismissalPolicy: .immediate)
+    }
+    #endif
 }

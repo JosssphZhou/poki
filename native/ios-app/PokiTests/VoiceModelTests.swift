@@ -81,6 +81,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     private(set) var liveAnswer: String?
     private(set) var remoteVolume = 1.0
     @MainActor var remoteSpeech = false
+    @MainActor var inputLevel: Double? = nil
     func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws {}
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws {
         liveAnswer = try await exchange("sdp-offer")
@@ -88,6 +89,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) { remoteVolume = value }
     func hasRemoteSpeech() async -> Bool { await MainActor.run { remoteSpeech } }
+    func inputAudioLevel() async -> Double? { await MainActor.run { inputLevel } }
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
     func close() { closed = true }
     @MainActor func play(_ events: [String: Any]...) { for event in events { onEvent?(event) } }
@@ -1067,9 +1069,11 @@ final class VoiceLanguageTests: XCTestCase {
 /// The Live Activity during a talk: it says what the talk is doing in the state's own `voice` field,
 /// its End ends the talk, and an approval is never pushed aside by it.
 extension VoiceModelTests {
-    private func following(_ h: Harness) -> (ActivityController, TalkActivity) {
+    private func following(_ h: Harness, dismissAfter: Duration = .milliseconds(40)) -> (ActivityController, TalkActivity) {
         let activity = ActivityController()
-        return (activity, TalkActivity(voice: h.voice, activity: activity, deviceName: { "Test iPhone" }, keepsActivity: { false }))
+        let watcher = TalkActivity(voice: h.voice, activity: activity, deviceName: { "Test iPhone" }, keepsActivity: { false })
+        watcher.dismissAfter = dismissAfter
+        return (activity, watcher)
     }
 
     func testLiveActivityWaitsForTheNextResponseAndMeasuresThePlayedAnswer() async {
@@ -1141,41 +1145,107 @@ extension VoiceModelTests {
 
     func testTheLiveActivitySaysWhatTheTalkIsDoing() async {
         let h = Harness()
-        let (activity, watcher) = following(h)
+        let (activity, watcher) = following(h, dismissAfter: .milliseconds(60))
         await h.talk()
         await h.time.settle()
         XCTAssertEqual(activity.state.voice, .listening)
-        XCTAssertEqual(activity.state.face.content, StatusWord.listening.text)
+        XCTAssertEqual(activity.state.face.content, "Listening")
+        XCTAssertEqual(activity.state.face.bear, .ready)
         XCTAssertTrue(activity.state.face.endsTalk)
-        XCTAssertTrue(activity.state.face.talkGlow, "the island's brand band shows while a talk is on")
         XCTAssertTrue(activity.state.face.shieldsTaps, "a tap on the expanded island during a talk keeps the owner in their app")
 
-        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"],
-                    ["type": "conversation.item.input_audio_transcription.completed", "transcript": "What iOS version is this?"],
+        h.link.play(["type": "input_audio_buffer.speech_started"])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .hearing)
+        XCTAssertEqual(activity.state.face.bear, .listening)
+        XCTAssertEqual(activity.state.face.content, "Listening")
+
+        h.link.play(["type": "input_audio_buffer.speech_stopped"])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .thinking)
+        XCTAssertEqual(activity.state.face.bear, .thinking)
+        XCTAssertEqual(activity.state.face.content, "Thinking")
+
+        h.link.play(["type": "conversation.item.input_audio_transcription.completed", "transcript": "What iOS version is this?"],
                     ["type": "response.created", "response": ["id": "r1"]], ["type": "output_audio_buffer.started"])
         await h.time.settle()
         XCTAssertEqual(activity.state.voice, .speaking)
-        XCTAssertEqual(activity.state.face.content, StatusWord.speaking.text)
+        XCTAssertEqual(activity.state.face.bear, .speaking)
+        XCTAssertEqual(activity.state.face.content, "Responding")
 
         h.voice.stop()
         await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .ended)
+        XCTAssertEqual(activity.state.face.bear, .done)
+        XCTAssertEqual(activity.state.face.content, "Ended")
+        XCTAssertFalse(activity.state.face.endsTalk)
+        try? await Task.sleep(for: .milliseconds(120))
         XCTAssertNil(activity.state.voice)
         XCTAssertFalse(activity.state.face.endsTalk)
-        XCTAssertFalse(activity.state.face.talkGlow)
         withExtendedLifetime(watcher) {}
     }
 
     func testEndOnTheLiveActivityEndsTheTalk() async throws {
         let h = Harness()
-        let (activity, watcher) = following(h)
+        let (activity, watcher) = following(h, dismissAfter: .milliseconds(150))
         await h.talk()
         XCTAssertTrue(h.voice.isOn)
-        let ended = expectation(for: NSPredicate { _, _ in !h.voice.isOn }, evaluatedWith: nil)
         _ = try await EndTalkIntent().perform()
-        await fulfillment(of: [ended], timeout: 2)
+        for _ in 0..<100 where h.voice.isOn {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(h.voice.isOn)
         XCTAssertTrue(h.link.closed)
         await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .ended)
+        try await Task.sleep(for: .milliseconds(250))
         XCTAssertNil(activity.state.voice)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testConnectionLossShowsFailedStateThenDismisses() async throws {
+        let h = Harness()
+        let (activity, watcher) = following(h, dismissAfter: .milliseconds(60))
+        await h.talk()
+        await h.time.settle()
+        h.link.onClosed?("network dropped")
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .failed)
+        XCTAssertEqual(activity.state.face.bear, .tripped)
+        XCTAssertEqual(activity.state.face.content, "Connection failed")
+        XCTAssertEqual(activity.state.face.bottom, .voiceType)
+        XCTAssertEqual(activity.state.face.link, ActivityLink.type)
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertNil(activity.state.voice)
+        withExtendedLifetime(watcher) {}
+    }
+
+    func testWorkingStepAndHearingLoudnessUpdateTheVoiceActivity() async throws {
+        let (step, stepDone) = AsyncStream<Void>.makeStream()
+        let h = Harness(phoneTool: { _, _ in for await _ in step { break }; return ("done", false, nil) })
+        let (activity, watcher) = following(h, dismissAfter: .milliseconds(40))
+        watcher.levelPollInterval = .milliseconds(30)
+        await h.talk()
+
+        h.link.inputLevel = 0.25
+        h.link.play(["type": "input_audio_buffer.speech_started"])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .hearing)
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(activity.state.voiceLevel, 2, "loud microphone input updates waveform tier")
+
+        h.link.play(["type": "input_audio_buffer.speech_stopped"],
+                    ["type": "response.created", "response": ["id": "r1"]],
+                    ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]])
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .working)
+        XCTAssertEqual(activity.state.voiceStep, "1/1")
+        XCTAssertEqual(activity.state.face.bear, .phone)
+        XCTAssertEqual(activity.state.face.content, "Working")
+
+        stepDone.finish()
+        await h.time.settle()
+        XCTAssertEqual(activity.state.voice, .thinking)
         withExtendedLifetime(watcher) {}
     }
 
@@ -1196,7 +1266,7 @@ extension VoiceModelTests {
 
         // Answered: the talk is back on the Live Activity, with End.
         activity.update { $0.phase = .idle; $0.approval = nil; $0.headline = "Waiting for agent" }
-        XCTAssertEqual(activity.state.face.content, StatusWord.speaking.text)
+        XCTAssertEqual(activity.state.face.content, "Responding")
         XCTAssertTrue(activity.state.face.endsTalk)
 
         // A talk that ends while an approval waits leaves the approval where it is.
@@ -1345,11 +1415,13 @@ extension VoiceModelTests {
         // Poki is not in front: every other start of the Live Activity waits for the foreground.
         activity.canStart = { false }
         let talk = TalkActivity(voice: h.voice, activity: activity, deviceName: { "Test iPhone" }, keepsActivity: { false })
+        talk.dismissAfter = .milliseconds(40)
         defer { activity.end() }
 
         let started = await talk.startHere()
         XCTAssertTrue(activity.isRunning, "the Live Activity starts from the background, inside the intent: \(activity.lastError ?? "")")
         guard started else { return XCTFail("Talk Here did not start") }
+        XCTAssertEqual(activity.state.voice, .connecting)
         h.link.play(["type": "session.created"])
         await h.time.settle()
 
@@ -1360,7 +1432,9 @@ extension VoiceModelTests {
 
         h.voice.stop()
         await h.time.settle()
-        XCTAssertFalse(activity.isRunning, "the Live Activity goes with the talk")
+        XCTAssertEqual(activity.state.voice, .ended)
+        try? await Task.sleep(for: .milliseconds(120))
+        XCTAssertFalse(activity.isRunning, "the Live Activity goes after the ended hold")
     }
 
     /// The screenshot behind a step reaches the model as an image right after the step's output and before

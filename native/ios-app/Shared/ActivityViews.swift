@@ -75,7 +75,11 @@ enum ActivityMetrics {
     }
 
     static func sizes(_ face: ActivityFace) -> Sizes {
-        switch face.size {
+        if face.isVoiceLayout {
+            return Sizes(island: 142, islandBear: 96, islandLeft: 114,
+                         lock: 124, lockBear: 116, lockLeft: 122, lockBearInset: 4)
+        }
+        return switch face.size {
         case .low:
             // A line over the title (Done over what a run came to, an event's word) takes a run's
             // height on the island: in 106 the system's clip cut the third line (ESP-954).
@@ -312,13 +316,32 @@ struct IslandBottom: View {
         .foregroundStyle(palette.text)
         .environment(\.colorScheme, .dark)
         .animation(dimmed ? nil : ActivityMotion.phase, value: face.talkGlow)
-        .animation(dimmed ? nil : ActivityMotion.phase, value: face.bear)
-        .animation(dimmed ? nil : ActivityMotion.step, value: face.content)
+        .animation(dimmed ? nil : (face.isVoiceLayout ? ActivityMotion.voice : ActivityMotion.phase), value: face.bear)
+        .animation(dimmed ? nil : (face.isVoiceLayout ? ActivityMotion.voice : ActivityMotion.step), value: face.content)
     }
 
     @ViewBuilder private func words(_ palette: ActivityPalette) -> some View {
         let hasKicker = face.hasKicker
-        if case .progress(let line, let stop) = face.bottom {
+        if face.isVoiceLayout {
+            HStack(alignment: .bottom, spacing: 10) {
+                Title(face: face, palette: palette)
+                    .padding(.top, 36)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                Group {
+                    switch face.bottom {
+                    case .voiceEnd:
+                        VoiceEndButton(surface: .island).transition(.opacity)
+                    case .voiceType:
+                        VoiceTypeButton(link: face.link, surface: .island).transition(.opacity)
+                    default:
+                        EmptyView()
+                    }
+                }
+                .padding(.bottom, 16)
+                .layoutPriority(1)
+            }
+            .padding(.trailing, 20)
+        } else if case .progress(let line, let stop) = face.bottom {
             HStack(alignment: .top, spacing: 14) {
                 VStack(alignment: .leading, spacing: 0) {
                     Kicker(face: face, palette: palette).frame(height: 16).padding(.top, 1)
@@ -326,14 +349,11 @@ struct IslandBottom: View {
                     if line { RunLine(palette: palette).padding(.top, 11) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if stop || face.endsTalk {
+                if stop {
                     // In the lowest island the circles sit a little higher, clear of the corner.
-                    HStack(spacing: 10) {
-                        if face.endsTalk { EndTalkButton(circle: true) }
-                        if stop { StopButton(surface: .island) }
-                    }
-                    .padding(.top, (line ? 16 : 6) + 9)
-                    .transition(.opacity)
+                    StopButton(surface: .island)
+                        .padding(.top, (line ? 16 : 6) + 9)
+                        .transition(.opacity)
                 }
             }
             .padding(.trailing, 20)
@@ -388,7 +408,7 @@ struct CompactLeading: View {
                 .clipped()
             }
         }
-        .animation(dimmed ? nil : ActivityMotion.pose, value: face.bear)
+        .animation(dimmed ? nil : (face.isVoiceLayout ? ActivityMotion.voice : ActivityMotion.pose), value: face.bear)
         .accessibilityHidden(true)
     }
 }
@@ -397,6 +417,7 @@ struct CompactLeading: View {
 struct CompactTrailing: View {
     var face: ActivityFace
     @Environment(\.isLuminanceReduced) private var dimmed
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let theme = ActivityTheme.current
     var body: some View {
         let palette = theme.island
@@ -404,7 +425,7 @@ struct CompactTrailing: View {
             if narrow { self.narrow(palette) } else { wide(palette) }
         }
         .environment(\.colorScheme, .dark)
-        .animation(dimmed ? nil : ActivityMotion.step, value: face.compact)
+        .animation(dimmed || reduceMotion ? nil : (face.isVoiceLayout ? ActivityMotion.voice : ActivityMotion.step), value: face.compact)
     }
 
     /// Short of room: the app's icon, a time, a short count or a symbol, inside a circle 28 points
@@ -431,6 +452,11 @@ struct CompactTrailing: View {
                 .frame(width: 26).frame(width: side, height: side)
         case .symbol(let name, let tone):
             StateSymbol(name: name, tone: tone, palette: palette, size: name == "checkmark" ? 15.5 : name.hasPrefix("exclamationmark") ? 16 : 15)
+                .frame(width: side, height: side)
+        case .voice(let indicator):
+            Image(systemName: indicator.minimalSymbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.color(indicator.badgeTone))
                 .frame(width: side, height: side)
         default:
             EmptyView()
@@ -470,6 +496,9 @@ struct CompactTrailing: View {
                 TimerText(range: Countdown.range(until), down: true, colour: palette.approval, width: 42)
             case .symbol(let name, let tone):
                 StateSymbol(name: name, tone: tone, palette: palette, size: name == "checkmark" ? 15.5 : name.hasPrefix("exclamationmark") ? 16 : 15)
+            case .voice(let indicator):
+                VoiceIndicatorView(indicator: indicator, palette: palette, scale: 1.0)
+                    .frame(width: ActivityMetrics.compactWords - 4, height: ActivityMetrics.compactHeight)
             }
         }
         .frame(maxWidth: 52, alignment: .trailing)
@@ -525,8 +554,20 @@ struct MinimalView: View {
                 .clipShape(.circle)
             }
         }
-        .animation(dimmed ? nil : ActivityMotion.pose, value: face.bear)
-        .accessibilityHidden(true)
+        .overlay(alignment: .bottomTrailing) {
+            if let badge = face.minimalBadge {
+                Image(systemName: badge.minimalSymbol)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(ActivityTheme.current.island.color(badge.badgeTone))
+                    .frame(width: 13, height: 13)
+                    .background(.black, in: .circle)
+                    .padding(3.5)
+            }
+        }
+        .animation(dimmed ? nil : (face.isVoiceLayout ? ActivityMotion.voice : ActivityMotion.pose), value: face.bear)
+        .animation(dimmed ? nil : ActivityMotion.voice, value: face.minimalBadge)
+        .accessibilityHidden(face.minimalBadge == nil)
+        .accessibilityLabel(face.minimalBadge == nil ? Text("") : Text(verbatim: face.content))
     }
 }
 
@@ -614,7 +655,7 @@ private struct Title: View {
             let stepLike = face.size == .working || face.size == .low
             Text(face.content)
                 .font(large ? theme.status : stepLike ? theme.step : theme.title).tracking(theme.titleTracking)
-                .foregroundStyle(palette.text.opacity(face.stale ? 0.72 : 1))
+                .foregroundStyle(palette.color(face.titleTone).opacity(face.stale ? 0.72 : 1))
                 .lineLimit(1).minimumScaleFactor(large ? 0.65 : 0.8)
                 .contentTransition(.interpolate)
                 .frame(height: large ? 30 : stepLike ? 24 : 25, alignment: .leading)
@@ -672,6 +713,8 @@ private struct MetaCluster: View {
                 TimerText(range: since...since.addingTimeInterval(12 * 3600), down: false, colour: palette.quiet, width: timer)
             case .symbol(let name, let tone):
                 StateSymbol(name: name, tone: tone, palette: palette, size: name == "checkmark" ? 16 : 17)
+            case .voice(let indicator):
+                VoiceIndicatorView(indicator: indicator, palette: palette, scale: 0.8)
             }
         }
     }
@@ -706,14 +749,14 @@ private struct Control: View {
         let palette = theme.palette(surface)
         switch face.bottom {
         case .none:
-            if face.endsTalk { EndTalkButton(circle: false).transition(.opacity) }
+            EmptyView()
+        case .voiceEnd:
+            VoiceEndButton(surface: surface).transition(.opacity)
+        case .voiceType:
+            VoiceTypeButton(link: face.link, surface: surface).transition(.opacity)
         case .progress(_, let stop):
-            if surface == .lockScreen {
-                HStack(spacing: 8) {
-                    if stop { StopButton(surface: surface) }
-                    if face.endsTalk { EndTalkButton(circle: false) }
-                }
-                .transition(.opacity)
+            if surface == .lockScreen, stop {
+                StopButton(surface: surface).transition(.opacity)
             }
         case .approval(let id):
             ApprovalButtons(approvalID: id, surface: surface, stopAsking: face.offersStopAsking)
@@ -961,32 +1004,101 @@ struct StopButton: View {
     }
 }
 
-/// End during a talk with Poki: ends the talk and closes the microphone; a task Poki is on goes on.
-/// Beside the island's Stop, a circle with the microphone struck through; elsewhere a white capsule
-/// that says End, drawn as Stop is. Ending a talk here is pull request #250's interaction.
-struct EndTalkButton: View {
-    var circle: Bool
+/// Right-side indicator for voice Live Activity states: five dots while connecting, five bars while
+/// waiting/listening/responding, three white dots while thinking, step count while working, and
+/// symbol marks for failed and ended states. Rendered at 1.0x in compact trailing and 0.8x in the
+/// expanded island's top-right meta slot.
+struct VoiceIndicatorView: View {
+    var indicator: ActivityFace.VoiceIndicator
+    var palette: ActivityPalette
+    var scale: CGFloat = 1.0
+    @Environment(\.isLuminanceReduced) private var dimmed
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let theme = ActivityTheme.current
+
+    var body: some View {
+        let color = palette.color(indicator.tone)
+        Group {
+            switch indicator.style {
+            case .dots5:
+                HStack(spacing: 2 * scale) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        Circle().fill(color).frame(width: 2.5 * scale, height: 2.5 * scale)
+                    }
+                }
+                .transition(.opacity)
+            case .dots3:
+                HStack(spacing: 3 * scale) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Circle().fill(color).frame(width: 3.5 * scale, height: 3.5 * scale)
+                    }
+                }
+                .transition(.opacity)
+            case .bars(let heights):
+                HStack(spacing: 2 * scale) {
+                    ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
+                        Capsule().fill(color).frame(width: 3 * scale, height: height * scale)
+                    }
+                }
+                .transition(.opacity)
+            case .step(let text):
+                Text(text)
+                    .font(theme.voiceStep(scale: scale))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .contentTransition(.numericText())
+            case .symbol(let name):
+                Image(systemName: name)
+                    .font(.system(size: (name == "checkmark" ? 15 : 14.5) * scale, weight: name == "checkmark" ? .semibold : .medium))
+                    .foregroundStyle(color)
+                    .transition(.opacity)
+            }
+        }
+        .animation(dimmed || reduceMotion ? nil : ActivityMotion.voice, value: indicator)
+        .accessibilityHidden(true)
+    }
+}
+
+/// End button for active voice states: tinted red capsule on the black expanded island, white
+/// capsule with red label on the blue Lock Screen card.
+struct VoiceEndButton: View {
+    var surface: ActivitySurface
     private let theme = ActivityTheme.current
     var body: some View {
         Button(intent: EndTalkIntent()) {
-            if circle {
-                let side = ActivityMetrics.stopCircle
-                Image(systemName: "mic.slash.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: side, height: side)
-                    .background(.white.opacity(0.18), in: .circle)
-                    .contentShape(.circle)
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "mic.slash.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(ActivityTheme.red)
-                    Text(String(activity: "End")).font(theme.button).foregroundStyle(Color(hex: 0x111111))
-                }
+            Text(String(activity: "End"))
+                .font(theme.voiceButton)
+                .foregroundStyle(ActivityTheme.red)
+                .lineLimit(1)
                 .padding(.horizontal, 14)
                 .frame(height: ActivityMetrics.stopCapsule)
-                .background(.white, in: .capsule)
-            }
+                .background(surface == .island ? ActivityTheme.red.opacity(0.22) : Color.white, in: .capsule)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(String(activity: "End talk")))
+    }
+}
+
+/// Type button for failed voice connections: Poki blue capsule on the expanded island, white
+/// capsule on the blue Lock Screen card; opens Poki's chat ready to type.
+struct VoiceTypeButton: View {
+    var link: URL
+    var surface: ActivitySurface
+    private let theme = ActivityTheme.current
+    var body: some View {
+        let palette = theme.palette(surface)
+        Link(destination: link) {
+            Text(String(activity: "voice.action.type"))
+                .font(theme.voiceButton)
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(height: ActivityMetrics.stopCapsule)
+                .background(palette.primaryFill, in: .capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(String(activity: "voice.action.type")))
     }
 }
 

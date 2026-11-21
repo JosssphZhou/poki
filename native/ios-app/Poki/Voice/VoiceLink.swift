@@ -7,6 +7,7 @@ protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws
     @MainActor func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws
     func hasRemoteSpeech() async -> Bool
+    func inputAudioLevel() async -> Double?
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
     func diagnose(_ write: @escaping @MainActor (String) -> Void)
@@ -16,6 +17,7 @@ protocol VoiceConnection: AnyObject, Sendable {
 extension VoiceConnection {
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws { throw VoiceError.noWebRTC }
     func hasRemoteSpeech() async -> Bool { false }
+    func inputAudioLevel() async -> Double? { nil }
 }
 
 /// The microphone and speaker are WebRTC tracks. The `oai-events` data channel carries JSON events.
@@ -159,6 +161,18 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
                     stat.type == "inbound-rtp" && (stat.values["kind"] as? String) == "audio"
                         && (stat.values["audioLevel"] as? Double ?? 0) > 0.005
                 })
+            }
+        }
+    }
+
+    func inputAudioLevel() async -> Double? {
+        guard let peer else { return nil }
+        return await withCheckedContinuation { done in
+            peer.statistics { report in
+                let level = report.statistics.values.first { stat in
+                    stat.type == "media-source" && (stat.values["kind"] as? String) == "audio"
+                }?.values["audioLevel"] as? Double
+                done.resume(returning: level)
             }
         }
     }

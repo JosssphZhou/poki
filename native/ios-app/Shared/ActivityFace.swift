@@ -6,7 +6,7 @@ typealias PokiState = PokiActivityAttributes.ContentState
 /// the island's black or the card's blue and says the state by its pose. The pictures are square;
 /// where the head and hand sit in each is the design's own measurement (`MEC` in its source).
 enum ActivityBear: String, Hashable {
-    case phone, needs, turn, done, tripped, ready, paused, thinking, checking
+    case phone, needs, turn, done, tripped, ready, paused, thinking, checking, listening, speaking
 
     var image: String { "ActivityBear-\(rawValue)" }
     var compactImage: String { image + "Compact" }
@@ -20,7 +20,7 @@ enum ActivityBear: String, Hashable {
         case .turn: (0.4656, 0.5225)
         case .done: (0.4672, 0.4727)
         case .tripped: (0.4467, 0.4841)
-        case .ready: (0.4919, 0.4572)
+        case .ready, .listening, .speaking: (0.4919, 0.4572)
         case .paused: (0.4906, 0.5556)
         case .thinking: (0.489, 0.4526)
         case .checking: (0.4669, 0.5192)
@@ -31,7 +31,7 @@ enum ActivityBear: String, Hashable {
     /// 27 points a side (`ActivityMetrics.compactBear`), so the whole bear, ears and outline, stays
     /// inside the 4.33 points the system cuts off the island's edge. Measured per pose in ESP-503's
     /// design (the island 36.67 tall, 393-point class): each pose's head sits elsewhere in its square.
-    /// The design has no thinking bear; it stands where the ready one does.
+    /// `thinking`, `listening` and `speaking` are aligned to `ready` and share its origin.
     var compactOrigin: CGPoint {
         switch self {
         case .phone: CGPoint(x: 17.43, y: 3.84)
@@ -39,7 +39,7 @@ enum ActivityBear: String, Hashable {
         case .turn: CGPoint(x: 17.73, y: 2.23)
         case .done: CGPoint(x: 17.73, y: 2.94)
         case .tripped: CGPoint(x: 18.43, y: 2.54)
-        case .ready, .thinking: CGPoint(x: 17.03, y: 3.34)
+        case .ready, .thinking, .listening, .speaking: CGPoint(x: 17.03, y: 3.34)
         case .paused: CGPoint(x: 16.83, y: 2.74)
         case .checking: CGPoint(x: 17.13, y: 3.64)
         }
@@ -54,7 +54,7 @@ enum ActivityBear: String, Hashable {
         case .turn: CGPoint(x: 3.54, y: 0.63)
         case .done: CGPoint(x: 3.54, y: 1.21)
         case .tripped: CGPoint(x: 4.12, y: 0.88)
-        case .ready, .thinking: CGPoint(x: 2.95, y: 1.54)
+        case .ready, .thinking, .listening, .speaking: CGPoint(x: 2.95, y: 1.54)
         case .paused: CGPoint(x: 2.79, y: 1.04)
         case .checking: CGPoint(x: 3.04, y: 1.79)
         }
@@ -66,6 +66,20 @@ enum ActivityBear: String, Hashable {
 /// live in one table (`PokiState.face`) instead of a switch in every view. Layout, words and colours
 /// follow ESP-344's final design (定稿规格): black, white and grey, and Poki's blue as the one accent.
 struct ActivityFace: Hashable {
+    /// Right-side indicator and minimal-mode badge for voice states.
+    struct VoiceIndicator: Hashable {
+        enum Style: Hashable {
+            case dots5
+            case dots3
+            case bars([CGFloat])
+            case step(String)
+            case symbol(String)
+        }
+        var style: Style
+        var tone: ActivityTone
+        var minimalSymbol: String
+        var badgeTone: ActivityTone { tone == .quiet ? .muted : tone }
+    }
     enum Meta: Hashable {
         case none
         /// A short count or location ("2 of 6", "Settings").
@@ -78,6 +92,8 @@ struct ActivityFace: Hashable {
         case elapsed(Date)
         /// A small symbol: the tick of a finished run, the mark of a problem.
         case symbol(String, ActivityTone)
+        /// Right-side voice indicator scaled down for the expanded island's top-right corner.
+        case voice(VoiceIndicator)
     }
     enum Compact: Hashable {
         /// The icon of the app the run is in, which the app wrote to the App Group container
@@ -95,6 +111,8 @@ struct ActivityFace: Hashable {
         case asking(String, Date)
         case countdown(Date)
         case symbol(String, ActivityTone)
+        /// Voice state indicator: bars, dots, step progress, or symbol.
+        case voice(VoiceIndicator)
     }
     enum Bottom: Hashable {
         case none
@@ -111,6 +129,10 @@ struct ActivityFace: Hashable {
         case openPoki
         /// The setup steps: done, the current one, the rest.
         case segments(number: Int, count: Int)
+        /// End the active voice conversation.
+        case voiceEnd
+        /// Open Poki's chat ready to type after a voice connection failure.
+        case voiceType
     }
     enum Thumbnail: Hashable { case none, large, small }
     /// What the compact island's right side shows while Poki works: the icon of the app the run is in
@@ -136,6 +158,8 @@ struct ActivityFace: Hashable {
     var lockMeta: Meta? = nil
     /// The main title line.
     var content: String
+    /// The main title's tone (sky blue for voice connection failed, plain white otherwise).
+    var titleTone: ActivityTone = .plain
     /// The title is a pairing code in large digits.
     var contentIsCode = false
     /// The secondary line under the title.
@@ -147,6 +171,8 @@ struct ActivityFace: Hashable {
     /// The latest screenshot on the right of the Lock Screen card.
     var thumbnail: Thumbnail = .none
     var compact: Compact
+    /// Small status badge overlaid on the bottom-right corner of the minimal circle for voice states.
+    var minimalBadge: VoiceIndicator? = nil
     /// The screen a tap opens.
     var link: URL = ActivityLink.chat
     /// While the agent may be acting (a run, an approval, a hand-off) or a talk is on, a tap on the
@@ -162,12 +188,16 @@ struct ActivityFace: Hashable {
     var endsTalk = false
     /// A talk with Poki is on: the expanded island draws the brand band along its lower edge.
     var talkGlow = false
+    /// Uses the unified voice expanded layout (single status word, bear left, compact action bottom-right).
+    var isVoiceLayout = false
 }
 
 /// Where a tap on the Live Activity goes, handled by RootView's onOpenURL.
 enum ActivityLink {
     /// The chat that runs the agent (also approvals and handoffs, which the chat shows).
     static let chat = URL(string: "poki://chat")!
+    /// Opens Poki's chat with the message field ready to type (from a failed voice connection).
+    static let type = URL(string: "poki://chat?type=1")!
     /// The Activity Log, where a problem's details are.
     static let log = URL(string: "poki://log")!
     static func setup(_ step: String? = nil) -> URL {
@@ -251,16 +281,18 @@ extension PokiState {
     func face(stale: Bool) -> ActivityFace {
         var face = baseFace
         face.caller = caller
-        // During a talk the card and the island carry End, while Poki listens, speaks or works on a step
-        // of the talk. Anything that needs the person (an approval, a hand-off) or tells of a problem
-        // keeps them to itself.
-        face.endsTalk = voice != nil && (phase == .idle || phase == .working) && !stale
-        face.talkGlow = voice != nil && !stale
-        face.shieldsTaps = !stale && ([.working, .approval, .deciding, .handoff].contains(phase) || voice != nil)
+        // During a talk the card and the island carry End while Poki connects, listens, thinks,
+        // operates or replies. Approvals, hand-offs, failures and ended talks keep their own controls.
+        let activeVoice = voice != nil && (phase == .idle || phase == .working) && !stale
+        face.endsTalk = activeVoice && voice != .failed && voice != .ended
+        face.talkGlow = false
+        face.shieldsTaps = !stale && ([.working, .approval, .deciding, .handoff].contains(phase)
+                                      || (voice != nil && voice != .failed && voice != .ended))
         // A fresh event ("Started", "Allowed") shows beside the app's name for a few seconds. An app
         // switch is the app's name itself, already there; so is a word the face already says (Done
         // over a finished run, Paired over Paired), which said twice read as a fault (ESP-954).
-        if let event, !phase.holdsApproval, event.kind != .app {
+        // Voice states keep a single status word with no kicker or event line.
+        if let event, !phase.holdsApproval, !face.isVoiceLayout, event.kind != .app {
             let word = ActivityWords.local(event.text)
             if word != face.content, word != face.kicker {
                 face.event = word
@@ -278,6 +310,8 @@ extension PokiState {
             face.meta = .none
             face.bottom = .none
             face.compact = .text(String(activity: "Stalled"), .quiet)
+            face.minimalBadge = nil
+            face.isVoiceLayout = false
             face.stale = true
         }
         return face
@@ -286,10 +320,13 @@ extension PokiState {
     private var baseFace: ActivityFace {
         switch phase {
         case .working:
+            if let voice {
+                return voiceFace(voice == .thinking ? .working : voice)
+            }
             let inApp = app.flatMap { $0.isEmpty || $0 == "unknown" ? nil : $0 }
-            let name = AppName.display(inApp) ?? (voice != nil ? String(activity: "Voice") : nil)
+            let name = AppName.display(inApp)
             return ActivityFace(
-                symbol: voice != nil ? "waveform" : "hand.tap.fill",
+                symbol: "hand.tap.fill",
                 bear: .phone, size: .working,
                 kicker: name,
                 meta: since.map { ActivityFace.Meta.elapsed($0) } ?? ActivityFace.Meta.none,
@@ -399,22 +436,121 @@ extension PokiState {
                 compact: .symbol("hand.tap.fill", .accent))
         case .idle:
             if let voice {
-                let (line, hint, bear): (String, String, ActivityBear) = switch voice {
-                case .listening: (StatusWord.listening.text, String(activity: "Talk with Poki"), .ready)
-                case .thinking: (StatusWord.thinking.text, String(activity: "Working out the next step."), .thinking)
-                case .speaking: (StatusWord.speaking.text, String(activity: "Talk with Poki"), .ready)
-                }
-                return ActivityFace(
-                    symbol: "waveform",
-                    bear: bear, size: .working,
-                    meta: .none,
-                    content: line,
-                    subtitle: hint,
-                    bottom: .none,
-                    compact: .symbol("waveform", .accent))
+                return voiceFace(voice)
             }
             return quietFace
         }
+    }
+
+    /// Step progress displayed while voice is operating on the phone ("3/4"), when available.
+    private var voiceStepText: String? {
+        if let step = voiceStep?.nonBlank { return step }
+        if let plan, plan.total > 0 { return "\(min(max(plan.current, 1), plan.total))/\(plan.total)" }
+        if stepCount > 0 { return "\(stepCount)" }
+        return nil
+    }
+
+    /// Unified presentation for every Live Activity voice state: bear pose on the left,
+    /// waveform / dots / step count / symbol on the right, single status word when expanded.
+    private func voiceFace(_ voice: Voice) -> ActivityFace {
+        let bear: ActivityBear
+        let title: String
+        let titleTone: ActivityTone
+        let indicator: ActivityFace.VoiceIndicator
+        let showsMeta: Bool
+        let bottom: ActivityFace.Bottom
+        let link: URL
+
+        switch voice {
+        case .connecting:
+            bear = .needs
+            title = String(activity: "voice.status.connecting")
+            titleTone = .plain
+            indicator = .init(style: .dots5, tone: .quiet, minimalSymbol: "ellipsis")
+            showsMeta = true
+            bottom = .voiceEnd
+            link = ActivityLink.chat
+        case .listening:
+            bear = .ready
+            title = String(activity: "voice.status.listening")
+            titleTone = .plain
+            indicator = .init(style: .bars([2.5, 3, 7, 3, 2.5]), tone: .accent, minimalSymbol: "mic.fill")
+            showsMeta = true
+            bottom = .voiceEnd
+            link = ActivityLink.chat
+        case .hearing:
+            bear = .listening
+            title = String(activity: "voice.status.listening")
+            titleTone = .plain
+            let heights: [CGFloat] = switch voiceLevel ?? 1 {
+            case ...0: [3, 4, 6, 4, 3]
+            case 1: [3, 7, 15, 7, 3]
+            default: [7, 14, 19, 13, 6]
+            }
+            indicator = .init(style: .bars(heights), tone: .accent, minimalSymbol: "mic.fill")
+            showsMeta = true
+            bottom = .voiceEnd
+            link = ActivityLink.chat
+        case .thinking:
+            bear = .thinking
+            title = String(activity: "voice.status.thinking")
+            titleTone = .plain
+            indicator = .init(style: .dots3, tone: .plain, minimalSymbol: "ellipsis")
+            showsMeta = true
+            bottom = .voiceEnd
+            link = ActivityLink.chat
+        case .working:
+            bear = .phone
+            title = String(activity: "voice.status.working")
+            titleTone = .plain
+            if let step = voiceStepText {
+                indicator = .init(style: .step(step), tone: .accent, minimalSymbol: "iphone")
+                showsMeta = true
+            } else {
+                indicator = .init(style: .symbol("iphone"), tone: .accent, minimalSymbol: "iphone")
+                showsMeta = false
+            }
+            bottom = .voiceEnd
+            link = ActivityLink.chat
+        case .speaking:
+            bear = .speaking
+            title = String(activity: "voice.status.responding")
+            titleTone = .plain
+            let heights: [CGFloat] = voiceLevel == 1 ? [3, 9, 15, 9, 5] : [5, 15, 10, 6, 3]
+            indicator = .init(style: .bars(heights), tone: .brand, minimalSymbol: "speaker.wave.2.fill")
+            showsMeta = true
+            bottom = .voiceEnd
+            link = ActivityLink.chat
+        case .failed:
+            bear = .tripped
+            title = String(activity: "voice.status.failed")
+            titleTone = .accent
+            indicator = .init(style: .symbol("keyboard"), tone: .accent, minimalSymbol: "keyboard")
+            showsMeta = false
+            bottom = .voiceType
+            link = ActivityLink.type
+        case .ended:
+            bear = .done
+            title = String(activity: "voice.status.ended")
+            titleTone = .plain
+            indicator = .init(style: .symbol("checkmark"), tone: .muted, minimalSymbol: "checkmark")
+            showsMeta = false
+            bottom = .none
+            link = ActivityLink.chat
+        }
+
+        return ActivityFace(
+            symbol: indicator.minimalSymbol,
+            bear: bear,
+            size: .working,
+            meta: showsMeta ? .voice(indicator) : .none,
+            content: title,
+            titleTone: titleTone,
+            bottom: bottom,
+            compact: .voice(indicator),
+            minimalBadge: indicator,
+            link: link,
+            isVoiceLayout: true)
     }
 
     /// The runner's start-up stages (`RunnerStatus.title`). Each says the same main line, Starting,

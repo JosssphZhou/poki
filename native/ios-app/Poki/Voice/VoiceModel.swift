@@ -583,6 +583,21 @@ final class VoiceModel {
         if case .lost = phase { phase = .off }
     }
 
+    /// Current microphone audio level (0...1) from WebRTC stats when live voice is active.
+    func inputAudioLevel() async -> Double? {
+        await link?.inputAudioLevel()
+    }
+
+    /// Step progress for phone tool calls in the current turn (for example "2/3"), while a call runs.
+    var activeTurnStep: String? {
+        let turnStart = clock.said ?? .distantPast
+        let turnCalls = calls.filter { $0.session == session && $0.started >= turnStart }
+        guard turnCalls.contains(where: { $0.state == .running }) else { return nil }
+        let total = turnCalls.count
+        let completed = turnCalls.filter { $0.state != .running }.count
+        return "\(min(completed + 1, total))/\(total)"
+    }
+
     private func markInterrupted() {
         interrupted = true
         interruptedLapse?.cancel()

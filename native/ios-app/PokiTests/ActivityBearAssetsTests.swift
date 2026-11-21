@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class ActivityBearAssetsTests: XCTestCase {
     func testEveryPoseHasPresentationSizedAssets() throws {
-        let poses: [ActivityBear] = [.phone, .needs, .turn, .done, .tripped, .ready, .paused, .thinking, .checking]
+        let poses: [ActivityBear] = [.phone, .needs, .turn, .done, .tripped, .ready, .paused, .thinking, .checking, .listening, .speaking]
         for pose in poses {
             for (name, side) in [(pose.image, CGFloat(136)),
                                  (pose.compactImage, ActivityMetrics.compactBear),

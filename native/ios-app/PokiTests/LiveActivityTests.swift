@@ -211,12 +211,16 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
-    /// ESP-981: in every voice state on the expanded Dynamic Island (listening, thinking, speaking,
-    /// working, approval, deciding, hand-off, done), both the bear and the words and controls stay
-    /// above the 12.33-point bottom strip that iOS clips away.
+    /// In every voice state on the expanded Dynamic Island (all eight voice states plus approval,
+    /// deciding, hand-off, done), both the bear and the words and controls stay above the 12.33-point
+    /// bottom strip that iOS clips away.
     func testEveryVoiceStatesExpandedIslandKeepsTheBearAndControlsInsideTheSystemClip() throws {
         let samples = ActivityPreview.makeSamples().filter { $0.0.hasPrefix("voice") }
-        XCTAssertEqual(samples.map(\.0), ["voice", "voicethinking", "voicespeaking", "voiceworking", "voiceapproval", "voicedeciding", "voicehandoff", "voicedone"])
+        XCTAssertEqual(samples.map(\.0), [
+            "voiceconnecting", "voicelistening", "voice", "voicethinking",
+            "voiceworking", "voicespeaking", "voicefailed", "voiceended",
+            "voiceapproval", "voicedeciding", "voicehandoff", "voicedone",
+        ])
         let width = 374
         let clip = Int(ActivityMetrics.islandClip)
         let space = CGColorSpaceCreateDeviceRGB()
@@ -274,6 +278,66 @@ final class LiveActivityTests: XCTestCase {
                 }
             }
         }
+    }
+
+    /// All eight voice states render through one unified face table with standard English and
+    /// Chinese status words, aligned bear poses, right-side differentiation, and no subtitle.
+    func testAllVoiceStatesMatchUnifiedPresentationInEnglishAndChinese() {
+        let expected: [(voice: PokiState.Voice, bear: ActivityBear, en: String, zh: String,
+                        titleTone: ActivityTone, bottom: ActivityFace.Bottom, hasMeta: Bool,
+                        minimalSymbol: String, indicator: ActivityFace.VoiceIndicator.Style, tone: ActivityTone)] = [
+            (.connecting, .needs, "Connecting", "正在连接", .plain, .voiceEnd, true, "ellipsis", .dots5, .quiet),
+            (.listening, .ready, "Listening", "正在聆听", .plain, .voiceEnd, true, "mic.fill", .bars([2.5, 3, 7, 3, 2.5]), .accent),
+            (.hearing, .listening, "Listening", "正在聆听", .plain, .voiceEnd, true, "mic.fill", .bars([3, 7, 15, 7, 3]), .accent),
+            (.thinking, .thinking, "Thinking", "正在思考", .plain, .voiceEnd, true, "ellipsis", .dots3, .plain),
+            (.working, .phone, "Working", "正在操作", .plain, .voiceEnd, true, "iphone", .step("3/4"), .accent),
+            (.speaking, .speaking, "Responding", "正在回复", .plain, .voiceEnd, true, "speaker.wave.2.fill", .bars([5, 15, 10, 6, 3]), .brand),
+            (.failed, .tripped, "Connection failed", "连接失败", .accent, .voiceType, false, "keyboard", .symbol("keyboard"), .accent),
+            (.ended, .done, "Ended", "已结束", .plain, .none, false, "checkmark", .symbol("checkmark"), .muted),
+        ]
+
+        for locale in ["en", "zh-Hans"] {
+            AppLocalization.shared.preference = locale
+            for item in expected {
+                var state = PokiState(phase: .idle, headline: "", thumbnailVersion: 0)
+                state.voice = item.voice
+                if item.voice == .working { state.voiceStep = "3/4" }
+                let face = state.face
+                XCTAssertTrue(face.isVoiceLayout, "\(locale) \(item.voice)")
+                XCTAssertEqual(face.bear, item.bear, "\(locale) \(item.voice)")
+                XCTAssertEqual(face.content, locale == "en" ? item.en : item.zh, "\(locale) \(item.voice)")
+                XCTAssertEqual(face.titleTone, item.titleTone, "\(locale) \(item.voice)")
+                XCTAssertNil(face.subtitle, "\(locale) \(item.voice): voice states carry no explanatory subtitle")
+                XCTAssertNil(face.kicker, "\(locale) \(item.voice): voice states carry no kicker")
+                XCTAssertEqual(face.bottom, item.bottom, "\(locale) \(item.voice)")
+                XCTAssertEqual(face.minimalBadge?.minimalSymbol, item.minimalSymbol, "\(locale) \(item.voice)")
+                XCTAssertEqual(face.compact, .voice(.init(style: item.indicator, tone: item.tone, minimalSymbol: item.minimalSymbol)), "\(locale) \(item.voice)")
+                if item.hasMeta {
+                    XCTAssertEqual(face.meta, .voice(.init(style: item.indicator, tone: item.tone, minimalSymbol: item.minimalSymbol)), "\(locale) \(item.voice)")
+                } else {
+                    XCTAssertEqual(face.meta, .none, "\(locale) \(item.voice)")
+                }
+            }
+        }
+
+        // Loudness tiers during hearing shift bar heights without changing the bear or status word.
+        AppLocalization.shared.preference = "en"
+        var hearing = PokiState(phase: .idle, headline: "", thumbnailVersion: 0)
+        hearing.voice = .hearing
+        for (tier, heights) in [(0, [3, 4, 6, 4, 3]), (1, [3, 7, 15, 7, 3]), (2, [7, 14, 19, 13, 6])] as [(Int, [CGFloat])] {
+            hearing.voiceLevel = tier
+            XCTAssertEqual(hearing.face.compact, .voice(.init(style: .bars(heights), tone: .accent, minimalSymbol: "mic.fill")))
+        }
+
+        // Duplicate working-during-voice display is merged into the same unified voice working face.
+        var workingVoice = PokiState(phase: .working, headline: "Open Settings", thumbnailVersion: 0)
+        workingVoice.app = "Settings"
+        workingVoice.voice = .thinking
+        workingVoice.plan = .init(steps: ["1", "2", "3", "4"], current: 3)
+        var idleWorkingVoice = PokiState(phase: .idle, headline: "", thumbnailVersion: 0)
+        idleWorkingVoice.voice = .working
+        idleWorkingVoice.voiceStep = "3/4"
+        XCTAssertEqual(workingVoice.face, idleWorkingVoice.face)
     }
 
     /// ESP-467: the island and the Lock Screen say what the task is doing, never the single tap under

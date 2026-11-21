@@ -430,6 +430,10 @@ struct RootView: View {
         } else {
             detailsOpen = false
             show(.chat)
+            if URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "type" && $0.value == "1" }) == true {
+                model.voice.dismissProblem()
+                MessageFieldAsk.shared.ask()
+            }
         }
     }
 

@@ -23,7 +23,7 @@ struct PokiActivityAttributes: ActivityAttributes {
         }
         /// Live voice session state when Poki's voice mode is active.
         enum Voice: String, Codable, Hashable {
-            case listening, thinking, speaking
+            case connecting, listening, hearing, thinking, working, speaking, failed, ended
         }
         /// Refreshes an existing activity when the shared UI language changes; older states decode nil.
         var uiLanguage: String? = nil
@@ -54,6 +54,10 @@ struct PokiActivityAttributes: ActivityAttributes {
         var guide: Guide?
         /// Live voice conversation state, when active.
         var voice: Voice? = nil
+        /// Voice waveform amplitude tier (0 = quiet, 1 = normal, 2 = loud) updated during hearing or speaking.
+        var voiceLevel: Int? = nil
+        /// Step progress shown while voice is operating on the phone (for example "3/4"), when known.
+        var voiceStep: String? = nil
         /// When the agent's current run of steps began.
         var since: Date?
         /// Actions taken in the current run, and how many of them did not go through. Kept by

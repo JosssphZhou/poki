@@ -78,6 +78,10 @@ enum ActivityTone: Hashable {
     /// The text colour itself.
     case plain
     case accent, approval, done, problem
+    /// Poki's primary brand blue on the black island (speaking bars), white on the blue Lock Screen card.
+    case brand
+    /// Light neutral grey on the black island (ended check mark and connecting minimal badge).
+    case muted
     /// The approval's reason line: white on the card, dimmed on the island.
     case reason
 }
@@ -89,6 +93,8 @@ struct ActivityPalette {
     var text = Color.white
     var quiet: Color
     var accent: Color
+    var brand: Color
+    var muted: Color
     var approval: Color
     var done: Color
     var problem: Color
@@ -112,6 +118,8 @@ struct ActivityPalette {
         case .quiet: quiet
         case .plain: text
         case .accent: accent
+        case .brand: brand
+        case .muted: muted
         case .approval: approval
         case .done: done
         case .problem: problem
@@ -127,17 +135,20 @@ struct ActivityTheme {
     /// only the square in Stop, a failed step's segment and the mark of a problem. Green and yellow are gone.
     /// On the blue card everything is white.
     var lock = ActivityPalette(
-        quiet: .white.opacity(0.72), accent: .white, approval: .white, done: .white,
+        quiet: .white.opacity(0.72), accent: .white, brand: .white, muted: .white.opacity(0.72),
+        approval: .white, done: .white,
         problem: .white, reason: .white.opacity(0.72), buttonFill: .white.opacity(0.20),
         segmentDone: .white, segmentFailed: Self.red, track: .white.opacity(0.28),
         primaryFill: .white, primaryText: Site.boardInk, rim: Site.boardInk.opacity(0.55))
     var island = ActivityPalette(
-        quiet: Self.secondary, accent: Site.sky, approval: Site.sky, done: Site.sky,
+        quiet: Self.secondary, accent: Site.sky, brand: Site.boardBlue, muted: Self.mutedLight,
+        approval: Site.sky, done: Site.sky,
         problem: Self.red, reason: Self.secondary, buttonFill: .white.opacity(0.22),
         segmentDone: Site.sky, segmentFailed: Self.red, track: .white.opacity(0.20),
         primaryFill: Site.boardBlue, primaryText: .white, rim: .black.opacity(0.70))
-    /// The system's secondary label on black, and its red in dark.
+    /// The system's secondary label on black, light neutral grey for ended/minimal marks, and red in dark.
     static let secondary = Color(red: 235 / 255, green: 235 / 255, blue: 245 / 255).opacity(0.6)
+    static let mutedLight = Color(hex: 0xB8B8C0)
     static let red = Color(hex: 0xFF453A)
     /// The flat blue the card had before its gradient: what the app's previews lay under the card.
     var lockBackground: Color? = Site.boardBlue
@@ -175,6 +186,10 @@ struct ActivityTheme {
     var titleTracking: CGFloat { Self.usesGeist ? -0.2 : 0 }
     var subtitle: Font { Self.font("Geist-Medium", .medium, 13) }
     var button: Font { Self.font("Geist-SemiBold", .semibold, 15) }
+    /// Compact capsule button in the expanded voice island ("End" / "Type").
+    var voiceButton: Font { Self.font("Geist-SemiBold", .semibold, 14) }
+    /// Step progress text in the voice island ("3/4"), scaled for compact (1.0) and expanded meta (0.8).
+    func voiceStep(scale: CGFloat) -> Font { Self.font("Geist-SemiBold", .semibold, 10.5 * scale).monospacedDigit() }
     /// The compact island's top line (what the task is doing), or its count when nothing is said.
     var compact: Font { Self.font("Geist-SemiBold", .semibold, 13) }
     /// Under it: the count ("2/5", "Step 7").
@@ -210,6 +225,8 @@ enum ActivityMotion {
     /// A new pose: the bear stays where it stands and the new pose fades in over the old one (ESP-467).
     /// No movement and no bounce, which on the phone read as the bear dropping and pressing.
     static let pose = Animation.easeInOut(duration: 0.35)
+    /// Voice state transition: 0.45 s cross-fade for bear pose and waveform bar heights.
+    static let voice = Animation.easeInOut(duration: 0.45)
 }
 
 extension AnyTransition {

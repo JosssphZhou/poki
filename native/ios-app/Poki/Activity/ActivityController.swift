@@ -338,7 +338,7 @@ final class ActivityController {
 
     /// Updates that change what the person must do or know go out at once, ahead of plain progress.
     private static func isCritical(_ state: PokiState, after old: PokiState) -> Bool {
-        state.phase != old.phase || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin
+        state.phase != old.phase || state.voice != old.voice || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin
     }
 
     /// iOS shows an alert's expanded island for a few seconds only. Halfway to the deadline, while the

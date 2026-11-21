@@ -17,7 +17,14 @@ final class TalkActivity {
     private let ended: @MainActor () -> Void
     /// End on the Live Activity: what stops with the talk.
     private let endFromLiveActivityAction: (@MainActor () -> Void)?
+    /// How long terminal voice states (`.ended`, `.failed`) stay visible before dismissing.
+    var dismissAfter: Duration = .seconds(3)
+    /// How often microphone loudness is sampled during `.hearing` to update waveform bar heights.
+    var levelPollInterval: Duration = .seconds(1)
     private var shown: PokiState.Voice?
+    private var shownStep: String?
+    private var dismissTask: Task<Void, Never>?
+    private var levelTask: Task<Void, Never>?
     private var wasMidTurn = false
     /// What EndTalkIntent's notification reaches; it holds this weakly, so an ended TalkActivity hears nothing.
     private let mailbox: Mailbox
@@ -39,32 +46,131 @@ final class TalkActivity {
 
     /// The talk's state as the Live Activity says it: nil while no talk is on.
     static func state(of voice: VoiceModel) -> PokiState.Voice? {
-        guard voice.isOn else { return nil }
         switch voice.phase {
-        case .off, .lost: return nil
-        case .connecting, .listening, .hearing: return .listening
-        case .thinking: return .thinking
+        case .off: return nil
+        case .lost: return .failed
+        case .connecting: return .connecting
+        case .listening: return .listening
+        case .hearing: return .hearing
+        case .thinking: return voice.calls.contains { $0.state == .running } ? .working : .thinking
         case .speaking: return .speaking
         }
     }
 
+    /// Maps WebRTC microphone `audioLevel` (0...1) to the three waveform tiers (0 = quiet, 1 = normal, 2 = loud).
+    static func loudnessTier(for level: Double) -> Int {
+        if level < 0.04 { return 0 }
+        if level < 0.16 { return 1 }
+        return 2
+    }
+
     private func follow() {
-        withObservationTracking { show(Self.state(of: voice)); turn(voice.midTurn) } onChange: { [weak self] in
+        withObservationTracking {
+            let next = Self.state(of: voice)
+            let step = next == .working ? voice.activeTurnStep : nil
+            show(next, step: step)
+            turn(voice.midTurn)
+        } onChange: { [weak self] in
             Task { @MainActor in self?.follow() }
         }
     }
 
-    private func show(_ talk: PokiState.Voice?, fromIntent: Bool = false) {
-        guard talk != shown else { return }
-        let started = shown == nil
-        shown = talk
-        activity.update { $0.voice = talk }
-        // Started from a tap in Poki, or from Talk Here's intent: the times iOS lets a Live Activity start.
-        if started, talk != nil { activity.start(deviceName: deviceName(), fromIntent: fromIntent) }
+    private func show(_ next: PokiState.Voice?, step: String? = nil, fromIntent: Bool = false) {
+        let wasActive = shown != nil && shown != .ended && shown != .failed
+        switch next {
+        case nil:
+            guard let current = shown else { return }
+            if current == .ended { return }
+            if current == .failed {
+                clearVoice()
+                return
+            }
+            levelTask?.cancel(); levelTask = nil
+            ended()
+            if activity.state.phase == .idle || activity.state.phase == .working {
+                holdTerminal(.ended)
+            } else {
+                clearVoice()
+            }
+        case .failed?:
+            guard wasActive else { return }
+            levelTask?.cancel(); levelTask = nil
+            ended()
+            if activity.state.phase == .idle || activity.state.phase == .working {
+                holdTerminal(.failed)
+            } else {
+                clearVoice()
+            }
+        case .ended?:
+            guard wasActive else { return }
+            levelTask?.cancel(); levelTask = nil
+            ended()
+            holdTerminal(.ended)
+        case let active?:
+            dismissTask?.cancel(); dismissTask = nil
+            let nextStep = active == .working ? step : nil
+            guard active != shown || nextStep != shownStep else { return }
+            let started = shown == nil
+            shown = active
+            shownStep = nextStep
+            activity.update { state in
+                state.voice = active
+                if active != .hearing && active != .speaking { state.voiceLevel = nil }
+                state.voiceStep = nextStep
+            }
+            // Started from a tap in Poki, or from Talk Here's intent: the times iOS lets a Live Activity start.
+            if started { activity.start(deviceName: deviceName(), fromIntent: fromIntent) }
+            if active == .hearing { startLevelPolling() } else { levelTask?.cancel(); levelTask = nil }
+        }
+    }
+
+    private func holdTerminal(_ terminal: PokiState.Voice) {
+        shown = terminal
+        shownStep = nil
+        activity.update { state in
+            state.voice = terminal
+            state.voiceLevel = nil
+            state.voiceStep = nil
+        }
+        dismissTask?.cancel()
+        let wait = dismissAfter
+        dismissTask = Task { [weak self] in
+            if wait > .zero { try? await Task.sleep(for: wait) }
+            guard !Task.isCancelled, let self, self.shown == terminal else { return }
+            self.clearVoice()
+        }
+    }
+
+    private func clearVoice() {
+        dismissTask?.cancel(); dismissTask = nil
+        levelTask?.cancel(); levelTask = nil
+        shown = nil
+        shownStep = nil
+        activity.update { state in
+            state.voice = nil
+            state.voiceLevel = nil
+            state.voiceStep = nil
+        }
         // Only a Live Activity that shows nothing else goes with the talk: an approval, a hand-off, a
         // problem, pairing or setup stays.
-        if talk == nil, !keepsActivity(), activity.state.phase == .idle { activity.end() }
-        if talk == nil, !started { ended() }
+        if !keepsActivity(), activity.state.phase == .idle { activity.end() }
+    }
+
+    private func startLevelPolling() {
+        levelTask?.cancel()
+        let interval = levelPollInterval
+        levelTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, let self, self.shown == .hearing else { return }
+                guard let level = await self.voice.inputAudioLevel() else { continue }
+                guard !Task.isCancelled, self.shown == .hearing else { return }
+                let tier = Self.loudnessTier(for: level)
+                if self.activity.state.voiceLevel != tier {
+                    self.activity.update { $0.voiceLevel = tier }
+                }
+            }
+        }
     }
 
     /// The talk's turn is over: Poki has answered and has nothing left to do for the request. A run of
@@ -82,14 +188,15 @@ final class TalkActivity {
     /// the intent runs, and the microphone only once it is up, because iOS ends an app that records in
     /// the background without one. false: the Live Activity did not start, and nothing else did.
     func startHere() async -> Bool {
-        show(.listening, fromIntent: true)
+        show(.connecting, fromIntent: true)
         guard activity.isRunning else {
-            show(nil)
+            clearVoice()
             return false
         }
         await voice.start()
-        // Not connected: the talk's phase says why, and the Live Activity goes (`follow` sees no talk).
-        show(Self.state(of: voice))
+        // Not connected: the talk's phase is `.lost`, which shows Connection failed for 3 s before dismissing.
+        let next = Self.state(of: voice)
+        show(next, step: next == .working ? voice.activeTurnStep : nil)
         return true
     }
 
