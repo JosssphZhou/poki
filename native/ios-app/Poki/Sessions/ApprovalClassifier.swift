@@ -85,8 +85,9 @@ enum ApprovalClassifier {
     /// The latest decisions by approval id, for the chat's grey line.
     private(set) static var verdicts: [String: Verdict] = [:]
 
-    static func decide(_ approval: PendingApproval, level: Level, voice: [VoiceLine]) async -> Verdict {
-        let verdict = await ask(approval, level: level, voice: voice)
+    static func decide(_ approval: PendingApproval, level: Level, voice: [VoiceLine],
+                       resolveModel: (ModelProvider, String) -> Model? = { $0.piModel($1) }) async -> Verdict {
+        let verdict = await ask(approval, level: level, voice: voice, resolveModel: resolveModel)
         verdicts[approval.id] = verdict
         if verdicts.count > 50 { verdicts.removeAll() }
         return verdict
@@ -135,10 +136,11 @@ enum ApprovalClassifier {
         return (text, complete)
     }
 
-    private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine]) async -> Verdict {
+    private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine],
+                            resolveModel: (ModelProvider, String) -> Model?) async -> Verdict {
         let provider = ModelKeys.selectedProvider
         guard provider.wired, ModelKeys.key(provider) != nil || provider == .custom,
-              let model = provider.piModel(ModelKeys.selectedModel) else {
+              let model = resolveModel(provider, ModelKeys.selectedModel) else {
             return Verdict(allowed: false, reason: "no chat model to ask")
         }
         var said = AskPoki.chat?.ownerContext ?? []
@@ -161,7 +163,11 @@ enum ApprovalClassifier {
         Conversation, oldest first:
         \(context.text)
         """
-        let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
+        // A live chat's approval shares its session. External approvals use their own stable ID
+        // rather than accidentally borrowing an unrelated chat's provider routing identity.
+        let approvalSessionID = AskPoki.chat?.running == true ? AskPoki.chat?.sessionID : nil
+        let loop = PiLoop(provider: provider, model: model,
+                          sessionID: approvalSessionID ?? "approval-\(approval.id)", tools: []) { _ in
             .init(text: "No tools.", jpeg: nil, isError: true)
         }
         // The first of the model's reply and the deadline answers; a late reply is dropped.
