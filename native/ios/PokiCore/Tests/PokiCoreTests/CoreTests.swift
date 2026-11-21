@@ -377,6 +377,53 @@ final class ApprovalTests: XCTestCase {
         }
     }
 
+    func testOwnerInstructionReplacesOnlyTheMatchingSendOrDeleteApproval() async {
+        let draft = "Meet at noon"
+        let send = OwnerApprovalInstruction(id: UUID(), text: "请用微信发给小林：Meet at noon")
+        let delete = OwnerApprovalInstruction(id: UUID(), text: "请删除备忘录里的周末清单")
+        let readOnly = OwnerApprovalInstruction(id: UUID(), text: "只打开内容给我看")
+        for operation in [OwnerApprovalStep.Kind.message, .deletion] {
+            let message = operation == .message
+            let expected = message ? send : delete
+            let control = message ? "Send" : "删除周末清单"
+            let bundle = message ? "com.tencent.xin" : "com.apple.mobilenotes"
+            for instruction in [expected, readOnly, nil] as [OwnerApprovalInstruction?] {
+                let wda = FakeWDA()
+                wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle)]]) }
+                wda.tree([
+                    Node("NavigationBar", message ? "小林" : "周末清单", [0, 40, 390, 44]),
+                    Node("TextView", "Message", [12, 420, 250, 45], value: draft),
+                    Node("Button", control, [280, 420, 88, 45]),
+                ])
+                let (core, _, _) = makeCore(wda) {
+                    $0.approvalWait = 0
+                    $0.approvalMode = { .off }
+                    $0.approveOwnerStep = { text, step in
+                        text == expected.text && step.kind == operation && step.control == control
+                            && (message ? step.draft == draft && step.context.contains("小林") : step.draft == nil)
+                    }
+                }
+                let args = #"{"actions":[{"tap":[324,442]}],"ownerInstruction":"Please send and delete"}"#
+                _ = await core.callTool("look", arguments: "{}")
+
+                let result = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                    await core.callTool("do", arguments: args)
+                }
+
+                let alreadyAsked = instruction?.id == expected.id
+                XCTAssertEqual(wda.bodies("POST /wda/tap").count, alreadyAsked ? 1 : 0, result.text)
+                XCTAssertEqual(core.pendingApproval == nil, alreadyAsked, result.text)
+                if alreadyAsked {
+                    _ = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                        await core.callTool("do", arguments: args)
+                    }
+                    XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, "One instruction must not repeat the same sensitive step")
+                    XCTAssertNotNil(core.pendingApproval)
+                }
+            }
+        }
+    }
+
     func screenWithDelete() -> FakeWDA {
         let wda = FakeWDA()
         wda.source([("Button", "Delete Photo"), ("Button", "Share")], app: "Photos")

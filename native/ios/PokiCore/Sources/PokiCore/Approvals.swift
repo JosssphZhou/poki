@@ -1,5 +1,36 @@
 import Foundation
 
+/// Set by the app for a direct owner turn, outside the tool arguments.
+public struct OwnerApprovalInstruction: Sendable {
+    @TaskLocal public static var current: OwnerApprovalInstruction?
+    public let id: UUID
+    public let text: String
+
+    public init(id: UUID, text: String) {
+        self.id = id
+        self.text = text
+    }
+}
+
+public struct OwnerApprovalStep: Encodable, Hashable, Sendable {
+    public enum Kind: String, Encodable, Sendable {
+        case payment, deletion, message
+
+        init?(reason: String) {
+            if reason.hasPrefix("a payment (") { self = .payment }
+            else if reason.hasPrefix("deleting (") { self = .deletion }
+            else if reason.hasPrefix("sending a message ("), !reason.contains("screen not read yet") { self = .message }
+            else { return nil }
+        }
+    }
+
+    public let kind: Kind
+    public let app: String
+    public let control: String
+    public let context: [String]
+    public let draft: String?
+}
+
 /// What needs the owner's approval on the phone before it is sent. Words match whole words or
 /// phrases, case-insensitively, in the label, value or identifier of the element an action touches: at
 /// the start of the text, anywhere in a short one, or anywhere on an action button. A name inside a
@@ -60,8 +91,42 @@ public struct SensitivityRules: Sendable, Equatable {
         return nil
     }
 
+    static func shortCJK(_ text: String) -> Bool {
+        text.filter(\.isLetter).count <= 12
+    }
+
+    private static let currencyAmount = #"(?:[¥￥$€£]\s*[0-9]|[0-9][0-9,.]*\s*(?:元|圆|圓|USD|HKD|CNY|RMB|EUR|GBP))"#
+    private static let paymentConfirm = #"^(?:确认|確認|确定|確定|confirm)\s*[:：]?\s*"# + currencyAmount
+    private static let paymentVerb = #"^(?:(?:确认|確認|立即|现在|現在|马上|馬上|完成)\s*)?(?:确认支付|確認支付|支付|付款|转账|轉帳|轉賬|购买|購買|订阅|訂閱|下单|下單)(?=$|\s|[¥￥$€£0-9:：]|确认|確認)"#
+
+    func paymentReason(on element: Element?) -> String? {
+        guard let element else { return nil }
+        for raw in [element.text, element.identifier ?? ""] {
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.range(of: Self.paymentConfirm, options: [.regularExpression, .caseInsensitive]) != nil {
+                return "a payment (\"confirm amount\")"
+            }
+            let words = payments.filter { !$0.unicodeScalars.contains(where: { $0.value > 0x2E80 }) }
+            let description = #"\b(?:payment|pay)[\s_-]+(?:methods?|options?|history|details|receipts?|settings|offers?)\b|^tap[\s_-]+here[\s_-]+to[\s_-]+see\b"#
+            if text.range(of: description, options: [.regularExpression, .caseInsensitive]) == nil,
+               let word = Self.matches(text, words.filter { $0 != "payment" }, elementType: element.type) {
+                return "a payment (\"\(word)\")"
+            }
+            if text.range(of: #"\b(?:complete|confirm|make) (?:the |a |this )?payment\b"#, options: [.regularExpression, .caseInsensitive]) != nil,
+               words.contains("payment") {
+                return "a payment (\"payment\")"
+            }
+            if let word = payments.first(where: { $0.unicodeScalars.contains(where: { $0.value > 0x2E80 }) && text.contains($0) }),
+               text.range(of: Self.paymentVerb, options: .regularExpression) != nil
+                || (text.hasPrefix("使用") && Self.shortCJK(text) && text.range(of: Self.currencyAmount, options: .regularExpression) != nil) {
+                return "a payment (\"\(word)\")"
+            }
+        }
+        return nil
+    }
+
     /// Why this action needs approval, or nil.
-    func reason(touching element: Element?, typing: Bool, app: Foreground?, secureOnScreen: Bool) -> String? {
+    func reason(touching element: Element?, typing: Bool, app: Foreground?, secureOnScreen: Bool, paymentButton: Element? = nil) -> String? {
         guard enabled else { return nil }
         if let bundle = app?.bundleID, guardedApps.contains(bundle) { return "input in \(app?.describe ?? bundle)" }
         if typing, secureFields, element?.isSecure == true || (element == nil && secureOnScreen) { return "typing into a password field" }
@@ -75,8 +140,11 @@ public struct SensitivityRules: Sendable, Equatable {
         func match(_ words: [String]) -> String? {
             texts.lazy.compactMap { Self.matches($0, words, elementType: element.type) }.first
         }
-        if let word = match(payments) { return "a payment (\"\(word)\")" }
-        if let word = match(deletions) { return "deleting (\"\(word)\")" }
+        if let reason = paymentReason(on: element) ?? paymentReason(on: paymentButton) { return reason }
+        if let word = match(deletions), !word.unicodeScalars.contains(where: { $0.value > 0x2E80 })
+            || texts.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(word) || Self.shortCJK($0) && $0.contains(word) }) {
+            return "deleting (\"\(word)\")"
+        }
         if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
         if let word = match(calling) { return "a call (\"\(word)\")" }
         if let bundle = app?.bundleID, messagingApps.contains(bundle), let word = match(sending) {

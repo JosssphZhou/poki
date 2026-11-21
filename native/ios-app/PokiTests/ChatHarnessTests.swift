@@ -954,6 +954,49 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertFalse(verdict.allowed, "Omitted evidence must require owner confirmation")
     }
 
+    func testDirectChatSendAndDeleteAskOnlyWhenTheCurrentInstructionDoesNotCoverThem() async throws {
+        let defaults = UserDefaults.standard
+        let mode = defaults.object(forKey: ApprovalClassifier.modeKey)
+        defaults.set(ApprovalClassifier.Mode.confirm.rawValue, forKey: ApprovalClassifier.modeKey)
+        defer { defaults.set(mode, forKey: ApprovalClassifier.modeKey) }
+        for (message, request, allowed) in [
+            (true, "Send Riley the message Meet at noon in WeChat.", true),
+            (true, "Show me Riley's chat in WeChat.", false),
+            (false, "Delete the Weekend list in Notes.", true),
+            (false, "Open the Weekend list in Notes and show it to me.", false),
+        ] {
+            let transport = ApprovalScreenTransport(message: message)
+            let server = try FakeCompletions(replies: [
+                FakeCompletions.tool("report_plan", ["steps": ["Check the requested action"], "currentStep": 1]),
+                FakeCompletions.tool("look", ["full": true]),
+                FakeCompletions.tool("do", ["actions": [["tap": [324, 442]]]]),
+                FakeCompletions.text(allowed ? "ALLOW" : "REFUSE"),
+                FakeCompletions.text("Checked the action."),
+            ])
+            let chat = chat(on: server, transport: transport, kind: .poki)
+            let app = try XCTUnwrap(app)
+            defer { SessionStore.shared.delete(chat.sessionID) }
+            var requests = 0
+            app.addShellObserver { [weak app] event in
+                guard case .approvalRequested(let approval) = event else { return }
+                requests += 1
+                app?.resolve(approval, approved: false)
+            }
+
+            chat.send(request)
+            try await waitForTask(chat)
+
+            XCTAssertEqual(requests, allowed ? 0 : 1, request)
+            XCTAssertEqual(transport.touches, allowed ? 1 : 0, request)
+            let decision = try XCTUnwrap(server.requests.first { FakeCompletions.system($0).contains("single current owner instruction") })
+            let messages = try XCTUnwrap(decision["messages"] as? [[String: Any]])
+            let input = try XCTUnwrap(messages.last { $0["role"] as? String == "user" })
+            let payload = try JSON.parse(Self.messageText(input))
+            XCTAssertEqual(payload["instruction"]?.string, request)
+            XCTAssertEqual(payload["step"]?["kind"]?.string, message ? "message" : "deletion")
+        }
+    }
+
     func testSmallAttachmentRetainsItsCompleteBoundaryInApprovalRequest() async throws {
         let server = try FakeCompletions(replies: [FakeCompletions.text("Done."), FakeCompletions.text("REFUSE: ask the owner")])
         let chat = chat(on: server)
@@ -3274,6 +3317,42 @@ private actor PasteReceiptTransport: HTTPTransport {
             return try await screen.send(method: method, url: url, body: body, timeout: timeout)
         }
         return (200, (["value": value] as JSON).data())
+    }
+}
+
+private final class ApprovalScreenTransport: HTTPTransport, @unchecked Sendable {
+    private let message: Bool
+    private let base: SessionScreenTransport
+    private let lock = NSLock()
+    private var taps = 0
+    var touches: Int { lock.withLock { taps } }
+
+    init(message: Bool) {
+        self.message = message
+        let automation = FakeAutomation()
+        _ = automation.prepare()
+        base = SessionScreenTransport(session: automation)
+    }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
+        let value: JSON
+        switch path {
+        case "/wda/activeAppInfo":
+            value = ["bundleId": .string(message ? "com.tencent.xin" : "com.apple.mobilenotes"), "name": .string(message ? "WeChat" : "Notes")]
+        case "/source":
+            let title = message ? "Riley" : "Weekend list"
+            let control = message ? "Send" : "Delete Weekend list"
+            let draft = message ? #"<XCUIElementTypeTextView label="Message" value="Meet at noon" x="12" y="420" width="250" height="45"/>"# : ""
+            value = .string(#"<AppiumAUT><XCUIElementTypeApplication x="0" y="0" width="390" height="844"><XCUIElementTypeNavigationBar label="\#(title)" x="0" y="40" width="390" height="44"/>\#(draft)<XCUIElementTypeButton label="\#(control)" x="280" y="420" width="88" height="45"/></XCUIElementTypeApplication></AppiumAUT>"#)
+        case "/wda/tap":
+            lock.withLock { taps += 1 }
+            value = .null
+        default:
+            return try await base.send(method: method, url: url, body: body, timeout: timeout)
+        }
+        let response: JSON = ["value": value]
+        return (200, response.data())
     }
 }
 

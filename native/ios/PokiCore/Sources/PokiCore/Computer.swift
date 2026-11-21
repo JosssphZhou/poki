@@ -134,6 +134,7 @@ final class Computer: @unchecked Sendable {
     var typedInto: (ref: Int, text: String)?
     /// The text this task last typed (not a password), for the send check after Return in a chat app.
     var typedText: String?
+    private var usedOwnerApproval: (turn: UUID, steps: Set<OwnerApprovalStep>)?
     /// How much of the picture changed in the latest read while the elements did not (nil when the
     /// elements changed too, or nothing did): a whole new picture over an unchanged tree is the old
     /// app's tree under the new app's screen (gym: Photos launched from Safari).
@@ -1203,7 +1204,7 @@ final class Computer: @unchecked Sendable {
             var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
             for (at, action) in actions.enumerated() {
                 if scan.moved, let kind = ActionKind(action), presses(kind, action, scan, unread: false).contains(where: \.atPoint) {
-                    var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy, byOwnersVoice: byOwnersVoice, onActionSucceeded: onActionSucceeded)
+                    var result = await actNow(actions: Array(actions[..<at]), full: full, finish: false, session: session, answerBy: answerBy, byOwnersVoice: byOwnersVoice, local: local, localTask: localTask, onActionSucceeded: onActionSucceeded)
                     result.text += "\nnot_sent from action \(at + 1): a coordinate action needs a fresh read after an earlier action that could change the screen. This check runs before the final screen comparison. Choose the remaining actions from the screen above and send them in a new do call. Do not repeat actions already sent."
                     return result
                 }
@@ -1257,45 +1258,53 @@ final class Computer: @unchecked Sendable {
                         return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: ["action \(at + 1) and the actions after it were not sent (they would have needed the owner's approval: \(reason))"])
                     }
                 }
-                let approval = approvals.pending.flatMap { $0.covers(scope, workspaceSession: workspaceSession) ? $0 : nil }
-                    ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, scope: scope, workspaceSession: workspaceSession,
-                                           stopsWhenOff: sensitiveSteps(actions, under: config.sensitive.asked(.off)).isEmpty)
-                // The time the owner takes is not the actions' time: the clock starts again after it.
-                let asked = now()
-                let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
-                let waited = now() - asked
-                until += waited
-                started += waited
-                approvalWaited += waited
-                // The caller gave up while the owner was being waited for (the relay sent `cancel`): the
-                // model will send these actions again, so nothing is sent for this call, whatever the owner does.
-                if Task.isCancelled {
-                    approvals.discardWorkspaceDecisions(session: workspaceSession)
-                    return ToolResult(text: "cancelled: the caller stopped waiting before the owner answered; nothing was sent from action \(at + 1).", jpeg: nil, isError: true)
-                }
-                // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
-                // Nothing of the owner's can have done that while the request is still unanswered, and
-                // the time is the answer's.
-                if outcome != nil, let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
-                let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
-                let again = at > 0 ? "send action \(at + 1)\(tail.count > 1 ? " to \(actions.count)" : "") again, on their own" : "send the same actions again"
-                switch outcome {
-                case .approved? where answerBy.map({ now() + timeToFinish(tail, until: until) + Self.relayMargin > $0 }) == true:
-                    // Too late for the relay: the actions would run after it answered its caller with a 504, and
-                    // the model would send them again. The approval stays; the same actions sent again run at once.
-                    return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner approved on the phone, but too late for this call to send the actions and read the screen before the relay gives up on it.\(sentFirst) The approval is kept: \(again) and they run at once (within \(Int(approvals.lifetime / 60)) minutes).")
-                case .approved?:
-                    guard approvals.consumeGrant(scope: scope, workspaceSession: workspaceSession) != nil else {
-                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The approval went to another call with the same actions, so nothing was sent from this one.\(sentFirst) To run them, \(again) and ask again.")
-                    }
-                    approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
+                if local, actions.count == at + 1, steps.count == 1,
+                   actions[..<at].allSatisfy({ ActionKind($0) == .type || ActionKind($0)?.changesScreen($0) == false }),
+                   await directlyAuthorized(tail[0], reason: reason, until: until) {
+                    if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
+                    approvedNote = "approval: matched the owner's current instruction (\(reason))"
                     toRun = tail
-                case .declined?:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)")
-                case .expired?:
-                    return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the approval request ended unanswered (\(reason)).\(sentFirst)")
-                case nil:
-                    return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone.\(sentFirst) When they approve, \(again) (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.")
+                } else {
+                    let approval = approvals.pending.flatMap { $0.covers(scope, workspaceSession: workspaceSession) ? $0 : nil }
+                        ?? approvals.request(app: lastForeground?.describe ?? "unknown", summary: labels(tail), reason: reason, scope: scope, workspaceSession: workspaceSession,
+                                               stopsWhenOff: sensitiveSteps(actions, under: config.rules(for: .off)).isEmpty)
+                    // The time the owner takes is not the actions' time: the clock starts again after it.
+                    let asked = now()
+                    let outcome = await approvals.wait(id: approval.id, seconds: approvalHold(answerBy: answerBy))
+                    let waited = now() - asked
+                    until += waited
+                    started += waited
+                    approvalWaited += waited
+                    // The caller gave up while the owner was being waited for (the relay sent `cancel`): the
+                    // model will send these actions again, so nothing is sent for this call, whatever the owner does.
+                    if Task.isCancelled {
+                        approvals.discardWorkspaceDecisions(session: workspaceSession)
+                        return ToolResult(text: "cancelled: the caller stopped waiting before the owner answered; nothing was sent from action \(at + 1).", jpeg: nil, isError: true)
+                    }
+                    // The owner's approval can open Poki: the app comes back before anything is sent into Poki.
+                    // Nothing of the owner's can have done that while the request is still unanswered, and
+                    // the time is the answer's.
+                    if outcome != nil, let back = await bringBack(from: before, why: "after the approval", check: true) { extra.append(back) }
+                    let sentFirst = at > 0 ? " Actions 1 to \(at) were sent (below)." : ""
+                    let again = at > 0 ? "send action \(at + 1)\(tail.count > 1 ? " to \(actions.count)" : "") again, on their own" : "send the same actions again"
+                    switch outcome {
+                    case .approved? where answerBy.map({ now() + timeToFinish(tail, until: until) + Self.relayMargin > $0 }) == true:
+                        // Too late for the relay: the actions would run after it answered its caller with a 504, and
+                        // the model would send them again. The approval stays; the same actions sent again run at once.
+                        return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner approved on the phone, but too late for this call to send the actions and read the screen before the relay gives up on it.\(sentFirst) The approval is kept: \(again) and they run at once (within \(Int(approvals.lifetime / 60)) minutes).")
+                    case .approved?:
+                        guard approvals.consumeGrant(scope: scope, workspaceSession: workspaceSession) != nil else {
+                            return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The approval went to another call with the same actions, so nothing was sent from this one.\(sentFirst) To run them, \(again) and ask again.")
+                        }
+                        approvedNote = "approval: approved on the phone after \(Int(waited.rounded())) s (\(reason))"
+                        toRun = tail
+                    case .declined?:
+                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the owner declined on the phone (\(reason)).\(sentFirst)")
+                    case .expired?:
+                        return await refused(until: until, full: full, did: did, text: "not_sent from action \(at + 1): the approval request ended unanswered (\(reason)).\(sentFirst)")
+                    case nil:
+                        return await refusedAwaitingResend(approval, tail: tail, before: gatedAlone!, at: at, until: until, full: full, did: did, text: "not_sent from action \(at + 1): approval_required (id \(approval.id)): \(reason). The owner was asked on the phone.\(sentFirst) When they approve, \(again) (within \(Int(approvals.lifetime / 60)) minutes); other actions withdraw the request.")
+                    }
                 }
             }
         }
@@ -1578,7 +1587,7 @@ final class Computer: @unchecked Sendable {
             defer { if let kind = ActionKind(action), kind.changesScreen(action) { moved = true; changed = (kind.rawValue, now()) } }
             let check = moved
                 ? await pressNow(action, after: changed, approved: approved[index], until: until - config.readTimeout - 0.5)
-                : (problem: nil, backTarget: nil)
+                : (problem: navigationPaymentProblem(action), backTarget: nil)
             if let held = check.problem {
                 did.append("\(action.serialized()) (not_sent)")
                 error = "action \(index + 1) was not sent: \(held)\(i + 1 < actions.count ? "; the actions after it were not sent" : "")"
@@ -1679,9 +1688,10 @@ final class Computer: @unchecked Sendable {
         }
         skillStepApp = elements.foreground.bundleID
         let backTarget = kind == .back ? BackTarget(in: elements.all) : nil
-        let scan = SensitiveScan(front: elements.foreground, secureOnScreen: false, elements: listable(elements.all, screen))
+        let scan = SensitiveScan(front: elements.foreground, secureOnScreen: false, elements: listable(elements.all, screen), tree: elements.all)
         for press in presses(kind, action, scan, unread: false, backTarget: backTarget) {
-            guard let reason = rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front, secureOnScreen: false), reason != approved else { continue }
+            guard let reason = pressReason(press, in: scan, rules: rules), reason != approved else { continue }
+            if Self.isNavigationPayment(action, reason: reason) { return (Self.navigationPaymentRefusal, nil) }
             return ("the action before it may have changed the screen, and where it touches now it needs the owner's approval (\(reason)). Choose the remaining actions from the fresh screen below and send them in a new do", nil)
         }
         return (nil, backTarget)
@@ -1833,6 +1843,52 @@ final class Computer: @unchecked Sendable {
 
     // MARK: Sensitivity
 
+    private func directlyAuthorized(_ action: JSON, reason: String, until: Double) async -> Bool {
+        guard let instruction = OwnerApprovalInstruction.current, !instruction.text.isEmpty,
+              let check = config.approveOwnerStep, let kind = OwnerApprovalStep.Kind(reason: reason),
+              let screen = size, let front = lastForeground?.bundleID,
+              let before = await settledRead(until: min(until, now() + Self.settleWindow)),
+              before.foreground.bundleID == front else { return false }
+
+        func step(in read: (all: [Element], foreground: Foreground)) -> OwnerApprovalStep? {
+            guard read.foreground.bundleID == front else { return nil }
+            let elements = read.all
+            let listed = listable(elements, screen)
+            let title = elements.filter { ["NavigationBar", "Alert", "Sheet"].contains($0.type) }
+            let context = elements.filter { element in
+                !element.isSecure && !element.fromPicture && (title.contains(element) || title.contains { $0.contains(element) })
+            }.map(\.text).filter { !$0.isEmpty }
+            let control: String
+            if ActionKind(action) == .tap, let p = try? point(action["tap"]), let target = element(at: p, in: listed),
+               self.target(action["tap"])?.key == target.key {
+                let scan = SensitiveScan(front: read.foreground, secureOnScreen: false, elements: listed, tree: elements)
+                guard pressReason((target, false, .tap), in: scan, rules: config.rules) == reason else { return nil }
+                let button = elements.last { $0.type == "Button" && $0.contains(target) }
+                control = [target.text, button?.text ?? ""].filter { !$0.isEmpty }.joined(separator: " / ")
+            } else if ActionKind(action) == .key, Self.isReturn(action), kind == .message {
+                control = "Return in the message composer"
+            } else {
+                return nil
+            }
+            let draft = kind == .message ? elements.last(where: {
+                Self.fieldTypes.contains($0.type) && !$0.isSecure && !Self.isSearch($0)
+            })?.value : nil
+            guard !control.isEmpty, control.count <= 512, context.joined().count <= 2000,
+                  kind != .message || draft.map({ !$0.isEmpty && $0.count <= 2000 }) == true else { return nil }
+            return OwnerApprovalStep(kind: kind, app: read.foreground.describe, control: control, context: context, draft: draft)
+        }
+
+        guard let proposed = step(in: before) else { return false }
+        if usedOwnerApproval?.turn == instruction.id, usedOwnerApproval?.steps.contains(proposed) == true { return false }
+        guard await check(instruction.text, proposed), !Task.isCancelled,
+              PhoneOperationCancellation.current?.isCancelled != true,
+              let after = await settledRead(until: min(until, now() + Self.settleWindow)),
+              step(in: after) == proposed else { return false }
+        if usedOwnerApproval?.turn != instruction.id { usedOwnerApproval = (instruction.id, []) }
+        usedOwnerApproval?.steps.insert(proposed)
+        return true
+    }
+
     /// Whether an input action would run with Poki in front: the app of the latest read, followed through
     /// the launches and Home presses before it.
     func landsInPoki(_ actions: [JSON]) -> Bool {
@@ -1895,6 +1951,7 @@ final class Computer: @unchecked Sendable {
         var secureOnScreen: Bool
         /// The elements to look under a point in; nil for the latest read (and its numbers).
         var elements: [Element]?
+        var tree: [Element]?
     }
 
     /// Each action of a batch that needs the owner's approval, and why, judged on the latest read.
@@ -1904,7 +1961,9 @@ final class Computer: @unchecked Sendable {
         var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
         var matches: [(at: Int, reason: String)] = []
         for (at, action) in actions.enumerated() {
-            if let reason = sensitive(action, &scan, under: rules) { matches.append((at, reason)) }
+            if let reason = sensitive(action, &scan, under: rules), !Self.isNavigationPayment(action, reason: reason) {
+                matches.append((at, reason))
+            }
         }
         return matches
     }
@@ -1924,6 +1983,28 @@ final class Computer: @unchecked Sendable {
     /// alone, since a swipe in Phone or Wallet scrolls rather than calls or pays.
     enum Press { case tap, button, stroke }
 
+    private static let navigationPaymentRefusal = "this navigation gesture would touch a payment button. Choose a different area, or tap the payment button explicitly."
+
+    private static func isNavigationPayment(_ action: JSON, reason: String) -> Bool {
+        guard reason.hasPrefix("a payment ("), let kind = ActionKind(action) else { return false }
+        return kind == .swipe || kind == .scrollTo || kind == .back
+    }
+
+    private func navigationPaymentProblem(_ action: JSON) -> String? {
+        guard let kind = ActionKind(action), kind == .swipe || kind == .scrollTo || kind == .back else { return nil }
+        var scan = SensitiveScan(front: lastForeground, secureOnScreen: false)
+        guard let reason = sensitive(action, &scan), Self.isNavigationPayment(action, reason: reason) else { return nil }
+        return Self.navigationPaymentRefusal
+    }
+
+    private func pressReason(_ press: (element: Element?, atPoint: Bool, judged: Press), in scan: SensitiveScan, rules: SensitivityRules) -> String? {
+        let button = press.element.flatMap { element in
+            (scan.tree ?? scan.elements ?? lastAll).last { $0.type == "Button" && $0.contains(element) }
+        }
+        return rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front,
+                            secureOnScreen: scan.secureOnScreen, paymentButton: button)
+    }
+
     /// Where an action puts a finger down and lifts it on one element, which a control takes as a press
     /// whatever the action is called. A swipe or scroll_to presses what holds both ends of its first
     /// stroke on a screen that was read (a stroke inside one tall button, or across a wide one). A
@@ -1937,6 +2018,10 @@ final class Computer: @unchecked Sendable {
         func isPhotoContent(_ element: Element?) -> Bool {
             scan.front?.bundleID == "com.apple.mobileslideshow" && element?.type == "Image"
         }
+        func isScreenContent(_ element: Element) -> Bool {
+            guard element.type != "Button", let screen = size, screen.width > 0, screen.height > 0 else { return false }
+            return element.frame.width * element.frame.height > 0.5 * screen.width * screen.height
+        }
         // On a screen read after the numbers were given, a number is judged by what lies where it is touched.
         func under(_ p: (x: Double, y: Double)?) -> Element? { p.flatMap { element(at: $0, in: scan.elements) } }
         func at(_ spec: JSON?) -> (element: Element?, atPoint: Bool, judged: Press)? {
@@ -1947,7 +2032,7 @@ final class Computer: @unchecked Sendable {
         }
         func stroke(in spec: JSON?, _ direction: String, _ distance: String) -> [(element: Element?, atPoint: Bool, judged: Press)] {
             guard !unread, let screen = size, let path = try? swipePath(try area(spec, screen), direction, distance),
-                  let down = element(at: (path.0, path.1), in: scan.elements), !isPhotoContent(down),
+                  let down = element(at: (path.0, path.1), in: scan.elements), !isPhotoContent(down), !isScreenContent(down),
                   down == element(at: (path.2, path.3), in: scan.elements) else { return [] }
             return [(down, false, .stroke)]
         }
@@ -1985,9 +2070,9 @@ final class Computer: @unchecked Sendable {
            destination != "com.apple.mobilenotes" { return "dropping content into \(destination)" }
         if kind == .tap { scan.typingTarget = unread ? nil : target(spec, in: scan.elements) }
         for press in presses(kind, action, scan, unread: unread) {
-            if let r = rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front, secureOnScreen: scan.secureOnScreen) { return r }
+            if let r = pressReason(press, in: scan, rules: rules) { return r }
             guard press.judged == .tap else { continue }
-            if unread, messaging { return "sending a message (a tap in \(app) on a screen not read yet)" }
+            if unread, messaging, config.approveOwnerStep == nil { return "sending a message (a tap in \(app) on a screen not read yet)" }
             // After a launch or a run nothing of the app's screen was read: a Delete there reads as nothing.
             // The home screen after Home opens apps, which ask for themselves.
             if !scan.read, scan.front != nil { return "a tap on a screen not read yet (in \(app))" }

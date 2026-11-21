@@ -336,6 +336,7 @@ final class VoiceModel {
         }
     }
     private var liveDelegations: [String: LiveDelegationState] = [:]
+    private var liveApprovalInstructions: [String: OwnerApprovalInstruction] = [:]
     private var liveHasCancellation = false
     private struct LiveCallerSpeech {
         struct Transcript: Equatable {
@@ -823,6 +824,7 @@ final class VoiceModel {
         liveDelegations.removeAll()
         liveHasCancellation = false
         liveCallerSpeech = LiveCallerSpeech()
+        liveApprovalInstructions.removeAll()
         liveUsageSeconds = nil
         liveScreenDescription = nil
         liveResultReceipts.removeAll()
@@ -1187,7 +1189,8 @@ final class VoiceModel {
                     liveDelegations[id] = .duplicate
                     return
                 }
-                let parts = Self.liveSpeechParts(liveCallerSpeech.text)
+                let transcript = liveCallerSpeech.text
+                let parts = Self.liveSpeechParts(transcript)
                 let audio = liveCallerSpeech.pending?.audio
                 let fallback = liveCallerSpeech.pendingTextReceipt
                 liveCallerSpeech.markHandled()
@@ -1203,6 +1206,9 @@ final class VoiceModel {
                     liveDelegations[id] = .awaitingFirstTool(audio: audio, fallback: fallback)
                 } else {
                     liveDelegations[id] = .active
+                }
+                if newRequest, liveDelegations[id]?.canRunTools == true {
+                    liveApprovalInstructions[id] = OwnerApprovalInstruction(id: UUID(), text: transcript)
                 }
             }
             link.send(["type": "session.thinking.append", "event_id": UUID().uuidString, "delegation_id": NSNull(), "content": ""])
@@ -1474,7 +1480,10 @@ final class VoiceModel {
             var output: String
             var screen: Data?
             if local, Self.phoneTools.contains(call.name) {
-                let answer = await phoneTool(call.name, call.arguments, operation)
+                let instruction = live ? call.delegation.flatMap { liveApprovalInstructions[$0] } : nil
+                let answer = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                    await phoneTool(call.name, call.arguments, operation)
+                }
                 output = answer.text.count > 6000 ? String(answer.text.prefix(6000)) + "…" : answer.text
                 screen = answer.screen
                 if answer.failed { state = .failed }

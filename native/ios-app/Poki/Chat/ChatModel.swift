@@ -269,7 +269,7 @@ final class ChatModel {
         [ChatEntry(.time(Date())),
          ChatEntry(.poki(AppLocalization.text(LocalizedStringResource("Hi, I’m Poki. Tell me what to do on this iPhone.")))),
          ChatEntry(.poki(app.asksBeforeSensitiveSteps ? AppLocalization.text(LocalizedStringResource("I’ll ask before anything you can’t undo."))
-                         : AppLocalization.text(LocalizedStringResource("Payments, deletions, and Wallet actions always require your confirmation; other sensitive steps go ahead without asking."))))]
+                         : AppLocalization.text(LocalizedStringResource("Poki asks before sending, deleting or paying unless you explicitly asked for that step. Wallet still needs your confirmation."))))]
     }
 
     private var greetingIDs: [UUID] = []
@@ -1414,12 +1414,18 @@ final class ChatModel {
             } else {
                 phoneArguments = call.arguments
             }
-            let response = await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
-                                             expectedApps: expectedSplitViewApps, localTask: localTask) { [weak self, notesByAction] index, step, skill in
-                guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
-                let action = notesByAction[index]
-                let ids = step.map { action.steps[$0] ?? [] } ?? action.direct
-                self.recordMemoryUse(ids, skill: skill)
+            let instruction = entries.first { $0.id == taskRequestID }.flatMap { entry -> OwnerApprovalInstruction? in
+                guard kind == .poki, case .you(let text, _) = entry.kind else { return nil }
+                return OwnerApprovalInstruction(id: entry.id, text: text)
+            }
+            let response = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
+                                  expectedApps: expectedSplitViewApps, localTask: localTask) { [weak self, notesByAction] index, step, skill in
+                    guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
+                    let action = notesByAction[index]
+                    let ids = step.map { action.steps[$0] ?? [] } ?? action.direct
+                    self.recordMemoryUse(ids, skill: skill)
+                }
             }
             guard taskToken == runToken else { return response }
             messageScreen = response.isError || response.waitingForOwner ? nil : response.numberedScreen

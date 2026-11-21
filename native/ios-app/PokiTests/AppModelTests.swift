@@ -431,7 +431,7 @@ final class ApprovalDefaultTests: XCTestCase {
             for await event in core.events { if case .approvalRequested(let approval) = event { pending.append(approval) } }
         }
         defer { eventsTask.cancel() }
-        for (label, offered) in [("Send", true), ("Pay", false), ("Delete", false)] {
+        for (label, offered) in [("Call Alice", true), ("Send", false), ("Pay", false), ("Delete", false)] {
             pending.removeAll()
             _ = await core.clearTap(on: label, inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.3)
             let approval = try XCTUnwrap(pending.first, "\(label) raised no approval")
@@ -446,7 +446,7 @@ final class ApprovalDefaultTests: XCTestCase {
     func testAnOwnerWhoTurnedAskingOffIsNotAsked() async {
         UserDefaults.standard.set(false, forKey: LiveCore.askKey)
         let core = LiveCore(host: AppCoreHost(), transport: URLSessionTransport())
-        let tap = await core.clearTap(on: "Send", inApp: "com.apple.MobileSMS", named: "Messages", waiting: 0.2)
+        let tap = await core.clearTap(on: "Call Alice", inApp: "com.apple.mobilephone", named: "Phone", waiting: 0.2)
         XCTAssertEqual(tap, .clear)
     }
 

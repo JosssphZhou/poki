@@ -60,9 +60,9 @@ final class SensitivityTests: XCTestCase {
         }
     }
 
-    func testHyphenatedRowsKeepTheBasesApprovalProtection() {
+    func testHyphenatedReceiptLinksAreNotPayments() {
         for label in ["Tap-here-to-see-this-payment-receipt", "Tap-here-to-see-the-buy-receipt"] {
-            XCTAssertNotNil(reason(label, type: "Cell"), label)
+            XCTAssertNil(reason(label, type: "Cell"), label)
         }
     }
 
