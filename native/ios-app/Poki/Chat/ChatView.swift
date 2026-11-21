@@ -1,4 +1,3 @@
-import AVFoundation
 import PhotosUI
 import SwiftUI
 
@@ -1770,11 +1769,8 @@ final class FieldDictation {
         guard on, let engine else { return }
         on = false
         self.engine = nil
-        Task {
-            _ = await engine.finish()
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            model.background.resumeAudio()
-        }
+        engine.cancel()
+        model.background.resumeAudio()
     }
 }
 
