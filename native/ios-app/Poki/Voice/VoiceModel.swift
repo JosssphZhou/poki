@@ -336,7 +336,8 @@ final class VoiceModel {
         }
     }
     private var liveDelegations: [String: LiveDelegationState] = [:]
-    private var liveApprovalInstructions: [String: OwnerApprovalInstruction] = [:]
+    private let approvalTurn: OwnerApprovalTurn
+    private var liveApprovalInstruction: (delegation: String, instruction: OwnerApprovalInstruction)?
     private var liveHasCancellation = false
     private struct LiveCallerSpeech {
         struct Transcript: Equatable {
@@ -507,12 +508,13 @@ final class VoiceModel {
          phoneTool: @escaping @MainActor (String, String, PhoneOperationCancellation?) async -> PhoneAnswer,
          holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
          connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) },
-         time: VoiceClock = VoiceClock()) {
+         time: VoiceClock = VoiceClock(), approvalTurn: OwnerApprovalTurn? = nil) {
         self.clearTap = clearTap
         self.phoneTool = phoneTool
         self.holdMicrophone = holdMicrophone
         self.connection = connection
         self.time = time
+        self.approvalTurn = approvalTurn ?? OwnerApprovalTurn()
         // Poki in the background goes on with the talk (the owner, 2026-11-13): you speak to it from the
         // app you went to, and the Live Activity says what it is doing and carries End. It ends there as
         // it does in front, when nobody speaks for `followUp` after an answer. Only the wait for a server
@@ -771,6 +773,7 @@ final class VoiceModel {
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
         guard liveCloseTimeout == nil else { return }
+        invalidateLiveApproval()
         if let dictation {
             dictation.cancel()
             self.dictation = nil
@@ -824,7 +827,7 @@ final class VoiceModel {
         liveDelegations.removeAll()
         liveHasCancellation = false
         liveCallerSpeech = LiveCallerSpeech()
-        liveApprovalInstructions.removeAll()
+        invalidateLiveApproval()
         liveUsageSeconds = nil
         liveScreenDescription = nil
         liveResultReceipts.removeAll()
@@ -1208,7 +1211,8 @@ final class VoiceModel {
                     liveDelegations[id] = .active
                 }
                 if newRequest, liveDelegations[id]?.canRunTools == true {
-                    liveApprovalInstructions[id] = OwnerApprovalInstruction(id: UUID(), text: transcript)
+                    invalidateLiveApproval()
+                    liveApprovalInstruction = (id, approvalTurn.begin(text: transcript))
                 }
             }
             link.send(["type": "session.thinking.append", "event_id": UUID().uuidString, "delegation_id": NSNull(), "content": ""])
@@ -1225,6 +1229,11 @@ final class VoiceModel {
                kind != "response.output_item.done" { return }
             switch kind {
             case "response.completed", "response.failed", "response.incomplete":
+                let output = (backend["response"] as? [String: Any])?["output"] as? [[String: Any]]
+                if let delegation = event["delegation_id"] as? String, delegation == liveApprovalInstruction?.delegation,
+                   kind != "response.completed" || output?.contains(where: { $0["type"] as? String == "function_call" }) != true {
+                    invalidateLiveApproval()
+                }
                 backend["type"] = "response.done"
                 backend["live_failed"] = kind != "response.completed"
             case "response.created", "response.output_item.done":
@@ -1243,11 +1252,13 @@ final class VoiceModel {
                 }
                 liveCallerSpeech.hasSpeechStartEvents = true
                 let itemID = event["item_id"] as? String
+                beginApprovalSpeech()
                 liveCallerSpeech.recordInput(id: itemID ?? eventID)
                 liveCallerSpeech.begin(itemID: itemID)
                 endIfDone()
                 return
             }
+            approvalTurn.invalidate()
             if phase != .hearing { log.add("voice", "speech started") }
             // Spoken over Poki's answer: the server drops the answer's audio, and the talk says so.
             if phase == .speaking { markInterrupted() }
@@ -1259,7 +1270,9 @@ final class VoiceModel {
             clock = TurnClock(said: Date())
         case "input_audio_buffer.committed":
             if usesLive {
+                let revision = liveCallerSpeech.inputRevision
                 liveCallerSpeech.recordInput(id: (event["item_id"] as? String) ?? (event["event_id"] as? String))
+                if liveCallerSpeech.inputRevision != revision, liveApprovalInstruction != nil { beginApprovalSpeech() }
                 return
             }
             guard manualRealtimeTurns, let item = event["item_id"] as? String, !item.isEmpty,
@@ -1363,7 +1376,9 @@ final class VoiceModel {
     private static let liveBackchannels: Set<String> = ["嗯", "哦", "好的", "好", "uh-huh", "mm-hmm"]
 
     private func appendLiveSpeech(_ text: String, audio: Range<Int>?, itemID: String?) {
+        if liveCallerSpeech.pending == nil { beginApprovalSpeech() }
         if let itemID, itemID != liveCallerSpeech.itemID {
+            beginApprovalSpeech()
             liveCallerSpeech.begin(itemID: itemID)
         } else if !liveCallerSpeech.hasSpeechStartEvents, liveCallerSpeech.itemID == nil, let audio,
                   liveCallerSpeech.end > 0, audio.lowerBound >= liveCallerSpeech.end {
@@ -1372,6 +1387,7 @@ final class VoiceModel {
             let afterAcknowledgment = preceding.allSatisfy(Self.liveBackchannels.contains) && !joined.allSatisfy(Self.liveBackchannels.contains)
             let afterStop = Self.liveRequestsStop(preceding) && !Self.liveRequestsStop(joined)
             if preceding.isEmpty || afterAcknowledgment || afterStop || audio.lowerBound - liveCallerSpeech.end >= 600 {
+                beginApprovalSpeech()
                 liveCallerSpeech.begin(itemID: nil)
             }
         }
@@ -1391,6 +1407,7 @@ final class VoiceModel {
     }
 
     private func cancelLiveTask() {
+        invalidateLiveApproval()
         liveDelegations = liveDelegations.mapValues { $0.canRunTools ? .cancelled : $0 }
         liveHasCancellation = true
         for operation in livePhoneOperations.values { operation.cancel() }
@@ -1417,6 +1434,16 @@ final class VoiceModel {
     }
 
     private static let stoppedStep = "The user cancelled the task. This step did not run."
+
+    private func beginApprovalSpeech() {
+        invalidateLiveApproval()
+        approvalTurn.invalidate()
+    }
+
+    private func invalidateLiveApproval() {
+        liveApprovalInstruction?.instruction.invalidate()
+        liveApprovalInstruction = nil
+    }
 
     private func resumeLiveAudio(_ link: VoiceConnection) {
         guard liveSpeechStopped else { return }
@@ -1480,7 +1507,9 @@ final class VoiceModel {
             var output: String
             var screen: Data?
             if local, Self.phoneTools.contains(call.name) {
-                let instruction = live ? call.delegation.flatMap { liveApprovalInstructions[$0] } : nil
+                let candidate = live && call.session == session && call.delegation == liveApprovalInstruction?.delegation
+                    ? liveApprovalInstruction?.instruction : nil
+                let instruction = candidate.flatMap { $0.isActive ? $0 : nil }
                 let answer = await OwnerApprovalInstruction.$current.withValue(instruction) {
                     await phoneTool(call.name, call.arguments, operation)
                 }

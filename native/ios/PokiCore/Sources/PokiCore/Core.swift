@@ -9,12 +9,12 @@ public struct CoreConfig: Sendable {
     /// The owner's way of asking (the app's Approvals page), which `sensitive` is narrowed by
     /// (`SensitivityRules.asked`). Read at each step, so a change counts from the next one.
     public var approvalMode: @Sendable () -> ApprovalMode = { .confirm }
-    public var approveOwnerStep: (@Sendable (String, OwnerApprovalStep) async -> Bool)?
+    public var ownerApprovalIntent: (@Sendable (String) async -> OwnerApprovalIntent?)?
     /// The rules a step is judged by now: `sensitive` as the way of asking narrows it.
     var rules: SensitivityRules { rules(for: approvalMode()) }
     func rules(for mode: ApprovalMode) -> SensitivityRules {
         var rules = sensitive.asked(mode)
-        if approveOwnerStep != nil {
+        if ownerApprovalIntent != nil {
             rules.sending = sensitive.sending
             rules.messagingApps = sensitive.messagingApps
         }
@@ -436,7 +436,7 @@ public final class PokiCore: @unchecked Sendable {
         // Like `do`: a tap withdraws the request still waiting, so two taps never wait side by side. A
         // granted approval the agent has not used yet stays for the agent's own `do`.
         approvals.withdrawPending()
-        let element = Element(type: "Other", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        let element = Element(type: "Button", label: text, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
         // No readable text: the rules cannot tell what it does, so the owner is asked.
         let unreadable = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard let reason = unreadable && config.sensitive.enabled ? "a tap on something with no readable text" : config.rules.reason(touching: element, typing: false, app: app, secureOnScreen: false) else { return .clear }

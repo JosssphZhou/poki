@@ -34,6 +34,7 @@ final class AppModel {
     /// Poki keeps its own signing: the Apple Account, the next build ready ahead of time, Install.
     let signer = SelfSigner()
     let voice: VoiceModel
+    let approvalTurn = OwnerApprovalTurn()
     private(set) var runner = RunnerStatus.idle
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
@@ -380,7 +381,7 @@ final class AppModel {
                                }
                            },
                            holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() },
-                           connection: VoiceModel.connection)
+                           connection: VoiceModel.connection, approvalTurn: approvalTurn)
         self.launcher = launcher
         self.pairer = pairer
         // inFront starts true before the first scene callback, including a background launch.

@@ -68,7 +68,7 @@ Comprueba la nota en Notas: el título debe ser "Poki Demo" y el contenido debe 
 
 **¿Qué hago si no aparecen actualizaciones, por ejemplo en una red de China continental?** Poki consulta GitHub. Algunas redes no pueden acceder o alcanzan los límites 403 y 429. Prueba otra red o servidor proxy, o usa Renew en Poki Setup desde el ordenador. Consulta [Actualizar Poki](#actualizar-poki).
 
-**¿Poki cambia cosas en mi iPhone? ¿Pide permiso antes?** Ejecuta tus peticiones en apps reales, incluido el envío de mensajes, y envía el contenido de la pantalla al servicio de modelos configurado. Los pagos, las eliminaciones y las acciones en Wallet siempre requieren confirmación. Para otros pasos sensibles, como enviar mensajes o escribir contraseñas, eliges en `Settings > Approvals` cómo pregunta o si debe preguntar. Consulta los [Problemas conocidos](#problemas-conocidos).
+**¿Poki cambia cosas en mi iPhone? ¿Pregunta antes?** Poki actúa en tus aplicaciones y envía el contenido de la pantalla al servicio de modelos que configures. Poki pide confirmación antes de enviar mensajes, eliminar contenido o pagar, salvo que hayas solicitado ese paso explícitamente en la instrucción actual. Las acciones en Wallet requieren confirmación. En `Settings > Approvals` puedes elegir cómo se confirman los pasos opcionales, como llamar o introducir contraseñas. Consulta [Problemas conocidos](#problemas-conocidos).
 
 ## Actualizar Poki
 

@@ -1237,6 +1237,7 @@ final class Computer: @unchecked Sendable {
         // What the screen said before these actions, for the send check: a message that was already there does not count as sent.
         let textsBefore = lastAll.filter { !$0.fromPicture && !Self.fieldTypes.contains($0.type) }.map(\.text)
         var approvedNote: String?
+        var ownerApprovedAt: Int?
         let steps = sensitiveSteps(actions)
         let sensitive = firstSensitive(actions)
         let workspaceSession = workspaceOwner.value
@@ -1263,6 +1264,7 @@ final class Computer: @unchecked Sendable {
                    await directlyAuthorized(tail[0], reason: reason, until: until) {
                     if let pending = approvals.pending { approvals.withdraw(id: pending.id) }
                     approvedNote = "approval: matched the owner's current instruction (\(reason))"
+                    ownerApprovedAt = at
                     toRun = tail
                 } else {
                     let approval = approvals.pending.flatMap { $0.covers(scope, workspaceSession: workspaceSession) ? $0 : nil }
@@ -1312,7 +1314,7 @@ final class Computer: @unchecked Sendable {
         let actionsStarted = now()
         let approved = approvedNote == nil ? [:] : Dictionary(steps.map { ($0.at, $0.reason) }, uniquingKeysWith: { a, _ in a })
         let movedBefore = actions[..<(actions.count - toRun.count)].contains { ActionKind($0)?.changesScreen($0) == true }
-        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved, onActionSucceeded: onActionSucceeded)
+        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved, ownerApprovedAt: ownerApprovedAt, onActionSucceeded: onActionSucceeded)
         let actionsTook = now() - actionsStarted
         did += moreDid
         error = moreError
@@ -1573,7 +1575,7 @@ final class Computer: @unchecked Sendable {
     /// deadline. Stops at the first that fails.
     /// `moved`: an action sent before these may have changed the screen (`ActionKind.changesScreen`). `approved`: why the owner
     /// approved an action, by its number in the do.
-    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0, moved: Bool = false, approved: [Int: String] = [:], onActionSucceeded: PokiCore.ActionSucceeded?) async -> (did: [String], error: String?, lastKind: String?) {
+    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0, moved: Bool = false, approved: [Int: String] = [:], ownerApprovedAt: Int? = nil, onActionSucceeded: PokiCore.ActionSucceeded?) async -> (did: [String], error: String?, lastKind: String?) {
         var did: [String] = []
         var error: String?
         var logError: String?
@@ -1611,7 +1613,10 @@ final class Computer: @unchecked Sendable {
             }
             do {
                 let (kind, text) = try await withDeadline(left, "action \(index + 1)") { [self] in
-                    try await Runner.$afterInput.withValue(afterInput) {
+                    guard ownerApprovedAt != index || OwnerApprovalInstruction.current?.isActive == true else {
+                        throw ActionFailure(message: "the owner's instruction expired. Ask again before sending this step", delivery: .notSent)
+                    }
+                    return try await Runner.$afterInput.withValue(afterInput) {
                         try await perform(action, until: actionsUntil, backTarget: check.backTarget)
                     }
                 }
@@ -1843,49 +1848,75 @@ final class Computer: @unchecked Sendable {
 
     // MARK: Sensitivity
 
-    private func directlyAuthorized(_ action: JSON, reason: String, until: Double) async -> Bool {
-        guard let instruction = OwnerApprovalInstruction.current, !instruction.text.isEmpty,
-              let check = config.approveOwnerStep, let kind = OwnerApprovalStep.Kind(reason: reason),
-              let screen = size, let front = lastForeground?.bundleID,
-              let before = await settledRead(until: min(until, now() + Self.settleWindow)),
-              before.foreground.bundleID == front else { return false }
+    private struct OwnerApprovalObservation: Equatable {
+        let step: OwnerApprovalStep
+        let target: Element
+        let ancestors: [Element]
+        let subject: [Element]
+        let composer: Element?
+        let buttonContents: [Element]
+    }
 
-        func step(in read: (all: [Element], foreground: Foreground)) -> OwnerApprovalStep? {
+    private func directlyAuthorized(_ action: JSON, reason: String, until: Double) async -> Bool {
+        guard let instruction = OwnerApprovalInstruction.current, instruction.isActive, !instruction.text.isEmpty,
+              let extract = config.ownerApprovalIntent, let kind = OwnerApprovalIntent.Kind(reason: reason),
+              let screen = size, let front = lastForeground?.bundleID,
+              let before = await settledRead(until: min(until, now() + Self.settleWindow)) else { return false }
+
+        func observation(in read: (all: [Element], foreground: Foreground)) -> OwnerApprovalObservation? {
             guard read.foreground.bundleID == front else { return nil }
             let elements = read.all
             let listed = listable(elements, screen)
-            let title = elements.filter { ["NavigationBar", "Alert", "Sheet"].contains($0.type) }
-            let context = elements.filter { element in
-                !element.isSecure && !element.fromPicture && (title.contains(element) || title.contains { $0.contains(element) })
-            }.map(\.text).filter { !$0.isEmpty }
-            let control: String
-            if ActionKind(action) == .tap, let p = try? point(action["tap"]), let target = element(at: p, in: listed),
-               self.target(action["tap"])?.key == target.key {
+            let frames = listed.filter { ["NavigationBar", "Alert", "Sheet", "Menu"].contains($0.type) }
+            if kind == .message, frames.filter({ $0.type == "NavigationBar" }).count != 1 { return nil }
+            let subject = listed.filter { element in
+                !element.isSecure && !element.fromPicture
+                    && (frames.contains(element) || (element.type == "StaticText" && frames.contains { $0.contains(element) }))
+            }
+            let fields = listed.filter { Self.fieldTypes.contains($0.type) && !$0.fromPicture }
+            let focused = fields.filter(\.keyboardFocused)
+            let target: Element
+            let button: Element?
+            if ActionKind(action) == .tap, let p = try? point(action["tap"]), let actual = element(at: p, in: listed),
+               let expected = self.target(action["tap"]), !actual.fromPicture, actual == expected {
                 let scan = SensitiveScan(front: read.foreground, secureOnScreen: false, elements: listed, tree: elements)
-                guard pressReason((target, false, .tap), in: scan, rules: config.rules) == reason else { return nil }
-                let button = elements.last { $0.type == "Button" && $0.contains(target) }
-                control = [target.text, button?.text ?? ""].filter { !$0.isEmpty }.joined(separator: " / ")
-            } else if ActionKind(action) == .key, Self.isReturn(action), kind == .message {
-                control = "Return in the message composer"
+                guard pressReason((actual, false, .tap), in: scan, rules: config.rules) == reason else { return nil }
+                target = actual
+                button = actual.type == "Button" ? actual : elements.last { $0.type == "Button" && $0.contains(actual) }
+                guard let button, elements.filter({ $0.type == "Button" && $0.text == button.text }).count == 1 else { return nil }
+            } else if ActionKind(action) == .key, Self.isReturn(action), kind == .message,
+                      focused.count == 1, let field = focused.first, !field.isSecure, !Self.isSearch(field) {
+                target = field
+                button = nil
             } else {
                 return nil
             }
-            let draft = kind == .message ? elements.last(where: {
-                Self.fieldTypes.contains($0.type) && !$0.isSecure && !Self.isSearch($0)
-            })?.value : nil
-            guard !control.isEmpty, control.count <= 512, context.joined().count <= 2000,
-                  kind != .message || draft.map({ !$0.isEmpty && $0.count <= 2000 }) == true else { return nil }
-            return OwnerApprovalStep(kind: kind, app: read.foreground.describe, control: control, context: context, draft: draft)
+
+            let composer: Element?
+            if kind == .message {
+                let candidates = focused.isEmpty && button != nil ? fields : focused
+                guard candidates.count == 1, let field = candidates.first, !field.isSecure, !Self.isSearch(field),
+                      let draft = field.value, !draft.isEmpty, draft.count <= 2000 else { return nil }
+                composer = field
+            } else {
+                composer = nil
+            }
+            let control = button?.text ?? "Return in the message composer"
+            let buttonContents = button.map { parent in listed.filter { parent.contains($0) && !$0.isSecure } } ?? []
+            let targets = subject.map(\.text)
+            let amounts = kind == .payment ? OwnerApprovalStep.currencyAmounts(in: [control] + buttonContents.map(\.text)) : []
+            let step = OwnerApprovalStep(kind: kind, app: front, control: control, targets: targets, draft: composer?.value, amounts: amounts)
+            return OwnerApprovalObservation(step: step, target: target, ancestors: elements.filter { $0.contains(target) },
+                                            subject: subject, composer: composer, buttonContents: buttonContents)
         }
 
-        guard let proposed = step(in: before) else { return false }
-        if usedOwnerApproval?.turn == instruction.id, usedOwnerApproval?.steps.contains(proposed) == true { return false }
-        guard await check(instruction.text, proposed), !Task.isCancelled,
-              PhoneOperationCancellation.current?.isCancelled != true,
-              let after = await settledRead(until: min(until, now() + Self.settleWindow)),
-              step(in: after) == proposed else { return false }
+        guard let proposed = observation(in: before), !proposed.step.targets.isEmpty else { return false }
+        if usedOwnerApproval?.turn == instruction.id, usedOwnerApproval?.steps.contains(proposed.step) == true { return false }
+        guard let intent = await extract(instruction.text), proposed.step.matches(intent, in: instruction.text),
+              let after = await settledRead(until: min(until, now() + Self.settleWindow)), observation(in: after) == proposed,
+              instruction.isActive, !Task.isCancelled, PhoneOperationCancellation.current?.isCancelled != true else { return false }
         if usedOwnerApproval?.turn != instruction.id { usedOwnerApproval = (instruction.id, []) }
-        usedOwnerApproval?.steps.insert(proposed)
+        usedOwnerApproval?.steps.insert(proposed.step)
         return true
     }
 
@@ -1998,11 +2029,13 @@ final class Computer: @unchecked Sendable {
     }
 
     private func pressReason(_ press: (element: Element?, atPoint: Bool, judged: Press), in scan: SensitiveScan, rules: SensitivityRules) -> String? {
+        let tree = scan.tree ?? scan.elements ?? lastAll
         let button = press.element.flatMap { element in
-            (scan.tree ?? scan.elements ?? lastAll).last { $0.type == "Button" && $0.contains(element) }
+            element.type == "Button" ? element : tree.last { $0.type == "Button" && $0.contains(element) }
         }
+        let labels = button.map { button in tree.filter { button.contains($0) && !$0.isSecure }.map(\.text) } ?? []
         return rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front,
-                            secureOnScreen: scan.secureOnScreen, paymentButton: button)
+                            secureOnScreen: scan.secureOnScreen, paymentButton: button, buttonLabels: labels)
     }
 
     /// Where an action puts a finger down and lifts it on one element, which a control takes as a press
@@ -2072,7 +2105,7 @@ final class Computer: @unchecked Sendable {
         for press in presses(kind, action, scan, unread: unread) {
             if let r = pressReason(press, in: scan, rules: rules) { return r }
             guard press.judged == .tap else { continue }
-            if unread, messaging, config.approveOwnerStep == nil { return "sending a message (a tap in \(app) on a screen not read yet)" }
+            if unread, messaging, config.ownerApprovalIntent == nil { return "sending a message (a tap in \(app) on a screen not read yet)" }
             // After a launch or a run nothing of the app's screen was read: a Delete there reads as nothing.
             // The home screen after Home opens apps, which ask for themselves.
             if !scan.read, scan.front != nil { return "a tap on a screen not read yet (in \(app))" }

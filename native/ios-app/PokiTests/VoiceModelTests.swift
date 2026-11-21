@@ -155,6 +155,67 @@ private actor VoiceRunnerTransport: HTTPTransport {
 
 @MainActor
 final class VoiceModelTests: XCTestCase {
+    func testLiveApprovalDoesNotFollowAnOldDelegationAfterNewSpeech() async {
+        var instructions: [String?] = []
+        let h = Harness(phoneTool: { _, _ in
+            instructions.append(OwnerApprovalInstruction.current?.text)
+            return ("mock result", false, nil)
+        })
+        await h.liveTalk()
+        h.link.play(["type": "session.input_transcript.delta", "item_id": "first", "delta": "Send Riley a message"],
+                    ["type": "session.delegation.created", "delegation": ["id": "d1"]])
+        h.link.call("initial-read", "look")
+        await h.time.settle()
+        h.link.play(["type": "input_audio_buffer.speech_started", "item_id": "second", "event_id": "e2"])
+        h.link.call("between-speech-and-text", "do")
+        await h.time.settle()
+        h.link.play(["type": "session.input_transcript.delta", "item_id": "second", "delta": "Just show the chat"],
+                    ["type": "session.delegation.created", "delegation": ["id": "d2"]])
+        h.link.call("late-first", "do")
+        h.link.call("current", "do", delegation: "d2")
+        await h.time.settle()
+        XCTAssertEqual(instructions, ["Send Riley a message", nil, nil, "Just show the chat"])
+        h.voice.stop()
+    }
+
+    func testLiveApprovalExpiresWhenItsDelegationFinishes() async {
+        var instructions: [String?] = []
+        let h = Harness(phoneTool: { _, _ in
+            instructions.append(OwnerApprovalInstruction.current?.text)
+            return ("mock result", false, nil)
+        })
+        await h.liveTalk()
+        h.link.play(["type": "session.input_transcript.delta", "item_id": "first", "delta": "Delete the Weekend list"],
+                    ["type": "session.delegation.created", "delegation": ["id": "d1"]])
+        h.link.call("lookup", "look")
+        await h.time.settle()
+        h.link.backend("response.completed", ["response": ["id": "r1", "output": [["type": "message"]]]])
+        h.link.call("late", "do")
+        await h.time.settle()
+        XCTAssertEqual(instructions, ["Delete the Weekend list", nil])
+        h.voice.stop()
+    }
+
+    func testVoiceAndTextInvalidateEachOthersApprovalInstruction() async {
+        let turn = OwnerApprovalTurn()
+        var instructions: [String?] = []
+        let h = Harness(approvalTurn: turn, phoneTool: { _, _ in
+            instructions.append(OwnerApprovalInstruction.current?.text)
+            return ("mock result", false, nil)
+        })
+        await h.liveTalk()
+        h.link.play(["type": "session.input_transcript.delta", "item_id": "first", "delta": "Send Riley a message"],
+                    ["type": "session.delegation.created", "delegation": ["id": "d1"]])
+        h.link.call("initial", "look")
+        await h.time.settle()
+        let typed = turn.begin(text: "Show the chat")
+        h.link.call("late-voice", "do")
+        await h.time.settle()
+        h.link.play(["type": "input_audio_buffer.speech_started", "item_id": "second", "event_id": "e2"])
+        XCTAssertFalse(typed.isActive)
+        XCTAssertEqual(instructions, ["Send Riley a message", nil])
+        h.voice.stop()
+    }
     func testAConnectionWhoseSessionNeverStartsEndsAfterSixtySeconds() async {
         let h = Harness()
         await h.connect()
@@ -717,7 +778,7 @@ final class VoiceModelTests: XCTestCase {
         private(set) var microphone: [Bool] = []
         var link: FakeConnection { links.last! }
 
-        @MainActor init(time: FakeTime? = nil, phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
+        @MainActor init(time: FakeTime? = nil, approvalTurn: OwnerApprovalTurn? = nil, phoneTool: @escaping @MainActor (String, String) async -> PhoneAnswer = { _, _ in ("", false, nil) }) {
             let time = time ?? FakeTime()
             self.time = time
             var made: (() -> FakeConnection)!
@@ -725,7 +786,7 @@ final class VoiceModelTests: XCTestCase {
             voice = VoiceModel(clearTap: { _, _, _ in .clear }, phoneTool: { name, arguments, cancellation in
                 await PhoneOperationCancellation.$current.withValue(cancellation) { await phoneTool(name, arguments) }
             }, holdMicrophone: { held($0) },
-                               connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock)
+                               connection: { onEvent, onClosed in let link = made(); link.onEvent = onEvent; link.onClosed = onClosed; return link }, time: time.clock, approvalTurn: approvalTurn)
             made = { [unowned self] in let link = FakeConnection(); self.links.append(link); return link }
             held = { [unowned self] in self.microphone.append($0) }
             _ = voice.setBridge(BridgeStub.address)
