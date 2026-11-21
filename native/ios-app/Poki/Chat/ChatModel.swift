@@ -611,7 +611,11 @@ final class ChatModel {
         let namedApps = chooseWorkspace && kind == .poki && app.canPlanSplitView
             ? AppIconStore.bundleIDs(namedIn: text) : []
         if !inSplitView, namedApps.count < 2, Self.direct, provider == .anthropic || provider == .openai {
-            let context = Harness.taskInstructions(for: taskRequest)
+            let includeScreenScroll = countedScroll == nil && MessageScrollTarget.parse(taskRequest)?.isScreens == true
+            let context = Harness.taskInstructions(for: taskRequest,
+                                                   includeCountedScroll: countedScroll != nil,
+                                                   includeScreenScroll: includeScreenScroll,
+                                                   includeMemoryAttribution: !SkillStore.shared.notes.isEmpty)
             let instructions = [context.text, restoredContext, continuation].compactMap { $0 }.joined(separator: "\n\n")
             // Another model starts a new conversation on the model's side; the chat on screen stays.
             if client?.signature != "\(provider.rawValue)/\(model)" {
@@ -721,12 +725,21 @@ final class ChatModel {
                 AppLog.shared.add("chat", "workspace planning confirmed the requested Split View apps")
             }
             let loop = modelLoop(provider: prepared.provider, model: piModel, inSplitView: splitSession != nil)
-            let context = Harness.taskInstructions(for: prepared.continuation == nil ? prepared.message : taskRequest,
-                                                   inSplitView: splitSession != nil)
+            let taskPrompt = prepared.continuation == nil ? prepared.message : taskRequest
+            let includeCountedScroll = prepared.countedScroll != nil
+            let includeScreenScroll = !includeCountedScroll && MessageScrollTarget.parse(taskPrompt)?.isScreens == true
+            let includeMemoryAttribution = !SkillStore.shared.notes.isEmpty
+            let context = Harness.taskInstructions(for: taskPrompt,
+                                                   inSplitView: splitSession != nil,
+                                                   includeCountedScroll: includeCountedScroll,
+                                                   includeScreenScroll: includeScreenScroll,
+                                                   includeMemoryAttribution: includeMemoryAttribution)
             offeredMemories = context.notes
             let instructions = [context.text, restoredContext, prepared.continuation].compactMap { $0 }.joined(separator: "\n\n")
             let outcome = await loop.run(prepared.message.isEmpty ? Self.picturesOnly : prepared.message,
                                          images: prepared.images, instructions: instructions, maxTurns: Self.maxTurns,
+                                         includeCountedScroll: includeCountedScroll,
+                                         includeMemoryAttribution: includeMemoryAttribution,
                                          timing: timing) { [weak self] text in
                 guard let self, self.runToken == token else { return }
                 self.markDelivered(prepared.you.id)
@@ -869,8 +882,10 @@ final class ChatModel {
            loop.model.reasoning == model.reasoning, loop.hasCurrentCustomBackups, !changedWorkspace { return loop }
         // A different workspace starts without old screen evidence.
         let next = PiLoop(provider: provider, model: model,
-                          tools: Harness.toolSpecs(inSplitView: inSplitView, includeScreenHistory: true),
-                          inSplitView: inSplitView, carrying: changedWorkspace ? [] : loop?.messages ?? []) { [weak self] call in
+                          tools: Harness.toolSpecs(inSplitView: inSplitView, includeScreenHistory: true,
+                                                   includeCountedScroll: true, includeMemoryAttribution: true),
+                          inSplitView: inSplitView, sessionId: sessionID,
+                          carrying: changedWorkspace ? [] : loop?.messages ?? []) { [weak self] call in
             guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
             return await self.perform(call)
         }
@@ -1422,7 +1437,8 @@ final class ChatModel {
                 phoneArguments = call.arguments
             }
             let response = await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
-                                             expectedApps: expectedSplitViewApps, localTask: localTask) { [weak self, notesByAction] index, step, skill in
+                                             expectedApps: expectedSplitViewApps, localTask: localTask,
+                                             offeredMemoryIDs: Set(offeredMemories.map(\.id))) { [weak self, notesByAction] index, step, skill in
                 guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
                 let action = notesByAction[index]
                 let ids = step.map { action.steps[$0] ?? [] } ?? action.direct

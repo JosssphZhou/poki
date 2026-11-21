@@ -23,12 +23,35 @@ final class PiLoop {
     let model: Model
     let inSplitView: Bool
     private let agent: Agent
-    private let allTools: [AgentTool]
+    private let toolVariants: [ToolVariant]
+    private let toolPolicy = ToolPolicy()
     private let gate = StopGate()
     /// A custom address's HTTP client, which repairs a doubled `data:` stream and keeps what the address
     /// answered for the log.
     private let endpoint: CustomEndpointClient?
     private let stall = StallWatch()
+
+    private struct ToolVariant: Sendable {
+        let withMemory: AgentTool
+        let withoutMemory: AgentTool
+    }
+
+    private final class ToolPolicy: @unchecked Sendable {
+        private let lock = NSLock()
+        private var includeCountedScroll = false
+        private var includeMemoryAttribution = true
+
+        func set(includeCountedScroll: Bool, includeMemoryAttribution: Bool) {
+            lock.withLock {
+                self.includeCountedScroll = includeCountedScroll
+                self.includeMemoryAttribution = includeMemoryAttribution
+            }
+        }
+
+        func current() -> (countedScroll: Bool, memoryAttribution: Bool) {
+            lock.withLock { (includeCountedScroll, includeMemoryAttribution) }
+        }
+    }
 
     var signature: String { "pi:\(provider.rawValue)/\(model.id)" }
     var messages: [AgentMessage] { agent.state.messages }
@@ -37,7 +60,8 @@ final class PiLoop {
         return endpoint.backups == CustomEndpointClient.backupAddresses(for: model)
     }
 
-    init(provider: ModelProvider, model: Model, tools: [ToolSpec], inSplitView: Bool = false, carrying messages: [AgentMessage] = [],
+    init(provider: ModelProvider, model: Model, tools: [ToolSpec], inSplitView: Bool = false, sessionId: String? = nil,
+         carrying messages: [AgentMessage] = [],
          perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
         self.provider = provider
         self.model = model
@@ -47,8 +71,9 @@ final class PiLoop {
         self.endpoint = endpoint
         let stall = self.stall
         let grants = HistoryDeliveryGrants()
-        let agentTools = tools.map { spec in
-            AgentTool(label: spec.name, name: spec.name, description: spec.description, parameters: spec.schema.mapValues { AnyCodable($0) }) { id, params, signal, _ in
+        let policy = self.toolPolicy
+        let variants = tools.map { spec -> ToolVariant in
+            let execute: AgentToolExecute = { id, params, signal, _ in
                 if gate.stopped { return Self.result(PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)) }
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = .sortedKeys
@@ -80,13 +105,21 @@ final class PiLoop {
                 }
                 return Self.result(answer)
             }
+            let stripped = Harness.withoutActionMemoryIDs(spec)
+            let withMemory = AgentTool(label: spec.name, name: spec.name, description: spec.description,
+                                       parameters: spec.schema.mapValues { AnyCodable($0) }, execute: execute)
+            let withoutMemory = AgentTool(label: stripped.name, name: stripped.name, description: stripped.description,
+                                          parameters: stripped.schema.mapValues { AnyCodable($0) }, execute: execute)
+            return ToolVariant(withMemory: withMemory, withoutMemory: withoutMemory)
         }
-        allTools = agentTools
+        toolVariants = variants
         // agent/pi-session.mjs: low thinking, one tool call at a time. Pi copies the
         // tool list at prompt start; prepareRequest updates its *live* context each turn.
         agent = Agent(AgentOptions(
             initialState: AgentState(model: model, thinkingLevel: .low,
-                                     tools: Self.availableTools(agentTools, allowed: HistoryCapture.agentQueryAllowed), messages: messages),
+                                     tools: Self.availableTools(variants, allowed: HistoryCapture.agentQueryAllowed,
+                                                                includeCountedScroll: false, includeMemoryAttribution: true),
+                                     messages: messages),
             streamFn: { model, transcript, options in
                 // API credentials may have suspended after prepareRequest. Recheck at
                 // the last request boundary too; never add a tool the live context lacks.
@@ -120,6 +153,7 @@ final class PiLoop {
                 }
                 return try streamSimple(model: model, context: Context(messages: messages), options: options)
             },
+            sessionId: sessionId,
             getApiKey: { _ in await ModelCredential.apiKey(for: provider, piProvider: model.provider) },
             toolExecution: .sequential,
             prepareToolResultMessage: { result in
@@ -127,7 +161,10 @@ final class PiLoop {
             },
             prepareRequest: { request, _ in
                 let revision = HistoryCapture.agentQueryRevision
-                let tools = Self.availableTools(agentTools, allowed: revision != nil)
+                let currentPolicy = policy.current()
+                let tools = Self.availableTools(variants, allowed: revision != nil,
+                                                includeCountedScroll: currentPolicy.countedScroll,
+                                                includeMemoryAttribution: currentPolicy.memoryAttribution)
                 var context = request.context
                 context.tools = tools
                 context.messages = context.messages.map { message in
@@ -157,10 +194,14 @@ final class PiLoop {
     /// screen, or `maxTurns` model turns (a ceiling for a model that runs away). Owner waits reset the
     /// stall history. `onText` gets each finished text block.
     func run(_ text: String, images: [Data] = [], instructions: String, maxTurns: Int,
+             includeCountedScroll: Bool = false, includeMemoryAttribution: Bool = true,
              timing: ChatStepTiming? = nil, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
         stall.reset()
-        agent.tools = Self.availableTools(allTools, allowed: HistoryCapture.agentQueryAllowed)
+        toolPolicy.set(includeCountedScroll: includeCountedScroll, includeMemoryAttribution: includeMemoryAttribution)
+        agent.tools = Self.availableTools(toolVariants, allowed: HistoryCapture.agentQueryAllowed,
+                                          includeCountedScroll: includeCountedScroll,
+                                          includeMemoryAttribution: includeMemoryAttribution)
         use(instructions)
         let turns = Counter()
         let failure = Box()
@@ -240,8 +281,15 @@ final class PiLoop {
         agent.messages = messages
     }
 
-    nonisolated static func availableTools(_ tools: [AgentTool], allowed: Bool) -> [AgentTool] {
-        tools.filter { $0.name != "screen_history" || allowed }
+    private nonisolated static func availableTools(_ variants: [ToolVariant], allowed: Bool,
+                                                   includeCountedScroll: Bool,
+                                                   includeMemoryAttribution: Bool) -> [AgentTool] {
+        variants.compactMap { variant in
+            let tool = includeMemoryAttribution ? variant.withMemory : variant.withoutMemory
+            if tool.name == "screen_history", !allowed { return nil }
+            if Harness.countedScrollTools.contains(tool.name), !includeCountedScroll { return nil }
+            return tool
+        }
     }
 
     private nonisolated static func result(_ answer: PokiCore.ToolAnswer) -> AgentToolResult {

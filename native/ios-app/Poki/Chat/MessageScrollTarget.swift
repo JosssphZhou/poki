@@ -9,6 +9,11 @@ enum MessageScrollTarget {
         return nil
     }
 
+    var isScreens: Bool {
+        if case .screens = self { return true }
+        return false
+    }
+
     private static let digits = #"[0-9]+(?:,[0-9]{3})*"#
     private static let chineseNumber = "[0-9零〇一二两兩三四五六七八九十百千万萬亿億]+"
     private static let englishWord = #"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million"#
@@ -17,23 +22,100 @@ enum MessageScrollTarget {
     private static let englishModifiers = #"(?:\s+[a-z]+(?:[-'][a-z]+)*)*?\s*"#
     private static let messageUnits: Set<String> = ["条", "條", "则", "則", "message", "messages", "msg", "msgs"]
 
+    private static let quotedContentRegex = try! NSRegularExpression(
+        pattern: #"『[^』]*』|「[^」]*」|“[^”]*”|"[^"]*"|‘[^’]*’"#,
+        options: []
+    )
+    private static let chineseReportedSpeechRegex = try! NSRegularExpression(
+        pattern: #"((?:发送|发|發|寄|回复|回覆|转发|轉發)[^。！？.!?;；\n]*?)(?:[，,]?\s*(?:说|說|写着|寫著|内容[是为：:]|告诉[^，,。！？\n]*[：:]))[^。！？.!?;；\n]*"#,
+        options: []
+    )
+    private static let englishReportedSpeechRegex = try! NSRegularExpression(
+        pattern: #"(\b(?:send|sending|text|texting|write|writing|reply|replying|forward|forwarding|dm|message)\b[^.!?;；\n]*?)(?:,?\s*(?:\bsaying\b|\bthat\s+says?\b|\btelling\b[^.!?;；\n]*?\bthat\b|:))[^.!?;；\n]*"#,
+        options: [.caseInsensitive]
+    )
+
+    private static let nonScrollVerbRegex = try! NSRegularExpression(
+        pattern: #"(?:发送|发|發|寄|写|寫|新建|添加|删|刪|转发|轉發|回复|回覆|买|買|订|訂|收藏|点赞|點讚|置顶|置頂|撤回|复制|複製|(?<!聊天)记(?!录)|(?<!聊天)記(?!錄)|\b(?:send|sending|text|texting|write|writing|compose|draft|reply|replying|forward|forwarding|delete|deleting|remove|removing|copy|copying|pin|pinning|star|starring|mute|mark)\b|\b(?:check\s+(?:my\s+)?latest|read\s+the\s+latest)\b)"#,
+        options: [.caseInsensitive]
+    )
+    private static let explicitScrollVerbRegex = try! NSRegularExpression(
+        pattern: #"(?:翻|滑|滚|滾|退到|退回|回退|倒退|往回|上移|下移|上拉|下拉|\b(?:scroll|scrolling|swipe|swiping)\b|\b(?:move|moving|go|going|step|jump|head|navigate)\s+(?:up|back|backward|backwards)\b)"#,
+        options: [.caseInsensitive]
+    )
+    private static let scrollIntentRegex = try! NSRegularExpression(
+        pattern: #"(?:翻|滑|滚|滾|退到|退回|回退|倒退|往回|往上|向上|往前|向前|上移|下移|上拉|下拉|回到|之前|以前|更早|消息前|訊息前|记录前|記錄前|\b(?:scroll|scrolling|swipe|swiping)\b|\b(?:move|moving|go|going|step|jump|head|navigate)\s+(?:up|back|backward|backwards)\b|\b(?:move|moving|go|going|scroll|scrolling|swipe|swiping)\b[^\n.!?;。！？]*?\b(?:up|back|earlier|older|previous|ago)\b|\b(?:older|earlier|previous)\s+(?:chat\s+)?(?:messages?|msgs?|pages?|screens?)\b|\b(?:messages?|msgs?|pages?|screens?)\s+(?:up|back|earlier|older|ago)\b|\bgo\s+to\b[^\n.!?;。！？]*?\b(?:earlier|older|previous|back|ago)\b)"#,
+        options: [.caseInsensitive]
+    )
+    private static let chatLocationRegex = try! NSRegularExpression(
+        pattern: #"群聊|私聊|聊天记录|聊天記錄"#,
+        options: []
+    )
+    private static let sentenceSeparators = CharacterSet(charactersIn: "。！？.!?;；\n")
+    private static let subClauseSeparators = CharacterSet(charactersIn: "。！？.!?;；\n，,、")
+
     private static let patterns = [
         "\(countBoundary)(\(digits)|\(chineseNumber))\\s*([条條则則页頁屏])",
         "\(countBoundary)(?<![a-z])(\(digits)|\(chineseNumber)|\(englishNumber))\(englishModifiers)(messages?|msgs?|pages?|screens?)\\b",
     ].map { try! NSRegularExpression(pattern: $0, options: .caseInsensitive) }
 
     static func parse(_ request: String) -> MessageScrollTarget? {
-        let text = request.folding(options: .widthInsensitive, locale: nil).lowercased()
+        let folded = request.folding(options: .widthInsensitive, locale: nil).lowercased()
+        let text = stripMessageBodies(folded)
         let range = NSRange(text.startIndex..., in: text)
         let matches = patterns.flatMap { $0.matches(in: text, range: range) }
             .sorted { $0.range.location < $1.range.location }
         for match in matches {
-            guard let number = Range(match.range(at: 1), in: text),
+            guard let fullRange = Range(match.range, in: text),
+                  let number = Range(match.range(at: 1), in: text),
                   let unit = Range(match.range(at: 2), in: text),
                   let count = integer(text[number]), count > 0 else { continue }
+            guard hasScrollIntent(for: fullRange, in: text) else { continue }
             return messageUnits.contains(String(text[unit])) ? .messages(count) : .screens(count)
         }
         return nil
+    }
+
+    private static func stripMessageBodies(_ text: String) -> String {
+        var cleaned = quotedContentRegex.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " "
+        )
+        cleaned = chineseReportedSpeechRegex.stringByReplacingMatches(
+            in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: "$1"
+        )
+        cleaned = englishReportedSpeechRegex.stringByReplacingMatches(
+            in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: "$1"
+        )
+        return cleaned
+    }
+
+    private static func slice(around range: Range<String.Index>, in text: String, delimitedBy delimiters: CharacterSet) -> String {
+        var start = range.lowerBound
+        while start > text.startIndex {
+            let prev = text.index(before: start)
+            if text[prev].unicodeScalars.allSatisfy({ delimiters.contains($0) }) { break }
+            start = prev
+        }
+        var end = range.upperBound
+        while end < text.endIndex {
+            if text[end].unicodeScalars.allSatisfy({ delimiters.contains($0) }) { break }
+            end = text.index(after: end)
+        }
+        return String(text[start..<end])
+    }
+
+    private static func matches(_ regex: NSRegularExpression, in text: String) -> Bool {
+        regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    private static func hasScrollIntent(for matchRange: Range<String.Index>, in text: String) -> Bool {
+        let subClause = slice(around: matchRange, in: text, delimitedBy: subClauseSeparators)
+        if matches(nonScrollVerbRegex, in: subClause), !matches(explicitScrollVerbRegex, in: subClause) {
+            return false
+        }
+        if matches(scrollIntentRegex, in: subClause) { return true }
+        let sentence = slice(around: matchRange, in: text, delimitedBy: sentenceSeparators)
+        return matches(chatLocationRegex, in: sentence) && !matches(nonScrollVerbRegex, in: sentence)
     }
 
     private static func integer(_ words: Substring) -> Int? {
