@@ -370,6 +370,68 @@ final class ApprovalTests: XCTestCase {
         await assertApprovalForControl(Node("Button", "Confirm", [16, 400, 358, 44]), reason: "a confirmation button")
     }
 
+    func testPaymentControlsWithoutButtonRoleWaitBeforeTouch() async {
+        let labels = [
+            ("Other", "使用账户余额为当前商品订单支付"),
+            ("Cell", "将使用账户余额完成本笔订单付款"),
+            ("StaticText", "本订单将使用所选方式支付"),
+            ("Link", "Payment"),
+            ("Other", "转账 ¥48.20"),
+        ]
+        for (role, label) in labels {
+            await assertApprovalForControl(Node(role, label, [16, 400, 358, 44]), reason: "a payment")
+        }
+    }
+
+    func testNamedMessagingAppMustMatchEvenWithTheSameRecipientAndDraft() async throws {
+        let intent = try JSONDecoder().decode(OwnerApprovalIntent.self, from: Data(#"{"kind":"message","app":"微信","target":"妈妈","message":"午饭见"}"#.utf8))
+        let instruction = OwnerApprovalInstruction(id: UUID(), text: "请用微信发给妈妈：午饭见")
+        for (bundle, touches) in [("com.tencent.xin", 1), ("net.whatsapp.WhatsApp", 0)] {
+            let wda = FakeWDA()
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle)]]) }
+            wda.tree([
+                Node("NavigationBar", "妈妈", [0, 40, 390, 44]),
+                Node("TextView", "Message", [10, 350, 240, 44], value: "午饭见", focused: true),
+                Node("Button", "Send", [16, 400, 358, 44]),
+            ])
+            let (core, _, _) = makeCore(wda) {
+                $0.approvalWait = 0
+                $0.resolveApp = { $0 == "微信" ? "com.tencent.xin" : nil }
+                $0.ownerApprovalIntent = { _ in intent }
+            }
+            _ = await core.callTool("look", arguments: "{}")
+            let result = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                await core.callTool("do", arguments: #"{"actions":[{"tap":[185,422]}]}"#)
+            }
+            XCTAssertEqual(core.pendingApproval != nil, touches == 0, bundle + ": " + result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, touches, bundle + ": " + result.text)
+        }
+    }
+
+    func testNamedDeletionAppAndSelectedNoteMustBothMatch() async throws {
+        let intent = try JSONDecoder().decode(OwnerApprovalIntent.self, from: Data(#"{"kind":"deletion","app":"备忘录","target":"周末清单"}"#.utf8))
+        for (bundle, note, touches) in [("com.apple.mobilenotes", "周末清单", 1), ("com.apple.reminders", "周末清单", 0), ("com.apple.mobilenotes", "出游清单", 0)] {
+            let wda = FakeWDA()
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle)]]) }
+            wda.tree([
+                Node("NavigationBar", "周末清单", [0, 40, 390, 44]),
+                Node("Cell", note, [12, 330, 360, 160], [Node("Button", "删除", [16, 400, 358, 44])]),
+            ])
+            let (core, _, _) = makeCore(wda) {
+                $0.approvalWait = 0
+                $0.resolveApp = { $0 == "备忘录" ? "com.apple.mobilenotes" : nil }
+                $0.ownerApprovalIntent = { _ in intent }
+            }
+            _ = await core.callTool("look", arguments: "{}")
+            let instruction = OwnerApprovalInstruction(id: UUID(), text: "删掉备忘录里的周末清单。")
+            let result = await OwnerApprovalInstruction.$current.withValue(instruction) {
+                await core.callTool("do", arguments: #"{"actions":[{"tap":[185,422]}]}"#)
+            }
+            XCTAssertEqual(core.pendingApproval != nil, touches == 0, result.text)
+            XCTAssertEqual(wda.bodies("POST /wda/tap").count, touches, result.text)
+        }
+    }
+
     func testTransferAmountInOrdinaryContentDoesNotAskForApproval() async {
         let wda = FakeWDA()
         wda.tree([Node("StaticText", "转账 ¥48.20", [16, 400, 358, 44])])
