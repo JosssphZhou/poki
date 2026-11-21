@@ -292,7 +292,9 @@ private struct LoopbackPage: View {
 
     var body: some View {
         let monitor = model.loopback
-        let localReady = model.hasOpenInProcessSession && !monitor.isWorking
+        let localTrouble = monitor.isWorking ? nil : model.localSessionTrouble
+        let localReady = !monitor.isWorking && localTrouble == nil
+            && (model.hasOpenInProcessSession || model.runner.code == "local_ddi" || model.mountedImageStandsIn)
         let detail = LocalizedStringKey(monitor.detail)
         Section {
             LabeledContent {
@@ -301,8 +303,14 @@ private struct LoopbackPage: View {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(localReady ? "Local automation ready" : headline(monitor))
-                        Text(localReady && monitor.state != .checking ? "The network loopback is unavailable." : detail)
-                            .font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                        Group {
+                            if let localTrouble {
+                                Text(verbatim: localTrouble.text)
+                            } else {
+                                Text(localReady && monitor.state != .checking ? "The network loopback is unavailable." : detail)
+                            }
+                        }
+                        .font(.footnote).foregroundStyle(Color(.secondaryLabel))
                     }
                 } icon: {
                     if localReady {
@@ -331,7 +339,7 @@ private struct LoopbackPage: View {
         } header: {
             Text("Use Your Proxy App")
         } footer: {
-            if let chosen = model.setup.proxyApp, !monitor.isWorking, !localReady, model.setup.loopback == .proxy {
+            if let chosen = model.setup.proxyApp, !monitor.isWorking, !localReady, localTrouble?.opensSetup != false, model.setup.loopback == .proxy {
                 let name = ProxyApps.all.first { $0.id == chosen }?.name ?? "LocalDevVPN"
                 Text("\(name) is chosen, but nothing answers at 10.7.0.1 right now. Open \(name), make sure it is connected with the loopback on, then come back; this page updates by itself.")
             }

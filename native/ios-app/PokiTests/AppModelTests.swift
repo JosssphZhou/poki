@@ -1019,6 +1019,39 @@ final class InProcessPasscodeTests: XCTestCase {
         XCTAssertEqual(hint?.target, .setup)
     }
 
+    func testLoopbackPageShowsFailedMountedImageSession() async throws {
+        let savedLanguage = AppLocalization.shared.preference
+        let savedLoopback = UserDefaults.standard.object(forKey: "pokiLoopback")
+        AppLocalization.shared.preference = "en"
+        UserDefaults.standard.set("noanswer", forKey: "pokiLoopback")
+        defer {
+            AppLocalization.shared.preference = savedLanguage
+            UserDefaults.standard.set(savedLoopback, forKey: "pokiLoopback")
+        }
+
+        await handOverToTheMountedImage()
+        session.answer(["ok": false, "code": "missing_framework"])
+        await waitFor("the local session failure") { self.model.localSessionTrouble != nil }
+        try await assertLoopbackPageShowsSessionTrouble()
+
+        session.holdNextOpen()
+        model.runnerChanged(RunnerStatus(state: "running", code: "local_ddi"))
+        await waitFor("the next local open is under way") { self.session.isHoldingOpen }
+        session.answer(["ok": false, "code": "passcode_declined"])
+        await waitFor("the passcode failure") {
+            self.model.localSessionTrouble?.text.contains("not entered") == true
+        }
+        try await assertLoopbackPageShowsSessionTrouble()
+    }
+
+    private func assertLoopbackPageShowsSessionTrouble() async throws {
+        XCTAssertEqual(model.runner.code, "local_ddi")
+        let trouble = try XCTUnwrap(model.localSessionTrouble?.text)
+        let labels = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
+        XCTAssertTrue(labels.contains { $0.contains(trouble) }, "\(labels)")
+        XCTAssertFalse(labels.contains { $0.contains("Local automation ready") }, "\(labels)")
+    }
+
     /// A local open that fails waits for the loopback; when it answers again the launcher goes the
     /// normal way once, as before the hand-over.
     func testAFailedLocalOpenRetriesOverTheLoopbackOnce() async {
@@ -1931,6 +1964,35 @@ final class FrontendSubtractionTests: XCTestCase {
         XCTAssertTrue(labels.contains { $0.contains("Set Up Again") }, "\(labels)")
     }
 
+    func testLoopbackPageShowsLocalAutomationWhenMountedImageCanTakeTasks() async throws {
+        let pairing = AppFiles.phonePairingFile
+        let savedPairing = try? Data(contentsOf: pairing)
+        let savedForced = UserDefaults.standard.object(forKey: "pokiLoopback")
+        defer {
+            if let savedPairing { try? savedPairing.write(to: pairing) }
+            else { try? FileManager.default.removeItem(at: pairing) }
+            UserDefaults.standard.set(savedForced, forKey: "pokiLoopback")
+        }
+        let record: [String: Any] = ["identifier": "test-host", "public_key": Data(repeating: 1, count: 32), "private_key": Data(repeating: 2, count: 32)]
+        try PropertyListSerialization.data(fromPropertyList: record, format: .xml, options: 0).write(to: pairing)
+        UserDefaults.standard.set("noanswer", forKey: "pokiLoopback")
+        let (model, restore) = try modelWithLoopbackChosen(launcher: FakeLauncher(), imageMounted: { true })
+        defer { restore() }
+        model.loopback.simulate(.noAnswer)
+        XCTAssertTrue(model.mountedImageStandsIn)
+        XCTAssertFalse(model.hasOpenInProcessSession)
+        model.setup.proxyApp = "localdevvpn"
+        let labels = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
+        XCTAssertTrue(labels.contains { $0.contains("Local automation ready") }, "\(labels)")
+        XCTAssertFalse(labels.contains { $0.contains("with the loopback on") }, "\(labels)")
+
+        let lockdown: [String: Any] = ["HostID": "test-host", "SystemBUID": "test"]
+        try PropertyListSerialization.data(fromPropertyList: lockdown, format: .xml, options: 0).write(to: pairing)
+        XCTAssertFalse(model.mountedImageStandsIn)
+        let withoutPhonePairing = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
+        XCTAssertFalse(withoutPhonePairing.contains { $0.contains("Local automation ready") }, "\(withoutPhonePairing)")
+    }
+
     /// A task on the mounted image ends and the runner stands by, as after every chat or agent task:
     /// `local_ddi` is gone from the runner, but the next task is handed to the image again, so no
     /// screen asks to turn the loopback on. Only a pairing the hand-over cannot use keeps the prompt.
@@ -1991,7 +2053,11 @@ final class FrontendSubtractionTests: XCTestCase {
         await fulfillment(of: [done], timeout: 5)
     }
 
-    private func renderedLabels<Content: View>(of view: Content, model: AppModel) async throws -> [String] {
+}
+
+@MainActor
+private extension XCTestCase {
+    func renderedLabels<Content: View>(of view: Content, model: AppModel) async throws -> [String] {
         let chat = ChatModel(app: model)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -2008,10 +2074,10 @@ final class FrontendSubtractionTests: XCTestCase {
         display.add(to: .main, forMode: .common)
         await fulfillment(of: [drawn], timeout: 5)
         display.invalidate()
-        return Self.collectLabels(in: window)
+        return Self.collectLoopbackTestLabels(in: window)
     }
 
-    private static func collectLabels(in root: NSObject) -> [String] {
+    private static func collectLoopbackTestLabels(in root: NSObject) -> [String] {
         var labels: [String] = []
         var pending = [root]
         var visited = Set<ObjectIdentifier>()
