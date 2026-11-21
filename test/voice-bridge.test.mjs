@@ -9,9 +9,14 @@ import { join } from 'node:path';
 import { fixture } from './fixture.mjs';
 import { root } from '../src/config.mjs';
 
-async function sessionBridge(t) {
+async function sessionBridge(t, { screenError, screenThrows, extraArgs = [] } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'poki-voice-token-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
+  const screenAction = screenThrows
+    ? `(() => { throw new Error(${JSON.stringify(screenThrows)}); })()`
+    : screenError
+      ? `Response.json(${JSON.stringify(screenError.body ?? { error: { message: screenError.message } })}, { status: ${screenError.status} })`
+      : `Response.json({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'Screen description' }] }] })`;
   const preload = `
     import { writeFile } from 'node:fs/promises';
     import { join } from 'node:path';
@@ -19,13 +24,11 @@ async function sessionBridge(t) {
       await writeFile(join(process.env.POKI_MCP_STATE_DIR, 'request.json'), JSON.stringify({ url, body: JSON.parse(options.body) }));
       if (url === 'https://api.openai.com/v1/realtime/client_secrets') return Response.json({ value: 'ek_test' });
       if (url === 'https://api.openai.com/v1/live/sessions') return Response.json({ transport: { sdp: 'sdp-answer' } }, { status: 201 });
-      if (url === 'https://api.openai.com/v1/responses') return Response.json({ output: [{
-        type: 'message', content: [{ type: 'output_text', text: 'Screen description' }],
-      }] });
+      if (url === 'https://api.openai.com/v1/responses') return ${screenAction};
       throw new Error('Unexpected upstream URL');
     };
   `;
-  const child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, join(root, 'bin/voice-bridge.mjs'), '--port', '0', '--host', '127.0.0.1'], {
+  const child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, join(root, 'bin/voice-bridge.mjs'), '--port', '0', '--host', '127.0.0.1', ...extraArgs], {
     env: { ...process.env, POKI_MCP_STATE_DIR: dir, POKI_VOICE_MODEL: '', OPENAI_API_KEY: 'unused' }, stdio: ['ignore', 'pipe', 'inherit'],
   });
   const exited = once(child, 'exit');
@@ -110,6 +113,95 @@ test('each Live screenshot uses its own unsaved vision request', async t => {
     assert.deepEqual(images.map(image => image.image_url), [url(screen)]);
     assert.ok(!JSON.stringify(upstream.body).includes(url(previous)));
   }
+});
+
+test('Live and Realtime voice prompts direct screen delegation and look-first concisely', async t => {
+  const { base, request } = await sessionBridge(t);
+  const liveResponse = await fetch(`${base}/session?language=en`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  });
+  assert.equal(liveResponse.status, 200);
+  const { body: { session: live } } = await request();
+  assert.match(live.instructions, /reads and operates the iPhone via the backend/i);
+  assert.match(live.instructions, /Delegate screen questions and phone actions before answering/i);
+  assert.match(live.instructions, /never say you cannot see the screen first/i);
+  assert.ok(live.instructions.length <= 2050, `Live foreground prompt grew too long: ${live.instructions.length}`);
+
+  const backend = live.delegation.responses;
+  assert.match(backend.instructions, /Call look before claiming you cannot see the current screen/i);
+  assert.match(backend.instructions, /state the reported failure/i);
+  assert.ok(backend.instructions.length <= 3500, `Live backend prompt grew too long: ${backend.instructions.length}`);
+  const liveLook = backend.tools.find(tool => tool.name === 'look');
+  assert.ok(liveLook);
+  assert.match(liveLook.description, /screenshot description/i);
+  assert.match(liveLook.description, /Call first for any screen question or action/i);
+
+  const realtimeResponse = await fetch(`${base}/token?language=en`);
+  assert.equal(realtimeResponse.status, 200);
+  const { body: { session: realtime } } = await request();
+  assert.match(realtime.instructions, /Call look before claiming you cannot see the current screen/i);
+  assert.match(realtime.instructions, /state the reported failure/i);
+  assert.ok(realtime.instructions.length <= 3450, `Realtime prompt grew too long: ${realtime.instructions.length}`);
+  const realtimeLook = realtime.tools.find(tool => tool.name === 'look');
+  assert.ok(realtimeLook);
+  assert.match(realtimeLook.description, /screenshot image/i);
+  assert.match(realtimeLook.description, /Call first for any screen question or action/i);
+});
+
+test('Live screenshot description failures distinguish upstream 404, non-string errors, and secret redaction', async t => {
+  const url = `data:image/jpeg;base64,${Buffer.from('synthetic screenshot').toString('base64')}`;
+
+  const notFound = await sessionBridge(t, {
+    screenError: { status: 404, message: 'model gpt-6-luna does not exist' },
+  });
+  const upstream404 = await fetch(`${notFound.base}/screen`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: url }),
+  });
+  assert.equal(upstream404.status, 502);
+  const payload404 = await upstream404.json();
+  assert.equal(payload404.source, 'upstream');
+  assert.equal(payload404.upstream_status, 404);
+  assert.match(payload404.error, /model gpt-6-luna does not exist/);
+
+  const wrongRoute = await fetch(`${notFound.base.replace(/\/voice\/[^/]+$/, '/voice/wrongsecret000000')}/screen`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: url }),
+  });
+  assert.equal(wrongRoute.status, 404);
+  assert.equal((await wrongRoute.json()).source, undefined);
+
+  const nonString = await sessionBridge(t, {
+    screenError: { status: 503, body: { error: { message: { detail: 'overloaded' } } } },
+  });
+  const nonStringRes = await fetch(`${nonString.base}/screen`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: url }),
+  });
+  assert.equal(nonStringRes.status, 503);
+  const nonStringPayload = await nonStringRes.json();
+  assert.equal(nonStringPayload.source, 'upstream');
+  assert.match(nonStringPayload.error, /Screen description failed \(503\)/);
+
+  const secretLeak = await sessionBridge(t, {
+    screenError: { status: 503, message: 'vision down for sk-secret123456 and Bearer tok_abcdef123456' },
+  });
+  const secretRes = await fetch(`${secretLeak.base}/screen`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: url }),
+  });
+  assert.equal(secretRes.status, 503);
+  const secretPayload = await secretRes.json();
+  assert.match(secretPayload.error, /vision down/);
+  assert.match(secretPayload.error, /the API key/);
+  assert.ok(!secretPayload.error.includes('sk-secret123456'));
+  assert.ok(!secretPayload.error.includes('tok_abcdef123456'));
+
+  const networkDown = await sessionBridge(t, { screenThrows: 'connect ECONNREFUSED' });
+  const networkRes = await fetch(`${networkDown.base}/screen`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: url }),
+  });
+  assert.equal(networkRes.status, 502);
+  const networkPayload = await networkRes.json();
+  assert.equal(networkPayload.source, 'upstream');
+  assert.equal(networkPayload.upstream_status, 502);
+  assert.match(networkPayload.error, /Could not reach OpenAI for screen description/);
 });
 
 // The voice bridge in front of a fixture daemon and phone, as the Poki app reaches it.

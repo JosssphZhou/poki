@@ -131,12 +131,12 @@ enum VoiceDirect {
     # Tools
     - Use the appropriate tool when it can answer or do what the user asks. Never guess facts about the phone.
     - \(lockCheck)
-    - \(live ? "A description of the current screenshot may be part of the tool result" : "A screenshot of the screen follows each look, do and open_app answer as an image"): use it with the numbered elements to say what is on the screen. Asked what is on the screen, name the app and its main content in one sentence, without listing buttons.
+    - \(live ? "Each look, do, or open_app result includes elements and a screenshot description (or why it failed): answer screen questions in one sentence naming the app and main content, or state the reported failure." : "A screenshot follows each look, do, or open_app answer (unless the result states why not): use it with the elements to answer screen questions in one sentence naming the app and main content, or state the reported failure.")
     - Open an app with open_app and its name as the user said it (微信, WeChat, 设置, Settings); Poki knows its bundle id. For a page of Settings (Bluetooth, Wi-Fi, Battery and the others open_app lists), give the page too, and Settings opens on it.
     - Search the Home Screen for an app only when open_app answers that it does not know the app or the app is not installed: go home ({button: "home"}), swipe down on the Home Screen, type the app's name and tap it.
     - A request can take several steps (open an app, tap, type): call one tool after another until it is done. Put several actions in one do when you know them; tap elements by the numbers from the latest look or do.
     - Never repeat an action that already ran, including actions from before a reconnect that the conversation says have finished.
-    - To read a page, open it first, then read the screen.
+    - Call look before claiming you cannot see the current screen; open another app first to read its page.
     - You can open and operate every app installed on this iPhone, Apple's and anyone else's (WeChat, Instagram, Uber, a bank, a game): never tell the user an app is out of reach before you have tried.
 
     # Approvals and stopping
@@ -158,15 +158,18 @@ enum VoiceDirect {
         A standalone stop such as “停” stops playback and cancels the current phone task. Call \(cancelCurrentTask) immediately as the only tool for a cancellation request such as “停” or “先别发了”. Wait for a new request before speaking or using phone tools again. A request only to quiet the voice pauses playback. For “在备忘录输入停” or “把停字发过去”, use the normal phone tools to enter or send the requested text.
         Brief acknowledgments such as “嗯” and “好的” leave the current reply and task intact. Report success only after a tool confirms the requested result. Describe pending, uncertain and failed results as they are.
         """
-    private static let tools: [[String: Any]] = [
-        ["type": "function", "name": "get_ios_version", "description": "Read the iPhone model and its iOS version. Changes nothing on the phone.", "parameters": empty],
-        ["type": "function", "name": "look", "description": "Read the iPhone screen now: the app in front, its numbered elements (role, label, frame in points) and a screenshot." + phoneToolGuidance, "parameters": empty],
-        ["type": "function", "name": "open_app", "description": "Open an app on this iPhone by its name, as the user says it in any language (微信, WeChat, 设置, Settings), then read the screen. With page, Settings opens straight on that page." + phoneToolGuidance,
-         "parameters": ["type": "object", "properties": ["app": ["type": "string"], "page": ["type": "string", "enum": VoiceApps.settingsPages.map(\.key).sorted()]],
-                        "required": ["app"], "additionalProperties": false]],
-        ["type": "function", "name": "do", "description": doDescription + phoneToolGuidance,
-         "parameters": ["type": "object", "properties": ["actions": ["type": "array", "items": ["type": "object"]]], "required": ["actions"], "additionalProperties": false]],
-    ]
+    private static func tools(live: Bool) -> [[String: Any]] {
+        let lookMedia = live ? "screenshot description" : "screenshot image"
+        return [
+            ["type": "function", "name": "get_ios_version", "description": "Read the iPhone model and its iOS version. Changes nothing on the phone.", "parameters": empty],
+            ["type": "function", "name": "look", "description": "Read the current iPhone screen (app, numbered elements, and \(lookMedia)). Call first for any screen question or action; report any read failure." + phoneToolGuidance, "parameters": empty],
+            ["type": "function", "name": "open_app", "description": "Open an app on this iPhone by its name, as the user says it in any language (微信, WeChat, 设置, Settings), then read the screen. With page, Settings opens straight on that page." + phoneToolGuidance,
+             "parameters": ["type": "object", "properties": ["app": ["type": "string"], "page": ["type": "string", "enum": VoiceApps.settingsPages.map(\.key).sorted()]],
+                            "required": ["app"], "additionalProperties": false]],
+            ["type": "function", "name": "do", "description": doDescription + phoneToolGuidance,
+             "parameters": ["type": "object", "properties": ["actions": ["type": "array", "items": ["type": "object"]]], "required": ["actions"], "additionalProperties": false]],
+        ]
+    }
 
     /// PokiCore's own description of do (the text chat's), so voice knows every action the chat knows:
     /// launch any app, scroll_to, back, long_press, handoff and the rest.
@@ -186,7 +189,7 @@ enum VoiceDirect {
                           "noise_reduction": ["type": "near_field"], "transcription": ["model": "gpt-4o-mini-transcribe", "language": "zh"]],
                 "output": ["voice": "marin"],
             ],
-            "tools": tools, "tool_choice": "auto", "parallel_tool_calls": false, "reasoning": ["effort": "low"],
+            "tools": tools(live: false), "tool_choice": "auto", "parallel_tool_calls": false, "reasoning": ["effort": "low"],
         ]
     }
 
@@ -196,7 +199,7 @@ enum VoiceDirect {
         let live: [String: Any] = [
             "model": model,
             "instructions": """
-                You are Poki, a voice assistant. Speak \(interfaceLanguage). Switch languages only when the user clearly switches. App names, tool output and words like hello do not change the conversation language.
+                You are Poki, a voice assistant that reads and operates the iPhone via the backend. Delegate screen questions and phone actions before answering; never say you cannot see the screen first. Speak \(interfaceLanguage). Switch languages only when the user clearly switches. App names, tool output and words like hello do not change the conversation language.
 
                 If the user asks to cancel, delegate the new cancellation request immediately and silently, even if the previous delegation is still running. Do not wait for its result. The backend calls the cancellation tool.
                 \(cancellationRule)
@@ -209,7 +212,7 @@ enum VoiceDirect {
             "audio": ["output": ["voice": "marin"]],
             "delegation": ["type": "responses", "acknowledgement_delay_ms": 800, "responses": [
                 "model": liveBackend, "instructions": instructions(live: true), "tool_choice": "auto",
-                "tools": (tools + [cancelTool]).map { $0.merging(["strict": false]) { _, value in value } },
+                "tools": (tools(live: true) + [cancelTool]).map { $0.merging(["strict": false]) { _, value in value } },
                 "parallel_tool_calls": false, "reasoning": ["effort": "low"],
             ]],
         ]
@@ -241,8 +244,11 @@ enum VoiceDirect {
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        guard (200..<300).contains(status), let output = json?["output"] as? [[String: Any]] else {
-            throw VoiceError.realtime(status, "Screen description failed")
+        guard (200..<300).contains(status) else {
+            throw VoiceError.realtime(status, openAIError(json, fallback: "Screen description failed (\(status))"))
+        }
+        guard let output = json?["output"] as? [[String: Any]] else {
+            throw VoiceError.realtime(502, "OpenAI returned no screen description")
         }
         let text = output.filter { $0["type"] as? String == "message" }
             .flatMap { $0["content"] as? [[String: Any]] ?? [] }
@@ -271,9 +277,18 @@ enum VoiceDirect {
                                  local_tools: localTools, base: base.absoluteString)
     }
 
+    static func scrubSecrets(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"(?i)\b(?:Bearer\s+[A-Za-z0-9._~+/=-]{6,}|(?:sk|rk|pk)-[A-Za-z0-9._*-]{4,}|AIza[A-Za-z0-9_-]{10,}|xox[baprs]-[A-Za-z0-9-]{6,}|gh[pousr]_[A-Za-z0-9_]{6,})"#,
+            with: "the API key",
+            options: .regularExpression
+        )
+    }
+
     private static func openAIError(_ json: [String: Any]?, fallback: String) -> String {
-        ((json?["error"] as? [String: Any])?["message"] as? String ?? fallback)
-            .replacingOccurrences(of: #"sk-[\w*-]+"#, with: "the API key", options: .regularExpression)
+        let message = (json?["error"] as? [String: Any])?["message"] as? String
+        let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return scrubSecrets(trimmed?.isEmpty == false ? trimmed! : fallback)
     }
 }
 
