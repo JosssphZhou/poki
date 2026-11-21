@@ -14,7 +14,19 @@ static void Write(NSString *name, id object) {
 /// refused, and the new session must have a new generation.
 static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
-    out[@"front"] = [PKInProcess.shared frontApp];
+    // check.sh launches the fixture 3 s after this app, and the read is meant for the fixture. On a
+    // slow simulator (an iPad on CI) it was not in front yet when the read came, so this app read
+    // itself. Up to 60 s for another app to come to the front; the wait is in the result.
+    NSString *me = NSBundle.mainBundle.bundleIdentifier;
+    NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
+    NSDictionary *front = [PKInProcess.shared frontApp];
+    while (([front[@"bundleId"] length] == 0 || [front[@"bundleId"] isEqualToString:me]) &&
+           NSProcessInfo.processInfo.systemUptime - waitStarted < 60) {
+        [NSThread sleepForTimeInterval:0.5];
+        front = [PKInProcess.shared frontApp];
+    }
+    out[@"front_wait_seconds"] = @(NSProcessInfo.processInfo.systemUptime - waitStarted);
+    out[@"front"] = front;
     NSString *code;
     NSString *before = [PKInProcess.shared sourceXML:NULL code:&code];
     if (code) out[@"source_code"] = code;
@@ -133,7 +145,16 @@ static NSDictionary *Apps(NSString *fixture) {
     NSString *text = [args stringForKey:@"text"] ?: @"ESP173 读屏";
     double delay = [args doubleForKey:@"delay"];
     dispatch_async(dispatch_queue_create("check", DISPATCH_QUEUE_SERIAL), ^{
+        // A prepare that gives up waiting (session_timeout, 10.8 s on a slow CI simulator) leaves the
+        // open running and the next one waits for it, as Poki asks again when a call finds the open
+        // still going: up to four more.
         NSDictionary *prepare = [PKInProcess.shared prepare];
+        int retries = 0;
+        while (retries < 4 && ![prepare[@"ok"] boolValue] && [prepare[@"code"] isEqual:@"session_timeout"]) {
+            retries++;
+            prepare = [PKInProcess.shared prepare];
+        }
+        if (retries) { prepare = [prepare mutableCopy]; ((NSMutableDictionary *)prepare)[@"timeouts_before"] = @(retries); }
         if (delay > 0) [NSThread sleepForTimeInterval:delay];
         NSMutableDictionary *out = [([mode isEqualToString:@"apps"] ? Apps([args stringForKey:@"fixture"] ?: @"local.pokimcp.fixture") : Run(mode, tag, text)) mutableCopy];
         out[@"prepare"] = prepare;

@@ -143,9 +143,11 @@ fi
 xcrun simctl launch "$UDID" local.poki.inprocess-check -mode "$MODE" -tag field -delay 8 -text "$TEXT" -times "${POKI_CHECK_TIMES:-1}" >/dev/null
 sleep 3
 xcrun simctl launch "$UDID" local.pokimcp.fixture >/dev/null
-for _ in $(seq 90); do [ -s "$DOCS/field.json" ] && break; sleep 1; done
+# 180 s: on a slow simulator the session took 43 s to get ready, then the 8 s delay and up to 60 s
+# for the fixture to come to the front (main.m).
+for _ in $(seq 180); do [ -s "$DOCS/field.json" ] && break; sleep 1; done
 if [ ! -s "$DOCS/field.json" ]; then
-  echo "::error::the check app wrote no result in 90 s"
+  echo "::error::the check app wrote no result in 180 s"
   [ -s "$DOCS/field-progress.json" ] && { echo "progress:"; cat "$DOCS/field-progress.json"; }
   echo "check app running: $(xcrun simctl spawn "$UDID" launchctl list | grep -c 'local.poki.inprocess-check' || true)"
   for f in $(ls -t ~/Library/Logs/DiagnosticReports/InProcessCheck* 2>/dev/null | head -1); do echo "== crash $f"; head -60 "$f"; done
