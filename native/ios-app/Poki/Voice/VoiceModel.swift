@@ -290,6 +290,11 @@ struct VoiceClock {
 @MainActor
 @Observable
 final class VoiceModel {
+    struct CallMicrophone {
+        let callID = UUID()
+        var isMuted = false
+    }
+
     private(set) var bridge = VoiceBridge.saved
     private(set) var phase = VoicePhase.off
     private(set) var lines: [VoiceLine] = [] { didSet { saveTranscript() } }
@@ -306,6 +311,29 @@ final class VoiceModel {
     #endif
     /// Model audio off: for silent test runs. Speech is still transcribed into `lines`.
     var muted = false { didSet { link?.setRemoteVolume(muted || liveSpeechStopped || liveCloseTimeout != nil ? 0 : 1) } }
+    private(set) var microphone: CallMicrophone?
+
+    @discardableResult
+    func setMicrophoneMuted(_ muted: Bool, callID: UUID) -> Bool {
+        guard let microphone, microphone.callID == callID else {
+            log.add("voice", "Ignored microphone mute for call \(callID): the call is no longer active")
+            return false
+        }
+        guard microphone.isMuted != muted else { return true }
+        self.microphone?.isMuted = muted
+        link?.setMicrophoneMuted(muted)
+        log.add("voice", "Microphone \(muted ? "muted" : "unmuted") for call \(callID), session \(session)")
+        return true
+    }
+
+    @discardableResult
+    func toggleMicrophoneMute() -> Bool? {
+        guard let microphone else { return nil }
+        let muted = !microphone.isMuted
+        setMicrophoneMuted(muted, callID: microphone.callID)
+        return muted
+    }
+
     /// The last measured turn: from the end of speech to the first audio of the answer that carries a tool result.
     private(set) var lastTurnMS: Int?
     /// Timestamps of the current turn, from the end of the person's speech.
@@ -678,6 +706,7 @@ final class VoiceModel {
         session += 1
         PokiEntry.shared.advanceEpoch()
         let number = session
+        self.microphone = microphone ? CallMicrophone() : nil
         awaitingFirstLaunchUtterance = request
         request?.record(.started, reason: "newTalk", session: number)
         let bridge = self.bridge
@@ -694,6 +723,7 @@ final class VoiceModel {
             return try await bridge.token(preferLive: microphone)
         }
         func connect(_ link: VoiceConnection, _ token: VoiceBridge.Token, direct: Bool) async throws {
+            link.setMicrophoneMuted(self.microphone?.isMuted ?? false)
             usesLive = token.live == true
             localTools = Set(token.local_tools)
             if usesLive {
@@ -749,6 +779,7 @@ final class VoiceModel {
             // Ended while connecting: stop() already put everything back.
             guard number == session, liveCloseTimeout == nil else { return }
             transcript = nil
+            self.microphone = nil
             link?.close()
             link = nil
             holdingMicrophone = false
@@ -805,6 +836,7 @@ final class VoiceModel {
     func stop() {
         guard liveCloseTimeout == nil else { return }
         PokiEntry.shared.advanceEpoch()
+        microphone = nil
         if let dictation {
             dictation.cancel()
             self.dictation = nil
@@ -850,6 +882,7 @@ final class VoiceModel {
     /// Drops the connection and the state of its turns; calls already running keep running. The lines of
     /// the conversation are kept for one opened soon after, before the chat takes them.
     private func endSession() {
+        microphone = nil
         keepOpen()
         inputReadyWatch?.cancel()
         inputReadyWatch = nil

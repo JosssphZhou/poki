@@ -1359,6 +1359,7 @@ struct ComposerInputView: View {
                         Group {
                             if let talk = voice.talkState {
                                 TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
+                                        microphoneMuted: voice.microphone?.isMuted, toggleMicrophoneMute: { voice.toggleMicrophoneMute() },
                                         interrupt: voice.stopTalking, end: voice.stop,
                                         retry: { voice.dismissProblem(); openVoice() }, dismiss: voice.dismissProblem)
                             } else {

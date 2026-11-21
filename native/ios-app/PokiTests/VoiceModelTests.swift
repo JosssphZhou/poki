@@ -87,6 +87,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     }
     func send(_ event: [String: Any]) -> Bool { sent.append(event); return true }
     func setRemoteVolume(_ value: Double) { remoteVolume = value }
+    func setMicrophoneMuted(_ muted: Bool) {}
     func hasRemoteSpeech() async -> Bool { await MainActor.run { remoteSpeech } }
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
     func close() { closed = true }
@@ -155,6 +156,29 @@ private actor VoiceRunnerTransport: HTTPTransport {
 
 @MainActor
 final class VoiceModelTests: XCTestCase {
+    func testMicrophoneMuteIsScopedToTheActiveCall() async throws {
+        let h = Harness()
+        defer { h.voice.stop() }
+        await h.talk()
+        let callID = try XCTUnwrap(h.voice.microphone?.callID)
+
+        XCTAssertTrue(h.voice.setMicrophoneMuted(true, callID: callID))
+        XCTAssertTrue(h.voice.setMicrophoneMuted(true, callID: callID))
+        XCTAssertEqual(h.voice.microphone?.callID, callID)
+        XCTAssertEqual(h.voice.microphone?.isMuted, true)
+        XCTAssertEqual(h.link.remoteVolume, 1)
+
+        h.voice.stop()
+        XCTAssertNil(h.voice.microphone)
+        XCTAssertFalse(h.voice.setMicrophoneMuted(true, callID: callID))
+        XCTAssertTrue(AppLog.shared.lines.last?.contains("Ignored microphone mute for call \(callID): the call is no longer active") == true)
+
+        await h.talk()
+        XCTAssertNotEqual(h.voice.microphone?.callID, callID)
+        XCTAssertFalse(h.voice.setMicrophoneMuted(true, callID: callID))
+        XCTAssertEqual(h.voice.microphone?.isMuted, false)
+    }
+
     func testAConnectionWhoseSessionNeverStartsEndsAfterSixtySeconds() async {
         let h = Harness()
         await h.connect()

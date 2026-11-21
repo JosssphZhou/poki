@@ -9,6 +9,7 @@ protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func hasSentMicrophoneAudio() async -> Bool
     func hasRemoteSpeech() async -> Bool
     @discardableResult func send(_ event: [String: Any]) -> Bool
+    @MainActor func setMicrophoneMuted(_ muted: Bool)
     func setRemoteVolume(_ value: Double)
     func diagnose(_ write: @escaping @MainActor (String) -> Void)
     @MainActor func close()
@@ -54,6 +55,8 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     private var peer: RTCPeerConnection?
     private var channel: RTCDataChannel?
     @MainActor private var holdsAudioSession = false
+    @MainActor private var microphoneTrack: RTCAudioTrack?
+    @MainActor private var microphoneMuted = false
     /// WebRTC calls the delegate methods on its own threads and the app calls in from the main actor,
     /// so these three are only touched under `lock`.
     private let lock = NSLock()
@@ -120,6 +123,8 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
             try session.setActive(true)
             holdsAudioSession = true
             let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
+            mic.isEnabled = !microphoneMuted
+            microphoneTrack = mic
             peer.add(mic, streamIds: ["poki-voice"])
         } else {
             let receiveOnly = RTCRtpTransceiverInit()
@@ -228,6 +233,12 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         return channel.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
+    @MainActor
+    func setMicrophoneMuted(_ muted: Bool) {
+        microphoneMuted = muted
+        microphoneTrack?.isEnabled = !muted
+    }
+
     /// 0 mutes Poki's voice (silent test runs); 1 is normal.
     func setRemoteVolume(_ value: Double) {
         lock.withLock {
@@ -244,6 +255,7 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         peer?.close()
         channel = nil
         peer = nil
+        microphoneTrack = nil
         // An interruption can make the session inactive before we give up our activation.
         guard holdsAudioSession else { return }
         holdsAudioSession = false
