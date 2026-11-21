@@ -6,6 +6,7 @@ import WebRTC
 protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws
     @MainActor func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws
+    @MainActor func hasSentMicrophoneAudio() async -> Bool
     func hasRemoteSpeech() async -> Bool
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
@@ -15,6 +16,7 @@ protocol VoiceConnection: AnyObject, Sendable {
 
 extension VoiceConnection {
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws { throw VoiceError.noWebRTC }
+    func hasSentMicrophoneAudio() async -> Bool { false }
     func hasRemoteSpeech() async -> Bool { false }
 }
 
@@ -149,6 +151,19 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
             try await Task.sleep(for: .milliseconds(20))
         }
         lock.withLock { opened = true }
+    }
+
+    @MainActor
+    func hasSentMicrophoneAudio() async -> Bool {
+        guard let peer else { return false }
+        return await withCheckedContinuation { done in
+            peer.statistics { report in
+                done.resume(returning: report.statistics.values.contains { stat in
+                    stat.type == "outbound-rtp" && (stat.values["kind"] as? String) == "audio"
+                        && ((stat.values["bytesSent"] as? NSNumber)?.uint64Value ?? 0) > 0
+                })
+            }
+        }
     }
 
     func hasRemoteSpeech() async -> Bool {

@@ -708,6 +708,29 @@ final class VoiceModelTests: XCTestCase {
         UserDefaults.standard.set(savedDirect, forKey: "voice.openai.enabled")
     }
 
+    func testLiveInputTranscriptRecordsTheFirstLaunchUtteranceWithoutACommitEvent() async {
+        let h = Harness()
+        defer { h.voice.stop() }
+        XCTAssertTrue(h.voice.setBridge(BridgeStub.liveAddress))
+        let request = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                        source: .appShortcut, epoch: PokiEntry.shared.epoch)
+        await h.voice.start(admitEntry: { request })
+        h.link.play(["type": "session.started"],
+                    ["type": "session.output_transcript.delta", "delta": "Hello"])
+        XCTAssertEqual(h.voice.phase, .listening)
+        let launch = "launch request=\(request.id.uuidString)"
+        let firstUtterance = "\(launch) stage=firstUtterance "
+        XCTAssertTrue(AppLog.shared.lines.contains { $0.contains("\(launch) stage=transportConnected ") })
+        XCTAssertFalse(AppLog.shared.lines.contains { $0.contains(firstUtterance) })
+
+        h.link.play(["type": "session.input_transcript.delta", "delta": "Open", "start_ms": 100, "end_ms": 220],
+                    ["type": "session.input_transcript.delta", "delta": " Settings", "start_ms": 220, "end_ms": 400])
+
+        let milestones = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
+        XCTAssertEqual(milestones.count, 1, "Live transcript deltas must record the first utterance once without an audio buffer commit")
+        XCTAssertFalse(milestones.contains { $0.contains("Open") || $0.contains("Settings") })
+    }
+
     /// One VoiceModel with its connections (one per conversation), its time, and what Poki was told about
     /// the microphone (true: the voice session holds it).
     private final class Harness {

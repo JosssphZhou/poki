@@ -385,6 +385,11 @@ struct RootView: View {
 
     private func open(link url: URL) {
         AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
+        if url.scheme?.lowercased() == "poki", url.host() == "voice" {
+            model.voice.open(url)
+            PokiEntry.shared.ask(.voice, from: .link)
+            return
+        }
         // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
         guard !model.pairingUnderWay else { return }
         let opening = model.open(link: url)
@@ -420,13 +425,6 @@ struct RootView: View {
                 detailsOpen = false
                 openRun(id)
             }
-        } else if url.host() == "voice" {
-            detailsOpen = false
-            model.voice.open(url)
-            show(.chat)
-            // A link never turns on the microphone: it brings the chat to the front, where the message
-            // field's button starts a talk, and says what Talk with Poki is missing when it has no key.
-            if !model.voice.isOn, !model.voice.canTalkLive { model.voice.keyAsked = true }
         } else {
             detailsOpen = false
             show(.chat)
@@ -440,24 +438,87 @@ struct RootView: View {
         show(.chat)
         guard model.voice.canTalkLive else { model.voice.keyAsked = true; return }
         if !model.voice.isOn {
-            ApprovalNotice.requestPermission()
-            model.prepareForTask()
+            prepareToTalk()
             Task { await model.voice.start() }
         }
     }
 
-    /// The Action Button, Control Center, Shortcuts or Spotlight (PokiEntry), once Poki is in front. A task
-    /// under way is shown, not interrupted: Talk starts only when Poki is free. Pairing stays on its step,
-    /// and the first run stays up: its record is asked, not `welcoming`, because at a cold launch the
-    /// request can be here before the cover is.
+    private func prepareToTalk() {
+        ApprovalNotice.requestPermission()
+        model.prepareForTask()
+    }
+
     private func takeEntry() {
-        guard scenePhase == .active, let request = PokiEntry.shared.take(), !model.pairingUnderWay, !FirstRun.isDue() else { return }
+        guard scenePhase == .active else { return }
+        for request in PokiEntry.shared.take() {
+            guard admitEntry(request, markPageShown: true) != nil else { continue }
+            Task {
+                await model.voice.start(admitEntry: {
+                    guard let request = admitEntry(request) else { return nil }
+                    prepareToTalk()
+                    return request
+                })
+            }
+        }
+    }
+
+    // A queued start checks again after the task hop, and after a Live call finishes closing.
+    private func admitEntry(_ request: PokiEntry.Request, markPageShown: Bool = false) -> PokiEntry.Request? {
+        if request.destination == .talk {
+            guard request.epoch == PokiEntry.shared.epoch else {
+                request.record(.invalidated, reason: "voiceEpochChanged")
+                return nil
+            }
+            guard UIApplication.shared.applicationState == .active else {
+                request.record(.invalidated, reason: "sceneInactive")
+                return nil
+            }
+        }
+        let firstRun = FirstRun.isDue()
+        if firstRun || model.pairingUnderWay {
+            if request.destination != .chat {
+                request.record(.blocked, reason: firstRun ? "firstRun" : "pairing")
+            }
+            return nil
+        }
         detailsOpen = false
-        if let handoff = AskPoki.liveSessionID { show(.session(handoff)); return }
+        if markPageShown, request.destination != .chat { request.recordStage(.pageShown) }
+        if request.destination == .voice {
+            show(.chat)
+            if !model.voice.isOn, !model.voice.canTalkLive { model.voice.keyAsked = true }
+            request.record(.shown, reason: "link")
+            return nil
+        }
+        if request.destination == .talk {
+            if request.isExpired() {
+                show(.chat)
+                request.record(.shown, reason: "expired")
+                return nil
+            }
+            if let session = model.voice.activeEntrySession {
+                show(.chat)
+                request.record(.returned, reason: "activeTalk", session: session)
+                return nil
+            }
+        }
+        if let handoff = AskPoki.liveSessionID {
+            show(.session(handoff))
+            if request.destination == .talk { request.record(.blocked, reason: "taskRunning") }
+            return nil
+        }
         show(.chat)
-        guard request == .talk, !chat.running, !model.voice.isOn else { return }
-        // Without a live voice (no OpenAI key, no voice bridge) Talk opens the message field instead.
-        if model.voice.canTalkLive { openLiveVoice() } else { MessageFieldAsk.shared.ask() }
+        guard request.destination == .talk else { return nil }
+        guard !chat.running, ChatModel.delegatedBusy == nil else {
+            request.record(.blocked, reason: "taskRunning")
+            return nil
+        }
+        guard model.voice.canTalkLive else {
+            if request.source == .anytime { MessageFieldAsk.shared.ask() }
+            else { model.voice.keyAsked = true }
+            request.record(.blocked, reason: "voiceNotConfigured")
+            return nil
+        }
+        return request
     }
 
     /// The conversation `id` left the list. When it is the one in the chat, the chat stops its task and
