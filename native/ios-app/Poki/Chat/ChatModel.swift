@@ -464,6 +464,7 @@ final class ChatModel {
         guard let prepared = prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
                                          inSplitView: inSplitView, chooseWorkspace: chooseWorkspace) else { return }
         running = true
+        persist()
         awaitingModel = !app.hasVisibleDuoCompanion
         stopAsked = false
         runToken += 1

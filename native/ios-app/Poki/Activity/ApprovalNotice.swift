@@ -35,6 +35,7 @@ enum ApprovalNotice {
 
     static func requestPermission() {
         Task { @MainActor in registerActions() }
+        guard !LaunchMode.current.suppressesSystemPermissionPrompts else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             Task { @MainActor in AppLog.shared.add("notice", granted ? "notifications allowed" : "notifications not allowed") }
         }

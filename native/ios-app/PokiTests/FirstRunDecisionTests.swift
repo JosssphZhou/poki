@@ -46,4 +46,22 @@ final class FirstRunDecisionTests: XCTestCase {
         launch()
         XCTAssertEqual(record, "done")
     }
+
+    func testLaunchModeSuppressesPermissionPromptsOutsideInteractiveLaunches() {
+        let interactive = LaunchMode.resolve(environment: [:], arguments: [:])
+        let scripted = LaunchMode.resolve(environment: [:], arguments: ["pokiScreen": "chat"])
+        let bundleInjected = LaunchMode.resolve(environment: ["XCTestBundlePath": "/tmp/PokiTests.xctest"], arguments: [:])
+        let configured = LaunchMode.resolve(environment: ["XCTestConfigurationFilePath": "/tmp/run.xctestconfiguration"], arguments: [:])
+        let argumentSelected = LaunchMode.resolve(environment: [:], arguments: ["XCTest": "PokiTests/FirstRunDecisionTests"])
+
+        XCTAssertEqual(interactive, .interactive)
+        XCTAssertFalse(interactive.suppressesSystemPermissionPrompts)
+        for mode in [scripted, bundleInjected, configured, argumentSelected] {
+            XCTAssertTrue(mode.suppressesSystemPermissionPrompts, "\(mode)")
+        }
+        XCTAssertEqual(LaunchMode.current, .xctest)
+        XCTAssertTrue(LaunchMode.current.suppressesSystemPermissionPrompts)
+        launch()
+        XCTAssertFalse(FirstRun.isDue(defaults: defaults))
+    }
 }

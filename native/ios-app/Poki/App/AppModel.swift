@@ -360,25 +360,14 @@ final class AppModel {
         let core = LiveCore(host: host, transport: transport ?? (automationPath == .inProcess ? InProcessWDA() : URLSessionTransport()))
         self.core = core
         // Voice taps get the same rules and approval card as an agent's `do`.
+        let phoneStepOwner = PhoneStepOwner()
         voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
-                           phoneTool: { name, arguments in
-                               #if DEBUG && targetEnvironment(simulator)
-                               if TalkRehearsal.asked { return await TalkRehearsal.step() }
-                               #endif
-                               let tool = { (name: String, arguments: String) async -> PhoneAnswer in
-                                   let result = await core.tool(name, arguments: arguments)
-                                   return (result.text, result.isError, result.jpeg)
-                               }
-                               guard name == "open_app" else { return await tool(name, arguments) }
-                               return await VoiceApps.open(arguments, tool: tool, openLink: { url in
-                                   guard UIApplication.shared.applicationState == .active else { return false }
-                                   return await UIApplication.shared.open(url)
-                               })
-                           },
+                           phoneTool: { name, arguments in await phoneStepOwner.model?.voicePhoneStep(name, arguments) ?? ("Poki is not running.", true, nil) },
                            holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() },
                            connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
+        phoneStepOwner.model = self
         // inFront starts true before the first scene callback, including a background launch.
         self.activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
@@ -2097,19 +2086,46 @@ final class AppModel {
     func runTool(_ name: String, arguments: String, localSession: String? = nil, expectedApps: Set<String>? = nil, conversation: String? = nil, localTask: String? = nil) async -> PokiCore.ToolAnswer {
         if name == "status" || name == "skills" || name == "routines" || name == "screen_history" { return await core.callTool(name, arguments: arguments, localSession: localSession, conversation: conversation) }
         if probeDriven { return await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps) }
+        if let refusal = await turnOnForPhoneStep(canWaitForAuthorization: true) {
+            return PokiCore.ToolAnswer(text: refusal, jpeg: nil, isError: true)
+        }
+        return await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, localTask: localTask)
+    }
+
+    /// The phone step of a live voice conversation (look, do, open_app): turns Poki on when it is off, as a
+    /// chat's step does, then runs as a relay call.
+    func voicePhoneStep(_ name: String, _ arguments: String) async -> PhoneAnswer {
+        #if DEBUG && targetEnvironment(simulator)
+        if TalkRehearsal.asked { return await TalkRehearsal.step() }
+        #endif
+        let tool = { [self] (name: String, arguments: String) async -> PhoneAnswer in
+            if let refusal = await turnOnForPhoneStep(canWaitForAuthorization: false) { return (refusal, true, nil) }
+            let result = await core.tool(name, arguments: arguments)
+            return (result.text, result.isError, result.jpeg)
+        }
+        guard name == "open_app" else { return await tool(name, arguments) }
+        return await VoiceApps.open(arguments, tool: tool, openLink: { url in
+            guard UIApplication.shared.applicationState == .active else { return false }
+            return await UIApplication.shared.open(url)
+        })
+    }
+
+    /// A phone step turns Poki on when it is off, and waits for it. nil: Poki is on and the step goes on;
+    /// otherwise the words the step answers with, and nothing was sent.
+    private func turnOnForPhoneStep(canWaitForAuthorization: Bool) async -> String? {
+        if probeDriven { return nil }
         if !sessionOn {
             if !sessionStarting { startSession() }
             if let task = sessionStartTask { await task.value }
         }
-        if passcodeConfirmationPending, automationPath != .inProcess || !sessionOn {
-            return PokiCore.ToolAnswer(text: "not_sent: \(AppLocalization.text(Self.passcodeConfirmationMessage)) Nothing was sent.", jpeg: nil, isError: true)
+        if passcodeConfirmationPending, !canWaitForAuthorization || automationPath != .inProcess || !sessionOn {
+            return "not_sent: \(AppLocalization.text(Self.passcodeConfirmationMessage)) Nothing was sent."
         }
         guard sessionOn else {
-            let why = problem ?? "Poki is off."
-            return PokiCore.ToolAnswer(text: "not_sent: Poki could not turn on: \(why) Nothing was sent. Tell the owner what to fix.", jpeg: nil, isError: true)
+            return "not_sent: Poki could not turn on: \(problem ?? "Poki is off.") Nothing was sent. Tell the owner what to fix."
         }
         lastAgentActivity = Date(); lastStepAt = Date()
-        return await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, localTask: localTask)
+        return nil
     }
 
     /// After Stop: waits until the phone has finished the action a stopped call had already sent.
@@ -2694,4 +2710,10 @@ struct AutomationAllowance: Equatable {
     }
 
     func save() { UserDefaults.standard.set([boot, at.timeIntervalSince1970], forKey: Self.key) }
+}
+
+/// Lets the voice's phone tool, built before the model is complete, reach the model that owns it.
+@MainActor
+private final class PhoneStepOwner {
+    weak var model: AppModel?
 }

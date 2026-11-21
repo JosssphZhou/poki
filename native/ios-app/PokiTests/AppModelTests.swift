@@ -542,12 +542,16 @@ final class PasscodeTests: XCTestCase {
     }
 }
 
+extension InProcessWDA {
+    nonisolated static func resetGate() { gate.withLock { $0 = OpenGate() } }
+}
+
 /// iOS asks the owner for the passcode before it allows automation, after Poki restarts and 8 hours
 /// after the last time. An in-process open that waits on it is named: Poki's home asks the owner, and
 /// the agent reads that only the owner can enter it, also after iOS gives up.
 @MainActor
 final class InProcessPasscodeTests: XCTestCase {
-    private var saved: (relay: String?, relayEnabled: Any?, setup: SetupState)!
+    private var saved: (relay: String?, relayEnabled: Any?, wantsOn: Any?, startedBoot: Any?, setup: SetupState)!
     private var savedAllowance: Any?
     private var model: AppModel!
     private var session: FakeAutomation!
@@ -555,12 +559,13 @@ final class InProcessPasscodeTests: XCTestCase {
 
     override func setUp() async throws {
         try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
-        // The open gate is process-wide: a suite that sent Poki to the background before this one
-        // must not leave each open here refused as "open Poki first".
-        InProcessWDA.gate.withLock { $0 = InProcessWDA.OpenGate() }
-        savedAllowance = UserDefaults.standard.object(forKey: AutomationAllowance.key)
-        UserDefaults.standard.removeObject(forKey: AutomationAllowance.key)
-        saved = (UserDefaults.standard.string(forKey: "relayAddress"), UserDefaults.standard.object(forKey: "relayEnabled"), SetupState.load())
+        InProcessWDA.resetGate()
+        let defaults = UserDefaults.standard
+        savedAllowance = defaults.object(forKey: AutomationAllowance.key)
+        defaults.removeObject(forKey: AutomationAllowance.key)
+        saved = (defaults.string(forKey: "relayAddress"), defaults.object(forKey: "relayEnabled"),
+                 defaults.object(forKey: "wantsOn"), defaults.object(forKey: "automationStartedBoot"), SetupState.load())
+        defaults.removeObject(forKey: "automationStartedBoot")
         session = FakeAutomation()
         launcher = FakeLauncher()
         useSystem(27)
@@ -582,10 +587,14 @@ final class InProcessPasscodeTests: XCTestCase {
         session?.answer(nil)
         session?.releasePause()
         UserDefaults.standard.set(savedAllowance, forKey: AutomationAllowance.key)
+        InProcessWDA.resetGate()
         guard let saved, let model else { return }
         model.stopSession()
-        UserDefaults.standard.set(saved.relay, forKey: "relayAddress")
-        UserDefaults.standard.set(saved.relayEnabled, forKey: "relayEnabled")
+        let defaults = UserDefaults.standard
+        defaults.set(saved.relay, forKey: "relayAddress")
+        defaults.set(saved.relayEnabled, forKey: "relayEnabled")
+        defaults.set(saved.wantsOn, forKey: "wantsOn")
+        defaults.set(saved.startedBoot, forKey: "automationStartedBoot")
         saved.setup.save()
     }
 
@@ -913,6 +922,18 @@ final class InProcessPasscodeTests: XCTestCase {
         try await Task.sleep(for: .seconds(1))
         XCTAssertNil(store.session(id), "the late reply does not bring the deleted conversation back")
         XCTAssertFalse(chat.entries.contains { $0.kind == .poki("Four.") }, "the new conversation does not show the late reply")
+    }
+
+    /// Poki is off and the owner talks to it: the live voice's first phone step turns Poki on, as a chat's does.
+    /// (The step ends on the runner here, because a simulator has no WebDriverAgent.)
+    func testALiveVoicePhoneStepTurnsPokiOnWhenItIsOff() async {
+        model.stopSession()
+        XCTAssertFalse(model.sessionOn)
+
+        let answer = await model.voicePhoneStep("look", "{}")
+
+        XCTAssertTrue(model.sessionOn, "the voice's phone step turned Poki on: \(answer.text)")
+        XCTAssertFalse(answer.text.hasPrefix("not_sent: Poki could not turn on"), answer.text)
     }
 
     private func chatWithoutAutomation(on server: FakeCompletions, request: String) async throws -> ChatModel {
@@ -1762,10 +1783,14 @@ final class FrontendSubtractionTests: XCTestCase {
     /// reach the new screens: the failure is the hint line on Home and in the chat, and an issue row
     /// on Poki's details.
     func testUnreachableRunnerFailureAndAutoTurnOnSurfaceInNewHomeAndDetails() async throws {
+        let defaults = UserDefaults.standard
+        let savedWantsOn = defaults.object(forKey: "wantsOn")
+        let savedRelay = defaults.object(forKey: "relayAddress")
+        let savedRelayEnabled = defaults.object(forKey: "relayEnabled")
         defer { try? FileManager.default.removeItem(at: SelfSigner.handedIdentity) }
         try FileManager.default.createDirectory(at: SelfSigner.handedIdentity.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: SelfSigner.handedIdentity)
-        UserDefaults.standard.removeObject(forKey: "wantsOn")
+        defaults.removeObject(forKey: "wantsOn")
 
         let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         XCTAssertTrue(model.wantsOn, "#79: Poki Setup install turns wantsOn on automatically")
@@ -1776,8 +1801,9 @@ final class FrontendSubtractionTests: XCTestCase {
         model.startSession()
         defer {
             model.stopSession()
-            UserDefaults.standard.removeObject(forKey: "relayAddress")
-            UserDefaults.standard.set(nil as Any?, forKey: "relayEnabled")
+            defaults.set(savedWantsOn, forKey: "wantsOn")
+            defaults.set(savedRelay, forKey: "relayAddress")
+            defaults.set(savedRelayEnabled, forKey: "relayEnabled")
         }
         model.wakeRunner()
         let done = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in ["failed", "running"].contains(model.runner.state) }, object: nil)
@@ -1980,10 +2006,11 @@ final class FrontendSubtractionTests: XCTestCase {
         // A pairing file from a computer is never handed to the image: the loopback is still needed.
         let lockdown: [String: Any] = ["HostID": "test-host", "SystemBUID": "test"]
         try PropertyListSerialization.data(fromPropertyList: lockdown, format: .xml, options: 0).write(to: pairing)
+        model.loopback.simulate(.noAnswer)
         XCTAssertEqual(SetupIssueHint.first(model: model)?.target, .step(.loopback), "a computer's pairing file")
         XCTAssertTrue(Issue.current(model).contains { $0.id == "loopback" }, "Settings issues, a computer's pairing file")
         let refused = try await renderedLabels(of: NavigationStack { SetupStepPage(step: .loopback) }, model: model)
-        XCTAssertTrue(refused.contains { $0.contains("with the loopback on") }, "the loopback page, a computer's pairing file: \(refused)")
+        XCTAssertTrue(refused.contains { $0.contains("Tunnel On, No Answer") }, "the loopback page, a computer's pairing file: \(refused)")
     }
 
     private func waitOnMain(_ condition: @escaping () -> Bool) async {
@@ -2008,28 +2035,29 @@ final class FrontendSubtractionTests: XCTestCase {
         display.add(to: .main, forMode: .common)
         await fulfillment(of: [drawn], timeout: 5)
         display.invalidate()
-        return Self.collectLabels(in: window)
+        return renderedAccessibilityLabels(in: window)
     }
+}
 
-    private static func collectLabels(in root: NSObject) -> [String] {
-        var labels: [String] = []
-        var pending = [root]
-        var visited = Set<ObjectIdentifier>()
-        while let item = pending.popLast() {
-            guard visited.insert(ObjectIdentifier(item)).inserted else { continue }
-            if let label = item.accessibilityLabel, !label.isEmpty { labels.append(label) }
-            if let value = item.accessibilityValue, !value.isEmpty { labels.append(value) }
-            if let view = item as? UIView { pending.append(contentsOf: view.subviews) }
-            if let children = item.accessibilityElements { pending.append(contentsOf: children.compactMap { $0 as? NSObject }) }
-            let count = item.accessibilityElementCount()
-            if count > 0 && count < 1000 {
-                for index in 0..<count {
-                    if let child = item.accessibilityElement(at: index) as? NSObject { pending.append(child) }
-                }
+@MainActor
+func renderedAccessibilityLabels(in root: NSObject) -> [String] {
+    var labels: [String] = []
+    var pending = [root]
+    var visited = Set<ObjectIdentifier>()
+    while let item = pending.popLast() {
+        guard visited.insert(ObjectIdentifier(item)).inserted else { continue }
+        if let label = item.accessibilityLabel, !label.isEmpty { labels.append(label) }
+        if let value = item.accessibilityValue, !value.isEmpty { labels.append(value) }
+        if let view = item as? UIView { pending.append(contentsOf: view.subviews) }
+        if let children = item.accessibilityElements { pending.append(contentsOf: children.compactMap { $0 as? NSObject }) }
+        let count = item.accessibilityElementCount()
+        if count > 0 && count < 1000 {
+            for index in 0..<count {
+                if let child = item.accessibilityElement(at: index) as? NSObject { pending.append(child) }
             }
         }
-        return labels
     }
+    return labels
 }
 
 @MainActor
