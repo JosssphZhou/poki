@@ -988,7 +988,8 @@ final class ChatHarnessTests: XCTestCase {
 
             let previous = app.approvalTurn.begin(text: "Send a different draft from the previous voice turn.")
             chat.send(request)
-            try await waitForTask(chat)
+            // The first case can include a cold WebKit process launch in the simulator.
+            try await waitForTask(chat, timeout: .seconds(30))
 
             XCTAssertFalse(previous.isActive)
             XCTAssertEqual(requests, allowed ? 0 : 1, request)
@@ -1071,9 +1072,9 @@ final class ChatHarnessTests: XCTestCase {
         }
     }
 
-    private func waitForTask(_ chat: ChatModel) async throws {
+    private func waitForTask(_ chat: ChatModel, timeout: Duration = .seconds(10)) async throws {
         defer { chat.stop() }
-        let deadline = ContinuousClock.now + .seconds(10)
+        let deadline = ContinuousClock.now + timeout
         while chat.running, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertFalse(chat.running, "Scripted task did not finish")
     }
