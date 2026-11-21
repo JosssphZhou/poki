@@ -39,12 +39,13 @@ final class TalkActivity {
 
     /// The talk's state as the Live Activity says it: nil while no talk is on.
     static func state(of voice: VoiceModel) -> PokiState.Voice? {
-        guard voice.isOn else { return nil }
         switch voice.phase {
-        case .off, .lost: return nil
-        case .connecting, .listening, .hearing: return .listening
-        case .thinking: return .thinking
-        case .speaking: return .speaking
+        case .off: return nil
+        case .connecting: return .connecting
+        case .listening, .hearing: return voice.isOn ? .listening : nil
+        case .thinking: return voice.isOn ? .thinking : nil
+        case .speaking: return voice.isOn ? .speaking : nil
+        case .lost: return .failed
         }
     }
 
@@ -82,18 +83,21 @@ final class TalkActivity {
     /// the intent runs, and the microphone only once it is up, because iOS ends an app that records in
     /// the background without one. false: the Live Activity did not start, and nothing else did.
     func startHere() async -> Bool {
-        show(.listening, fromIntent: true)
+        show(.connecting, fromIntent: true)
         guard activity.isRunning else {
             show(nil)
             return false
         }
         await voice.start()
-        // Not connected: the talk's phase says why, and the Live Activity goes (`follow` sees no talk).
         show(Self.state(of: voice))
         return true
     }
 
     fileprivate func endFromLiveActivity() {
+        if case .lost = voice.phase {
+            voice.dismissProblem()
+            return
+        }
         guard voice.isOn else { return }
         AppLog.shared.add("voice", "the talk was ended from the Live Activity")
         if let endFromLiveActivityAction { endFromLiveActivityAction() } else { voice.stop() }
@@ -112,8 +116,9 @@ final class TalkActivity {
         }
 
         deinit {
-            CFNotificationCenterRemoveObserver(CFNotificationCenterGetDarwinNotifyCenter(), Unmanaged.passUnretained(self).toOpaque(),
-                                               CFNotificationName(TalkSignal.end as CFString), nil)
+            let center = CFNotificationCenterGetDarwinNotifyCenter()
+            let observer = Unmanaged.passUnretained(self).toOpaque()
+            CFNotificationCenterRemoveObserver(center, observer, CFNotificationName(TalkSignal.end as CFString), nil)
         }
     }
 }

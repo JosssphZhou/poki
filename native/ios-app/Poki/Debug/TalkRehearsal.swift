@@ -1,5 +1,6 @@
 #if DEBUG && targetEnvironment(simulator)
 import Foundation
+import UIKit
 
 /// `-pokiTalkRehearsal 1`, in a simulator's development build: Talk with Poki connects to this instead of
 /// OpenAI. It plays one talk's worth of the Realtime API's events into VoiceModel, the way the unit
@@ -14,7 +15,19 @@ import Foundation
 /// for a screenshot of it.
 final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     static var asked: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") != nil }
-    private static var loses: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") == "lost" }
+    @MainActor private static var attempt = 0
+    @MainActor private static func nextMode() -> String {
+        let raw = UserDefaults.standard.string(forKey: "pokiTalkRehearsal") ?? ""
+        let modes = raw.split(separator: ",").map(String.init).filter { !$0.isEmpty }
+        guard !modes.isEmpty else { return raw }
+        let mode = modes[min(attempt, modes.count - 1)]
+        attempt += 1
+        return mode
+    }
+    private static var connectMS: Int {
+        let configured = UserDefaults.standard.integer(forKey: "pokiTalkConnectMS")
+        return configured > 0 ? configured : 900
+    }
     static var hold: TalkState? { UserDefaults.standard.string(forKey: "pokiTalkHold").flatMap(TalkState.named) }
 
     /// The stand-in for the key exchange, which a rehearsal skips. `do` is on the phone's list, so the
@@ -31,14 +44,41 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     private let onEvent: @MainActor ([String: Any]) -> Void
     private let onClosed: @MainActor (String) -> Void
     private var script: Task<Void, Never>?
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     init(onEvent: @escaping @MainActor ([String: Any]) -> Void, onClosed: @escaping @MainActor (String) -> Void) {
         self.onEvent = onEvent
         self.onClosed = onClosed
     }
 
+    @MainActor
+    private func beginBackgroundKeepAlive() {
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "TalkRehearsal") { [weak self] in
+            Task { @MainActor in self?.endBackgroundKeepAlive() }
+        }
+    }
+
+    @MainActor
+    private func endBackgroundKeepAlive() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
     func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws {
-        try await Task.sleep(for: .milliseconds(Self.hold == .connecting ? 3_600_000 : 900))
+        await beginBackgroundKeepAlive()
+        let mode = await Self.nextMode()
+        do {
+            try await Task.sleep(for: .milliseconds(Self.hold == .connecting ? 3_600_000 : Self.connectMS))
+        } catch {
+            await endBackgroundKeepAlive()
+            throw error
+        }
+        if mode == "offline" {
+            await endBackgroundKeepAlive()
+            throw URLError(.notConnectedToInternet)
+        }
         let zh = AppLocalization.language.hasPrefix("zh")
         let asks = zh ? "打开设置，把屏幕调亮一点" : "Open Settings and turn the brightness up a little"
         let answer = zh ? "已经把亮度调高了。现在大约是百分之八十，还需要" : "Brightness is up. It’s at about eighty percent now, do you want"
@@ -71,8 +111,9 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
             (18.5, ["type": "output_audio_buffer.stopped"], nil),
         ]
         let (onEvent, onClosed) = (onEvent, onClosed)
-        let (hold, loses) = (Self.hold, Self.loses)
-        script = Task { @MainActor in
+        let (hold, loses) = (Self.hold, mode == "lost")
+        script = Task { @MainActor [weak self] in
+            defer { self?.endBackgroundKeepAlive() }
             var clock = 0.0
             for (at, event, reaches) in turn {
                 try? await Task.sleep(for: .seconds(at - clock))
@@ -92,7 +133,10 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     func send(_ event: [String: Any]) -> Bool { true }
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
-    func close() { script?.cancel() }
+    func close() {
+        script?.cancel()
+        Task { @MainActor [weak self] in self?.endBackgroundKeepAlive() }
+    }
 }
 
 extension TalkState {
