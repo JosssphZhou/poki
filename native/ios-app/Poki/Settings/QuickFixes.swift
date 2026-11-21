@@ -6,7 +6,7 @@ import SwiftUI
 
 /// The decision model: a small, fast model which a skill or a path asks how to go on where it would
 /// otherwise stop (a prompt in the way, a button renamed or moved). It is a model on this iPhone
-/// (Apple Intelligence, under Settings › Models › Local Models) or a model of one of the
+/// (Apple Intelligence or a downloaded model, under Settings › Models › Local Models) or a model of one of the
 /// owner's model accounts (under the account, Decisions). There is no other switch: it is in use
 /// from the moment it is picked, and only one is in use at a time. An account's call goes from this
 /// iPhone straight to its provider, never through Poki's relay, and holds the task's goal and the
@@ -17,6 +17,8 @@ enum QuickFixes {
         case none
         /// Apple's own model, where Apple Intelligence is on the iPhone.
         case apple
+        /// The model downloaded to this iPhone (BacktapeModel).
+        case downloaded
         /// A model of one of the owner's model accounts (`accountPick`).
         case account
 
@@ -24,6 +26,7 @@ enum QuickFixes {
             switch self {
             case .none: "none"
             case .apple: "apple"
+            case .downloaded: "downloaded"
             case .account: "account"
             }
         }
@@ -32,6 +35,7 @@ enum QuickFixes {
             switch raw {
             case "none": self = .none
             case "apple": self = .apple
+            case "downloaded": self = .downloaded
             case "account": self = .account
             default: return nil
             }
@@ -89,10 +93,12 @@ enum QuickFixes {
 
     /// The decision model's name, for the In Use card; nil while there is none, or the one picked is
     /// gone (its account deleted, its model removed).
+    @MainActor
     static var name: String? {
         switch choice {
         case .none: return nil
         case .apple: return OnDeviceDecisions.appleAvailable ? AppLocalization.text("Apple Intelligence") : nil
+        case .downloaded: return OnDeviceDecisions.downloadedName
         case .account:
             guard let pick = accountPick, ModelAccounts.isSetUp(pick.provider), AccountDecisions.canDecide(pick.provider) else { return nil }
             return AccountDecisions.name(pick.provider, pick.model)
@@ -104,6 +110,7 @@ enum QuickFixes {
         switch choice {
         case .none: return nil
         case .apple: return OnDeviceDecisions.apple
+        case .downloaded: return OnDeviceDecisions.downloaded
         case .account: return accountPick.flatMap { AccountDecisions.decider($0.provider, model: $0.model) }
         }
     }
@@ -117,6 +124,21 @@ enum OnDeviceDecisions {
     static var apple: PromptDecider? {
         guard appleAvailable else { return nil }
         return PromptDecider(name: "Apple Intelligence", maxState: 5000) { prompt, instructions in await askApple(prompt, instructions: instructions) }
+    }
+
+    /// The downloaded model's name once it is on the phone and can run; nil until then.
+    @MainActor
+    static var downloadedName: String? {
+        BacktapeModel.supported && BacktapeModel.shared.ready ? BacktapeModel.shared.choice.name : nil
+    }
+
+    /// The downloaded model as the decider. Its files are checked when it is asked: a model removed
+    /// since gives no answer, which is an error and never a guess.
+    static var downloaded: PromptDecider? {
+        guard BacktapeModel.supported else { return nil }
+        return PromptDecider(name: "downloaded model", maxState: 5000, patience: 15) { prompt, instructions in
+            await BacktapeModel.shared.respond(to: prompt, instructions: instructions, maxTokens: 160, temperature: 0)
+        }
     }
 
     private static func askApple(_ prompt: String, instructions: String) async -> String? {
