@@ -21,7 +21,8 @@ enum WatchVoiceSpeechError: LocalizedError {
 extension Dictation {
     static func transcribe(recording: Data) async throws -> String {
         #if DEBUG && targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("-pokiWatchVoiceTestTranscript") {
+        if ProcessInfo.processInfo.arguments.contains("-pokiWatchVoiceTestTranscript")
+            || UserDefaults.standard.bool(forKey: "pokiWatchVoiceTestTranscript") {
             return "Check whether Poki automation is on on this iPhone."
         }
         #endif
@@ -39,7 +40,7 @@ extension Dictation {
         }
         let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".m4a")
         do {
-            try recording.write(to: url, options: .completeFileProtection)
+            try recording.write(to: url, options: .completeFileProtectionUntilFirstUserAuthentication)
         } catch {
             throw WatchVoiceSpeechError.unreadable
         }

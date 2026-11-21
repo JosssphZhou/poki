@@ -14,6 +14,10 @@ targets:
     settings:
       base:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) POKI_APP POKI_WATCH
+  PokiTests:
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) POKI_WATCH
   PokiWatch:
     type: application
     platform: watchOS

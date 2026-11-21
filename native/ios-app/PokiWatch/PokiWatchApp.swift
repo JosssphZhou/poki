@@ -37,15 +37,40 @@ private struct WatchVoiceView: View {
                     } else if model.microphone == .denied {
                         Label("Allow Poki’s microphone in Watch Settings.", systemImage: "mic.slash")
                             .font(.footnote)
-                    } else if !model.hasPending {
+                    } else if model.pendingStatus == .idle {
                         recordControl
                     }
-                    if let update = model.update {
-                        Label(update.phase.title, systemImage: update.phase.symbol)
-                            .font(.headline)
-                    } else if model.hasPending {
-                        Label("Sending recording…", systemImage: "arrow.up.circle")
-                            .font(.headline)
+                    switch model.pendingStatus {
+                    case .idle:
+                        EmptyView()
+                    case .sending:
+                        VStack(spacing: 6) {
+                            ProgressView()
+                            Label("Sending recording…", systemImage: "arrow.up.circle")
+                                .font(.headline)
+                        }
+                    case .deliveryFailed(let failure):
+                        VStack(spacing: 6) {
+                            Label(failure.title, systemImage: failure.symbol)
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+                            Text(failure.detail)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                    case .tracking(let update):
+                        VStack(spacing: 6) {
+                            Label(update.phase.title, systemImage: update.phase.symbol)
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+                            if update.phase == .waitingForUnlock {
+                                Text("Unlock your iPhone to continue, or open Poki if it doesn’t start.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                        }
                     }
                     if let problem = model.problem {
                         Text(problem)
@@ -55,6 +80,9 @@ private struct WatchVoiceView: View {
                     }
                     if model.hasPending, !model.sending {
                         Button(model.update == nil ? "Retry delivery" : "Check iPhone") { model.sync() }
+                        if model.update == nil {
+                            Button("Cancel", role: .destructive) { model.discardPending() }
+                        }
                     }
                     if let latest = model.results.first, !model.hasPending, !model.recording {
                         NavigationLink {
@@ -90,6 +118,7 @@ private struct WatchVoiceView: View {
             .navigationTitle("Poki")
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
+            model.setActive(phase == .active)
             if phase == .active {
                 model.opened()
                 if model.microphone == .granted { Task { await model.requestNotifications() } }
@@ -165,6 +194,7 @@ private extension WatchVoiceUpdate.Phase {
     var title: LocalizedStringResource {
         switch self {
         case .received: "iPhone received it"
+        case .waitingForUnlock: "Received. Unlock your iPhone."
         case .running: "Poki is working"
         case .finished: "Task finished"
         case .blocked: "Task needs attention"
@@ -174,6 +204,7 @@ private extension WatchVoiceUpdate.Phase {
     var symbol: String {
         switch self {
         case .received: "iphone"
+        case .waitingForUnlock: "lock.fill"
         case .running: "ellipsis.circle"
         case .finished: "checkmark.circle"
         case .blocked: "exclamationmark.circle"
