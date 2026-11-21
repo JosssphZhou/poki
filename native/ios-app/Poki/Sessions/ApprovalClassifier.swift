@@ -65,9 +65,24 @@ enum ApprovalClassifier {
 
     static func requiresOwner(_ approval: PendingApproval) -> Bool {
         let reason = approval.reason
-        if reason.hasPrefix("sending a message (a tap in ") { return true }
-        return !reason.hasPrefix("sending a message") && !reason.hasPrefix("a call (") &&
+        return !reason.hasPrefix("a call (") &&
             reason != "typing into a password field" && reason != "submitting a password field"
+    }
+
+    static func extractOwnerIntent(_ instruction: String) async -> OwnerApprovalIntent? {
+        guard instruction.count <= 4000, let data = try? JSONEncoder().encode(instruction) else { return nil }
+        let instructions = """
+        Read the JSON string containing the owner's current instruction. Return null unless it explicitly
+        directs one immediate message, deletion, or payment for one named target. Never infer consent from
+        questions, examples, quotes, contradictions, negations, preparation, or requests to view. For a
+        message, the exact draft must appear in the instruction. For a payment, a literal currency and
+        amount must appear. The target, message, and amount must be exact substrings of this JSON string's
+        decoded text. If an app is explicitly specified, include its exact name as app. Do not infer an app
+        or target. Return one JSON object with keys kind (message, deletion or payment), target, app if
+        specified, and message or amount as applicable. Return null when the app or target is ambiguous.
+        """
+        guard let answer = await modelAnswer(prompt: String(decoding: data, as: UTF8.self), instructions: instructions, singleBlock: true) else { return nil }
+        return try? JSONDecoder().decode(OwnerApprovalIntent.self, from: Data(answer.utf8))
     }
 
     static func handToOwner(_ id: String) { handed.insert(id) }
@@ -136,11 +151,6 @@ enum ApprovalClassifier {
     }
 
     private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine]) async -> Verdict {
-        let provider = ModelKeys.selectedProvider
-        guard provider.wired, ModelKeys.key(provider) != nil || provider == .custom,
-              let model = provider.piModel(ModelKeys.selectedModel) else {
-            return Verdict(allowed: false, reason: "no chat model to ask")
-        }
         var said = AskPoki.chat?.ownerContext ?? []
         for line in voice.suffix(12) {
             switch line.role {
@@ -161,23 +171,7 @@ enum ApprovalClassifier {
         Conversation, oldest first:
         \(context.text)
         """
-        let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
-            .init(text: "No tools.", jpeg: nil, isError: true)
-        }
-        // The first of the model's reply and the deadline answers; a late reply is dropped.
-        let reply: String? = await withCheckedContinuation { (done: CheckedContinuation<String?, Never>) in
-            let once = Once(done)
-            let run = Task { @MainActor in
-                var first: String?
-                _ = await loop.run(prompt, instructions: instructions, maxTurns: 1) { text in if first == nil { first = text } }
-                once.finish(first)
-            }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(deadline))
-                run.cancel()
-                once.finish(nil)
-            }
-        }
+        let reply = await modelAnswer(prompt: prompt, instructions: instructions)
         guard context.complete else {
             return Verdict(allowed: false, reason: "approval context is incomplete")
         }
@@ -188,6 +182,30 @@ enum ApprovalClassifier {
         let allowed = line.uppercased().hasPrefix("ALLOW")
         let why = line.split(separator: ":", maxSplits: 1).dropFirst().first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         return Verdict(allowed: allowed, reason: why.isEmpty ? (allowed ? "allowed" : "refused") : String(why.prefix(120)))
+    }
+
+    private static func modelAnswer(prompt: String, instructions: String, singleBlock: Bool = false) async -> String? {
+        let provider = ModelKeys.selectedProvider
+        guard provider.wired, ModelKeys.key(provider) != nil || provider == .custom,
+              let model = provider.piModel(ModelKeys.selectedModel) else { return nil }
+        let loop = PiLoop(provider: provider, model: model, tools: []) { _ in
+            .init(text: "No tools.", jpeg: nil, isError: true)
+        }
+        // The first of the model's reply and the deadline answers; a late reply is dropped.
+        return await withCheckedContinuation { (done: CheckedContinuation<String?, Never>) in
+            let once = Once(done)
+            let run = Task { @MainActor in
+                var blocks: [String] = []
+                let outcome = await loop.run(prompt, instructions: instructions, maxTurns: 1) { blocks.append($0) }
+                guard case .done = outcome, !singleBlock || blocks.count == 1 else { once.finish(nil); return }
+                once.finish(blocks.first)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(deadline))
+                run.cancel()
+                once.finish(nil)
+            }
+        }
     }
 
 }
@@ -230,4 +248,24 @@ private final class Once {
     private var continuation: CheckedContinuation<String?, Never>?
     init(_ continuation: CheckedContinuation<String?, Never>) { self.continuation = continuation }
     func finish(_ value: String?) { continuation?.resume(returning: value); continuation = nil }
+}
+
+
+@MainActor
+final class OwnerApprovalTurn {
+    private var current: OwnerApprovalInstruction?
+    private(set) var generation = UUID()
+
+    func begin(id: UUID = UUID(), text: String) -> OwnerApprovalInstruction {
+        invalidate()
+        let value = OwnerApprovalInstruction(id: id, text: text)
+        current = value
+        return value
+    }
+
+    func invalidate() {
+        current?.invalidate()
+        current = nil
+        generation = UUID()
+    }
 }

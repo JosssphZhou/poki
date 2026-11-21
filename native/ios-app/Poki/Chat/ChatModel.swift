@@ -175,6 +175,7 @@ final class ChatModel {
     /// The task under way as the owner asked it.
     private var taskText = ""
     private var taskRequestID: UUID?
+    private var approvalInstruction: OwnerApprovalInstruction?
     private var client: ModelClient?
     private var restoredContext: String?
     /// The plan the model published with report_plan; the bubble shows its steps up to the current one.
@@ -269,7 +270,7 @@ final class ChatModel {
         [ChatEntry(.time(Date())),
          ChatEntry(.poki(AppLocalization.text(LocalizedStringResource("Hi, I’m Poki. Tell me what to do on this iPhone.")))),
          ChatEntry(.poki(app.asksBeforeSensitiveSteps ? AppLocalization.text(LocalizedStringResource("I’ll ask before anything you can’t undo."))
-                         : AppLocalization.text(LocalizedStringResource("Payments, deletions, and Wallet actions always require your confirmation; other sensitive steps go ahead without asking."))))]
+                         : AppLocalization.text(LocalizedStringResource("Poki asks before sending, deleting or paying unless you explicitly asked for that step. Wallet still needs your confirmation."))))]
     }
 
     private var greetingIDs: [UUID] = []
@@ -454,6 +455,7 @@ final class ChatModel {
         // Pictures may go without words, and Try Again sends them again.
         guard !text.isEmpty || !documents.isEmpty || !thumbnails.isEmpty || (again && !lastImages.isEmpty), !running else { return }
         if isDemo { playDemo(text); return }
+        if kind == .poki { app.approvalTurn.invalidate() }
         // Another conversation (an outside agent's hand-off) is working the phone: one task at a time.
         if kind == .poki, let busy = ChatModel.delegatedBusy {
             var entry = ChatEntry(.you(text, delivered: false))
@@ -605,6 +607,7 @@ final class ChatModel {
         }
         planID = nil; noteID = nil; cardID = nil; modelPlan = nil
         taskRequestID = you.id
+        approvalInstruction = kind == .poki && !text.isEmpty ? app.approvalTurn.begin(id: you.id, text: text) : nil
         taskApp = nil
         taskApps = TaskApps(); taskRequest = linkedTask ?? text; toolRoute = nil
         let images = lastImages
@@ -646,6 +649,8 @@ final class ChatModel {
     }
 
     private func executePreparedSend(_ prepared: PreparedSend, token: Int) async {
+        let instruction = approvalInstruction?.id == prepared.you.id ? approvalInstruction : nil
+        defer { instruction?.invalidate() }
         persist()
         store.flush(sessionID: sessionID)
         switch prepared.engine {
@@ -1139,6 +1144,7 @@ final class ChatModel {
     func stop() {
         if isDemo { stopDemo(); return }
         guard running else { return }
+        approvalInstruction?.invalidate()
         stopAsked = true
         waitingForSplitView = false
         loop?.stop()
@@ -1421,12 +1427,14 @@ final class ChatModel {
             } else {
                 phoneArguments = call.arguments
             }
-            let response = await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
-                                             expectedApps: expectedSplitViewApps, localTask: localTask) { [weak self, notesByAction] index, step, skill in
-                guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
-                let action = notesByAction[index]
-                let ids = step.map { action.steps[$0] ?? [] } ?? action.direct
-                self.recordMemoryUse(ids, skill: skill)
+            let response = await OwnerApprovalInstruction.$current.withValue(approvalInstruction) {
+                await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
+                                  expectedApps: expectedSplitViewApps, localTask: localTask) { [weak self, notesByAction] index, step, skill in
+                    guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
+                    let action = notesByAction[index]
+                    let ids = step.map { action.steps[$0] ?? [] } ?? action.direct
+                    self.recordMemoryUse(ids, skill: skill)
+                }
             }
             guard taskToken == runToken else { return response }
             messageScreen = response.isError || response.waitingForOwner ? nil : response.numberedScreen

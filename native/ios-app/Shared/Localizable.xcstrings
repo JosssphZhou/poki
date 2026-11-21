@@ -33813,24 +33813,24 @@
         }
       }
     },
-    "Payments, deletions and actions in Wallet always need your confirmation." : {
+    "Poki asks before sending, deleting or paying unless you explicitly asked for that step. Wallet still needs your confirmation." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "付款、删除及“钱包”操作始终需要你确认。"
+            "value" : "Poki 会在发送消息、删除内容或付款前询问你。如果你已明确要求该操作，Poki 会直接执行。“钱包”操作仍需确认。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "付款、刪除及「錢包」操作始終需要你確認。"
+            "value" : "Poki 會在傳送訊息、刪除內容或付款前詢問你。如果你已明確要求該操作，Poki 會直接執行。「錢包」操作仍需確認。"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Payments, deletions, and Wallet actions always require your confirmation."
+            "value" : "Poki asks before sending, deleting or paying unless you explicitly asked for that step. Wallet still needs your confirmation."
           }
         }
       }

@@ -48,9 +48,9 @@ struct ApprovalsSections: View {
                     switch model.approvalMode {
                     case .reply: Text("With Message Reply, Poki asks you in the chat and your yes lets the step through. Away from Poki you can answer from the notification. Outside agents have no chat, so their steps ask with Allow and Don’t Allow.")
                     case .confirm: Text("With Confirmation, you tap Allow or Don’t Allow on the Live Activity, in a notification, or here in Poki.")
-                    case .off: Text("Optional steps continue without asking. Payments, deletions and actions in Wallet still need your confirmation.")
+                    case .off: Text("Optional steps run automatically without asking.")
                     }
-                    Text("Payments, deletions and actions in Wallet always need your confirmation.")
+                    Text("Poki asks before sending, deleting or paying unless you explicitly asked for that step. Wallet still needs your confirmation.")
                     Text("Changes apply right away, starting from Poki’s next step.")
                 }
             }

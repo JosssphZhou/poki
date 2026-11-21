@@ -40,8 +40,9 @@ public struct Element: Equatable, Sendable {
     public var end = 0
     /// Not in the tree: text read from the screenshot.
     public var fromPicture = false
+    public var keyboardFocused = false
 
-    public init(type: String, label: String?, value: String?, identifier: String?, frame: Rect, depth: Int, node: Int = 0, end: Int = 0, fromPicture: Bool = false) {
+    public init(type: String, label: String?, value: String?, identifier: String?, frame: Rect, depth: Int, node: Int = 0, end: Int = 0, fromPicture: Bool = false, keyboardFocused: Bool = false) {
         self.type = type
         self.label = label
         self.value = value
@@ -51,6 +52,7 @@ public struct Element: Equatable, Sendable {
         self.node = node
         self.end = end
         self.fromPicture = fromPicture
+        self.keyboardFocused = keyboardFocused
     }
 
     func contains(_ other: Element) -> Bool { node < other.node && other.node <= end }
@@ -118,7 +120,7 @@ func flatten(_ root: JSON) -> [Element] {
             let type = (node["type"]?.string ?? "Other").replacingOccurrences(of: "XCUIElementType", with: "")
             let name = node["name"]?.text
             index = out.count
-            out.append(Element(type: type, label: node["label"]?.text ?? name, value: node["value"]?.text, identifier: name, frame: frame, depth: depth, node: place, end: place))
+            out.append(Element(type: type, label: node["label"]?.text ?? name, value: node["value"]?.text, identifier: name, frame: frame, depth: depth, node: place, end: place, keyboardFocused: node["focused"]?.bool == true))
         }
         for child in node["children"]?.array ?? [] { walk(child, depth + 1) }
         if let index { out[index].end = counter }
@@ -150,7 +152,7 @@ func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, na
                 let type = name.replacingOccurrences(of: "XCUIElementType", with: "")
                 let id = attributes["name"]
                 index = out.count
-                out.append(Element(type: type, label: attributes["label"] ?? id, value: attributes["value"], identifier: id, frame: frame, depth: depth, node: place, end: place))
+                out.append(Element(type: type, label: attributes["label"] ?? id, value: attributes["value"], identifier: id, frame: frame, depth: depth, node: place, end: place, keyboardFocused: attributes["focused"] == "true" || attributes["focused"] == "1"))
             }
             open.append(index)
         }

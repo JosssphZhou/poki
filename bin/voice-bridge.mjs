@@ -23,7 +23,7 @@
 //   GET  utterance?n=01  recorded speech <dir>/u01.24k.pcm (24 kHz mono PCM16)
 //   POST report          one finished test turn, appended to voice-test-report.jsonl in the state directory
 import http from 'node:http';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { networkInterfaces } from 'node:os';
@@ -31,6 +31,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { root, stateDir } from '../src/config.mjs';
 import { matching } from '../src/interaction.mjs';
+import { flagOn } from '../src/element-flags.mjs';
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i < 0 ? fallback : process.argv[i + 1]; };
 const port = Number(arg('port', '47830'));
@@ -183,11 +184,19 @@ const runners = {
   // Only with `checked`, the app and element text the phone cleared (see runTool).
   async tap_text(mcp, a, checked) {
     if (isPoki(checked.app)) throw new Error(ownAppRefusal);
-    // Unknown when the screen names no app; then the checked app is opened again.
-    const front = await mcp.call('get_foreground_app', {}).then(result => JSON.parse(text(result)), () => null);
-    // The owner may have opened Poki to allow it; the tap belongs to the app that was checked.
-    if (checked.app && front?.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
-    else if (!checked.app && isPoki(front?.bundle_id)) throw new Error(ownAppRefusal);
+    if (!checked.snapshot || checked.restore === 'true') {
+      // The owner may have opened Poki to answer the approval.
+      const front = await mcp.call('get_foreground_app', {}).then(result => JSON.parse(text(result)), () => null);
+      if (checked.app && front?.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
+      else if (!checked.app && isPoki(front?.bundle_id)) throw new Error(ownAppRefusal);
+    }
+    if (checked.snapshot) {
+      const { app, ref, target } = await tapTarget(mcp, checked.text, true);
+      if (!ref || app.bundle_id !== checked.app || target.evidence?.snapshot !== checked.snapshot) {
+        throw new Error('the app, control or selected item changed; nothing was tapped. Read the screen again.');
+      }
+      return clip(text(await mcp.call('tap', { ref })));
+    }
     return clip(text(await mcp.call('tap_text', { text: checked.text, exact: true })));
   },
   go_home: async mcp => clip(text(await mcp.call('press_button', { button: 'home' }))),
@@ -211,21 +220,80 @@ const ownAppRefusal = "only the phone's owner can approve, by tapping it on the 
 
 // Every name tap_text matches on (src/interaction.mjs), so the phone checks what the tap would match.
 const names = e => [e.label, e.text, e.value, e.identifier, e.placeholder].filter(s => typeof s === 'string' && s.trim());
+const role = e => (e.role ?? e.type ?? '').replace(/^(AX|XCUIElementType)/, '');
+const controlFields = e => ({ role: role(e), label: e.label ?? e.text ?? e.placeholder, value: e.value, identifier: e.identifier });
+const subjectRoles = new Set(['Cell', 'Alert', 'Sheet', 'Menu']);
+
+// Native parent indices refer to the unfiltered tree. Keep raw screen text out of the
+// acknowledgement sent back to this bridge: it carries only the snapshot digest.
+async function tapEvidence(mcp, screen, selected) {
+  if (!selected.object_id || !screen.foreground?.bundle_id || !screen.observation?.device) return {};
+  const tree = JSON.parse(text(await mcp.call('list_elements', { source: 'accessibility', include_offscreen: true, max_elements: 5000 })));
+  if (tree.truncated || tree.observation?.device !== screen.observation.device ||
+      tree.foreground?.bundle_id !== screen.foreground.bundle_id || tree.foreground?.pid !== screen.foreground.pid) return {};
+  const index = tree.elements.findIndex(element => element.object_id === selected.object_id);
+  const pressed = tree.elements[index];
+  if (!pressed || JSON.stringify(controlFields(pressed)) !== JSON.stringify(controlFields(selected)) ||
+      JSON.stringify(pressed.frame) !== JSON.stringify(selected.frame)) return {};
+
+  const visible = element => {
+    const box = element.frame;
+    return flagOn(element.visible) && box?.width > 0 && box.height > 0 &&
+      box.x < tree.width && box.y < tree.height && box.x + box.width > 0 && box.y + box.height > 0;
+  };
+  const parentOf = child => {
+    const parent = tree.elements[child]?.parent;
+    return Number.isInteger(parent) && parent >= 0 && parent < child ? parent : -1;
+  };
+  const ancestor = (child, matches) => {
+    for (let i = parentOf(child); i >= 0; i = parentOf(i)) {
+      if (matches(tree.elements[i])) return i;
+    }
+    return -1;
+  };
+  if (!visible(pressed)) return {};
+  const buttonIndex = role(pressed) === 'Button' ? index : ancestor(index, element => role(element) === 'Button');
+  const button = tree.elements[buttonIndex];
+  const buttonLabels = button ? tree.elements.flatMap((element, i) => (
+    i > buttonIndex && role(element) !== 'SecureTextField' && visible(element) && ancestor(i, parent => parent === button) === buttonIndex
+      ? [element.label ?? element.text, element.value].filter(label => typeof label === 'string') : []
+  )) : [];
+  const ownerOf = child => ancestor(child, element => subjectRoles.has(role(element)));
+  const ownerIndex = ownerOf(index);
+  const owner = tree.elements[ownerIndex];
+  const bars = tree.elements.filter(element => role(element) === 'NavigationBar' && visible(element));
+  const overlay = tree.elements.some(element => ['Alert', 'Sheet', 'Menu'].includes(role(element)) && visible(element));
+  const fields = tree.elements.filter(element => ['TextField', 'TextView'].includes(role(element)) && element.focused === true && visible(element));
+  const field = fields.length === 1 ? fields[0] : undefined;
+  const scopedField = field && ownerOf(tree.elements.indexOf(field)) === ownerIndex ? field : undefined;
+  const subject = owner?.label;
+  const recipient = owner ? subject : !overlay && bars.length === 1 ? bars[0].label : undefined;
+  const evidence = { control: button?.label ?? names(pressed)[0] ?? '', pressed: controlFields(pressed),
+    button: button ? controlFields(button) : undefined, buttonLabels, subject, recipient, draft: scopedField?.value };
+  const snapshot = createHash('sha256').update(JSON.stringify([
+    tree.observation.device, tree.foreground, pressed.object_id, pressed.frame, button?.object_id,
+    owner?.object_id, bars.map(bar => bar.object_id), scopedField?.object_id, evidence,
+  ])).digest('hex');
+  return { ref: pressed.ref, evidence: { ...evidence, snapshot } };
+}
 
 // What tap_text would tap, read without touching the phone: Poki MCP's own matching on the screen.
-async function tapTarget(mcp, wanted) {
+async function tapTarget(mcp, wanted, exact = false) {
   if (typeof wanted !== 'string' || !wanted.trim()) throw new Error('tap_text needs text');
   let screen = JSON.parse(text(await mcp.call('list_elements', { max_elements: 400 })));
   if (isPoki(screen.foreground?.bundle_id)) throw new Error(ownAppRefusal);
-  let found = matching(screen.elements, wanted);
+  let found = matching(screen.elements, wanted, exact);
   if (!found.length && screen.source !== 'ocr') {
     screen = JSON.parse(text(await mcp.call('list_elements', { source: 'ocr', max_elements: 400 })));
-    found = matching(screen.elements, wanted);
+    found = matching(screen.elements, wanted, exact);
   }
   if (!found.length) throw new Error(`nothing on screen reads ${JSON.stringify(wanted)}; nothing was tapped. Read the screen first.`);
   if (found.length > 1) throw new Error(`${found.length} elements match ${JSON.stringify(wanted)}: ${found.map(e => JSON.stringify(names(e)[0] ?? '')).join(', ')}; nothing was tapped. Name one exactly.`);
   const [first, ...rest] = names(found[0]);
-  return { app: { bundle_id: screen.foreground?.bundle_id ?? null, name: screen.foreground?.name ?? null }, target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = ') } };
+  const { ref, evidence } = await tapEvidence(mcp, screen, found[0]).catch(() => ({}));
+  return { app: { bundle_id: screen.foreground?.bundle_id ?? null, name: screen.foreground?.name ?? null },
+    target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = '),
+      evidence: evidence ?? { snapshot: '', control: first ?? wanted, pressed: controlFields(found[0]) } }, ref };
 }
 
 async function bridgeSecret() {
@@ -248,7 +316,10 @@ async function runTool(mcp, { call_id, name, arguments: args = {}, checked }) {
   // A tap the phone has not checked yet: say what it would tap. Nothing runs, so it is not in the ledger.
   if (name === 'tap_text' && !(typeof checked?.text === 'string' && checked.text)) {
     const started = Date.now();
-    try { return { state: 'check', ...await tapTarget(mcp, args.text), started, finished: Date.now() }; }
+    try {
+      const { app, target } = await tapTarget(mcp, args.text);
+      return { state: 'check', app, target, started, finished: Date.now() };
+    }
     catch (error) { return { state: 'failed', output: `error: ${error.message}`, started, finished: Date.now() }; }
   }
   const entry = { call_id, name, args, ...(checked ? { checked } : {}), state: 'running', started: Date.now() };

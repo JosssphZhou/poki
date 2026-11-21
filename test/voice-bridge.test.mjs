@@ -160,6 +160,52 @@ test('a voice tap_text with Poki in front taps nothing, checked or not', async t
   assert.equal(await taps(), 0);
 });
 
+test('a voice tap cleared by the instruction only reaches the same app, recipient and draft', async t => {
+  const f = await fixture(t);
+  const tool = await bridge(t, f);
+  const show = (bundleId, recipient, draft) => f.set({ bundleId, elements: [
+    { role: 'NavigationBar', label: recipient, object_id: 'o1', parent: null, frame: { x: 0, y: 0, width: 100, height: 20 } },
+    { role: 'TextView', value: draft, focused: true, object_id: 'o2', parent: null, frame: { x: 0, y: 40, width: 50, height: 20 } },
+    { role: 'Button', label: 'Send', object_id: 'o3', parent: null, frame: { x: 60, y: 40, width: 30, height: 20 } },
+  ] });
+  const taps = async () => (await f.events()).filter(e => e.op === 'tap').length;
+  const request = { name: 'tap_text', arguments: { text: 'Send' } };
+  const original = ['example.chat', 'Riley', 'Meet at noon'];
+  await show(...original);
+  const check = await tool({ call_id: 'check', ...request });
+  assert.equal(check.target?.evidence?.recipient, 'Riley', JSON.stringify(check));
+  assert.equal(check.target?.evidence?.draft, 'Meet at noon');
+  assert.equal(await taps(), 0);
+  const checked = { app: check.app.bundle_id, text: check.target.text, snapshot: check.target.evidence.snapshot };
+  for (const [i, state] of [['example.other', 'Riley', 'Meet at noon'],
+    ['example.chat', 'Jordan', 'Meet at noon'], ['example.chat', 'Riley', 'Changed draft']].entries()) {
+    await show(...state);
+    const denied = await tool({ call_id: `changed-${i}`, ...request, checked });
+    assert.equal(denied.state, 'failed', JSON.stringify(denied));
+    assert.equal(await taps(), 0);
+  }
+  await show(...original);
+  const sent = await tool({ call_id: 'same', ...request, checked });
+  assert.equal(sent.state, 'done', JSON.stringify(sent));
+  assert.equal(await taps(), 1);
+});
+
+test('a voice confirmation sends its button and its amount child for approval', async t => {
+  const f = await fixture(t);
+  await f.set({ bundleId: 'example.shop', elements: [
+    { role: 'Button', label: 'Confirm', identifier: 'primary_action', object_id: 'o1', parent: null,
+      frame: { x: 10, y: 50, width: 80, height: 35 } },
+    { role: 'StaticText', label: '$24', object_id: 'o2', parent: 0, frame: { x: 50, y: 55, width: 30, height: 20 } },
+    { role: 'StaticText', label: '$90', object_id: 'o3', parent: null, frame: { x: 50, y: 100, width: 30, height: 20 } },
+  ] });
+  const tool = await bridge(t, f);
+  const check = await tool({ call_id: 'confirmation', name: 'tap_text', arguments: { text: 'Confirm' } });
+  assert.equal(check.state, 'check', JSON.stringify(check));
+  assert.deepEqual(check.target.evidence.pressed, { role: 'Button', label: 'Confirm', identifier: 'primary_action' });
+  assert.deepEqual(check.target.evidence.buttonLabels, ['$24']);
+  assert.equal((await f.events()).filter(e => e.op === 'tap').length, 0);
+});
+
 test('a voice tap_text on an element known only by its identifier shows the phone that name', async t => {
   const f = await fixture(t);
   await f.set({ elements: [{ role: 'Button', identifier: 'Send', frame: { x: 10, y: 10, width: 40, height: 20 } }] });

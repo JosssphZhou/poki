@@ -112,7 +112,7 @@ struct PokiMenu<Face: View>: View {
                             }
                         }
                     } header: {
-                        Text("Payments, deletions and actions in Wallet always need your confirmation.")
+                        Text("Poki asks before sending, deleting or paying unless you explicitly asked for that step. Wallet still needs your confirmation.")
                     }
                 } label: {
                     Label("Approval Method", systemImage: "checkmark.shield")

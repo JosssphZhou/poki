@@ -2770,6 +2770,7 @@ CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSArray<NSValue *> *> 
             [xml appendFormat:@" x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\"", (int)lround(f.origin.x), (int)lround(f.origin.y), (int)lround(f.size.width), (int)lround(f.size.height)];
             BOOL keyboard = [node respondsToSelector:@selector(hasKeyboardFocus)] ? [node hasKeyboardFocus]
                 : [node respondsToSelector:@selector(hasFocus)] && [node hasFocus];
+            if (keyboard) [xml appendString:@" focused=\"true\""];
             if (!focus && keyboard && (!paneRead || !CGRectIsEmpty(f)) && ([type hasSuffix:@"Field"] || [type hasSuffix:@"TextView"])) {
                 NSMutableDictionary *field = [@{@"value": value ?: @"", @"x": @(f.origin.x), @"y": @(f.origin.y), @"width": @(f.size.width), @"height": @(f.size.height)} mutableCopy];
                 // The placeholder, so a failed type can tell an empty field that shows it from typed text
