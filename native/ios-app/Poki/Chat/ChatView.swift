@@ -11,6 +11,10 @@ struct ChatView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
     var sharedDraft: Binding<String>? = nil
+    /// Opens Poki's card: under Poki's picture over the greeting on the home page (the bottom of the
+    /// picture, in global points), under the top bar in the chat (nil).
+    var openDetails: (_ under: CGFloat?) -> Void = { _ in }
+    var openCustomization: (() -> Void)? = nil
     var openVoice: () -> Void
     var openSetup: () -> Void
     var openSetupStep: (SetupStep) -> Void = { _ in }
@@ -29,10 +33,10 @@ struct ChatView: View {
     private var voice: VoiceModel { model.voice }
     /// The taps on Poki's picture, for the bear to answer.
     @State private var pokes = 0
+    /// Where Poki's picture over the greeting ends, for the card to open under it.
+    @State private var homeBottom: CGFloat?
     /// How far Poki's picture rises from the home page into the top bar.
     @State private var flightRise: CGFloat = 0
-    @State private var customizationOpen = false
-    @Environment(\.bearCovered) private var bearCovered
 
     private func tapPoki() {
         writing = false
@@ -40,8 +44,9 @@ struct ChatView: View {
         pokes += 1
     }
 
-    private func openCustomization() {
-        customizationOpen = true
+    private func showPokiStatus() {
+        tapPoki()
+        openDetails(isGreeting ? homeBottom : nil)
     }
 
     /// The message field has the keyboard.
@@ -115,11 +120,6 @@ struct ChatView: View {
 
     var body: some View {
         chatContent
-            .environment(\.bearCovered, bearCovered || customizationOpen)
-            .fullScreenCover(isPresented: $customizationOpen) {
-                BearCustomizationView()
-                    .environment(\.bearOutfitPreview, true)
-            }
     }
 
     @ViewBuilder private var chatContent: some View {
@@ -162,7 +162,7 @@ struct ChatView: View {
             if !bare {
                 ChatTopBar(status: status, home: home, busy: busy, openThreads: openThreads,
                            newConversation: { if home { restarts += 1 } else { chat.newConversation() } },
-                           openDetails: tapPoki, openModel: openModel, openCustomization: openCustomization)
+                           openDetails: showPokiStatus)
                     .logStartupAppearance(.topBar)
             }
         }
@@ -209,7 +209,9 @@ struct ChatView: View {
             GeometryReader { proxy in
                 if !bare {
                     PokiFlight(status: status, home: home, writing: writing, places: anchors.mapValues { proxy[$0] }, pokes: pokes,
-                               tap: tapPoki, openModel: openModel, openCustomization: openCustomization, travel: { flightRise = $0 })
+                               tap: showPokiStatus,
+                               openCustomization: openCustomization.map { action in { tapPoki(); action() } },
+                               landed: { homeBottom = $0 }, travel: { flightRise = $0 })
                 }
             }
         }
@@ -1058,11 +1060,10 @@ struct MessageListHeader: View {
     var subtitle: String? = nil
     var title: String = "Poki"
     var back: (() -> Void)? = nil
-    /// Settings › Models, for the menu's Add Model.
-    var openModel: () -> Void = {}
+    var openDetails: () -> Void
 
     var body: some View {
-        PokiMenu(openModel: openModel) {
+        Button(action: openDetails) {
             VStack(spacing: 4) {
                 PokiAvatar(size: 56)
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
