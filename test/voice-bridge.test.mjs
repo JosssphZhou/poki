@@ -171,3 +171,22 @@ test('a voice tap_text on an element known only by its identifier shows the phon
   assert.match(check.target.says, /\bSend\b/);
   assert.equal((await f.events()).filter(e => e.op === 'tap').length, 0);
 });
+
+test('bridge Realtime and Live prompts cover source distinction, quiet/pause/resume, progress and noise rules', async t => {
+  const { base, request } = await sessionBridge(t);
+  for (const language of ['zh-Hans', 'en']) {
+    assert.equal((await fetch(`${base}/token?language=${language}&turns=committed`)).status, 200);
+    const realtime = (await request()).body.session.instructions;
+    assert.equal((await fetch(`${base}/session?language=${language}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+    })).status, 200);
+    const liveBody = (await request()).body.session;
+    for (const prompt of [realtime, liveBody.instructions, liveBody.delegation.responses.instructions]) {
+      assert.match(prompt, /Quoted media transcript/);
+      assert.match(prompt, /bystander/i);
+      assert.match(prompt, /screen reader/i);
+      assert.match(prompt, /pause/i);
+      assert.match(prompt, /noise/i);
+    }
+  }
+});
