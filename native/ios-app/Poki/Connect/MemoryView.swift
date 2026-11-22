@@ -80,6 +80,8 @@ struct MemoryView: View {
                         MemoryHeader("Apps")
                     }
                 }
+                // Provisional habits and interests from Screen History, apart from the memories above.
+                SensesMemorySection()
                 if let message = library.message {
                     Section { Text(verbatim: message).font(.footnote).foregroundStyle(Color(.secondaryLabel)) }
                 }

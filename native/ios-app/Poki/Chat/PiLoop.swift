@@ -80,22 +80,23 @@ final class PiLoop {
         // tool list at prompt start; prepareRequest updates its *live* context each turn.
         agent = Agent(AgentOptions(
             initialState: AgentState(model: model, thinkingLevel: .low,
-                                     tools: Self.availableTools(agentTools, allowed: HistoryCapture.agentQueryAllowed), messages: messages),
+                                     tools: Self.availableTools(agentTools), messages: messages),
             streamFn: { model, transcript, options in
                 // API credentials may have suspended after prepareRequest. Recheck at
                 // the last request boundary too; never add a tool the live context lacks.
                 let revision = HistoryCapture.agentQueryRevision
-                let allowed = revision != nil && getCurrentTools(transcript.messages).contains { $0.name == "screen_history" }
+                // Poki's chat has no screen_history tool any more: a context carried from before loses
+                // it and its instructions, and an old result in it reads as revoked.
                 var messages = transcript.messages.map { message -> PiSwiftAI.Message in
                     guard case .toolResult(let result) = message else { return message }
                     return .toolResult(grants.validated(result, revision: revision))
                 }
                 if let index = messages.indices.first, case .system(var system) = messages[index],
                    case .text(let text) = system.content {
-                    system.content = .text(Harness.historyInstructions(text, allowed: allowed))
+                    system.content = .text(Harness.historyInstructions(text, allowed: false))
                     messages[index] = .system(system)
                 }
-                if !allowed, getCurrentTools(messages).contains(where: { $0.name == "screen_history" }) {
+                if getCurrentTools(messages).contains(where: { $0.name == "screen_history" }) {
                     messages.append(.system(SystemMessage(content: .text(""), toolsRemoved: [ToolReference(name: "screen_history")])))
                 }
                 var options = options
@@ -109,7 +110,7 @@ final class PiLoop {
             },
             prepareRequest: { request, _ in
                 let revision = HistoryCapture.agentQueryRevision
-                let tools = Self.availableTools(agentTools, allowed: revision != nil)
+                let tools = Self.availableTools(agentTools)
                 var context = request.context
                 context.tools = tools
                 context.messages = context.messages.map { message in
@@ -118,7 +119,7 @@ final class PiLoop {
                 }
                 if let index = context.messages.indices.first, case .system(var system) = context.messages[index],
                    case .text(let text) = system.content {
-                    system.content = .text(Harness.historyInstructions(text, allowed: revision != nil))
+                    system.content = .text(Harness.historyInstructions(text, allowed: false))
                     context.messages[index] = .system(system)
                 }
                 let changes = getToolStateChanges(getCurrentTools(context.messages), tools.map(\.aiTool))
@@ -141,7 +142,7 @@ final class PiLoop {
     func run(_ text: String, images: [Data] = [], instructions: String, maxTurns: Int, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
         gate.reset()
         stall.reset()
-        agent.tools = Self.availableTools(allTools, allowed: HistoryCapture.agentQueryAllowed)
+        agent.tools = Self.availableTools(allTools)
         use(instructions)
         let turns = Counter()
         let failure = Box()
@@ -208,8 +209,10 @@ final class PiLoop {
         agent.messages = messages
     }
 
-    nonisolated static func availableTools(_ tools: [AgentTool], allowed: Bool) -> [AgentTool] {
-        tools.filter { $0.name != "screen_history" || allowed }
+    /// What the model is offered now. Never the raw screen_history tool: Poki's own chat asks Screen
+    /// History through personal_context, and only while the owner lets it (Harness.offered).
+    nonisolated static func availableTools(_ tools: [AgentTool]) -> [AgentTool] {
+        Harness.offered(tools.filter { $0.name != "screen_history" }, name: \.name)
     }
 
     private nonisolated static func result(_ answer: PokiCore.ToolAnswer) -> AgentToolResult {
