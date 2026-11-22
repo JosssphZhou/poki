@@ -1805,7 +1805,7 @@ final class AppModel {
         }
     }
 
-    private func handle(_ event: ShellEvent) {
+    func handle(_ event: ShellEvent) {
         if case .approvalRequested(let approval) = event, let probe = onProbeApproval { probe(approval) }
         // Every outside agent's session and step goes into the Sessions list, on or off.
         SessionStore.shared.observe(event, approvals: approvals)
@@ -2221,7 +2221,7 @@ final class AppModel {
     }
 
     /// Each request is answered by the owner on the Live Activity, or on a notification when there is none.
-    private func askOwner(_ approval: PendingApproval) {
+    func askOwner(_ approval: PendingApproval) {
         approvals.append(approval)
         log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
         let caller = currentCaller

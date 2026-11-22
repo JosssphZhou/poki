@@ -131,6 +131,35 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    func testNewApprovalAndHandoffNotifyOwnerWhileCaptureHidesActivity() async throws {
+        try await withFinishWindow(dynamicIsland: true) {
+            let session = try await ensureRunningSession()
+            let app = session.app
+            await app.chatTaskBegan()
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(UUID()))
+            XCTAssertFalse(hidden.isError)
+            XCTAssertTrue(session.activities().isEmpty)
+            try await movePokiToBackground(app)
+
+            let id = UUID().uuidString
+            let noticeID = "approval-\(id)"
+            clearNotice(AttentionNotice.id)
+            defer { clearNotice(noticeID); clearNotice(AttentionNotice.id) }
+            let approval = PendingApproval(id: id, app: "Messages", summary: "Send a message", reason: "sending a message", expires: .now.addingTimeInterval(60))
+            app.askOwner(approval)
+            let notice = try await waitForDeliveredNotice(noticeID)
+            XCTAssertEqual(notice.request.content.userInfo["approval"] as? String, id)
+            XCTAssertTrue(session.activities().isEmpty)
+            app.handle(.approvalEnded(id: id, approved: false))
+
+            let handoffText = "Complete verification."
+            app.handle(.handoffRequested(id: UUID().uuidString, kind: "verification", text: handoffText, app: nil))
+            let handoff = try await waitForDeliveredNotice(AttentionNotice.id)
+            XCTAssertEqual(handoff.request.content.body, handoffText)
+            XCTAssertTrue(session.activities().isEmpty)
+        }
+    }
+
     func testCaptureActivityReturnsWhenPokiOpensDuringTaskCleanup() async throws {
         for captureEndsFirst in [true, false] {
             try await withSessionApp { app, activities in
