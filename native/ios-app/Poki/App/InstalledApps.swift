@@ -40,7 +40,7 @@ final class InstalledApps {
     static let cacheMaxAge: TimeInterval = 30 * 86_400
 
     init() {
-        if let saved = Self.savedList() { publish(saved) }
+        if let saved = Self.savedList() { publish(saved, current: false) }
     }
 
     private static func savedList() -> [App]? {
@@ -51,10 +51,10 @@ final class InstalledApps {
     }
 
     /// The list goes to the names, icons and capsules (DynamicApps), and to the file when `save`.
-    private func publish(_ list: [App], save: Bool = false) {
+    private func publish(_ list: [App], save: Bool = false, current: Bool = false) {
         DynamicApps.set(list.compactMap { app in
             (app.name ?? app.bundleName).map { DynamicApps.Entry(id: app.id, name: $0, user: app.type == "User") }
-        })
+        }, current: current)
         AppIconStore.shared.directoryChanged()
         if save { Self.keep(list) }
     }
@@ -131,13 +131,15 @@ final class InstalledApps {
                 let read = try await fetch(request)
                 let at = now()
                 last = (apps: read, at: at); lastProblem = nil
-                publish(read, save: true)
+                publish(read, save: true, current: true)
                 return Inventory(apps: read, fresh: true, readAt: at)
             } catch {
                 lastProblem = error.localizedDescription
+                DynamicApps.clearCurrent()
             }
         } else {
             lastProblem = "the loopback to the phone is not on"
+            DynamicApps.clearCurrent()
         }
         return last.map { Inventory(apps: $0.apps, fresh: false, readAt: $0.at) }
     }
@@ -251,7 +253,7 @@ final class InstalledApps {
 
     /// Nothing current could say whether the app is there.
     private static func answer(unknown name: String, offers: [Match], storeFailed: Bool, source: String) -> String {
-        var text = "could not tell whether \"\(name)\" is installed: no current app list holds it and the icons could not settle it (checked \(source)). Do not tell the owner it is missing: go home ({button: \"home\"}), swipe down on the Home Screen to search, type its name and tap it."
+        var text = "could not tell whether \"\(name)\" is installed: no current app list holds it and the icons could not settle it (checked \(source)). Do not tell the owner it is missing: send {button: \"home\"} by itself, then use the returned screen to swipe down on the Home Screen to search, type its name and tap the matching result."
         if storeFailed { text += " The App Store could not be searched either." }
         if !offers.isEmpty { text += " The App Store's matches, for their ids:\n" + offers.map(line).joined(separator: "\n") }
         return text

@@ -1,3 +1,4 @@
+import PokiCore
 import UIKit
 import XCTest
 @testable import Poki
@@ -181,5 +182,162 @@ final class DynamicAppsTests: XCTestCase {
         _ = InstalledApps()
         XCTAssertNil(AppIconStore.bundleID("Strava"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testLiveCoreLaunchRefusesUninstalledBundleIDsAndAllowsDynamicAppsAndExplicitBundleObjects() async {
+        let savedAppNames = UserDefaults.standard.object(forKey: SpeedOptions.appNamesKey)
+        UserDefaults.standard.set(true, forKey: SpeedOptions.appNamesKey)
+        defer {
+            if let savedAppNames { UserDefaults.standard.set(savedAppNames, forKey: SpeedOptions.appNamesKey) }
+            else { UserDefaults.standard.removeObject(forKey: SpeedOptions.appNamesKey) }
+        }
+
+        let host = AppCoreHost()
+        host.update(runner: .automationReady(revision: 1))
+        let transport = LaunchProbeTransport()
+        let core = LiveCore(host: host, transport: transport)
+
+        for uninstalled in ["com.xingin.discover", "ctrip.com", "Nonesuch", "tutti.ch"] {
+            let refused = await core.callTool("do", arguments: #"{"actions":[{"button":"home"},{"launch":"\#(uninstalled)"}]}"#, localTask: "esp-1274")
+            XCTAssertTrue(refused.isError, "\(uninstalled): \(refused.text)")
+            XCTAssertTrue(refused.text.contains("no app named \"\(uninstalled)\" is known"), "\(uninstalled): \(refused.text)")
+        }
+        let mutationsBeforeInstall = await transport.mutatingPaths
+        XCTAssertEqual(mutationsBeforeInstall, [], "an uninstalled launch string refuses the whole batch before sending any action")
+
+        let explicitBundleObject = await core.callTool("do", arguments: #"{"actions":[{"launch":{"bundle":"com.not.installed"}}]}"#, localTask: "esp-1274")
+        XCTAssertFalse(explicitBundleObject.isError, explicitBundleObject.text)
+        let afterBundleObject = await transport.activated
+        XCTAssertEqual(afterBundleObject, ["com.not.installed"])
+
+        DynamicApps.set([
+            .init(id: "com.xingin.discover", name: "小红书", user: true),
+            .init(id: "ctrip.com", name: "携程旅行", user: true),
+            strava,
+        ], current: true)
+        for (input, expected) in [
+            ("com.xingin.discover", "com.xingin.discover"),
+            ("小红书", "com.xingin.discover"),
+            ("ctrip.com", "ctrip.com"),
+            ("Strava", "com.strava.stravaride"),
+        ] {
+            let result = await core.callTool("do", arguments: #"{"actions":[{"launch":"\#(input)"}]}"#, localTask: "esp-1274")
+            XCTAssertFalse(result.isError, "\(input): \(result.text)")
+            let latest = await transport.activated.last
+            XCTAssertEqual(latest, expected, input)
+        }
+
+        let wrongCase = await core.callTool("do", arguments: #"{"actions":[{"launch":"COM.XINGIN.DISCOVER"}]}"#, localTask: "esp-1274")
+        XCTAssertTrue(wrongCase.isError, wrongCase.text)
+        XCTAssertTrue(wrongCase.text.contains("no app named \"COM.XINGIN.DISCOVER\" is known"), wrongCase.text)
+
+        let finalActivated = await transport.activated
+        XCTAssertEqual(finalActivated, ["com.not.installed", "com.xingin.discover", "com.xingin.discover", "ctrip.com", "com.strava.stravaride"])
+    }
+
+    func testStaleDiskCacheNeverPassesInstalledLaunchPreflight() async throws {
+        let savedAppNames = UserDefaults.standard.object(forKey: SpeedOptions.appNamesKey)
+        UserDefaults.standard.set(true, forKey: SpeedOptions.appNamesKey)
+        defer {
+            if let savedAppNames { UserDefaults.standard.set(savedAppNames, forKey: SpeedOptions.appNamesKey) }
+            else { UserDefaults.standard.removeObject(forKey: SpeedOptions.appNamesKey) }
+        }
+
+        let cachedApps: [InstalledApps.App] = [
+            .init(id: "ctrip.com", name: "携程旅行", bundleName: "CtripWireless", type: "User"),
+            .init(id: "com.xingin.discover", name: "小红书", bundleName: "discover", type: "User"),
+            .init(id: "com.strava.stravaride", name: "Strava", bundleName: "StravaRide", type: "User"),
+        ]
+        try FileManager.default.createDirectory(at: InstalledApps.cacheFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(cachedApps).write(to: InstalledApps.cacheFile)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-2 * 86_400)],
+            ofItemAtPath: InstalledApps.cacheFile.path
+        )
+
+        var clock = Date(timeIntervalSince1970: 2_000_000)
+        let apps = InstalledApps()
+        apps.now = { clock }
+        XCTAssertEqual(AppIconStore.bundleID("Strava"), "com.strava.stravaride", "cached list still backs names and icons")
+        XCTAssertEqual(AppName.display("com.strava.stravaride"), "Strava")
+        XCTAssertEqual(DynamicApps.name(forID: "ctrip.com"), "携程旅行")
+
+        let host = AppCoreHost()
+        host.update(runner: .automationReady(revision: 1))
+        let transport = LaunchProbeTransport()
+        let core = LiveCore(host: host, transport: transport)
+
+        for stale in ["ctrip.com", "携程旅行", "com.xingin.discover", "小红书", "Strava"] {
+            let refused = await core.callTool("do", arguments: #"{"actions":[{"button":"home"},{"launch":"\#(stale)"}]}"#, localTask: "esp-1274")
+            XCTAssertTrue(refused.isError, "\(stale): \(refused.text)")
+            XCTAssertTrue(refused.text.contains("no app named \"\(stale)\" is known"), "\(stale): \(refused.text)")
+        }
+        let mutationsFromStaleCache = await transport.mutatingPaths
+        XCTAssertEqual(mutationsFromStaleCache, [], "disk-cached apps must not pass launch preflight without current install evidence")
+
+        var fetchCount = 0
+        apps.phone = { ["device_address": "10.7.0.1"] }
+        apps.call = { _ in
+            fetchCount += 1
+            if fetchCount > 1 { throw URLError(.timedOut) }
+            return try AppLaunchPromptTests.signerAnswer(cachedApps)
+        }
+        let fresh = await apps.list()
+        XCTAssertEqual(fresh?.fresh, true)
+
+        let liveLaunch = await core.callTool("do", arguments: #"{"actions":[{"launch":"ctrip.com"}]}"#, localTask: "esp-1274")
+        XCTAssertFalse(liveLaunch.isError, liveLaunch.text)
+        let activatedAfterRefresh = await transport.activated
+        XCTAssertEqual(activatedAfterRefresh, ["ctrip.com"])
+
+        clock += 600
+        let failedRefresh = await apps.list()
+        XCTAssertEqual(failedRefresh?.fresh, false)
+        XCTAssertEqual(AppName.display("com.strava.stravaride"), "Strava", "failed refresh still keeps display names")
+
+        let mutationsBeforeStaleRetry = await transport.mutatingPaths.count
+        let refusedAfterFailedRefresh = await core.callTool("do", arguments: #"{"actions":[{"button":"home"},{"launch":"ctrip.com"}]}"#, localTask: "esp-1274")
+        XCTAssertTrue(refusedAfterFailedRefresh.isError, refusedAfterFailedRefresh.text)
+        XCTAssertTrue(refusedAfterFailedRefresh.text.contains("no app named \"ctrip.com\" is known"), refusedAfterFailedRefresh.text)
+        let mutationsAfterStaleRetry = await transport.mutatingPaths.count
+        XCTAssertEqual(mutationsAfterStaleRetry, mutationsBeforeStaleRetry)
+    }
+}
+
+private actor LaunchProbeTransport: HTTPTransport {
+    private(set) var activated: [String] = []
+    private(set) var mutatingPaths: [String] = []
+    private var foreground = "nz.zheha.poki"
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        let path = url.path.replacingOccurrences(of: #"^/session/[^/]+"#, with: "", options: .regularExpression)
+        if method == "POST", path != "/session" {
+            mutatingPaths.append(path)
+        }
+        let value: JSON
+        switch (method, path) {
+        case ("POST", "/session"):
+            value = ["sessionId": "launch-probe"]
+        case ("GET", "/status"):
+            value = ["ready": true]
+        case ("GET", "/wda/locked"):
+            value = false
+        case ("GET", "/wda/screen"):
+            value = ["screenSize": ["width": 390, "height": 844]]
+        case ("GET", "/wda/activeAppInfo"):
+            value = ["bundleId": .string(foreground), "name": .string(foreground)]
+        case ("GET", "/screenshot"):
+            value = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII="
+        case ("GET", "/source"):
+            value = .string(#"<AppiumAUT><XCUIElementTypeApplication name="\#(foreground)" label="\#(foreground)" x="0" y="0" width="390" height="844"><XCUIElementTypeButton name="Explore" label="Explore" x="16" y="100" width="358" height="44" /></XCUIElementTypeApplication></AppiumAUT>"#)
+        case ("POST", "/wda/apps/activate"), ("POST", "/wda/apps/launch"):
+            let bundle = body.flatMap { try? JSON.parse(String(decoding: $0, as: UTF8.self)) }?["bundleId"]?.string ?? ""
+            activated.append(bundle)
+            foreground = bundle
+            value = .null
+        default:
+            value = .null
+        }
+        return (200, JSON.object(["value": value]).data())
     }
 }

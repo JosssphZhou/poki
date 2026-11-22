@@ -46,7 +46,7 @@ enum VoiceApps {
         case .several(let found):
             return ("not_sent: “\(name)” could be any of \(found.joined(separator: ", ")). Ask the user which app, or call open_app with its full name.", true, nil)
         case .unknown:
-            return ("not_sent: Poki does not know an app called “\(name)”. Search the Home Screen for it: go home ({button: \"home\"}), swipe down, type its name and tap it.", true, nil)
+            return ("not_sent: Poki does not know an app called “\(name)”. To search the Home Screen for it, send {button: \"home\"} by itself, then use the returned screen to swipe down, type its name and tap the matching result.", true, nil)
         }
         var note = ""
         if let page = args["page"] as? String, let route = settingsPages[page] {
@@ -66,7 +66,7 @@ enum VoiceApps {
             guard answer.failed, answer.text.contains(notInstalled) else { break }
         }
         if answer.failed, answer.text.contains(notInstalled) {
-            return ("not_sent: \(name) (\(ids.joined(separator: ", "))) is not installed on this iPhone. Search the Home Screen for it before telling the user: go home ({button: \"home\"}), swipe down, type its name and tap it.", true, nil)
+            return ("not_sent: \(name) (\(ids.joined(separator: ", "))) is not installed on this iPhone. Before telling the user, send {button: \"home\"} by itself, then use the returned screen to swipe down on the Home Screen to search, type its name and tap the matching result.", true, nil)
         }
         return (note + answer.text, answer.failed, answer.screen)
     }

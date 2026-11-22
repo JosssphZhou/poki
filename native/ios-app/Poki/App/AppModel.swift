@@ -1687,6 +1687,14 @@ final class AppModel {
         if sessionOn { host.update(runner: coreState(of: runner)) }
     }
 
+    private func isWaitingForLoopback(_ status: RunnerStatus) -> Bool {
+        let preLaunch = ["connecting", "pairing", "tunnel", "waiting_network", "standby", "idle"].contains(status.state)
+        guard preLaunch, !loopback.isWorking, loopback.state != .checking || status.state == "waiting_network" else {
+            return false
+        }
+        return !loopback.cellularRefused || cellularNeedsWiFi
+    }
+
     /// The runner's state as the agent reads it. While the loopback is down, every pre-launch state
     /// is the same thing: waiting for the tunnel, said with the time it went and what to do.
     func coreState(of status: RunnerStatus) -> RunnerState {
@@ -2122,23 +2130,69 @@ final class AppModel {
         core.saveTaskMemories(writes, conversation: conversation, task: task)
     }
 
+    struct ToolRunOutcome {
+        let answer: PokiCore.ToolAnswer
+        let failure: ChatDebugLog.Failure?
+    }
+
+    private func sessionOffFailure() -> ChatDebugLog.Failure {
+        if setup.loopback == .none || (setup.loopback == .builtIn && !tunnel.connected) || tunnelAttention != nil {
+            return .notSentTunnelDisconnected
+        }
+        if pairingPath == nil || pairingTrouble != nil {
+            return .notSentPairingRequired
+        }
+        return .sessionOff
+    }
+
+    /// Structured failure category from session, launcher, and answer flags without scanning error prose.
+    func toolFailure(for answer: PokiCore.ToolAnswer, tool: String) -> ChatDebugLog.Failure? {
+        guard tool == "do" || tool == "look" else { return nil }
+        if answer.automationAuthorizationDeclined { return .notSentSessionNotReady }
+        if answer.splitViewNeedsRead { return .notSentScreenEvidence }
+        guard answer.isError || answer.waitingForOwner else { return nil }
+        let fromRunnerGate = answer.waitingForOwner || answer.text.hasPrefix("runner: ") || answer.text.contains("\nrunner: ")
+        if fromRunnerGate, !probeDriven, !coreState(of: runner).isRunning {
+            if runner.code == "pairing" { return .notSentPairingRequired }
+            if ["loopback", "handshake", "unreachable", "pairing_port"].contains(runner.code) || isWaitingForLoopback(runner) {
+                return .notSentTunnelDisconnected
+            }
+            return .notSentSessionNotReady
+        }
+        return nil
+    }
+
     /// `conversation`: the chat a `skills` call comes from (a note keeps it as where it was heard).
-    func runTool(_ name: String, arguments: String, localSession: String? = nil, expectedApps: Set<String>? = nil, conversation: String? = nil, localTask: String? = nil, offeredMemoryIDs: Set<String> = [], onActionSucceeded: PokiCore.ActionSucceeded? = nil) async -> PokiCore.ToolAnswer {
-        if name == "status" || name == "skills" || name == "routines" || name == "screen_history" { return await core.callTool(name, arguments: arguments, localSession: localSession, conversation: conversation) }
-        if probeDriven { return await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, localTask: localTask, offeredMemoryIDs: offeredMemoryIDs, onActionSucceeded: onActionSucceeded) }
+    func runToolOutcome(_ name: String, arguments: String, localSession: String? = nil, expectedApps: Set<String>? = nil, conversation: String? = nil, localTask: String? = nil, offeredMemoryIDs: Set<String> = [], onActionSucceeded: PokiCore.ActionSucceeded? = nil) async -> ToolRunOutcome {
+        if name == "status" || name == "skills" || name == "routines" || name == "screen_history" {
+            let answer = await core.callTool(name, arguments: arguments, localSession: localSession, conversation: conversation)
+            return ToolRunOutcome(answer: answer, failure: nil)
+        }
+        if probeDriven {
+            let answer = await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, localTask: localTask, offeredMemoryIDs: offeredMemoryIDs, onActionSucceeded: onActionSucceeded)
+            return ToolRunOutcome(answer: answer, failure: toolFailure(for: answer, tool: name))
+        }
         if !sessionOn {
             if !sessionStarting { startSession() }
             if let task = sessionStartTask { await task.value }
         }
         if passcodeConfirmationPending, automationPath != .inProcess || !sessionOn {
-            return PokiCore.ToolAnswer(text: "not_sent: \(AppLocalization.text(Self.passcodeConfirmationMessage)) Nothing was sent.", jpeg: nil, isError: true)
+            let answer = PokiCore.ToolAnswer(text: "not_sent: \(AppLocalization.text(Self.passcodeConfirmationMessage)) Nothing was sent.", jpeg: nil, isError: true)
+            return ToolRunOutcome(answer: answer, failure: .notSentSessionNotReady)
         }
         guard sessionOn else {
             let why = problem ?? "Poki is off."
-            return PokiCore.ToolAnswer(text: "not_sent: Poki could not turn on: \(why) Nothing was sent. Tell the owner what to fix.", jpeg: nil, isError: true)
+            let answer = PokiCore.ToolAnswer(text: "not_sent: Poki could not turn on: \(why) Nothing was sent. Tell the owner what to fix.", jpeg: nil, isError: true)
+            return ToolRunOutcome(answer: answer, failure: sessionOffFailure())
         }
         lastAgentActivity = Date(); lastStepAt = Date()
-        return await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, localTask: localTask, offeredMemoryIDs: offeredMemoryIDs, onActionSucceeded: onActionSucceeded)
+        let answer = await core.callTool(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, localTask: localTask, offeredMemoryIDs: offeredMemoryIDs, onActionSucceeded: onActionSucceeded)
+        return ToolRunOutcome(answer: answer, failure: toolFailure(for: answer, tool: name))
+    }
+
+    /// `conversation`: the chat a `skills` call comes from (a note keeps it as where it was heard).
+    func runTool(_ name: String, arguments: String, localSession: String? = nil, expectedApps: Set<String>? = nil, conversation: String? = nil, localTask: String? = nil, offeredMemoryIDs: Set<String> = [], onActionSucceeded: PokiCore.ActionSucceeded? = nil) async -> PokiCore.ToolAnswer {
+        await runToolOutcome(name, arguments: arguments, localSession: localSession, expectedApps: expectedApps, conversation: conversation, localTask: localTask, offeredMemoryIDs: offeredMemoryIDs, onActionSucceeded: onActionSucceeded).answer
     }
 
     func itemPictures(for card: ResultCard, localTask: String) async -> [String: Data]? {

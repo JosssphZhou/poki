@@ -1,3 +1,4 @@
+import PokiCore
 import XCTest
 @testable import Poki
 
@@ -71,12 +72,196 @@ final class AppLaunchPromptTests: XCTestCase {
         XCTAssertEqual(entry.calls[1].error, "launch_not_installed")
         XCTAssertEqual(entry.calls[2].actions, ["run", "type", "key return", "swipe"], "no routine name, no text, no free-form direction")
         XCTAssertEqual(entry.calls[2].error, "failed")
-        XCTAssertEqual(entry.calls[3].actions, ["launch com.taobao.taobao4iphone", "launch", "launch com.strava.stravaride"],
-                       "an app Poki lists or the phone has is kept; a made-up dotted string is not")
+        XCTAssertEqual(entry.calls[3].actions, ["launch com.taobao.taobao4iphone", "launch", "launch bundle com.strava.stravaride"],
+                       "an app Poki lists or the phone has is kept; string and bundle object launches are recorded separately")
         // A type with a ref is a type every time, whichever key the dictionary gives first.
         for _ in 0..<200 {
             XCTAssertEqual(ChatDebugLog.actions(#"{"actions":[{"ref":3,"type":"hello"},{"tap":4,"count":2},{"mystery":1}]}"#), ["type", "tap", "other"])
         }
+    }
+
+    func testTheDebugFileDistinguishesNotSentGatesAndLaunchForms() throws {
+        let sentinel = "SECRET-SCREEN-\(UUID().uuidString)"
+        DynamicApps.set([.init(id: "com.strava.stravaride", name: "Strava", user: true)])
+
+        let actionForms = ChatDebugLog.actions(#"""
+        {"actions":[
+          {"launch":"com.taobao.taobao4iphone"},
+          {"launch":"unknown.bundle.id"},
+          {"launch":{"bundle":"com.taobao.taobao4iphone"}},
+          {"launch":{"bundle":"unknown.bundle.id"}},
+          {"launch":{"name":"\#(sentinel)"}},
+          {"launch":{"app":"com.strava.stravaride"}}
+        ]}
+        """#)
+        XCTAssertEqual(actionForms, [
+            "launch com.taobao.taobao4iphone",
+            "launch",
+            "launch bundle com.taobao.taobao4iphone",
+            "launch bundle",
+            "launch name",
+            "launch com.strava.stravaride",
+        ])
+
+        let cases: [(answer: String, expected: String)] = [
+            ("runner: starting (waiting for the loopback since 04:10:00: the loopback at 10.7.0.1 is not answering. The owner turns the proxy app's tunnel back on)\nNothing was sent. Call look or status again in a few seconds and continue the task when automation is ready.", "not_sent_tunnel_disconnected"),
+            ("runner: failed: remote pairing handshake failed: the phone's remote pairing service did not answer (EOF). Fix on the phone: Open Setup › Loopback and check the loopback, then pair this iPhone again in Setup › Pairing with the loopback on.\nNothing was sent. Fix it on the phone, then call look again.", "not_sent_tunnel_disconnected"),
+            ("runner: failed: remote pairing connect failed: cannot reach the phone's remote pairing service (connection refused). Is the loopback on?\nNothing was sent. Fix it on the phone, then call look again.", "not_sent_tunnel_disconnected"),
+            ("not_sent: Poki could not turn on: The local connection is off. Turn Poki on to reconnect, or choose an external connection in Setup. Nothing was sent. Tell the owner what to fix.", "not_sent_tunnel_disconnected"),
+            ("not_sent: Poki could not turn on: Choose and enable a local connection first (Setup). Nothing was sent. Tell the owner what to fix.", "not_sent_tunnel_disconnected"),
+            ("runner: starting (waiting for the local developer connection since 04:10:00: the phone has only cellular, and the developer disk image is not mounted.)\nNothing was sent.", "not_sent_tunnel_disconnected"),
+            ("not_sent: Poki could not turn on: The phone refused the pairing (\(sentinel)). Pair again in Setup. Nothing was sent. Tell the owner what to fix.", "not_sent_pairing_required"),
+            ("not_sent: Poki could not turn on: Pair this iPhone first (Setup). Nothing was sent. Tell the owner what to fix.", "not_sent_pairing_required"),
+            ("runner: failed: cannot read the pairing file. Fix on the phone: Pair again in Poki's setup.\nNothing was sent. Fix it on the phone, then call look again.", "not_sent_pairing_required"),
+            (#"do: no app named "\#(sentinel)" is known on this phone; nothing was sent. Give its bundle id."#, "not_sent_app_preflight"),
+            ("do: app is turned off on this phone (Apps by Name, in Poki's Testing Options); nothing was sent.", "not_sent_app_preflight"),
+            ("Automation is ready. Nothing was sent. Call look to read the current screen before choosing the next action.", "not_sent_screen_evidence"),
+            ("element 9 is not in the latest read; nothing was sent. The current elements are below.", "not_sent_screen_evidence"),
+            ("did: button home\nnot_sent from action 2: a coordinate action needs a fresh read after an earlier action that could change the screen.", "not_sent_screen_evidence"),
+            ("The iPhone unlocked. No requested action was sent. Call look before acting on the new screen.", "not_sent_screen_evidence"),
+            ("Split View: look at the selected pane before sending input; nothing was sent", "not_sent_screen_evidence"),
+            ("not_sent: To turn on automation, open Settings › Connection and tap Continue. Nothing was sent.", "not_sent_session_not_ready"),
+            ("not_sent: 要开启自动化，请前往设置 › 连接并轻点“继续”。 Nothing was sent.", "not_sent_session_not_ready"),
+            ("Poki stopped waiting for automation to be ready. Nothing was sent.", "not_sent_session_not_ready"),
+            ("runner: not ready (\(sentinel))\nNothing was sent. Call look or status again in a few seconds.", "not_sent_session_not_ready"),
+            ("screen: locked. Nothing was sent. The owner has to unlock the phone; call look once they have.", "not_sent_locked"),
+            ("Automatic unlock could not be confirmed. Nothing was sent. Call look before choosing the next action.", "not_sent_locked"),
+            (#"not_sent: a step is handed to the owner (password: "\#(sentinel)"), so no input is sent."#, "not_sent_handoff"),
+            ("not_sent: Poki cannot tap inside itself. Nothing was sent. Leave Poki first ({button: \"home\"} or {launch: \"bundle id\"}).", "not_sent_own_app"),
+            ("not_sent from action 2: the owner declined on the phone (\(sentinel)).", "not_sent_approval_declined"),
+            ("not_sent from action 1: the approval request ended unanswered (\(sentinel)).", "not_sent_approval_declined"),
+            ("not_sent: the two visible apps do not match the planned Split View pair.", "not_sent_split_view"),
+            (#"not_hittable: element 3 Button "\#(sentinel)": off screen; nothing was sent."#, "not_sent_target_refused"),
+            ("path: \(sentinel); nothing was sent", "not_sent_target_refused"),
+            ("not_sent: the runner is still finishing an earlier GET /source; nothing was sent.", "runner_busy"),
+            ("not_sent: Poki could not turn on: \(sentinel) Nothing was sent.", "session_off"),
+            ("Task stopped. Nothing was sent.", "stopped"),
+            ("not_sent: an unrecognized refusal (\(sentinel)); nothing was sent.", "not_sent"),
+            ("Typed into Search: loopback 10.7.0.1 remote pairing \(sentinel).\nThe page did not answer. Read it again with web_read.", "failed"),
+        ]
+
+        let calls = cases.map { item in
+            CallRecord(name: "do", arguments: #"{"actions":[{"launch":{"name":"\#(sentinel)"}}]}"#, answer: item.answer, ms: 5, ok: false)
+        }
+        let entry = ChatDebugLog.entry(model: "pi, openai/x", named: [], calls: calls, finished: false, seconds: 1)
+        for (index, item) in cases.enumerated() {
+            XCTAssertEqual(entry.calls[index].error, item.expected, item.answer)
+            XCTAssertEqual(entry.calls[index].actions, ["launch name"])
+        }
+
+        ChatDebugLog.add(entry)
+        let saved = try String(contentsOf: ChatDebugLog.file, encoding: .utf8)
+        XCTAssertFalse(saved.contains(sentinel), saved)
+        let exported = String(decoding: ChatDebugLog.exportBundle(), as: UTF8.self)
+        XCTAssertFalse(exported.contains(sentinel), exported)
+    }
+
+    func testTheDebugFileClassifiesWaitingForLoopbackCorruptPairingAndLoopbackAppName() async {
+        let savedAppNames = UserDefaults.standard.object(forKey: SpeedOptions.appNamesKey)
+        UserDefaults.standard.set(true, forKey: SpeedOptions.appNamesKey)
+        defer {
+            if let savedAppNames { UserDefaults.standard.set(savedAppNames, forKey: SpeedOptions.appNamesKey) }
+            else { UserDefaults.standard.removeObject(forKey: SpeedOptions.appNamesKey) }
+        }
+
+        // 1. Waiting for loopback returns isError == false, waitingForOwner == true from PokiCore.
+        let waitingHost = AppCoreHost()
+        waitingHost.update(runner: .waitingForLoopback(since: "04:10:00", tunnelWithoutAnswer: false, connection: .external))
+        let waitingCore = LiveCore(host: waitingHost, transport: InertDebugTransport())
+        let waitingAnswer = await waitingCore.callTool(
+            "do",
+            arguments: #"{"actions":[{"launch":{"bundle":"com.taobao.taobao4iphone"}}]}"#,
+            localTask: "esp-1274"
+        )
+        XCTAssertFalse(waitingAnswer.isError, waitingAnswer.text)
+        XCTAssertTrue(waitingAnswer.waitingForOwner, waitingAnswer.text)
+        let waitingCall = ChatDebugLog.call(CallRecord(
+            name: "do",
+            arguments: #"{"actions":[{"launch":{"bundle":"com.taobao.taobao4iphone"}}]}"#,
+            answer: waitingAnswer.text,
+            ms: 12,
+            ok: !waitingAnswer.isError
+        ))
+        XCTAssertFalse(waitingCall.ok)
+        XCTAssertEqual(waitingCall.error, "not_sent_tunnel_disconnected", waitingAnswer.text)
+
+        // Status queries while waiting for loopback are not failed actions.
+        let statusAnswer = await waitingCore.callTool("status", arguments: "{}", localTask: "esp-1274")
+        let statusCall = ChatDebugLog.call(CallRecord(name: "status", arguments: "{}", answer: statusAnswer.text, ms: 2, ok: !statusAnswer.isError))
+        XCTAssertTrue(statusCall.ok)
+        XCTAssertNil(statusCall.error)
+
+        // 2. Corrupt pairing file from launcher (contains "remote pairing file") must classify as pairing, not tunnel disconnected.
+        let corruptHost = AppCoreHost()
+        corruptHost.update(runner: .failed(
+            "the pairing file is neither a remote pairing file nor a lockdown pairing record (invalid plist)",
+            fix: "Pair again in Poki's setup."
+        ))
+        let corruptCore = LiveCore(host: corruptHost, transport: InertDebugTransport())
+        let corruptAnswer = await corruptCore.callTool(
+            "do",
+            arguments: #"{"actions":[{"launch":{"bundle":"com.taobao.taobao4iphone"}}]}"#,
+            localTask: "esp-1274"
+        )
+        XCTAssertTrue(corruptAnswer.isError, corruptAnswer.text)
+        let corruptCall = ChatDebugLog.call(CallRecord(
+            name: "do",
+            arguments: #"{"actions":[{"launch":{"bundle":"com.taobao.taobao4iphone"}}]}"#,
+            answer: corruptAnswer.text,
+            ms: 8,
+            ok: !corruptAnswer.isError
+        ))
+        XCTAssertFalse(corruptCall.ok)
+        XCTAssertEqual(corruptCall.error, "not_sent_pairing_required", corruptAnswer.text)
+
+        // 3. Unknown app named "Loopback" must classify as app preflight, not tunnel disconnected.
+        let readyHost = AppCoreHost()
+        readyHost.update(runner: .automationReady(revision: 1))
+        let readyCore = LiveCore(host: readyHost, transport: InertDebugTransport())
+        let loopbackAppAnswer = await readyCore.callTool(
+            "do",
+            arguments: #"{"actions":[{"launch":"Loopback"}]}"#,
+            localTask: "esp-1274"
+        )
+        XCTAssertTrue(loopbackAppAnswer.isError, loopbackAppAnswer.text)
+        let loopbackAppCall = ChatDebugLog.call(CallRecord(
+            name: "do",
+            arguments: #"{"actions":[{"launch":"Loopback"}]}"#,
+            answer: loopbackAppAnswer.text,
+            ms: 4,
+            ok: !loopbackAppAnswer.isError
+        ))
+        XCTAssertFalse(loopbackAppCall.ok)
+        XCTAssertEqual(loopbackAppCall.error, "not_sent_app_preflight", loopbackAppAnswer.text)
+
+        // Normal screen reads mentioning "Loopback" stay ok with no error.
+        let normalRead = ChatDebugLog.call(CallRecord(
+            name: "look",
+            arguments: "{}",
+            answer: "app: Settings   read: 2026-11-22T04:10:00Z (10 ms)\nelements (1):\n 1 Button \"Loopback\" [0,0,100,44]",
+            ms: 10,
+            ok: true
+        ))
+        XCTAssertTrue(normalRead.ok)
+        XCTAssertNil(normalRead.error)
+
+        // Explicit structured CallRecord.failure takes precedence directly without body parsing,
+        // including for non-error waitingForOwner replies and arbitrary answer prose.
+        let explicitTunnel = ChatDebugLog.call(CallRecord(
+            name: "do",
+            arguments: #"{"actions":[{"launch":{"bundle":"com.taobao.taobao4iphone"}}]}"#,
+            answer: "arbitrary text",
+            ms: 5,
+            ok: true,
+            failure: .notSentTunnelDisconnected
+        ))
+        XCTAssertFalse(explicitTunnel.ok)
+        XCTAssertEqual(explicitTunnel.error, "not_sent_tunnel_disconnected")
+
+        // Backwards compatibility: stored CallRecord JSON without `failure` still decodes cleanly.
+        let legacyJSON = Data(#"{"name":"do","arguments":"{}","answer":"ok","ms":1,"ok":true}"#.utf8)
+        let decodedLegacy = try? JSONDecoder().decode(CallRecord.self, from: legacyJSON)
+        XCTAssertEqual(decodedLegacy, CallRecord(name: "do", arguments: "{}", answer: "ok", ms: 1, ok: true, failure: nil))
     }
 
     /// The file keeps the newest 20 tasks: the number is written here, not read from the code.
@@ -245,6 +430,7 @@ final class AppLaunchPromptTests: XCTestCase {
             XCTAssertFalse(answer.text.contains("NOT installed"), answer.text)
             XCTAssertFalse(answer.text.contains("(not installed)"), answer.text)
             XCTAssertTrue(answer.text.contains("could not tell whether"), answer.text)
+            XCTAssertTrue(answer.text.contains("send {button: \"home\"} by itself"), answer.text)
             XCTAssertTrue(answer.text.contains("swipe down on the Home Screen to search"), answer.text)
         }
     }
@@ -302,5 +488,11 @@ final class AppLaunchPromptTests: XCTestCase {
     func testTheModelIsOfferedFindApp() {
         XCTAssertTrue(Harness.tools.contains { $0.name == "find_app" })
         XCTAssertTrue(Harness.taskInstructions(for: "打开闲鱼").text.contains("find_app"))
+    }
+}
+
+private actor InertDebugTransport: HTTPTransport {
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        (200, Data("{\"value\":null}".utf8))
     }
 }

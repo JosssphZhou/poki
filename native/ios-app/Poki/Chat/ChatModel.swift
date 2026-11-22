@@ -1285,12 +1285,12 @@ final class ChatModel {
         awaitingModel = false
         let started = Date()
         let historyRevision = call.name == "screen_history" ? HistoryCapture.agentQueryRevision : nil
-        let rawAnswer = await performCall(call)
+        let rawOutcome = await performCall(call)
         // Main-actor boundary: validate again after the await before recording or returning
         // any private text. A valid answer may have become stale on the way back from Core.
         let answer = call.name == "screen_history"
-            ? HistoryCapture.validateAgentAnswer(rawAnswer, revision: historyRevision) : rawAnswer
-        let record = CallRecord(name: call.name, arguments: call.arguments, answer: String(answer.text.prefix(2000)), ms: Int(Date().timeIntervalSince(started) * 1000), ok: !answer.isError)
+            ? HistoryCapture.validateAgentAnswer(rawOutcome.answer, revision: historyRevision) : rawOutcome.answer
+        let record = CallRecord(name: call.name, arguments: call.arguments, answer: String(answer.text.prefix(2000)), ms: Int(Date().timeIntervalSince(started) * 1000), ok: !answer.isError, failure: rawOutcome.failure)
         taskCalls.append(record)
         guard sessionID == session else {
             store.appendCall(record, to: session)
@@ -1300,7 +1300,7 @@ final class ChatModel {
             offeredMemories.append(contentsOf: answer.offeredMemories)
         }
         // A launch that went through says which app the task is for; a refused one says nothing.
-        if runToken == token, call.name == "do", !answer.isError {
+        if runToken == token, call.name == "do", !answer.isError, rawOutcome.failure == nil {
             for app in TaskApps.launches(inArguments: call.arguments) {
                 taskApps.launch(app)
                 observeTaskApp(app)
@@ -1323,11 +1323,14 @@ final class ChatModel {
         return deliveredAnswer
     }
 
-    private func performCall(_ call: ToolCall) async -> PokiCore.ToolAnswer {
-        guard !Task.isCancelled else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
+    private func performCall(_ call: ToolCall) async -> AppModel.ToolRunOutcome {
+        func reply(_ answer: PokiCore.ToolAnswer, failure: ChatDebugLog.Failure? = nil) -> AppModel.ToolRunOutcome {
+            AppModel.ToolRunOutcome(answer: answer, failure: failure)
+        }
+        guard !Task.isCancelled else { return reply(PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true), failure: .stopped) }
         toolCalls += 1
         if countedScrollReplyQuestion != nil {
-            return PokiCore.ToolAnswer(text: "Waiting for the owner's reply. No action was sent.", jpeg: nil, isError: true)
+            return reply(PokiCore.ToolAnswer(text: "Waiting for the owner's reply. No action was sent.", jpeg: nil, isError: true), failure: .notSentHandoff)
         }
         let session = sessionID
         let taskToken = runToken
@@ -1339,22 +1342,22 @@ final class ChatModel {
                 if let pane = args["pane"] as? String {
                     hasSplitViewRead = false
                     guard pane == "left" || pane == "right" else {
-                        return splitViewRefusal("Choose left or right with look. This task keeps both apps in Split View.")
+                        return reply(splitViewRefusal("Choose left or right with look. This task keeps both apps in Split View."), failure: .notSentSplitView)
                     }
                 } else if !hasSplitViewRead {
-                    return splitViewRefusal("Use look with pane left or right to confirm the two visible apps first.")
+                    return reply(splitViewRefusal("Use look with pane left or right to confirm the two visible apps first."), failure: .notSentSplitView)
                 }
             case "do":
                 guard hasSplitViewRead else {
-                    return splitViewRefusal("Use look with pane left or right to confirm the two visible apps first.")
+                    return reply(splitViewRefusal("Use look with pane left or right to confirm the two visible apps first."), failure: .notSentSplitView)
                 }
                 let actions = args["actions"] as? [[String: Any]] ?? []
                 if args["finish"] as? Bool == true || actions.contains(where: { $0["launch"] != nil || $0["run"] != nil || $0["path"] != nil || $0["button"] != nil }) {
-                    return splitViewRefusal("Keep both apps in place. Do not launch apps, use hardware buttons, or run skills. Finish with finish_task.")
+                    return reply(splitViewRefusal("Keep both apps in place. Do not launch apps, use hardware buttons, or run skills. Finish with finish_task."), failure: .notSentSplitView)
                 }
             case "report_plan", "finish_task", "count_messages", Harness.countedScrollReplyTool, "status", "screen_history": break
             default:
-                return splitViewRefusal("Use the two visible apps with look and do for this task.")
+                return reply(splitViewRefusal("Use the two visible apps with look and do for this task."), failure: .notSentSplitView)
             }
         }
         switch call.name {
@@ -1362,35 +1365,35 @@ final class ChatModel {
             guard kind == .poki, messageScroll != nil, taskResult == nil,
                   let question = (args["question"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !question.isEmpty else {
-                return PokiCore.ToolAnswer(text: "Use a nonempty question during an active counted scroll in the owner's chat.", jpeg: nil, isError: true)
+                return reply(PokiCore.ToolAnswer(text: "Use a nonempty question during an active counted scroll in the owner's chat.", jpeg: nil, isError: true), failure: .invalidArguments)
             }
             countedScrollReplyQuestion = question
-            return PokiCore.ToolAnswer(text: "Waiting for the owner's reply.", jpeg: nil, isError: false)
+            return reply(PokiCore.ToolAnswer(text: "Waiting for the owner's reply.", jpeg: nil, isError: false))
         case "report_plan":
             guard let steps = args["steps"] as? [String], (1...8).contains(steps.count), let current = args["currentStep"] as? Int, (1...steps.count).contains(current) else {
-                return PokiCore.ToolAnswer(text: Harness.invalidPlan, jpeg: nil, isError: true)
+                return reply(PokiCore.ToolAnswer(text: Harness.invalidPlan, jpeg: nil, isError: true), failure: .invalidArguments)
             }
             let title = Self.shortTitle(args["title"]), to = Self.shortTitle(args["to"])
             showPlan(steps, current: current, title: title, to: to)
             if let title { nameTask(title) }
-            return PokiCore.ToolAnswer(text: Harness.planPublished, jpeg: nil, isError: false)
+            return reply(PokiCore.ToolAnswer(text: Harness.planPublished, jpeg: nil, isError: false))
         case "count_messages":
             guard var scroll = messageScroll, args["target"] as? Int == scroll.target, let refs = args["refs"] as? [Int] else {
-                return PokiCore.ToolAnswer(text: "Use the owner's requested target and the current message refs.", jpeg: nil, isError: true)
+                return reply(PokiCore.ToolAnswer(text: "Use the owner's requested target and the current message refs.", jpeg: nil, isError: true), failure: .invalidArguments)
             }
-            if let refusal = selectRoute(.app) { return refusal }
+            if let refusal = selectRoute(.app) { return reply(refusal) }
             let answer = scroll.count(refs, in: messageScreen, pane: messagePane)
             messageScroll = scroll
-            return answer
+            return reply(answer)
         case "finish_task":
             guard var result = try? JSONDecoder().decode(TaskResult.self, from: Data(call.arguments.utf8)) else {
-                return PokiCore.ToolAnswer(text: Harness.invalidResult, jpeg: nil, isError: true)
+                return reply(PokiCore.ToolAnswer(text: Harness.invalidResult, jpeg: nil, isError: true), failure: .invalidArguments)
             }
             if var scroll = messageScroll {
                 if result.success && !scroll.verifiedTarget(in: messageScreen, pane: messagePane) {
                     let answer = scroll.rejectCompletion()
                     messageScroll = scroll
-                    return answer
+                    return reply(answer)
                 }
                 result = TaskResult(success: result.success, summary: scroll.summary(
                     success: result.success, reason: scroll.observedStopReason ?? result.summary))
@@ -1405,32 +1408,32 @@ final class ChatModel {
                 if sessionID != session || runToken != taskToken { card = nil }
             }
             if let card { showCard(card) }
-            return PokiCore.ToolAnswer(text: Harness.recorded(result, cardShown: card != nil), jpeg: nil, isError: false)
+            return reply(PokiCore.ToolAnswer(text: Harness.recorded(result, cardShown: card != nil), jpeg: nil, isError: false))
         case let name where WebTools.names.contains(name):
-            if let refusal = selectRoute(.web) { return refusal }
+            if let refusal = selectRoute(.web) { return reply(refusal) }
             let ids = args["used_memory_ids"] as? [String] ?? []
             let taskToken = runToken
             showBrowser(opening: name == "web_open")
-            return await WebTools.perform(name, arguments: call.arguments, onActionSucceeded: ids.isEmpty ? nil : { [weak self] in
+            return reply(await WebTools.perform(name, arguments: call.arguments, onActionSucceeded: ids.isEmpty ? nil : { [weak self] in
                 guard let self, self.runToken == taskToken, !self.stopAsked else { return }
                 self.recordMemoryUse(ids)
-            })
+            }))
         case "find_app":
             let found = await InstalledApps.shared.find(name: args["name"] as? String, purpose: args["purpose"] as? String)
-            return PokiCore.ToolAnswer(text: found.text, jpeg: nil, isError: found.isError)
+            return reply(PokiCore.ToolAnswer(text: found.text, jpeg: nil, isError: found.isError))
         case "skills", "routines":
             if let action = args["action"] as? String, action == "save" || action == "remember" {
                 let required = action == "save" ? "name" : "text"
                 guard let value = (args[required] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-                    return PokiCore.ToolAnswer(text: "Give the \(required) to save.", jpeg: nil, isError: true)
+                    return reply(PokiCore.ToolAnswer(text: "Give the \(required) to save.", jpeg: nil, isError: true), failure: .invalidArguments)
                 }
                 let write = TaskMemoryWrite(arguments: call.arguments, optional: args["optional"] as? Bool == true)
                 pendingMemoryWrites.append((write, action == "save" ? value : nil))
-                return PokiCore.ToolAnswer(text: "Queued. This is saved only if the task finishes successfully.", jpeg: nil, isError: false)
+                return reply(PokiCore.ToolAnswer(text: "Queued. This is saved only if the task finishes successfully.", jpeg: nil, isError: false))
             }
-            return await app.runTool(call.name, arguments: call.arguments, conversation: sessionID)
+            return await app.runToolOutcome(call.name, arguments: call.arguments, conversation: sessionID)
         case "look", "do":
-            if let refusal = selectRoute(.app) { return refusal }
+            if let refusal = selectRoute(.app) { return reply(refusal) }
             let actions = args["actions"] as? [[String: Any]] ?? []
             let scrolls = actions.filter { $0["drag"] != nil || $0["swipe"] != nil || $0["scroll_to"] != nil }
             var phoneArgs = args
@@ -1446,15 +1449,15 @@ final class ChatModel {
             var countedDistance: Double?
             if call.name == "do", let messageScroll, messageScroll.started, !actions.isEmpty || args["finish"] as? Bool == true {
                 if messageScroll.reachedTarget || messageScroll.reachedTop || messageScroll.needsCount {
-                    return messageScroll.progress(error: true)
+                    return reply(messageScroll.progress(error: true))
                 }
                 let skipsReads = actions.contains { $0["run"] != nil || $0["path"] != nil }
                 if actions.count > 1 || skipsReads || args["finish"] as? Bool == true {
-                    return PokiCore.ToolAnswer(text: "Send one scroll at a time and verify the next screen before continuing.", jpeg: nil, isError: true)
+                    return reply(PokiCore.ToolAnswer(text: "Send one scroll at a time and verify the next screen before continuing.", jpeg: nil, isError: true))
                 }
                 if let scroll = scrolls.first {
                     guard let bounded = messageScroll.boundedDrag(scroll["drag"]) else {
-                        return messageScroll.progress(error: true)
+                        return reply(messageScroll.progress(error: true))
                     }
                     phoneArgs["actions"] = [bounded.action]
                     phoneArgs["full"] = true
@@ -1470,37 +1473,39 @@ final class ChatModel {
             } else {
                 phoneArguments = call.arguments
             }
-            let response = await app.runTool(call.name, arguments: phoneArguments, localSession: splitViewSession,
-                                             expectedApps: expectedSplitViewApps, localTask: localTask,
-                                             offeredMemoryIDs: Set(offeredMemories.map(\.id))) { [weak self, notesByAction] index, step, skill in
+            let outcome = await app.runToolOutcome(call.name, arguments: phoneArguments, localSession: splitViewSession,
+                                                   expectedApps: expectedSplitViewApps, localTask: localTask,
+                                                   offeredMemoryIDs: Set(offeredMemories.map(\.id))) { [weak self, notesByAction] index, step, skill in
                 guard let self, self.runToken == taskToken, !self.stopAsked, notesByAction.indices.contains(index) else { return }
                 let action = notesByAction[index]
                 let ids = step.map { action.steps[$0] ?? [] } ?? action.direct
                 self.recordMemoryUse(ids, skill: skill)
             }
-            guard taskToken == runToken else { return response }
+            let response = outcome.answer
+            guard taskToken == runToken else { return outcome }
             messageScreen = response.isError || response.waitingForOwner ? nil : response.numberedScreen
             messagePane = response.splitView?.side ?? lastSplitViewSide
             if call.name == "do", !scrolls.isEmpty || (messageScroll?.started == true && !actions.isEmpty) {
                 messageScroll?.actionTookPlace(error: response.isError, distance: countedDistance)
             }
-            guard usesSplitView else { return response }
+            guard usesSplitView else { return outcome }
             let changedLayout = call.name == "look" && lastSplitViewLayout != nil &&
                 response.splitView.map { $0.layout != lastSplitViewLayout } == true
             if let previous = lastSplitViewSide, response.splitViewNeedsRead || changedLayout {
                 hasSplitViewRead = false
                 messageScreen = nil
                 let side = (args["pane"] as? String) ?? previous
-                return await recoverSplitView(side: side, token: taskToken,
-                                              layoutSeen: changedLayout,
-                                              action: call.name == "do" ? response : nil)
+                let recovered = await recoverSplitView(side: side, token: taskToken,
+                                                       layoutSeen: changedLayout,
+                                                       action: call.name == "do" ? response : nil)
+                return reply(recovered)
             }
             if call.name == "look", let read = response.splitView, response.jpeg != nil {
                 recordSplitViewRead(read)
             }
-            return response
+            return outcome
         default:
-            return await app.runTool(call.name, arguments: call.arguments)
+            return await app.runToolOutcome(call.name, arguments: call.arguments)
         }
     }
 
@@ -1956,6 +1961,7 @@ struct CallRecord: Codable, Equatable {
     var answer: String
     var ms: Int
     var ok: Bool
+    var failure: ChatDebugLog.Failure? = nil
 }
 
 /// A finished task, for memory and routines.
