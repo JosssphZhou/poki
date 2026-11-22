@@ -1,6 +1,6 @@
 # Optional iMessage gateway
 
-Poki uses BlueBubbles to receive iMessage tasks and return replies. Install it only if you want this channel. The normal `./bin/setup` build and Telegram do not download a gateway.
+Poki uses BlueBubbles to receive iMessage tasks and return replies. Install it only if you want this channel. The normal `./bin/setup` build and Telegram do not download a gateway. To receive iMessage tasks without a Mac running Messages, see the [Photon channel](photon-channel.md) instead.
 
 ## Install
 
@@ -13,6 +13,8 @@ From the repository root, run:
 ```
 
 Choose `imessage` to install, or press Enter for `none`. Choosing `none` makes no network requests and writes no files. The explicit equivalents are `./bin/setup-channels --channel imessage` and `./bin/setup-channels --channel none`.
+
+In a terminal, `imessage` then describes the two ways Poki can reach iMessage and asks which one to use: BlueBubbles, which this page covers and which Enter selects, or [Photon](photon-channel.md). `--provider bluebubbles` or `--provider photon` answers that question on the command line. With `--answers`, or without a terminal, setup uses BlueBubbles unless you pass `--provider photon`.
 
 The installer asks for the local server URL, the single allowed sender, the Poki device name or ID, the exact direct chat GUID, and a server password. Password input is hidden. Choose a password now and set the same one in BlueBubbles when completing its setup. For a self-chat, the GUID can be `any;-;<sender>` or `iMessage;-;<sender>`; use the exact value for that conversation. See the [existing channel guide](../agent/README.md#configure-imessage-through-bluebubbles) for sender scoping and self-chat behavior.
 
@@ -54,6 +56,8 @@ node bin/poki-imessage.mjs --check
 ```
 
 This loads the password privately, authenticates and reads only the configured conversation. It sends no reply and starts no phone task. A successful check confirms the gateway connection and scoped read, not phone automation or message delivery.
+
+If you have also set up [Photon](photon-channel.md), the launcher asks in a terminal which provider to start, and `--provider bluebubbles` skips the question. Without a terminal it does not ask and starts BlueBubbles.
 
 Once you have prepared Poki's MCP service, the selected device and model access, start the channel explicitly:
 

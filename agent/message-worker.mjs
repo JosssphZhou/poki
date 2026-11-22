@@ -8,7 +8,7 @@ import { checkDeviceTools } from './device-preflight.mjs';
 
 export function reportChannelError(error) {
   let message = safeModelError(error);
-  for (const key of ['BLUEBUBBLES_PASSWORD', 'TELEGRAM_BOT_TOKEN']) {
+  for (const key of ['BLUEBUBBLES_PASSWORD', 'TELEGRAM_BOT_TOKEN', 'PHOTON_API_KEY']) {
     if (process.env[key]) message = message.replaceAll(process.env[key], '[redacted]');
   }
   console.error(message);
@@ -21,7 +21,7 @@ export async function runMessageWorker(channel, Source) {
     'step-timeout': { type: 'string' }, check: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
   } });
   if (values.help) {
-    console.log(`Usage: node agent/${channel === 'bluebubbles' ? 'imessage' : 'telegram'}.mjs --config <private JSON file> [--state <directory>] [--once] [--check]\n--check authenticates and reads only; no task or reply is sent.`);
+    console.log(`Usage: node agent/${channel === 'bluebubbles' ? 'imessage' : channel}.mjs --config <private JSON file> [--state <directory>] [--once] [--check]\n--check authenticates and reads only; no task or reply is sent.`);
     return;
   }
   if (!values.config) throw new Error('Pass --config with a private channel configuration file.');
@@ -96,7 +96,7 @@ export async function runMessageWorker(channel, Source) {
       }
       for (const runner of runners.values()) if (runner.failure) throw runner.failure;
       if (values.once) { await Promise.all([...runners.values()].map(runner => runner.finished)); break; }
-      await setTimeout(channel === 'bluebubbles' ? 200 : 1000, undefined, { signal: abort.signal });
+      await setTimeout(channel === 'telegram' ? 1000 : 200, undefined, { signal: abort.signal });
     } while (!abort.signal.aborted);
   } catch (error) {
     if (!abort.signal.aborted) throw error;
@@ -106,6 +106,7 @@ export async function runMessageWorker(channel, Source) {
     finally {
       process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); process.removeListener('SIGHUP', stop);
       process.stdout.removeListener('error', ignorePipeError); process.stderr.removeListener('error', ignorePipeError);
+      source.close?.();
       await unlink(lock);
     }
   }
