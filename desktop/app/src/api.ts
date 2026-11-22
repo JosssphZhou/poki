@@ -2,6 +2,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+/** What the Mount button did: mounted and copied into Poki, or why it was only mounted. */
+export type DdiGiven = { outcome: "copied" } | { outcome: "not_installed" } | { outcome: "lookup_failed"; reason: string };
+
 export type Failure = { kind: string; message: string };
 export type Progress =
   | { job: string; kind: "step"; id: string; title: string }
@@ -92,7 +95,7 @@ export const api = {
   connectorSnippets: (url: string) => invoke<[string, string][]>("connector_snippets", { url }),
   logsStart: (udid: string, filter: string | null) => invoke<void>("logs_start", { udid, filter }),
   logsStop: () => invoke<void>("logs_stop"),
-  mountDdi: (udid: string) => invoke<void>("mount_ddi", { udid }),
+  mountDdi: (udid: string) => invoke<DdiGiven>("mount_ddi", { udid }),
   supportBundle: (udid: string | null, outDir: string) => invoke<string>("support_bundle", { udid, outDir }),
   agentPrompt: () => invoke<string>("agent_prompt"),
   approveCertificateReplacement: () => invoke<number>("approve_certificate_replacement"),

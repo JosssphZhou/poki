@@ -592,8 +592,9 @@ async fn run() -> Result<()> {
         }
         Cmd::Ddi { udid } => {
             let p = phone(udid.as_deref()).await?;
-            device::ddi::mount(&p, &reporter).await?;
-            finish(cli.json, serde_json::json!({ "udid": p.udid, "mounted": true }), "Developer disk image mounted.")
+            let given = device::ddi::mount_and_give_poki(&p, &reporter).await?;
+            let copied = given == device::ddi::Given::Copied;
+            finish(cli.json, serde_json::json!({ "udid": p.udid, "mounted": true, "copied": copied, "given": given }), &given.message())
         }
         Cmd::Logs { udid, filter } => {
             let p = phone(udid.as_deref()).await?;

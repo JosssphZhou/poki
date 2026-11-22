@@ -349,10 +349,9 @@ pub async fn logs_stop(state: State<'_, Shared>) -> R<()> {
 }
 
 #[tauri::command]
-pub async fn mount_ddi(app: AppHandle, udid: String) -> R<()> {
+pub async fn mount_ddi(app: AppHandle, udid: String) -> R<device::ddi::Given> {
     let phone = setup::pick_phone(Some(&udid)).await?;
-    device::ddi::mount(&phone, &reporter(&app, "ddi")).await?;
-    Ok(())
+    Ok(device::ddi::mount_and_give_poki(&phone, &reporter(&app, "ddi")).await?)
 }
 
 #[tauri::command]
