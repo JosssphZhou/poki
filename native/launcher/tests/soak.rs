@@ -1,7 +1,7 @@
 //! The supervisor against a phone that misbehaves at the pairing port: it answers nothing, hangs
 //! up at once, or flaps. The supervisor must keep trying with bounded backoff, never wedge, react to
 //! restart at once, and go idle on stop even while an attempt is stuck. Each peer listens on
-//! an OS-assigned port on localhost. Tests take turns configuring the launcher’s process-wide port.
+//! an OS-assigned port on localhost. Each scenario owns its process-wide port in a separate process.
 
 use idevice::remote_pairing::RpPairingFile;
 use poki_launcher::{Config, Launcher, poki_set_remote_pairing_port};
@@ -10,27 +10,39 @@ use std::{
     io::Write,
     net::TcpListener,
     path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard},
+    process::Command,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
-static PORT_LOCK: Mutex<()> = Mutex::new(());
-
-struct TestPort {
-    _guard: MutexGuard<'static, ()>,
-}
-
-impl Drop for TestPort {
-    fn drop(&mut self) {
-        poki_set_remote_pairing_port(0);
+// The supervisor and peer threads can outlive a test function, including on panic.
+// Exiting the child keeps their retries and cleanup isolated from every other listener.
+fn in_scenario_process(name: &str) -> bool {
+    const SCENARIO: &str = "POKI_LAUNCHER_SOAK_CHILD";
+    if std::env::var(SCENARIO).as_deref() == Ok(name) {
+        return true;
     }
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture"])
+        .env(SCENARIO, name)
+        .output()
+        .expect("start isolated soak scenario");
+    assert!(
+        output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+        "soak scenario {name}: {}
+{}
+{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    false
 }
 
-fn loopback_listener() -> (TestPort, TcpListener) {
-    let guard = PORT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+fn loopback_listener() -> TcpListener {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     poki_set_remote_pairing_port(listener.local_addr().unwrap().port());
-    (TestPort { _guard: guard }, listener)
+    listener
 }
 
 fn pairing_file(name: &str) -> PathBuf {
@@ -91,7 +103,10 @@ fn rude_peer(listener: TcpListener) {
 
 #[test]
 fn stop_goes_idle_at_once_even_while_an_attempt_hangs() {
-    let (_port, listener) = loopback_listener();
+    if !in_scenario_process("stop_goes_idle_at_once_even_while_an_attempt_hangs") {
+        return;
+    }
+    let listener = loopback_listener();
     let held = silent_peer(listener);
     let (launcher, events) = launcher("silent");
     launcher.clone().start();
@@ -111,7 +126,10 @@ fn stop_goes_idle_at_once_even_while_an_attempt_hangs() {
 
 #[test]
 fn a_silent_phone_times_out_and_is_tried_again() {
-    let (_port, listener) = loopback_listener();
+    if !in_scenario_process("a_silent_phone_times_out_and_is_tried_again") {
+        return;
+    }
+    let listener = loopback_listener();
     let _held = silent_peer(listener);
     let (launcher, events) = launcher("slow");
     launcher.clone().start();
@@ -125,7 +143,10 @@ fn a_silent_phone_times_out_and_is_tried_again() {
 
 #[test]
 fn a_rude_phone_backs_off_and_restart_cuts_the_wait_short() {
-    let (_port, listener) = loopback_listener();
+    if !in_scenario_process("a_rude_phone_backs_off_and_restart_cuts_the_wait_short") {
+        return;
+    }
+    let listener = loopback_listener();
     rude_peer(listener);
     let (launcher, events) = launcher("rude");
     launcher.clone().start();
