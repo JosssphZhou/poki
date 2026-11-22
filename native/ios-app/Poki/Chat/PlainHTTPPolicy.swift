@@ -62,6 +62,20 @@ enum PlainHTTPPolicy {
             || (host.count > ".local".count && host.hasSuffix(".local"))
     }
 
+    static func isPlainHTTP(_ address: String) -> Bool {
+        address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("http://")
+    }
+
+    /// Rejects empty bracket hosts (`http://[]`) and out-of-range ports (`0`, `> 65535`) that
+    /// `URLComponents` accepts alongside `ModelCatalog.customRequest`.
+    static func hasValidHostAndPort(_ address: String) -> Bool {
+        let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parts = URLComponents(string: text),
+              let host = parts.host, !host.isEmpty, host != "[]" else { return false }
+        if let port = parts.port, !(1...65535).contains(port) { return false }
+        return true
+    }
+
     static func appTransportSecurity() -> [String: Any]? {
         Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any]
     }

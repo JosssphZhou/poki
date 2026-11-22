@@ -54,6 +54,7 @@ enum HistoryNames {
         case .task: "Waiting for an Agent's Task"
         case .noConnection: "No Local Connection"
         case .notPaired: "Not Paired"
+        case .paused: "Paused, Waiting to Resume"
         }
     }
 
@@ -116,8 +117,95 @@ struct HistoryPage: View {
 
 // MARK: Settings
 
-/// Everything that sets Backtape up, on a page of its own: the switch, pause, access times, apps,
-/// how long tape is kept, the reminder, the lock and the record.
+struct ScreenHistorySettingsView: View {
+    @ObservedObject private var capture = HistoryCapture.shared
+    @ObservedObject private var lock = HistoryLock.shared
+    @State private var size: (entries: Int, bytes: Int64) = (0, 0)
+    @State private var clearing = false
+
+    private var permissionsValue: String? {
+        if capture.listMode == .include {
+            return AppLocalization.text(LocalizedStringResource("Include Only These Apps"))
+        }
+        let count = capture.excluded.filter { !HistoryCapture.isPoki($0) }.count
+        return count > 0 ? "\(count)" : nil
+    }
+
+    private var recordingStatus: LocalizedStringKey {
+        if !capture.enabled { return "Off" }
+        return capture.status == .reading ? "Recording" : "Paused, Waiting to Resume"
+    }
+
+    var body: some View {
+        List {
+            Section {
+                Toggle(isOn: $capture.enabled) {
+                    SettingsRow(title: "Screen History", symbol: "rectangle.stack")
+                }
+                .accessibilityIdentifier("screenHistory.enabled")
+                SettingsRow(title: "Status", caption: recordingStatus, symbol: "dot.radiowaves.left.and.right")
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("screenHistory.status")
+            } footer: {
+                Text("While on, Poki records screen text whenever iOS lets it run. It pauses when the iPhone locks or iOS suspends Poki, and resumes when Poki can run again. Text is stored on this iPhone, excluding apps you leave out and password fields. When Poki or a connected agent queries history, relevant text may be sent to the selected AI provider or connected agent.")
+            }
+
+            Section {
+                NavigationLink {
+                    HistoryPage().settingsPage()
+                } label: {
+                    SettingsRow(
+                        title: "View History",
+                        symbol: "clock.arrow.circlepath",
+                        value: size.entries > 0 ? "\(size.entries)" : nil
+                    )
+                }
+                .accessibilityIdentifier("screenHistory.records")
+
+                NavigationLink {
+                    if lock.needsSetup {
+                        HistoryPermissionsPage().settingsPage()
+                    } else {
+                        HistoryGate { HistoryPermissionsPage().settingsPage() }
+                    }
+                } label: {
+                    SettingsRow(
+                        title: "Excluded Apps",
+                        symbol: "eye.slash",
+                        value: permissionsValue
+                    )
+                }
+                .accessibilityIdentifier("screenHistory.excludedApps")
+            }
+
+            Section {
+                Button("Clear History", role: .destructive) {
+                    clearing = true
+                }
+                .accessibilityIdentifier("screenHistory.clear")
+            } footer: {
+                if size.entries > 0 {
+                    Text(verbatim: String(
+                        format: AppLocalization.text("Storage used: %@"),
+                        ByteCountFormatter.string(fromByteCount: size.bytes, countStyle: .file)
+                    ))
+                }
+            }
+        }
+        .navigationTitle(AppLocalization.text("Screen History"))
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: capture.changes) { size = await HistoryStore.shared.size() }
+        .confirmationDialog("Clear History", isPresented: $clearing, titleVisibility: .visible) {
+            Button("Last 10 Minutes", role: .destructive) { Task { await capture.clear(last: 600) } }
+            Button("Last Hour", role: .destructive) { Task { await capture.clear(last: 3600) } }
+            Button("Last Day", role: .destructive) { Task { await capture.clear(last: 86_400) } }
+            Button("Everything", role: .destructive) { Task { await capture.clearEverything() } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+}
+
+/// App exclusions, retention, the reminder, the lock and the observing record.
 struct BacktapeSettingsPage: View {
     @ObservedObject private var capture = HistoryCapture.shared
     @State private var size: (entries: Int, bytes: Int64) = (0, 0)
@@ -288,41 +376,5 @@ private struct HistoryRecordPage: View {
         .navigationTitle(AppLocalization.text("Observing Record"))
         .navigationBarTitleDisplayMode(.inline)
         .task { records = await HistoryStore.shared.records() }
-    }
-}
-
-// MARK: Testing Options
-
-/// General › Testing Options › Screen History: the only place a read starts.
-struct HistoryTestingSection: View {
-    @ObservedObject var capture = HistoryCapture.shared
-    @Environment(AppModel.self) private var model
-    @State private var minutes = HistoryCapture.runMinutes[0]
-
-    var body: some View {
-        Section {
-            NavigationLink { HistoryPage().settingsPage() } label: { Text("Open Screen History") }
-            LabeledContent("Status") {
-                if let ends = capture.ends, capture.isRunning {
-                    Text(timerInterval: Date()...max(Date(), ends), countsDown: true).monospacedDigit()
-                } else {
-                    Text(LocalizedStringKey(HistoryNames.status(capture.status)))
-                }
-            }
-            Button("Read in 10 Seconds") { capture.start(model: model) }
-                .disabled(capture.isRunning)
-            Picker("Short Run", selection: $minutes) {
-                ForEach(HistoryCapture.runMinutes, id: \.self) { Text("\($0) min").tag($0) }
-            }
-            .disabled(capture.isRunning)
-            Button("Start Short Run") { capture.start(minutes: minutes, model: model) }
-                .disabled(capture.isRunning)
-            Button("Stop", role: .destructive) { capture.stop() }
-                .disabled(!capture.isRunning)
-        } header: {
-            Text("Screen History")
-        } footer: {
-            Text("An experiment. Poki reads the text of the app in front only after you start here, and keeps it on this iPhone. Leave Poki after starting. A run ends when its time is up, when the iPhone locks, or when iOS ends Poki's time in the background. Password fields are left out, and nothing is sent anywhere.")
-        }
     }
 }

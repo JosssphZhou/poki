@@ -74,6 +74,24 @@ final class PlainHTTPPolicyTests: XCTestCase {
         XCTAssertFalse(PlainHTTPPolicy.isAllowed("http://127.0.0.1:8765/v1", ats: off))
     }
 
+    func testPlainHTTPDetectionAndHostPortBounds() {
+        XCTAssertTrue(PlainHTTPPolicy.isPlainHTTP("http://203.0.113.9:3425/v1"))
+        XCTAssertTrue(PlainHTTPPolicy.isPlainHTTP("  HTTP://example.com/v1\n"))
+        XCTAssertTrue(PlainHTTPPolicy.isPlainHTTP("http://"))
+        XCTAssertFalse(PlainHTTPPolicy.isPlainHTTP("https://example.com/v1"))
+        XCTAssertFalse(PlainHTTPPolicy.isPlainHTTP("httpx://example.com/v1"))
+        XCTAssertFalse(PlainHTTPPolicy.isPlainHTTP(""))
+
+        XCTAssertTrue(PlainHTTPPolicy.hasValidHostAndPort("http://203.0.113.9:3425/v1"))
+        XCTAssertTrue(PlainHTTPPolicy.hasValidHostAndPort("https://gateway.example.com/v1/"))
+        XCTAssertTrue(PlainHTTPPolicy.hasValidHostAndPort("http://[2001:db8:12::34]:65535/v1"))
+        XCTAssertFalse(PlainHTTPPolicy.hasValidHostAndPort("http://[]"))
+        XCTAssertFalse(PlainHTTPPolicy.hasValidHostAndPort("http://[]:3425/v1"))
+        XCTAssertFalse(PlainHTTPPolicy.hasValidHostAndPort("http://example.com:0/v1"))
+        XCTAssertFalse(PlainHTTPPolicy.hasValidHostAndPort("http://example.com:65536/v1"))
+        XCTAssertFalse(PlainHTTPPolicy.hasValidHostAndPort("http://"))
+    }
+
     func testHTTPSAlwaysAllowed() {
         let plain: [String: Any] = ["NSAllowsLocalNetworking": true]
         XCTAssertTrue(PlainHTTPPolicy.isAllowed("https://api.openai.com/v1/models", ats: plain))

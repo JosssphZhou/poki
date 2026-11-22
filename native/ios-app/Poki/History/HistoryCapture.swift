@@ -1,24 +1,76 @@
 import Foundation
+import Observation
+import PokiCore
 import SwiftUI
 import UIKit
 import notify
 
-/// iPhone History's capture and its privacy controls (issue 356), as an experiment.
-///
-/// Nothing is read until the owner asks in Testing Options: one read 10 seconds later, or a short
-/// run of a few minutes. The launcher then reads the app in front as text through the accessibility
-/// service over the loopback, with no automation session. A run ends when its time is up, when the
-/// iPhone locks or the screen goes dark, when an agent's task opens a session, or when iOS ends
-/// Poki's background time. No audio plays to keep Poki awake. A read that passes the app list goes
-/// to `HistoryStore`. Nothing leaves the phone.
+/// A process-local lease for screen text already fetched by asynchronous agent queries.
+/// Revoking a lease does not try to undo an answer already delivered to the caller.
+private final class HistoryQueryPermissionLease: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+    private var deletions = 0
+    private var enabled = HistoryCapture.isEnabled
+    private var unlocked = false
+
+    var revision: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    /// Read the complete grant under the same lock as its revision.
+    var grant: UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        return enabled && unlocked && deletions == 0 ? value : nil
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        lock.lock()
+        self.enabled = enabled
+        value &+= 1
+        lock.unlock()
+    }
+
+    func setUnlocked(_ unlocked: Bool) {
+        lock.lock()
+        self.unlocked = unlocked
+        value &+= 1
+        lock.unlock()
+    }
+
+    func revoke() {
+        lock.lock()
+        value &+= 1
+        lock.unlock()
+    }
+
+    func beginDeletion() {
+        lock.lock()
+        value &+= 1
+        deletions += 1
+        lock.unlock()
+    }
+
+    func endDeletion() {
+        lock.lock()
+        deletions = max(0, deletions - 1)
+        value &+= 1
+        lock.unlock()
+    }
+}
+
+/// Reads the front app through the accessibility service over the local connection.
+/// Only reads allowed by the owner's app list are stored.
 @MainActor
 final class HistoryCapture: ObservableObject {
     static let shared = HistoryCapture()
 
-    /// What the short run is doing, or why the last one ended or did not start, as Testing Options
-    /// and the observing record say it.
+    /// Includes the values written by earlier versions so their observing records still display.
     enum Status: String {
-        case off, waiting, reading, finished, stopped, locked, task, noConnection, notPaired
+        case off, waiting, reading, finished, stopped, locked, task, noConnection, notPaired, paused
     }
 
     enum ListMode: String, CaseIterable, Identifiable {
@@ -28,9 +80,54 @@ final class HistoryCapture: ObservableObject {
 
     // MARK: Settings (kept in UserDefaults)
 
-    @Published var listMode: ListMode { didSet { save(listMode.rawValue, "history.listMode") } }
-    @Published var excluded: [String] { didSet { save(excluded, "history.excluded") } }
-    @Published var included: [String] { didSet { save(included, "history.included") } }
+    nonisolated static let enabledKey = "history.recordingEnabled"
+    nonisolated static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+    nonisolated private static let queryLease = HistoryQueryPermissionLease()
+    nonisolated static var accessRevision: UInt64 { queryLease.revision }
+    nonisolated static var agentQueryRevision: UInt64? {
+        guard isEnabled else { return nil }
+        return queryLease.grant
+    }
+    nonisolated static var agentQueryAllowed: Bool { agentQueryRevision != nil }
+    nonisolated static var agentQueryUnavailableMessage: String {
+        guard isEnabled else { return PokiCore.screenHistoryOffMessage }
+        return "Screen History is locked or temporarily unavailable. Unlock it in Poki before querying."
+    }
+
+    /// HistoryLock owns authentication; publish its decision to the synchronous agent gate.
+    nonisolated static func setAgentHistoryUnlocked(_ unlocked: Bool) {
+        queryLease.setUnlocked(unlocked)
+    }
+
+    nonisolated static func validateAgentAnswer(_ answer: PokiCore.ToolAnswer, revision: UInt64?) -> PokiCore.ToolAnswer {
+        guard !answer.isError else { return answer }
+        guard let revision, agentQueryRevision == revision else {
+            return PokiCore.ToolAnswer(text: PokiCore.screenHistoryRevokedMessage, jpeg: nil, isError: true)
+        }
+        return answer
+    }
+
+    @Published var enabled: Bool {
+        didSet {
+            guard oldValue != enabled else { return }
+            Self.queryLease.setEnabled(enabled)
+            save(enabled, Self.enabledKey)
+            if enabled {
+                reconcile()
+            } else {
+                pause(.stopped)
+            }
+        }
+    }
+    @Published var listMode: ListMode {
+        didSet { Self.queryLease.revoke(); save(listMode.rawValue, "history.listMode") }
+    }
+    @Published var excluded: [String] {
+        didSet { Self.queryLease.revoke(); save(excluded, "history.excluded") }
+    }
+    @Published var included: [String] {
+        didSet { Self.queryLease.revoke(); save(included, "history.included") }
+    }
     @Published var retentionDays: Int { didSet { save(retentionDays, "history.retentionDays"); prune() } }
     /// How long the hour, day and week summaries outlive the tape, in days. 0 is as long as the tape.
     @Published var summaryDays: Int { didSet { save(summaryDays, "history.summaryDays"); prune() } }
@@ -45,24 +142,19 @@ final class HistoryCapture: ObservableObject {
     // MARK: State
 
     @Published private(set) var status: Status = .off
-    /// When the run in progress ends.
-    @Published private(set) var ends: Date?
     /// Bumped when a read is kept or history is deleted, so an open panel reloads.
     @Published private(set) var changes = 0
     @Published private(set) var lastKept: Date?
 
-    var isRunning: Bool { status == .waiting || status == .reading }
+    var isRunning: Bool { captureTask?.isCancelled == false }
 
-    /// The short runs Testing Options offers, in minutes.
-    static let runMinutes = [3, 5]
-    /// The wait before a single read, time to leave Poki and put another app in front.
-    static let waitSeconds = 10
-    /// Seconds between two reads of a run.
-    static let interval = 5
+    private static let interval = 5
 
-    /// The run in progress. Ending a run moves it on, so a late answer from an older one is ignored.
+    private weak var model: AppModel?
+    private var captureTask: Task<Void, Never>?
+    private var needsActivation = true
+    /// A callback from an earlier native run must never supply text to a new one.
     private var run = 0
-    private var once = false
     private var background: UIBackgroundTaskIdentifier = .invalid
     private var lockToken: Int32 = NOTIFY_TOKEN_INVALID
     private var screenToken: Int32 = NOTIFY_TOKEN_INVALID
@@ -77,6 +169,13 @@ final class HistoryCapture: ObservableObject {
 
     init() {
         let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.enabledKey) == nil,
+           let legacyEnabled = defaults.object(forKey: "history.enabled") as? Bool {
+            defaults.set(legacyEnabled, forKey: Self.enabledKey)
+            // HistoryLock can initialize the query lease before capture starts.
+            Self.queryLease.setEnabled(legacyEnabled)
+        }
+        enabled = defaults.bool(forKey: Self.enabledKey)
         listMode = ListMode(rawValue: defaults.string(forKey: "history.listMode") ?? "") ?? .exclude
         // Poki's own screens and the suggested apps are left out from the start.
         excluded = defaults.stringArray(forKey: "history.excluded") ?? [Bundle.main.bundleIdentifier ?? "nz.zheha.poki"] + Self.suggested
@@ -95,7 +194,7 @@ final class HistoryCapture: ObservableObject {
     ]
 
     /// Poki's own screens are never kept, whatever the lists say.
-    static func isPoki(_ app: String) -> Bool {
+    nonisolated static func isPoki(_ app: String) -> Bool {
         app.caseInsensitiveCompare(Bundle.main.bundleIdentifier ?? "nz.zheha.poki") == .orderedSame || app.caseInsensitiveCompare("Poki") == .orderedSame
     }
 
@@ -129,13 +228,12 @@ final class HistoryCapture: ObservableObject {
         excluded.append(app)
     }
 
-    /// Why a read cannot happen now, or nil when it can.
-    private func refusal(_ model: AppModel) -> Status? {
-        if lockedOrDark { return .locked }
-        // Reading stays out of the way of an agent's task.
+    private func unavailable(_ model: AppModel) -> Status? {
         if model.hasOpenInProcessSession { return .task }
+        #if !targetEnvironment(simulator)
         if model.pairingPath == nil { return .notPaired }
         if !model.loopback.isWorking { return .noConnection }
+        #endif
         return nil
     }
 
@@ -145,87 +243,127 @@ final class HistoryCapture: ObservableObject {
         HistoryStore.shared.note(next.rawValue)
     }
 
-    // MARK: Short runs
+    func monitor(model: AppModel) {
+        self.model = model
+        observeAvailability(model)
+    }
 
-    /// Reads once after `waitSeconds`, or every `interval` seconds for `minutes`.
-    func start(minutes: Int? = nil, model: AppModel) {
-        guard !isRunning else { return }
-        watchLock()
-        if let refused = refusal(model) { set(refused); return }
+    private func observeAvailability(_ model: AppModel) {
+        withObservationTracking {
+            _ = unavailable(model)
+        } onChange: { [weak self, weak model] in
+            Task { @MainActor in
+                guard let self, let model else { return }
+                self.observeAvailability(model)
+                self.reconcile()
+            }
+        }
+    }
+
+    func appDidBecomeActive() {
+        needsActivation = false
+        reconcile()
+    }
+
+    private func reconcile() {
+        guard enabled, !needsActivation, let model else { return }
+        if lockedOrDark { pause(.locked); return }
+        if let reason = unavailable(model) { pause(reason); return }
+        guard captureTask == nil else { return }
         run += 1
         let me = run
-        once = minutes == nil
-        prune()
         background = UIApplication.shared.beginBackgroundTask(withName: "poki-screen-history") { [weak self] in
-            Task { @MainActor in
-                AppLog.shared.add("history", "iOS ended the background time")
-                self?.end(me, .stopped)
+            guard let self, self.run == me else { return }
+            AppLog.shared.add("history", "iOS ended the background time")
+            self.waitForActivation()
+        }
+        guard background != .invalid else { waitForActivation(); return }
+        HistoryLock.shared.readStarting()
+        prune()
+        set(.waiting)
+        captureTask = Task {
+            if !Task.isCancelled { await collect(run: me, model: model) }
+            captureTask = nil
+            if Task.isCancelled {
+                reconcile()
+            } else {
+                waitForActivation()
             }
         }
-        let wait = once ? Self.waitSeconds : 0
-        set(once ? .waiting : .reading)
-        ends = Date().addingTimeInterval(Double(wait + (minutes ?? 0) * 60))
+    }
+
+    private func collect(run me: Int, model: AppModel) async {
+        #if targetEnvironment(simulator)
+        await runOnSimulator(model: model)
+        #else
+        guard let pairing = model.pairingPath else { return }
         let screen = UIScreen.main.bounds
         let points = [0.5, 0.3, 0.7, 0.15].map { [Double(screen.midX), Double(screen.height) * $0] }
-        Task {
-            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
-            guard self.run == me else { return }
-            if let refused = self.refusal(model) { self.end(me, refused); return }
-            self.set(.reading)
-            // A single read runs for the launcher's shortest time and ends at the first kept read.
-            let request: [String: Any] = [
-                "op": "run", "device_address": "10.7.0.1", "pairing_file": model.pairingPath ?? "", "host_name": "Poki",
-                "direct_points": points, "interval_ms": Self.interval * 1000, "duration_s": max(10, (minutes ?? 0) * 60),
-                "include_text": true, "include_tree": true,
-            ]
-            do {
-                _ = try await HistoryBridge.call(request) { [weak self] line in
-                    Task { @MainActor in self?.took(line, run: me, model: model) }
-                }
-            } catch {
-                AppLog.shared.add("history", "capture stopped: \(error.localizedDescription)")
+        let request: [String: Any] = [
+            "op": "run", "device_address": "10.7.0.1", "pairing_file": pairing, "host_name": "Poki",
+            "direct_points": points, "interval_ms": Self.interval * 1000, "continuous": true,
+            "include_text": true, "include_tree": true,
+        ]
+        do {
+            _ = try await HistoryBridge.call(request) { [weak self] line in
+                Task { @MainActor [weak self] in self?.took(line, run: me, model: model) }
             }
-            self.end(me, .finished)
+        } catch {
+            AppLog.shared.add("history", "capture stopped: \(error.localizedDescription)")
         }
+        #endif
     }
 
-    func stop() {
-        end(run, .stopped)
+    private func waitForActivation() {
+        needsActivation = true
+        pause(.paused)
     }
 
-    /// Ends run `me`, if it is still the one in progress.
-    private func end(_ me: Int, _ why: Status) {
-        guard me == run, isRunning else { return }
-        run += 1
-        HistoryBridge.cancel()
-        set(why)
-        ends = nil
+    private func pause(_ reason: Status) {
+        if let captureTask, !captureTask.isCancelled {
+            captureTask.cancel()
+            HistoryBridge.cancel()
+        }
+        set(reason)
         if background != .invalid {
             UIApplication.shared.endBackgroundTask(background)
             background = .invalid
         }
-        // The file is closed when the phone locks, so iOS's file protection holds.
-        if why == .locked { HistoryStore.shared.close() }
     }
 
-    private func watchLock() {
-        guard lockToken == NOTIFY_TOKEN_INVALID else { return }
+    /// Monitor device lock independently of a recording run. The observer lives for the
+    /// application lifetime; a locked phone must revoke reads even when capture is idle.
+    func watchLock() {
         let changed: @Sendable (Int32) -> Void = { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.lockedOrDark else { return }
-                self.end(self.run, .locked)
+            // notify_register_dispatch delivers on DispatchQueue.main.
+            MainActor.assumeIsolated {
+                self?.deviceLockChanged()
             }
         }
-        notify_register_dispatch("com.apple.springboard.lockstate", &lockToken, DispatchQueue.main, changed)
-        notify_register_dispatch("com.apple.springboard.hasBlankedScreen", &screenToken, DispatchQueue.main, changed)
+        if lockToken == NOTIFY_TOKEN_INVALID {
+            notify_register_dispatch("com.apple.springboard.lockstate", &lockToken, DispatchQueue.main, changed)
+        }
+        if screenToken == NOTIFY_TOKEN_INVALID {
+            notify_register_dispatch("com.apple.springboard.hasBlankedScreen", &screenToken, DispatchQueue.main, changed)
+        }
+        deviceLockChanged()
+    }
+
+    private func deviceLockChanged() {
+        guard lockedOrDark else { reconcile(); return }
+        HistoryLock.shared.lock()
+        if enabled { pause(.locked) }
+        HistoryStore.shared.close()
     }
 
     /// One read from the launcher. Only a screen whose text changed carries text.
     private func took(_ data: Data, run me: Int, model: AppModel) {
-        guard me == run, status == .reading, !lockedOrDark,
+        guard me == run, isRunning, !lockedOrDark,
               let line = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        if model.hasOpenInProcessSession { end(me, .task); return }
-        if keep(line), once { end(me, .finished) }
+        if let reason = unavailable(model) { pause(reason); return }
+        guard line["ok"] as? Bool == true else { set(.paused); return }
+        set(.reading)
+        keep(line)
     }
 
     /// Keeps a read of the launcher's when the app lists allow it. Returns whether it was kept.
@@ -250,6 +388,8 @@ final class HistoryCapture: ObservableObject {
     // MARK: Deleting
 
     func clear(last seconds: TimeInterval) async {
+        Self.queryLease.beginDeletion()
+        defer { Self.queryLease.endDeletion() }
         BacktapeNotes.shared.reset()
         await HistoryStore.shared.delete(from: Date().addingTimeInterval(-seconds), to: Date().addingTimeInterval(60))
         HistoryStore.shared.note("cleared", "\(Int(seconds))")
@@ -257,14 +397,112 @@ final class HistoryCapture: ObservableObject {
     }
 
     func clearEverything() async {
+        Self.queryLease.beginDeletion()
+        defer { Self.queryLease.endDeletion() }
         BacktapeNotes.shared.reset()
         await HistoryStore.shared.deleteEverything()
         changes += 1
     }
 
     func delete(from start: Date, to end: Date) async {
+        Self.queryLease.beginDeletion()
+        defer { Self.queryLease.endDeletion() }
         BacktapeNotes.shared.reset()
         await HistoryStore.shared.delete(from: start, to: end)
         changes += 1
     }
+
+    #if targetEnvironment(simulator)
+    private static let simulatorQueue = DispatchQueue(label: "nz.zheha.poki.history-simulator", qos: .utility)
+
+    private func runOnSimulator(model: AppModel) async {
+        var lastApp = ""
+        var lastLines: [String] = []
+        defer {
+            Self.simulatorQueue.async { _ = PKInProcess.shared().close() }
+        }
+        while !Task.isCancelled {
+            if let reason = unavailable(model) { pause(reason); return }
+            let snapshot: (app: String, title: String, lines: [String])? = await withCheckedContinuation { done in
+                Self.simulatorQueue.async {
+                    let probe = PKInProcess.shared()
+                    let ready = (probe.prepare()["ok"] as? Bool) == true
+                    guard ready else { done.resume(returning: nil); return }
+                    let front = probe.frontApp()
+                    let app = (front["bundleId"] as? String) ?? ""
+                    guard !app.isEmpty else { done.resume(returning: nil); return }
+                    if Self.isPoki(app) { done.resume(returning: (app, "", [])); return }
+                    guard let xml = probe.sourceXML(nil, maxDepth: 40, maxChildren: 400, code: nil) else {
+                        done.resume(returning: nil)
+                        return
+                    }
+                    let parsed = SimulatorScreenXML.parse(xml)
+                    done.resume(returning: (app, parsed.title, parsed.lines))
+                }
+            }
+            guard !Task.isCancelled, !lockedOrDark else { return }
+            if let reason = unavailable(model) { pause(reason); return }
+            set(snapshot == nil ? .paused : .reading)
+            if let snapshot, snapshot.app != lastApp || snapshot.lines != lastLines {
+                lastApp = snapshot.app
+                lastLines = snapshot.lines
+                keep([
+                    "ok": true,
+                    "app": snapshot.app,
+                    "title": snapshot.title,
+                    "text": snapshot.lines,
+                ])
+            }
+            try? await Task.sleep(for: .seconds(Self.interval))
+        }
+    }
+    #endif
 }
+
+#if targetEnvironment(simulator)
+private final class SimulatorScreenXML: NSObject, XMLParserDelegate {
+    private var skipDepth = 0
+    private var title = ""
+    private var lines: [String] = []
+    private static let secretTerms = [
+        "password", "passcode", "verification code", "one-time code",
+        "密码", "密碼", "验证码", "驗證碼",
+    ]
+
+    static func parse(_ xml: String) -> (title: String, lines: [String]) {
+        let reader = SimulatorScreenXML()
+        let parser = XMLParser(data: Data(xml.utf8))
+        parser.delegate = reader
+        _ = parser.parse()
+        return (reader.title, reader.lines)
+    }
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String: String] = [:]) {
+        if skipDepth > 0 {
+            skipDepth += 1
+            return
+        }
+        let type = attributes["type"] ?? elementName
+        if type == "XCUIElementTypeKeyboard" || type == "XCUIElementTypeKey" || type == "XCUIElementTypeSecureTextField" {
+            skipDepth = 1
+            return
+        }
+        if type == "XCUIElementTypeApplication" { return }
+        let label = (attributes["label"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = (attributes["name"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = (attributes["value"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let descriptor = "\(name) \(label)".lowercased()
+        let isSecret = !value.isEmpty && Self.secretTerms.contains { descriptor.contains($0) }
+        if type == "XCUIElementTypeNavigationBar", title.isEmpty, !label.isEmpty {
+            title = label
+        }
+        for piece in isSecret ? [label] : [label, value] where !piece.isEmpty && lines.last != piece {
+            lines.append(piece)
+        }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        if skipDepth > 0 { skipDepth -= 1 }
+    }
+}
+#endif

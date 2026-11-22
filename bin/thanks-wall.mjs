@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const repo = 'JosssphZhou/poki';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const readmes = ['README.md', 'README.zh-CN.md', 'README.zh-TW.md', 'README.ja.md', 'README.ko.md', 'README.es.md'];
+const files = ['CONTRIBUTING.md'];
 const start = '<!-- THANKS-WALL:START -->';
 const end = '<!-- THANKS-WALL:END -->';
 const perLine = 5;
@@ -24,10 +24,10 @@ const curated = JSON.parse(readFileSync(join(root, 'scripts/contributors.curated
 const listed = new Set(Object.entries(curated).filter(([, entry]) => ['counted', 'community'].includes(entry.status)).map(([login]) => login));
 
 const usage = `Usage: node bin/thanks-wall.mjs [--check | --print]
-Rebuild the README thanks wall from the people counted or marked community in scripts/contributors.curated.json,
+Rebuild the thanks wall in CONTRIBUTING.md from the people counted or marked community in scripts/contributors.curated.json,
 with avatars from the issues and pull requests on ${repo}.
-  (no flag)  rewrite the list between the THANKS-WALL markers in all six READMEs
-  --check    exit 1 if any README list is out of date
+  (no flag)  rewrite the list between the THANKS-WALL markers in CONTRIBUTING.md
+  --check    exit 1 if the list is out of date
   --print    print the generated list without touching files
 Requires an authenticated GitHub CLI (gh).`;
 
@@ -44,6 +44,13 @@ function people() {
     const user = item.user;
     if (!user || user.type === 'Bot' || user.login.endsWith('[bot]') || user.login === owner || !listed.has(user.login)) continue;
     byLogin.set(user.login, { login: user.login, display: curated[user.login].display ?? user.login, profile: user.html_url, avatar: user.avatar_url });
+  }
+  // Counted for work that leaves no trace in the repository (for example promotion on social media): take them from their profile.
+  for (const login of [...listed].filter(login => !byLogin.has(login))) {
+    const user = spawnSync('gh', ['api', `users/${login}`], { encoding: 'utf8' });
+    if (user.status !== 0) continue;
+    const profile = JSON.parse(user.stdout);
+    if (profile.login === login) byLogin.set(login, { login, display: curated[login].display ?? login, profile: profile.html_url, avatar: profile.avatar_url });
   }
   const missing = [...listed].filter(login => !byLogin.has(login));
   if (missing.length) throw new Error(`No issue or pull request found for: ${missing.join(', ')}`);
@@ -109,7 +116,7 @@ try {
     process.exit(0);
   }
   const stale = [];
-  for (const file of readmes) {
+  for (const file of files) {
     const path = join(root, file);
     const before = readFileSync(path, 'utf8');
     const after = inject(before, block, file);

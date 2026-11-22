@@ -26,7 +26,14 @@ pub const ROUTING_INFO: &str = "17106176";
 /// report, with -23782 ("A Mac with macOS version 10.13 or later is required"); akd on macOS 27 is
 /// accepted. `None` goes back to the server's values once servers report ones Apple accepts.
 pub const CLIENT_INFO_OVERRIDE: Option<(&str, &str)> =
-    Some(("<Mac15,7> <macOS;27.0;26A5378j> <com.apple.AuthKit/1 (com.apple.akd/1.0)>", "akd/1.0 CFNetwork/811.5.4"));
+    Some(("<Mac15,7> <Mac OS X;27.0;26A5378j> <com.apple.AuthKit/1 (com.apple.akd/1.0)>", "akd/1.0 CFNetwork/811.5.4"));
+
+/// The OS label GSA's edge accepts in `X-MMe-Client-Info`. Since November 2026 Apple answers a
+/// GrandSlam request whose client info names its OS `macOS;` with a 190-byte HTML 503 from
+/// `Server: Apple`, before any credential is read; the same model, version and build written
+/// `Mac OS X;` reaches the service. macOS itself (AKDevice) writes `macOS;`, so every source is
+/// passed through here, not only the override.
+pub fn edge_client_info(client_info: &str) -> String { client_info.replacen("<macOS;", "<Mac OS X;", 1) }
 
 /// One set of headers, good for about a minute.
 #[derive(Debug, Clone)]
@@ -117,8 +124,62 @@ impl Provider {
 
     pub fn source(&self) -> &Source { &self.source }
 
+    /// Pins this provider to `source` without discarding an already-connected remote client for the
+    /// same URL, so finishing a 2FA check stays on the exact "Mac" identity that asked for the code.
+    pub fn pin_source(&mut self, source: Source) {
+        if self.source != source {
+            self.source = source;
+            self.remote = None;
+            self.last = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(source: Source, headers: Headers) -> Self {
+        Provider { source, remote: None, last: Some(headers), fallbacks: Vec::new() }
+    }
+
+    /// Headers for finishing an in-flight 2FA sign-in: never rotates to another fallback server,
+    /// never switches from System to Remote, and never wipes `adi_pb` to provision a new identity.
+    pub async fn headers_pinned(&mut self) -> Result<Headers> {
+        #[cfg(test)]
+        if self.remote.is_none() && self.fallbacks.is_empty() {
+            if let Some(h) = &self.last {
+                return Ok(h.clone());
+            }
+        }
+        if let Some(h) = &self.last {
+            if h.fresh() {
+                return Ok(h.clone());
+            }
+        }
+        match &self.source {
+            Source::System => {
+                let map = system::headers()?;
+                let h = Headers { map: with_time(map), made_at: std::time::Instant::now() };
+                self.last = Some(h.clone());
+                Ok(h)
+            }
+            Source::Remote { url } => {
+                if self.remote.is_none() {
+                    self.remote = Some(remote::Client::new(url.clone()).await?);
+                }
+                let map = self.remote.as_mut().unwrap().headers_pinned().await?;
+                let h = Headers { map: with_time(map), made_at: std::time::Instant::now() };
+                self.last = Some(h.clone());
+                Ok(h)
+            }
+        }
+    }
+
     /// A fresh header set, provisioning the remote identity on first use.
     pub async fn headers(&mut self) -> Result<Headers> {
+        #[cfg(test)]
+        if self.remote.is_none() && self.fallbacks.is_empty() {
+            if let Some(h) = &self.last {
+                return Ok(h.clone());
+            }
+        }
         if let Some(h) = &self.last {
             if h.fresh() {
                 return Ok(h.clone());
@@ -302,6 +363,7 @@ pub mod remote {
             if let Some((client_info, user_agent)) = CLIENT_INFO_OVERRIDE {
                 info = ClientInfo { client_info: client_info.into(), user_agent: user_agent.into() };
             }
+            info.client_info = edge_client_info(&info.client_info);
             let state = State::load_or_new(&url)?.for_client(&info.client_info);
             Ok(Client { url, info, state, http })
         }
@@ -390,6 +452,13 @@ pub mod remote {
                 }
                 Err(e) => Err(e),
             }
+        }
+
+        pub async fn headers_pinned(&mut self) -> Result<HashMap<String, String>> {
+            if self.state.adi_pb.is_none() {
+                return Err(Error::msg("The saved machine identity for this sign-in is missing. Sign in again."));
+            }
+            self.fetch().await
         }
 
         async fn fetch(&self) -> Result<HashMap<String, String>> {
@@ -484,7 +553,7 @@ pub mod system {
                 let lu: Option<Retained<NSString>> = msg_send![&*device, localUserUUID];
                 if let Some(lu) = lu { map.insert("X-Apple-I-MD-LU".into(), lu.to_string()); }
                 let desc: Option<Retained<NSString>> = msg_send![&*device, serverFriendlyDescription];
-                if let Some(d) = desc { map.insert("X-Mme-Client-Info".into(), d.to_string()); }
+                if let Some(d) = desc { map.insert("X-Mme-Client-Info".into(), edge_client_info(&d.to_string())); }
                 let udid: Option<Retained<NSString>> = msg_send![&*device, uniqueDeviceIdentifier];
                 if let Some(u) = udid { map.insert("X-Mme-Device-Id".into(), u.to_string()); }
                 let locale: Option<Retained<AnyObject>> = msg_send![&*device, locale];
@@ -507,6 +576,18 @@ pub mod system {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_info_never_names_its_os_the_way_the_edge_refuses() {
+        let (client_info, _) = CLIENT_INFO_OVERRIDE.unwrap();
+        assert!(!client_info.contains("<macOS;"), "{client_info}");
+        assert_eq!(
+            edge_client_info("<Mac17,2> <macOS;26.3.1;25D2128> <com.apple.AuthKit/1 ((null)/1.0)>"),
+            "<Mac17,2> <Mac OS X;26.3.1;25D2128> <com.apple.AuthKit/1 ((null)/1.0)>"
+        );
+        let already = "<MacBookPro18,3> <Mac OS X;13.4.1;22F8> <com.apple.AuthKit/1 (com.apple.akd/1.0)>";
+        assert_eq!(edge_client_info(already), already);
+    }
 
     #[test]
     fn an_identity_provisioned_as_another_client_is_provisioned_again() {
