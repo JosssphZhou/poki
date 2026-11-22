@@ -2221,7 +2221,7 @@ final class AppModel {
     }
 
     /// Each request is answered by the owner on the Live Activity, or on a notification when there is none.
-    func askOwner(_ approval: PendingApproval) {
+    private func askOwner(_ approval: PendingApproval) {
         approvals.append(approval)
         log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
         let caller = currentCaller

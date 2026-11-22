@@ -132,31 +132,34 @@ final class LiveActivityTests: XCTestCase {
     }
 
     func testNewApprovalAndHandoffNotifyOwnerWhileCaptureHidesActivity() async throws {
-        try await withFinishWindow(dynamicIsland: true) {
-            let session = try await ensureRunningSession()
-            let app = session.app
+        _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.provisional])
+        try await withSessionApp { app, activities in
+            UserDefaults.standard.removeObject(forKey: ActivityController.capturePermissionKey)
+            app.startSession()
             await app.chatTaskBegan()
+            XCTAssertFalse(activities().isEmpty, "The test must hide an existing activity")
             let hidden = await app.hideLiveActivityForCapture(task: .chat(UUID()))
             XCTAssertFalse(hidden.isError)
-            XCTAssertTrue(session.activities().isEmpty)
-            try await movePokiToBackground(app)
+            XCTAssertTrue(activities().isEmpty)
+            // Model the lifecycle change without suspending the shared test process.
+            app.wentToBackground()
 
             let id = UUID().uuidString
             let noticeID = "approval-\(id)"
             clearNotice(AttentionNotice.id)
             defer { clearNotice(noticeID); clearNotice(AttentionNotice.id) }
-            let approval = PendingApproval(id: id, app: "Messages", summary: "Send a message", reason: "sending a message", expires: .now.addingTimeInterval(60))
-            app.askOwner(approval)
+            let approval = PendingApproval(id: id, app: "Messages", summary: "Send a message", reason: "sending a message (a tap in Messages)", expires: .now.addingTimeInterval(60))
+            app.handle(.approvalRequested(approval))
             let notice = try await waitForDeliveredNotice(noticeID)
             XCTAssertEqual(notice.request.content.userInfo["approval"] as? String, id)
-            XCTAssertTrue(session.activities().isEmpty)
+            XCTAssertTrue(activities().isEmpty)
             app.handle(.approvalEnded(id: id, approved: false))
 
             let handoffText = "Complete verification."
             app.handle(.handoffRequested(id: UUID().uuidString, kind: "verification", text: handoffText, app: nil))
             let handoff = try await waitForDeliveredNotice(AttentionNotice.id)
             XCTAssertEqual(handoff.request.content.body, handoffText)
-            XCTAssertTrue(session.activities().isEmpty)
+            XCTAssertTrue(activities().isEmpty)
         }
     }
 
