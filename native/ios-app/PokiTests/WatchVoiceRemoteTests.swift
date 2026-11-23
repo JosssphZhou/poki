@@ -9,21 +9,25 @@ private final class RemoteTestConnection: VoiceConnection, @unchecked Sendable {
     private let lock = NSLock()
     private var localAudioEnabledStorage = true
     private var closedStorage = false
+    private var connectCountStorage = 0
     private var connectErrorStorage: Error?
     private var remoteLevelStorage: Double = 0
 
     var localAudioEnabled: Bool { lock.withLock { localAudioEnabledStorage } }
     var closed: Bool { lock.withLock { closedStorage } }
+    var connectCount: Int { lock.withLock { connectCountStorage } }
 
     func setConnectError(_ error: Error?) { lock.withLock { connectErrorStorage = error } }
     func setRemoteLevel(_ level: Double) { lock.withLock { remoteLevelStorage = level } }
 
     @MainActor func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws {
         if let error = lock.withLock({ connectErrorStorage }) { throw error }
+        lock.withLock { connectCountStorage += 1 }
     }
 
     @MainActor func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws {
         if let error = lock.withLock({ connectErrorStorage }) { throw error }
+        lock.withLock { connectCountStorage += 1 }
     }
 
     func hasRemoteSpeech() async -> Bool { lock.withLock { remoteLevelStorage > 0.005 } }
@@ -156,6 +160,15 @@ final class WatchVoiceRemoteTests: XCTestCase {
             }
             host.startObserving()
         }
+
+        @MainActor
+        func waitForConnection(count: Int = 1) async {
+            let deadline = Date().addingTimeInterval(2)
+            while (connection.connectCount < count || connection.onEvent == nil), Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            await time.settle()
+        }
     }
 
     func testStartMuteUnmuteAndEndLifecycleWithExplicitMuteIdempotency() async throws {
@@ -168,7 +181,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         XCTAssertFalse(startReply.snapshot.isMuted)
         XCTAssertEqual(h.preparedCount, 1)
 
-        await h.time.settle()
+        await h.waitForConnection()
         h.connection.play(["type": "session.created"])
         await h.time.settle()
 
@@ -354,7 +367,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         let start = h.host.handle(WatchVoiceRemoteCommand(issuedAt: h.time.now, action: .start))
         XCTAssertEqual(start.outcome, .accepted)
         let callID = try XCTUnwrap(start.snapshot.callID)
-        await h.time.settle()
+        await h.waitForConnection()
         h.connection.play(["type": "session.started"])
         await h.time.settle()
 
@@ -440,7 +453,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         let h = Harness()
         let start = h.host.handle(WatchVoiceRemoteCommand(issuedAt: h.time.now, action: .start))
         XCTAssertEqual(start.outcome, .accepted)
-        await h.time.settle()
+        await h.waitForConnection()
         h.connection.play(["type": "session.created"])
         await h.time.settle()
 
@@ -476,7 +489,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         let start1 = h.host.handle(WatchVoiceRemoteCommand(issuedAt: h.time.now, action: .start))
         XCTAssertEqual(start1.outcome, .accepted)
         let callID1 = try XCTUnwrap(start1.snapshot.callID)
-        await h.time.settle()
+        await h.waitForConnection(count: 1)
         h.connection.play(["type": "session.created"])
         await h.time.settle()
 
@@ -497,7 +510,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         XCTAssertEqual(start2.outcome, .accepted)
         let callID2 = try XCTUnwrap(start2.snapshot.callID)
         XCTAssertNotEqual(callID1, callID2)
-        await h.time.settle()
+        await h.waitForConnection(count: 2)
         h.connection.play(["type": "session.created"])
         await h.time.settle()
 
@@ -658,7 +671,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         let start = h.host.handle(WatchVoiceRemoteCommand(issuedAt: h.time.now, action: .start))
         XCTAssertEqual(start.outcome, .accepted)
         let callID = try XCTUnwrap(start.snapshot.callID)
-        await h.time.settle()
+        await h.waitForConnection()
         h.connection.play(["type": "session.created"])
         await h.time.settle()
 
@@ -769,7 +782,7 @@ final class WatchVoiceRemoteTests: XCTestCase {
         )
         XCTAssertEqual(startReply.outcome, .accepted)
         let callID = try XCTUnwrap(startReply.snapshot.callID)
-        await h.time.settle()
+        await h.waitForConnection()
         h.connection.play(["type": "session.started"])
         await h.time.settle()
 

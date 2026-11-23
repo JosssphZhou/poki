@@ -634,10 +634,18 @@ final class WatchVoiceRemoteChannel {
         let data = encodeUpdate(update)
         guard !data.isEmpty else { return }
         if transport.isReachable { transport.sendMessageData(data) }
-        if update.phase.isTerminal {
+        if update.phase != .received {
             latestTaskContext = data
             syncApplicationContext()
         }
+    }
+
+    func publishTaskContext(_ update: WatchVoiceUpdate) {
+        guard transport.isActivated, transport.isWatchAppInstalled else { return }
+        let data = encodeUpdate(update)
+        guard !data.isEmpty else { return }
+        latestTaskContext = data
+        syncApplicationContext()
     }
 
     func storeRemoteResult(_ update: WatchVoiceUpdate) {

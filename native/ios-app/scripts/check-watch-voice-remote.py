@@ -115,7 +115,7 @@ def touch(session, x, y, hold_ms=80):
     assert json.loads(session.stdout.readline())["sent"], "Simulator input did not send"
 
 
-def swipe_up(session, x=0.5, y0=0.80, y1=0.22, steps=5):
+def swipe_up(session, x=0.5, y0=0.82, y1=0.18, steps=10):
     def event(phase, py):
         return {
             "messageType": "IndigoDigitizerEvent",
@@ -125,8 +125,8 @@ def swipe_up(session, x=0.5, y0=0.80, y1=0.22, steps=5):
     events = [event(0, y0)]
     for i in range(1, steps):
         py = y0 + (y1 - y0) * (i / steps)
-        events.extend([{"delay_ms": 25}, event(1, py)])
-    events.extend([{"delay_ms": 25}, event(2, y1)])
+        events.extend([{"delay_ms": 30}, event(1, py)])
+    events.extend([{"delay_ms": 30}, event(2, y1)])
     session.stdin.write(json.dumps({"events": events}) + "\n")
     session.stdin.flush()
     assert json.loads(session.stdout.readline())["sent"], "Simulator swipe did not send"
@@ -201,22 +201,29 @@ def tap_label(device, ocr_bin, session, match, timeout_s=15):
     return tap_in_lines(session, lines, width, height, match)
 
 
+def phone_defaults_domain(phone):
+    container = simctl("get_app_container", phone, PHONE_BUNDLE, "data").stdout.strip()
+    return str(Path(container) / "Library" / "Preferences" / f"{PHONE_BUNDLE}.plist")
+
+
 def configure_phone_defaults(phone, hold=None, long_result=False):
-    simctl("spawn", phone, "defaults", "write", PHONE_BUNDLE, "pokiFirstRun", "done")
-    simctl("spawn", phone, "defaults", "write", PHONE_BUNDLE, "pokiTalkRehearsal", "1")
+    domain = phone_defaults_domain(phone)
+    simctl("spawn", phone, "defaults", "write", domain, "pokiFirstRun", "done")
+    simctl("spawn", phone, "defaults", "write", domain, "pokiTalkRehearsal", "1")
     if hold is None:
-        simctl("spawn", phone, "defaults", "delete", PHONE_BUNDLE, "pokiTalkHold", check=False)
+        simctl("spawn", phone, "defaults", "delete", domain, "pokiTalkHold", check=False)
     else:
-        simctl("spawn", phone, "defaults", "write", PHONE_BUNDLE, "pokiTalkHold", hold)
+        simctl("spawn", phone, "defaults", "write", domain, "pokiTalkHold", hold)
     if long_result:
-        simctl("spawn", phone, "defaults", "write", PHONE_BUNDLE, "pokiTalkLongResult", "1")
+        simctl("spawn", phone, "defaults", "write", domain, "pokiTalkLongResult", "1")
     else:
-        simctl("spawn", phone, "defaults", "delete", PHONE_BUNDLE, "pokiTalkLongResult", check=False)
+        simctl("spawn", phone, "defaults", "delete", domain, "pokiTalkLongResult", check=False)
 
 
 def clear_phone_defaults(phone):
+    domain = phone_defaults_domain(phone)
     for key in ("pokiTalkRehearsal", "pokiTalkHold", "pokiTalkLongResult"):
-        simctl("spawn", phone, "defaults", "delete", PHONE_BUNDLE, key, check=False)
+        simctl("spawn", phone, "defaults", "delete", domain, key, check=False)
 
 
 def poki_log_path(phone):
@@ -622,14 +629,18 @@ def run_checks(args):
             # Swipe up to secondary hub and open #591's Voice Task screen.
             voice_task_lines = None
             vt_w = vt_h = 0
-            for _ in range(5):
+            last_vt_texts = []
+            for _ in range(6):
                 lines_vt, vt_w, vt_h = ocr_screen(args.watch, ocr_bin)
+                last_vt_texts = [r["text"] for r in lines_vt]
                 if any("Voice Task" in r["text"] for r in lines_vt):
                     voice_task_lines = lines_vt
                     break
                 swipe_up(session)
-                sleep(0.6)
-            assert voice_task_lines is not None, "Could not find #591 Voice Task link on Watch"
+                sleep(0.9)
+            assert voice_task_lines is not None, (
+                f"Could not find #591 Voice Task link on Watch\nObserved OCR lines: {last_vt_texts}"
+            )
             tap_in_lines(session, voice_task_lines, vt_w, vt_h, lambda t: "Voice Task" in t)
             wait_for_ocr(
                 args.watch,

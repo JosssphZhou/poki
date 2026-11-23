@@ -39444,6 +39444,121 @@
           }
         }
       }
+    },
+    "Unlock iPhone for Watch Task" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock iPhone for Watch Task"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁 iPhone 以执行手表任务"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解鎖 iPhone 以執行手錶任務"
+          }
+        }
+      }
+    },
+    "Poki received your Apple Watch request. If it doesn’t continue after unlocking, tap this notification or tap Check iPhone on Apple Watch." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki received your Apple Watch request. If it doesn’t continue after unlocking, tap this notification or tap Check iPhone on Apple Watch."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 已收到手表请求。解锁后若没有继续，请点此通知，或在手表上点检查 iPhone。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 已收到手錶請求。解鎖後若沒有繼續，請點此通知，或在手錶上點檢查 iPhone。"
+          }
+        }
+      }
+    },
+    "Received. Unlock your iPhone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Received. Unlock your iPhone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已收到，请解锁手机"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已收到，請解鎖手機"
+          }
+        }
+      }
+    },
+    "Poki is waiting for you to unlock iPhone for another Watch task." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki is waiting for you to unlock iPhone for another Watch task."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 正在等待你解锁 iPhone 以执行另一条手表任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 正在等待你解鎖 iPhone 以執行另一條手錶任務。"
+          }
+        }
+      }
+    },
+    "Poki couldn’t find the saved Watch recording after unlock. Record the request again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki couldn’t find the saved Watch recording after unlock. Record the request again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁后未找到已保存的手表录音，请重新录制任务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解鎖後找不到已儲存的手錶錄音，請重新錄製任務。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

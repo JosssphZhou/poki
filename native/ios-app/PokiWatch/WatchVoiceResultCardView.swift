@@ -509,84 +509,14 @@ struct WatchVoiceTaskView: View {
 
                 Spacer(minLength: 6)
 
-                VStack(spacing: 8) {
-                    if model.microphone == .undetermined {
-                        Button {
-                            Task { await model.requestMicrophone() }
-                        } label: {
-                            Label("Enable microphone", systemImage: "mic.fill")
-                                .font(WatchDesignTokens.buttonFont)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: WatchDesignTokens.bottomBarHeight)
-                                .background(
-                                    LinearGradient(
-                                        colors: [WatchDesignTokens.pokiBlueTop, WatchDesignTokens.pokiBlueBottom],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    in: Capsule()
-                                )
-                                .overlay {
-                                    Capsule()
-                                        .strokeBorder(WatchDesignTokens.glassBlueBorder, lineWidth: 0.75)
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .watchGlassControl(in: Capsule(), tint: WatchDesignTokens.pokiBlue.opacity(0.75), interactive: true)
-                    } else if model.microphone == .denied {
-                        VStack(spacing: 6) {
-                            Image(systemName: "mic.slash.fill")
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(WatchDesignTokens.statusAmberLight)
-                            Text("Allow Poki’s microphone in Watch Settings.")
-                                .font(WatchDesignTokens.compactSubtitleFont)
-                                .foregroundStyle(WatchDesignTokens.subtitleDefault)
-                                .multilineTextAlignment(.center)
-                        }
-                    } else if !model.hasPending {
-                        recordControl
+                if model.pendingStatus == .idle {
+                    taskIdleContent
+                } else {
+                    ScrollView {
+                        taskPendingContent
+                            .frame(maxWidth: .infinity)
                     }
-
-                    if let update = model.update {
-                        Label(update.phase.title, systemImage: update.phase.symbol)
-                            .font(WatchDesignTokens.compactTitleFont)
-                            .foregroundStyle(.white)
-                    } else if model.hasPending {
-                        Label("Sending recording…", systemImage: "arrow.up.circle")
-                            .font(WatchDesignTokens.compactTitleFont)
-                            .foregroundStyle(WatchDesignTokens.skyBlueLight)
-                    }
-
-                    if let problem = model.problem {
-                        Text(problem)
-                            .font(WatchDesignTokens.compactSubtitleFont)
-                            .foregroundStyle(WatchDesignTokens.subtitleDefault)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                    }
-
-                    if model.hasPending, !model.sending {
-                        Button {
-                            model.sync()
-                        } label: {
-                            Text(model.update == nil ? "Retry delivery" : "Check iPhone")
-                                .font(WatchDesignTokens.buttonFont)
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: WatchDesignTokens.secondaryBottomBarHeight)
-                                .background(
-                                    LinearGradient(
-                                        colors: [WatchDesignTokens.pokiBlueTop, WatchDesignTokens.pokiBlueBottom],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    in: Capsule()
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .watchGlassControl(in: Capsule(), tint: WatchDesignTokens.pokiBlue.opacity(0.75), interactive: true)
-                    }
+                    .scrollIndicators(.hidden)
                 }
 
                 Spacer(minLength: 8)
@@ -627,6 +557,145 @@ struct WatchVoiceTaskView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task {
             if model.microphone == .granted { await model.requestNotifications() }
+        }
+    }
+
+    private var taskIdleContent: some View {
+        VStack(spacing: 8) {
+            if model.microphone == .undetermined {
+                Button {
+                    Task { await model.requestMicrophone() }
+                } label: {
+                    Label("Enable microphone", systemImage: "mic.fill")
+                        .font(WatchDesignTokens.buttonFont)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: WatchDesignTokens.bottomBarHeight)
+                        .background(
+                            LinearGradient(
+                                colors: [WatchDesignTokens.pokiBlueTop, WatchDesignTokens.pokiBlueBottom],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: Capsule()
+                        )
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(WatchDesignTokens.glassBlueBorder, lineWidth: 0.75)
+                        }
+                }
+                .buttonStyle(.plain)
+                .watchGlassControl(in: Capsule(), tint: WatchDesignTokens.pokiBlue.opacity(0.75), interactive: true)
+            } else if model.microphone == .denied {
+                VStack(spacing: 6) {
+                    Image(systemName: "mic.slash.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(WatchDesignTokens.statusAmberLight)
+                    Text("Allow Poki’s microphone in Watch Settings.")
+                        .font(WatchDesignTokens.compactSubtitleFont)
+                        .foregroundStyle(WatchDesignTokens.subtitleDefault)
+                        .multilineTextAlignment(.center)
+                }
+            } else {
+                recordControl
+            }
+
+            if let problem = model.problem {
+                Text(problem)
+                    .font(WatchDesignTokens.compactSubtitleFont)
+                    .foregroundStyle(WatchDesignTokens.subtitleDefault)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private var taskPendingContent: some View {
+        VStack(spacing: 8) {
+            switch model.pendingStatus {
+            case .idle:
+                EmptyView()
+            case .sending:
+                VStack(spacing: 6) {
+                    ProgressView()
+                    Label("Sending recording…", systemImage: "arrow.up.circle")
+                        .font(WatchDesignTokens.compactTitleFont)
+                        .foregroundStyle(WatchDesignTokens.skyBlueLight)
+                        .multilineTextAlignment(.center)
+                }
+            case .deliveryFailed(let failure):
+                VStack(spacing: 6) {
+                    Label(failure.title, systemImage: failure.symbol)
+                        .font(WatchDesignTokens.compactTitleFont)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                    Text(failure.detail)
+                        .font(WatchDesignTokens.compactSubtitleFont)
+                        .foregroundStyle(WatchDesignTokens.subtitleDefault)
+                        .multilineTextAlignment(.center)
+                }
+            case .tracking(let update):
+                VStack(spacing: 6) {
+                    Label(update.phase.title, systemImage: update.phase.symbol)
+                        .font(WatchDesignTokens.compactTitleFont)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                    if update.phase == .waitingForUnlock {
+                        Text("If it doesn’t continue after unlocking, tap the notification on iPhone or tap Check iPhone here.")
+                            .font(WatchDesignTokens.compactSubtitleFont)
+                            .foregroundStyle(WatchDesignTokens.subtitleDefault)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+            }
+
+            if let problem = model.problem {
+                Text(problem)
+                    .font(WatchDesignTokens.compactSubtitleFont)
+                    .foregroundStyle(WatchDesignTokens.subtitleDefault)
+                    .multilineTextAlignment(.center)
+            }
+
+            if model.hasPending, !model.sending {
+                Button {
+                    model.sync()
+                } label: {
+                    Text(model.update == nil ? "Retry delivery" : "Check iPhone")
+                        .font(WatchDesignTokens.buttonFont)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: WatchDesignTokens.secondaryBottomBarHeight)
+                        .background(
+                            LinearGradient(
+                                colors: [WatchDesignTokens.pokiBlueTop, WatchDesignTokens.pokiBlueBottom],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: Capsule()
+                        )
+                }
+                .buttonStyle(.plain)
+                .watchGlassControl(in: Capsule(), tint: WatchDesignTokens.pokiBlue.opacity(0.75), interactive: true)
+
+                if model.update == nil {
+                    Button(role: .destructive) {
+                        model.discardPending()
+                    } label: {
+                        Text("Cancel")
+                            .font(WatchDesignTokens.secondaryButtonFont)
+                            .foregroundStyle(WatchDesignTokens.titleRed)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: WatchDesignTokens.secondaryBottomBarHeight)
+                            .background(WatchDesignTokens.statusRedPillFill, in: Capsule())
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder(WatchDesignTokens.statusRedPillBorder, lineWidth: 0.75)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .watchGlassControl(in: Capsule(), tint: WatchDesignTokens.statusRed.opacity(0.2), interactive: true)
+                }
+            }
         }
     }
 
@@ -722,6 +791,7 @@ extension WatchVoiceUpdate.Phase {
     var title: LocalizedStringResource {
         switch self {
         case .received: "iPhone received it"
+        case .waitingForUnlock: "Received. Unlock your iPhone."
         case .running: "Poki is working"
         case .finished: "Task finished"
         case .blocked: "Task needs attention"
@@ -731,6 +801,7 @@ extension WatchVoiceUpdate.Phase {
     var symbol: String {
         switch self {
         case .received: "iphone"
+        case .waitingForUnlock: "lock.fill"
         case .running: "ellipsis.circle"
         case .finished: "checkmark.circle"
         case .blocked: "exclamationmark.circle"

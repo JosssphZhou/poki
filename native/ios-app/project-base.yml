@@ -40,6 +40,7 @@ targets:
         excludes: [LaunchArt/**]
       - path: Shared
       - path: WatchVoice
+        excludes: [WatchVoiceDelivery.swift]
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift
         group: Poki/Debug

@@ -97,6 +97,7 @@ private struct WatchVoiceRemoteView: View {
         }
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase, initial: true) { _, phase in
+            model.setActive(phase == .active)
             if phase == .active {
                 model.opened()
                 WidgetCenter.shared.reloadTimelines(ofKind: "PokiWatchFace")

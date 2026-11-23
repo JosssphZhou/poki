@@ -28,7 +28,7 @@ final class AppModel {
         if on, let relayAddress { core.start(relay: relayAddress) } else { core.stop() }
     }
     let loopback = LoopbackMonitor()
-    let tunnel = LoopbackTunnel()
+    let tunnel: any LocalTunnel
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
     /// Poki keeps its own signing: the Apple Account, the next build ready ahead of time, Install.
@@ -345,9 +345,11 @@ final class AppModel {
 
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(),
          automation: InProcessAutomation = PKInProcess.shared(), transport: HTTPTransport? = nil,
+         tunnel: (any LocalTunnel)? = nil,
          systemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
          requiresDiskImageCheck: Bool? = nil, imageMounted: @escaping () -> Bool = { AppModel.localDDIMounted }) {
         ActivityController.endAll()
+        self.tunnel = tunnel ?? LoopbackTunnel()
         self.imageMounted = imageMounted
         self.activity = ActivityController()
         self.automation = automation
@@ -386,7 +388,9 @@ final class AppModel {
                            connection: VoiceModel.connection)
         self.launcher = launcher
         self.pairer = pairer
-        // inFront starts true before the first scene callback, including a background launch.
+        let launchedInFront = UIApplication.shared.applicationState != .background
+        self.inFront = launchedInFront
+        InProcessWDA.gate.withLock { $0.inFront = launchedInFront }
         self.activity.canStart = { [weak self] in self?.inFront == true && UIApplication.shared.applicationState == .active }
         host.update(key: identity.signingKey, hashes: identity.accessHashes)
         host.onConsent { [weak self] client, callback, connector in
@@ -458,10 +462,10 @@ final class AppModel {
         loopback.onPairingPortSearchEnded = { [weak self] in self?.pairingPortSearchEnded() }
         // A built-in tunnel that fails or drops while Poki is on dials again by itself; the loopback
         // check that follows lets `loopbackChanged` start the runner, as for any other recovery.
-        tunnel.wanted = { [weak self] in self?.sessionOn == true && self?.setup.loopback == .builtIn }
-        tunnel.onReconnected = { [weak self] in self?.loopback.check() }
+        self.tunnel.wanted = { [weak self] in self?.sessionOn == true && self?.setup.loopback == .builtIn }
+        self.tunnel.onReconnected = { [weak self] in self?.loopback.check() }
         // When Poki detects the owner's own VPN it stops: the tunnel says so here, and the problem clears when it is back.
-        tunnel.onAttention = { [weak self] text in
+        self.tunnel.onAttention = { [weak self] text in
             guard let self else { return }
             if let text { problem = text; tunnelAttention = text }
             else if problem == tunnelAttention { problem = nil; tunnelAttention = nil }
@@ -492,7 +496,7 @@ final class AppModel {
         // Installed over the local-VPN build (both use one bundle ID): this build has only external
         // connections, so a saved built-in choice becomes the external one. Otherwise Setup showed the
         // step done while Turn on said this build has no local VPN.
-        if setup.loopback == .builtIn, !tunnel.available {
+        if setup.loopback == .builtIn, !self.tunnel.available {
             setup.loopback = .proxy
             setup.save()
             log.add("loopback", "this build has no built-in connection: the saved choice is now an external one")
@@ -842,6 +846,100 @@ final class AppModel {
             await tunnel.refresh()
             await diskImage.ensureChecked()
             if wantsOn, !sessionOn, pairingPath != nil, diskImage.hasFiles { startSession(reconnectLocal: false) }
+        }
+    }
+
+    struct BackgroundWatchLease {
+        let startedSession: Bool
+        let startedBackground: Bool
+        let startedTunnel: Bool
+    }
+
+    /// Starts or warms Poki for a Watch background task and returns a lease to release when the task ends.
+    func beginBackgroundWatchSession(timeout: Duration = .seconds(15)) async -> BackgroundWatchLease? {
+        guard automationPath == .inProcess, !ownerPaused else { return nil }
+        if sessionOn {
+            let hadBackground = background.isOn
+            if !hadBackground { background.start() }
+            if runnerPaused { prepareForTask() }
+            return BackgroundWatchLease(startedSession: false, startedBackground: !hadBackground, startedTunnel: false)
+        }
+        guard wantsOn else { return nil }
+        await tunnel.refresh()
+        await diskImage.ensureChecked()
+        guard Self.onSimulator || (pairingPath != nil && diskImage.hasFiles) else { return nil }
+        let hadTunnel = setup.loopback == .builtIn && tunnel.connected
+        let wasStarting = sessionStarting
+        if !sessionOn, !wasStarting {
+            startSession(reconnectLocal: setup.loopback == .builtIn)
+        }
+        if let startTask = sessionStartTask {
+            await Self.waitForSessionStart(startTask, timeout: timeout)
+        }
+        let startedTunnel = setup.loopback == .builtIn
+            && !hadTunnel
+            && !wasStarting
+            && (tunnel.connected || tunnel.busy || tunnel.state == .connecting)
+        guard sessionOn else {
+            if startedTunnel { tunnel.disconnect() }
+            return nil
+        }
+        if !background.isOn { background.start() }
+        if runnerPaused { prepareForTask() }
+        return BackgroundWatchLease(startedSession: !wasStarting, startedBackground: true, startedTunnel: startedTunnel)
+    }
+
+    func endBackgroundWatchSession(_ lease: BackgroundWatchLease?) {
+        guard let lease else { return }
+        guard !inFront, !voice.isOn, outsideAgentsAtWork.isEmpty, approvals.isEmpty,
+              ChatModel.delegatedBusy == nil, AskPoki.chat?.running != true else { return }
+        if lease.startedSession {
+            sessionStartTask?.cancel()
+            pendingPrepareForTask = false
+            preparingCellularImage = false
+            if !HistoryCapture.isEnabled { loopback.pause() }
+            if automationPath == .inProcess { closeInProcess("Watch task ended") }
+            core.stop()
+            launcher.stop()
+            if lease.startedTunnel { tunnel.disconnect() }
+            idleTimer?.invalidate()
+            idleTimer = nil
+            runnerPaused = false
+            host.setPaused(false)
+            background.stop()
+            activity.end()
+            sessionOn = false
+            chatTaskActive = false
+            stepUnderWay = nil
+            runner = .idle
+            relayStatus = .off
+            activityText = "Idle"
+            log.add("watch", "ended Watch background session and keep-alive")
+        } else if lease.startedBackground {
+            background.stop()
+            log.add("watch", "ended Watch background keep-alive")
+        }
+    }
+
+    static func waitForSessionStart(_ startTask: Task<Void, Never>, timeout: Duration) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            var resumed = false
+            let finish: @MainActor () -> Void = {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume()
+            }
+            let timer = Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
+                startTask.cancel()
+                finish()
+            }
+            Task { @MainActor in
+                await startTask.value
+                timer.cancel()
+                finish()
+            }
         }
     }
 

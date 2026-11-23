@@ -3,8 +3,22 @@ import NetworkExtension
 import PokiCore
 
 @MainActor
+protocol LocalTunnel: AnyObject {
+    var state: LoopbackTunnel.State { get }
+    var busy: Bool { get }
+    var available: Bool { get }
+    var connected: Bool { get }
+    var wanted: () -> Bool { get set }
+    var onReconnected: (() -> Void)? { get set }
+    var onAttention: ((String?) -> Void)? { get set }
+    func refresh() async
+    func connect() async throws
+    func disconnect()
+}
+
+@MainActor
 @Observable
-final class LoopbackTunnel {
+final class LoopbackTunnel: LocalTunnel {
     enum State: Equatable {
         case unavailable, off, connecting, connected, disconnecting
         case failed(String)

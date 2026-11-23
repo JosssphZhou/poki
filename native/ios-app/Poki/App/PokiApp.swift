@@ -3,6 +3,9 @@ import SwiftUI
 
 @main
 struct PokiApp: App {
+    #if POKI_WATCH
+    @UIApplicationDelegateAdaptor(PokiWatchAppDelegate.self) private var watchAppDelegate
+    #endif
     @State private var model: AppModel
     @State private var chat: ChatModel
     @State private var inDuoSplitView = false
@@ -61,6 +64,7 @@ struct PokiApp: App {
         AskPoki.install(app: model, chat: chat)
         #if POKI_WATCH
         watchVoice = WatchVoicePhone(app: model, chat: chat)
+        WatchVoicePhone.shared = watchVoice
         #endif
     }
 
@@ -80,7 +84,12 @@ struct PokiApp: App {
                     updateDuoSplitView()
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { updateDuoSplitView() }
+                    if phase == .active {
+                        updateDuoSplitView()
+                        #if POKI_WATCH
+                        watchVoice.handleUnlockSignal()
+                        #endif
+                    }
                 }
         }
     }

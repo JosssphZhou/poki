@@ -91,7 +91,31 @@
         }
       }
     },
+    "Cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消"
+          }
+        }
+      }
+    },
     "Check iPhone": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -102,17 +126,39 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看 iPhone"
+            "value": "检查 iPhone"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看 iPhone"
+            "value": "檢查 iPhone"
           }
         }
-      },
-      "extractionState": "manual"
+      }
+    },
+    "Check your iPhone connection or open Poki, then try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check your iPhone connection or open Poki, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请检查与 iPhone 的连接或在手机上打开 Poki 后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請檢查與 iPhone 的連線或在手機上打開 Poki 後重試。"
+          }
+        }
+      }
     },
     "Checking connection and mic": {
       "localizations": {
@@ -226,6 +272,29 @@
         }
       }
     },
+    "Couldn’t connect to iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t connect to iPhone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 iPhone"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法連線到 iPhone"
+          }
+        }
+      }
+    },
     "Couldn’t load the full result.": {
       "localizations": {
         "en": {
@@ -248,6 +317,29 @@
         }
       },
       "extractionState": "manual"
+    },
+    "Couldn’t send to iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send to iPhone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法发送到 iPhone"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法傳送到 iPhone"
+          }
+        }
+      }
     },
     "Disconnecting call": {
       "localizations": {
@@ -427,6 +519,7 @@
       }
     },
     "Hold the microphone while you speak.": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -437,17 +530,16 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "说话时请一直按住麦克风。"
+            "value": "请按住麦克风说话。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "說話時請一直按住麥克風。"
+            "value": "請按住麥克風說話。"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Hold to speak": {
       "localizations": {
@@ -471,6 +563,75 @@
         }
       },
       "extractionState": "manual"
+    },
+    "If it doesn’t continue after unlocking, tap the notification on iPhone or tap Check iPhone here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If it doesn’t continue after unlocking, tap the notification on iPhone or tap Check iPhone here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁后若没有继续，请点手机上的通知，或在这里点检查 iPhone。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解鎖後若沒有繼續，請點手機上的通知，或在這裡點檢查 iPhone。"
+          }
+        }
+      }
+    },
+    "Install Poki on iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Poki on iPhone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在 iPhone 安装 Poki"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請先在 iPhone 安裝 Poki"
+          }
+        }
+      }
+    },
+    "Install Poki on your paired iPhone and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Poki on your paired iPhone and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在配对的 iPhone 上安装 Poki 后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請在配對的 iPhone 上安裝 Poki 後重試。"
+          }
+        }
+      }
     },
     "Listening": {
       "extractionState": "manual",
@@ -506,17 +667,40 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在聆听…"
+            "value": "正在倾听…"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在聆聽…"
+            "value": "正在傾聽…"
           }
         }
       },
       "extractionState": "manual"
+    },
+    "Listening… Release to send": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening… Release to send"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在聆听… 松开发送"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在聆聽… 放開傳送"
+          }
+        }
+      }
     },
     "Loading full result…": {
       "localizations": {
@@ -536,6 +720,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在載入完整結果…"
+          }
+        }
+      }
+    },
+    "Move closer to your paired iPhone and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move closer to your paired iPhone and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请靠近配对的 iPhone 后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請靠近配對的 iPhone 後重試。"
           }
         }
       }
@@ -641,18 +848,42 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "待设置"
+            "value": "未设置"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "待設定"
+            "value": "未設定"
+          }
+        }
+      }
+    },
+    "Open Poki on your iPhone if it was closed, then try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Poki on your iPhone if it was closed, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果 iPhone 上的 Poki 已被关闭，请先打开 Poki 后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果 iPhone 上的 Poki 已被關閉，請先打開 Poki 後重試。"
           }
         }
       }
     },
     "Open Poki to see the result.": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -669,11 +900,10 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "開啟 Poki 查看結果。"
+            "value": "打開 Poki 查看結果。"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Poki": {
       "localizations": {
@@ -722,6 +952,7 @@
       "extractionState": "manual"
     },
     "Poki couldn’t find the accepted task on iPhone. Check what happened there before recording it again.": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -732,19 +963,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iPhone 上未找到已接收的任务，请先在手机查看后再重新录制。"
+            "value": "在 iPhone 上未找到已接收的任务，请先在手机确认状态后再重录。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "iPhone 上未找到已接收的任務，請先在手機查看後再重新錄製。"
+            "value": "在 iPhone 上找不到已接收的任務，請先在手機確認狀態後再重錄。"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Poki couldn’t save this task on Watch. Check available storage and retry.": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -755,19 +986,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "手表无法保存此任务，请检查存储空间后重试。"
+            "value": "无法在手表上保存此任务，请检查可用空间后重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "手錶無法儲存此任務，請檢查儲存空間後重試。"
+            "value": "無法在手錶上儲存此任務，請檢查可用空間後重試。"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Poki couldn’t start recording. Try holding the microphone again.": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -778,17 +1009,16 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法开始录音，请重新按住麦克风。"
+            "value": "无法开始录音，请再次按住麦克风重试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法開始錄音，請重新按住麥克風。"
+            "value": "無法開始錄音，請再次按住麥克風重試。"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Poki is speaking": {
       "extractionState": "manual",
@@ -814,6 +1044,7 @@
       }
     },
     "Poki is working": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -824,17 +1055,39 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Poki 正在处理"
+            "value": "正在执行"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Poki 正在處理"
+            "value": "正在執行"
           }
         }
-      },
-      "extractionState": "manual"
+      }
+    },
+    "Poki isn’t responding on iPhone": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poki isn’t responding on iPhone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接 iPhone 上的 Poki"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法連線 iPhone 上的 Poki"
+          }
+        }
+      }
     },
     "Poki isn’t running on iPhone": {
       "extractionState": "manual",
@@ -860,6 +1113,7 @@
       }
     },
     "Poki task finished": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -870,19 +1124,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务已完成"
+            "value": "Poki 任务已完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "任務已完成"
+            "value": "Poki 任務已完成"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Poki task needs attention": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -893,17 +1147,16 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "任务需要处理"
+            "value": "Poki 任务未完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "任務需要處理"
+            "value": "Poki 任務未完成"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Preview": {
       "localizations": {
@@ -949,7 +1202,31 @@
         }
       }
     },
+    "Received. Unlock your iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Received. Unlock your iPhone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收到，请解锁手机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收到，請解鎖手機"
+          }
+        }
+      }
+    },
     "Record a task": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -960,17 +1237,16 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "录制语音任务"
+            "value": "录制任务"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "錄製語音任務"
+            "value": "錄製任務"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Release to send": {
       "localizations": {
@@ -983,13 +1259,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "松开即可发送"
+            "value": "松开发送"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "鬆開即可傳送"
+            "value": "放開傳送"
           }
         }
       },
@@ -1131,6 +1407,7 @@
       "extractionState": "manual"
     },
     "Sending recording…": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1141,17 +1418,16 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在发送录音…"
+            "value": "发送中…"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在傳送錄音…"
+            "value": "傳送中…"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Start": {
       "localizations": {
@@ -1332,6 +1608,7 @@
       }
     },
     "The recording couldn’t be saved. Try a shorter request.": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1342,17 +1619,16 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法保存录音，请缩短语音内容后重试。"
+            "value": "无法保存录音，请说短一点再试。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法儲存錄音，請縮短語音內容後重試。"
+            "value": "無法儲存錄音，請說短一點再試。"
           }
         }
-      },
-      "extractionState": "manual"
+      }
     },
     "Thinking": {
       "extractionState": "manual",
@@ -1441,6 +1717,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "連線失敗"
+          }
+        }
+      }
+    },
+    "Unlock iPhone first": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unlock iPhone first"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先解锁 iPhone"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請先解鎖 iPhone"
           }
         }
       }
@@ -1601,6 +1900,29 @@
         }
       }
     },
+    "Your iPhone restarted. Unlock your iPhone, then try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your iPhone restarted. Unlock your iPhone, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 刚重启过，请先解锁 iPhone 后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 剛重新啟動過，請先解鎖 iPhone 後重試。"
+          }
+        }
+      }
+    },
     "iPhone didn’t confirm receipt. Open Poki on your iPhone and try again.": {
       "localizations": {
         "en": {
@@ -1643,6 +1965,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "iPhone 未確認指令，請重試"
+          }
+        }
+      }
+    },
+    "iPhone didn’t reply in time": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone didn’t reply in time"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 响应超时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 回應逾時"
           }
         }
       }
@@ -1716,6 +2061,7 @@
       }
     },
     "iPhone received it": {
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1726,17 +2072,39 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "iPhone 已收到"
+            "value": "已收到"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "iPhone 已收到"
+            "value": "已收到"
           }
         }
-      },
-      "extractionState": "manual"
+      }
+    },
+    "iPhone took too long to reply. Open Poki on your iPhone and try again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone took too long to reply. Open Poki on your iPhone and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 长时间未响应。请在 iPhone 上打开 Poki 后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 長時間未回應。請在 iPhone 上打開 Poki 後重試。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
