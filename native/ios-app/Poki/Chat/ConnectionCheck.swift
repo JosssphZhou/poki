@@ -69,7 +69,15 @@ enum ConnectionCheck {
         options.apiKey = key.isEmpty && provider == .custom ? "none" : key
         if provider == .custom, model.reasoning { options.reasoning = .low }
         // A connection check runs before a conversation exists. Give this probe its own
-        // routing identifier, using PiSwift's OpenCode host and provider checks.
+        // routing identifier, using PiSwift's OpenCode host and provider checks. Go also
+        // wants the client named, not the provider SDK's user agent, and Bearer auth on
+        // the Anthropic and Gemini adapters.
+        if isOpenCode(model) { options.identity = OpenCodeGoClient.identity }
+        if provider == .opencodeGo, let extra = PiLoop.openCodeGoAuth(model: model, apiKey: key).headers {
+            var headers = options.headers ?? [:]
+            for (field, value) in extra { headers[field] = value }
+            options.headers = headers
+        }
         options.headers = openCodeSessionHeaders(model: model, sessionId: UUID().uuidString, headers: options.headers)
         options.maxTokens = 16
         options.maxRetries = 0
@@ -200,6 +208,12 @@ enum ConnectionCheck {
         if text.hasPrefix("<") { return nil }  // an HTML error page says nothing useful here
         guard !text.isEmpty else { return nil }
         return text.count > 140 ? String(text.prefix(139)) + "…" : text
+    }
+
+    /// PiSwift treats provider `opencode` / `opencode-go`, or any `opencode.ai` host, as Go.
+    private static func isOpenCode(_ model: Model) -> Bool {
+        if model.provider == "opencode" || model.provider == "opencode-go" { return true }
+        return URL(string: model.baseUrl)?.host()?.lowercased() == "opencode.ai"
     }
 
     private enum Outcome: Sendable {

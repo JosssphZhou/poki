@@ -38,6 +38,7 @@ final class PiLoop {
     }
 
     init(provider: ModelProvider, model: Model, tools: [ToolSpec], inSplitView: Bool = false, carrying messages: [AgentMessage] = [],
+         sessionID: String = UUID().uuidString.lowercased(),
          perform: @escaping @MainActor (ToolCall) async -> PokiCore.ToolAnswer) {
         self.provider = provider
         self.model = model
@@ -76,6 +77,15 @@ final class PiLoop {
             }
         }
         allTools = agentTools
+        let openCode = provider == .opencodeGo
+        // Go's Anthropic and Gemini adapters need Authorization: Bearer. The OpenAI adapters
+        // already send it. The key is read on every request.
+        let openCodeAuth: (@Sendable (Model) async -> AgentModelAuth?)? = openCode ? { model in
+            guard let key = await ModelCredential.apiKey(for: .opencodeGo) else {
+                return AgentModelAuth(error: "OpenCode Go API key is missing.")
+            }
+            return PiLoop.openCodeGoAuth(model: model, apiKey: key)
+        } : nil
         // agent/pi-session.mjs: low thinking, one tool call at a time. Pi copies the
         // tool list at prompt start; prepareRequest updates its *live* context each turn.
         agent = Agent(AgentOptions(
@@ -102,7 +112,12 @@ final class PiLoop {
                 if let endpoint { options.httpClient = endpoint }
                 return try streamSimple(model: model, context: Context(messages: messages), options: options)
             },
+            // One Go conversation keeps one session id so Console can route it. Other providers
+            // leave PiSwift's session field unset.
+            sessionId: openCode ? sessionID : nil,
+            identity: openCode ? OpenCodeGoClient.identity : nil,
             getApiKey: { _ in await ModelCredential.apiKey(for: provider, piProvider: model.provider) },
+            getModelAuth: openCodeAuth,
             toolExecution: .sequential,
             prepareToolResultMessage: { result in
                 grants.validated(result, revision: HistoryCapture.agentQueryRevision)
@@ -132,6 +147,19 @@ final class PiLoop {
                 return AgentRequestUpdate(context: context)
             }
         ))
+    }
+
+    /// Bearer auth for Go's Anthropic and Gemini adapters. OpenAI adapters already send
+    /// `Authorization: Bearer` from the API key.
+    nonisolated static func openCodeGoAuth(model: Model, apiKey: String) -> AgentModelAuth {
+        let headers: ProviderHeaders?
+        switch model.api {
+        case .anthropicMessages, .googleGenerativeAI:
+            headers = ["Authorization": "Bearer \(apiKey)"]
+        default:
+            headers = nil
+        }
+        return AgentModelAuth(apiKey: apiKey, headers: headers)
     }
 
     /// The owner's message (with the JPEGs of its photos and PDFs) under this task's instructions, then

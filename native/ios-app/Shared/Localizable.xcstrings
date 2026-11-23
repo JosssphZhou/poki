@@ -21736,6 +21736,22 @@
         }
       }
     },
+    "OpenCode Go API key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenCode Go API 密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenCode Go API 金鑰"
+          }
+        }
+      }
+    },
     "Subscribe to OpenCode Go at opencode.ai, then copy its API key from the OpenCode Console. Models and available regions depend on your Go plan and privacy settings." : {
       "localizations" : {
         "zh-Hans" : {

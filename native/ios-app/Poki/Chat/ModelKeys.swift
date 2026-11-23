@@ -4,7 +4,9 @@ import PiSwiftAI
 /// The model providers the chat can use with the owner's own key or account (ESP-171 board "M Model").
 /// The wired ones run through pi (PiLoop); the others store their key and address for a later step.
 enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
-    case anthropic, openai, chatgpt, deepseek, gemini, openrouter, custom
+    case anthropic, openai, chatgpt, deepseek, gemini, openrouter
+    case opencodeGo = "opencode-go"
+    case custom
     var id: String { rawValue }
 
     var name: String {
@@ -15,6 +17,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "DeepSeek"
         case .gemini: "Gemini"
         case .openrouter: "OpenRouter"
+        case .opencodeGo: "OpenCode Go"
         case .custom: AppLocalization.text(LocalizedStringResource("Custom Endpoint"))
         }
     }
@@ -28,6 +31,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "D"
         case .gemini: "G"
         case .openrouter: "R"
+        case .opencodeGo: "OC"
         case .custom: "{ }"
         }
     }
@@ -40,6 +44,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: 0x4D6BFE
         case .gemini: 0x4285F4
         case .openrouter: 0x6566F1
+        case .opencodeGo: 0x242B3D
         case .custom: 0x8E8E93
         }
     }
@@ -54,6 +59,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: "deepseek"
         case .gemini: "google"
         case .openrouter: "openrouter"
+        case .opencodeGo: "opencode-go"
         case .custom: "poki-custom"
         }
     }
@@ -72,6 +78,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .chatgpt: ""
         case .gemini: "AIza…"
         case .openrouter: "sk-or-…"
+        case .opencodeGo: AppLocalization.text(LocalizedStringResource("OpenCode Go API key"))
         case .custom: AppLocalization.text(LocalizedStringResource("API key, if it needs one"))
         }
     }
@@ -112,6 +119,14 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol (OpenRouter)"),
             ChatModelChoice(id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash (OpenRouter)"),
         ]
+        // Go's own key and PiSwift's opencode-go catalog. Each id keeps that model's API; the request
+        // goes to Go's API path for it (see `openCodeGoBaseURL`).
+        case .opencodeGo: [
+            ChatModelChoice(id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash (Go)"),
+            ChatModelChoice(id: "kimi-k3", name: "Kimi K3 (Go)"),
+            ChatModelChoice(id: "gpt-5.6-luna", name: "GPT-5.6 Luna (Go)"),
+            ChatModelChoice(id: "glm-5.2", name: "GLM-5.2 (Go)"),
+        ]
         // Whatever model each of the owner's services serves (a local server, a company gateway), named
         // with its service once there is more than one.
         case .custom:
@@ -128,6 +143,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         case .deepseek: AppLocalization.text(LocalizedStringResource("Create a key at platform.deepseek.com, then paste it here."))
         case .gemini: AppLocalization.text(LocalizedStringResource("Create a key at aistudio.google.com, then paste it here."))
         case .openrouter: AppLocalization.text(LocalizedStringResource("Create a key at openrouter.ai/keys, then paste it here."))
+        case .opencodeGo: AppLocalization.text(LocalizedStringResource("Subscribe to OpenCode Go at opencode.ai, then copy its API key from the OpenCode Console. Models and available regions depend on your Go plan and privacy settings."))
         case .custom: AppLocalization.text(LocalizedStringResource("Any server that speaks the OpenAI Responses API or chat completions API. Poki sends the key, if any, only to this service’s addresses."))
         default: ""
         }
@@ -147,6 +163,22 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     private static let unlistedContextWindow = 128_000
     private static let unlistedMaxTokens = 8_192
     private static let openRouterBaseURL = "https://openrouter.ai/api/v1"
+
+    /// Go's published API paths (https://opencode.ai/docs/console/harnesses/). PiSwift's catalog lists
+    /// these models under one shared `/inference/go/v1` base; chat completions, Responses, Anthropic
+    /// and Gemini are separate paths, and PiSwift appends `/v1/messages` itself for Anthropic.
+    static func openCodeGoBaseURL(for api: Api) -> String? {
+        switch api {
+        case .openAICompletions, .openAIResponses:
+            "https://opencode.ai/inference/go/openai/v1"
+        case .anthropicMessages:
+            "https://opencode.ai/inference/go/anthropic"
+        case .googleGenerativeAI:
+            "https://opencode.ai/inference/go/google/v1beta"
+        default:
+            nil
+        }
+    }
 
     private func unlistedModel(_ id: String, provider: String, baseUrl: String, reasoning: Bool = false) -> Model {
         Model(id: id, name: id, api: .openAICompletions, provider: provider, baseUrl: baseUrl, reasoning: reasoning,
@@ -202,6 +234,13 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
     /// model id and `customAPI` and `customReasoning` are the page's choices.
     func piModel(_ id: String, customURL: String? = nil, customAPI: CustomAPIStyle = .chatCompletions, customReasoning: Bool? = nil) -> Model? {
         guard let piProvider else { return nil }
+        if self == .opencodeGo {
+            // Keep the catalog model's API and metadata, and send it to that API's Go path.
+            // An id the catalog lacks has no native API to preserve, so it is not offered.
+            guard let model = getModel(provider: piProvider, modelId: id),
+                  let baseURL = Self.openCodeGoBaseURL(for: model.api) else { return nil }
+            return model.with(baseUrl: baseURL)
+        }
         if self == .custom {
             if let customURL {
                 let base = customURL.trimmingCharacters(in: .whitespaces)
@@ -231,6 +270,24 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
         json["id"] = id
         json["name"] = id == "gpt-6.1-terra" ? "GPT-6.1 Terra" : id
         return (try? JSONSerialization.data(withJSONObject: json)).flatMap { try? JSONDecoder().decode(Model.self, from: $0) }
+    }
+}
+
+/// How Poki names itself to OpenCode Go. Go rejects a generic SDK user agent and routes each
+/// conversation by `x-opencode-session` (https://opencode.ai/docs/console/go/).
+enum OpenCodeGoClient {
+    /// `project-base.yml` leaves MARKETING_VERSION at 0.1.0 until a release build replaces it.
+    /// The fallback matches `native/ios-app/VERSION`.
+    static var userAgent: String {
+        let bundled = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if bundled.isEmpty || bundled == "0.1.0" { return "poki-ios/0.5.0" }
+        return "poki-ios/\(bundled)"
+    }
+
+    static var identity: ClientIdentity {
+        ClientIdentity(userAgent: .custom(userAgent),
+                       attribution: .value(ClientAttribution(name: "Poki", url: "https://github.com/JosssphZhou/poki")))
     }
 }
 

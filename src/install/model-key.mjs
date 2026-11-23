@@ -12,7 +12,7 @@ const exec = promisify(execFile);
 export const SCHEMA = 'poki.model-key/1';
 export const KEM = 'P256-HKDF-SHA256-AES256GCM';
 // The providers Poki can take a key for (ModelProvider in native/ios-app/Poki/Chat/ModelKeys.swift).
-export const PROVIDERS = ['anthropic', 'openai', 'deepseek', 'gemini', 'openrouter'];
+export const PROVIDERS = ['anthropic', 'openai', 'deepseek', 'gemini', 'openrouter', 'opencode-go'];
 const LIFETIME_MS = 10 * 60 * 1000;
 
 const b64u = bytes => Buffer.from(bytes).toString('base64url');

@@ -985,6 +985,9 @@ extension ModelProvider {
         case .gemini: "Provider-googlegemini"
         case .deepseek: "Provider-deepseek"
         case .openrouter: "Provider-openrouter"
+        // ProviderIcons.md names an OpenCode mark; the svg is not in the catalog, so the tile
+        // uses the neutral server symbol rather than another lab's logo.
+        case .opencodeGo: nil
         case .custom: nil
         }
     }

@@ -735,7 +735,7 @@ final class ChatModel {
     private func chooseSplitView(text: String, apps: [String], provider: ModelProvider, model: Model) async -> WorkspaceChoice {
         let names = apps.enumerated().map { "\($0.offset + 1). \(AppIconStore.name($0.element) ?? $0.element)" }.joined(separator: "\n")
         let instructions = "Choose whether two candidate iPhone apps should work side by side for the owner's request. A word may describe an item and just happen to match an app name (for example 写一封邮件 can describe a message, or 照片 can mean an image in Safari). Select only the two apps actually requested. For a side-by-side task such as dragging, comparing, or transferring between two apps, output SPLIT followed by their two numbers separated by spaces, source first if there is a source. Otherwise output NORMAL. Output only that line."
-        let planner = PiLoop(provider: provider, model: model, tools: []) { _ in
+        let planner = PiLoop(provider: provider, model: model, tools: [], sessionID: sessionID) { _ in
             PokiCore.ToolAnswer(text: "Planning only.", jpeg: nil, isError: true)
         }
         var answer = ""
@@ -774,7 +774,8 @@ final class ChatModel {
         // A different workspace starts without old screen evidence.
         let next = PiLoop(provider: provider, model: model,
                           tools: Harness.toolSpecs(inSplitView: inSplitView, includeScreenHistory: true),
-                          inSplitView: inSplitView, carrying: changedWorkspace ? [] : loop?.messages ?? []) { [weak self] call in
+                          inSplitView: inSplitView, carrying: changedWorkspace ? [] : loop?.messages ?? [],
+                          sessionID: sessionID) { [weak self] call in
             guard let self else { return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true) }
             return await self.perform(call)
         }

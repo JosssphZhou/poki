@@ -6,6 +6,8 @@ final class ModelServerStub: URLProtocol {
     struct Sent {
         let url: URL?
         let body: Data
+        /// The request as URLProtocol saw it, including Go's session and auth headers.
+        let request: URLRequest
         var json: [String: Any] {
             (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
         }
@@ -36,7 +38,7 @@ final class ModelServerStub: URLProtocol {
     override func startLoading() {
         let body = Self.bodyData(from: request)
         let customResponder = Self.lock.withLock { () -> (@Sendable (URLRequest, Data) -> (status: Int, type: String, body: String))? in
-            Self.recorded.append(Sent(url: request.url, body: body))
+            Self.recorded.append(Sent(url: request.url, body: body, request: request))
             return Self.responder
         }
         let reply: (status: Int, type: String, body: String)
