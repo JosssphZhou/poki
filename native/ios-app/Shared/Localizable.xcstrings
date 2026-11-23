@@ -29528,6 +29528,22 @@
         }
       }
     },
+    "Opening %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在打开%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在開啟%@"
+          }
+        }
+      }
+    },
     "Opening an app" : {
       "localizations" : {
         "zh-Hans" : {

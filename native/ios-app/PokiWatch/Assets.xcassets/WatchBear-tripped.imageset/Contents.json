@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "WatchBear-tripped.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

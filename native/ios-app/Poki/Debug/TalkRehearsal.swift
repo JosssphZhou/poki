@@ -15,6 +15,15 @@ import Foundation
 final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     static var asked: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") != nil }
     private static var loses: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") == "lost" }
+    private static var longResult: Bool { UserDefaults.standard.string(forKey: "pokiTalkLongResult") == "1" }
+    private static var customResult: String? {
+        guard let text = UserDefaults.standard.string(forKey: "pokiTalkRehearsalResult"), !text.isEmpty else { return nil }
+        return text
+    }
+    static var rehearsalStep: String? {
+        guard let text = UserDefaults.standard.string(forKey: "pokiTalkRehearsalStep"), !text.isEmpty else { return nil }
+        return text
+    }
     static var hold: TalkState? { UserDefaults.standard.string(forKey: "pokiTalkHold").flatMap(TalkState.named) }
 
     /// The stand-in for the key exchange, which a rehearsal skips. `do` is on the phone's list, so the
@@ -31,6 +40,8 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     private let onEvent: @MainActor ([String: Any]) -> Void
     private let onClosed: @MainActor (String) -> Void
     private var script: Task<Void, Never>?
+    private let lock = NSLock()
+    private var speaking = false
 
     init(onEvent: @escaping @MainActor ([String: Any]) -> Void, onClosed: @escaping @MainActor (String) -> Void) {
         self.onEvent = onEvent
@@ -43,7 +54,14 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
         let asks = zh ? "打开设置，把屏幕调亮一点" : "Open Settings and turn the brightness up a little"
         let answer = zh ? "已经把亮度调高了。现在大约是百分之八十，还需要" : "Brightness is up. It’s at about eighty percent now, do you want"
         let stops = zh ? "够了，谢谢" : "That’s enough, thanks"
-        let closing = zh ? "好的。" : "Okay."
+        let shortClosing = zh ? "好的。" : "Okay."
+        let closing: String = if let customResult = Self.customResult {
+            customResult
+        } else if Self.longResult {
+            shortClosing + "\n" + String(repeating: "Watch remote chunked result line 漢字.\n", count: 520) + "END_LONG_RESULT"
+        } else {
+            shortClosing
+        }
         let step: [String: Any] = ["type": "function_call", "call_id": "rehearsal-step", "name": "do", "arguments": "{}"]
         // Seconds from the connection, what OpenAI would send then, and the state the talk is in after it.
         let turn: [(Double, [String: Any], TalkState?)] = [
@@ -78,6 +96,12 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
                 try? await Task.sleep(for: .seconds(at - clock))
                 guard !Task.isCancelled else { return }
                 clock = at
+                if let type = event["type"] as? String {
+                    self.lock.withLock {
+                        if type == "output_audio_buffer.started" { self.speaking = true }
+                        else if type == "output_audio_buffer.stopped" || type == "output_audio_buffer.cleared" { self.speaking = false }
+                    }
+                }
                 onEvent(event)
                 if let hold, reaches == hold { return }
                 if hold?.isFailed == true, reaches == .listening { break }
@@ -93,10 +117,15 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws {
         throw VoiceError.noBridge
     }
-    func hasRemoteSpeech() async -> Bool { false }
+    func hasRemoteSpeech() async -> Bool { lock.withLock { speaking } }
+    func remoteAudioLevel() async -> Double? { lock.withLock { speaking ? 0.65 : 0.0 } }
     func setRemoteVolume(_ value: Double) {}
-    func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
-    func close() { script?.cancel() }
+    func setLocalAudioEnabled(_ enabled: Bool) {}
+    @MainActor func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
+    func close() {
+        lock.withLock { speaking = false }
+        script?.cancel()
+    }
 }
 
 extension TalkState {

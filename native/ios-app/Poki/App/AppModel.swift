@@ -38,6 +38,7 @@ final class AppModel {
     private(set) var relayStatus = RelayStatus.off
     private(set) var sessionOn = false
     private(set) var activityText = "Idle"
+    private(set) var activityPlan: PokiActivityAttributes.Plan?
     private(set) var lastAction: String?
     private(set) var approvals: [PendingApproval] = []
     private(set) var pairing: PairingEvent?
@@ -2037,6 +2038,7 @@ final class AppModel {
         // The owner sees that Poki took the task: the Live Activity (started here, while
         // Poki is in front) and iOS's background line say so before the model's first answer.
         if sessionOn {
+            activityPlan = nil
             activity.update { state in
                 state.plan = nil
                 guard state.approval == nil, state.handoff == nil, state.phase == .idle || state.phase.isRunOutcome else { return }
@@ -2046,6 +2048,7 @@ final class AppModel {
             }
             if !activity.isRunning, inFront { activity.start(deviceName: deviceName) }
         } else {
+            activityPlan = nil
             activity.update { $0.plan = nil }
         }
     }
@@ -2056,7 +2059,9 @@ final class AppModel {
     func chatPlan(steps: [String], current: Int, title: String?, to: String?) {
         activity.update { state in
             let old = state.plan
-            state.plan = .init(steps: steps.map { String($0.prefix(60)) }, current: current, title: title ?? old?.title, to: to ?? old?.to)
+            let next = PokiActivityAttributes.Plan(steps: steps.map { String($0.prefix(60)) }, current: current, title: title ?? old?.title, to: to ?? old?.to)
+            state.plan = next
+            activityPlan = next
         }
     }
 
@@ -2075,6 +2080,7 @@ final class AppModel {
         guard acted else {
             if !inSplitView { finishTask() }
             // A turn that never touched the phone: nothing ran, so nothing is left showing as working.
+            activityPlan = nil
             activity.update { state in
                 state.plan = nil
                 guard state.phase == .working, state.stepCount == 0, state.approval == nil, state.handoff == nil else { return }
@@ -2085,6 +2091,7 @@ final class AppModel {
             return
         }
         // On a Dynamic Island the activity's own pop-up says the task is over: no banner on top of it.
+        activityPlan = nil
         let islandTold = activity.finishNow(alert: true, result: result, task: task)
         if !inSplitView {
             finishTask { [weak self] in

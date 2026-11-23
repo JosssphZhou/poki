@@ -7,8 +7,10 @@ protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws
     @MainActor func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws
     func hasRemoteSpeech() async -> Bool
+    func remoteAudioLevel() async -> Double?
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
+    func setLocalAudioEnabled(_ enabled: Bool)
     @MainActor func diagnose(_ write: @escaping @MainActor (String) -> Void)
     @MainActor func close()
 }
@@ -16,6 +18,8 @@ protocol VoiceConnection: AnyObject, Sendable {
 extension VoiceConnection {
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws { throw VoiceError.noWebRTC }
     func hasRemoteSpeech() async -> Bool { false }
+    func remoteAudioLevel() async -> Double? { nil }
+    func setLocalAudioEnabled(_ enabled: Bool) {}
 }
 
 /// The microphone and speaker are WebRTC tracks. The `oai-events` data channel carries JSON events.
@@ -56,6 +60,8 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     /// WebRTC calls the delegate methods on its own threads and the app calls in from the main actor,
     /// so these three are only touched under `lock`.
     private let lock = NSLock()
+    private var localAudio: RTCAudioTrack?
+    private var localAudioEnabled = true
     private var remoteAudio: RTCAudioTrack?
     private var volume = 1.0
     private var closing = false
@@ -121,6 +127,10 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
             }
             holdsAudioSession = true
             let mic = factory.audioTrack(with: factory.audioSource(with: constraints), trackId: "poki-mic")
+            lock.withLock {
+                localAudio = mic
+                mic.isEnabled = localAudioEnabled
+            }
             peer.add(mic, streamIds: ["poki-voice"])
             diagnostics?("microphone track enabled; \(Self.audioSession())")
         } else {
@@ -157,13 +167,18 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     }
 
     func hasRemoteSpeech() async -> Bool {
-        guard let peer else { return false }
+        (await remoteAudioLevel() ?? 0) > 0.005
+    }
+
+    func remoteAudioLevel() async -> Double? {
+        guard let peer else { return nil }
         return await withCheckedContinuation { done in
             peer.statistics { report in
-                done.resume(returning: report.statistics.values.contains { stat in
-                    stat.type == "inbound-rtp" && (stat.values["kind"] as? String) == "audio"
-                        && (stat.values["audioLevel"] as? Double ?? 0) > 0.005
-                })
+                let level = report.statistics.values
+                    .filter { $0.type == "inbound-rtp" && ($0.values["kind"] as? String) == "audio" }
+                    .compactMap { $0.values["audioLevel"] as? Double }
+                    .max()
+                done.resume(returning: level)
             }
         }
     }
@@ -230,9 +245,20 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         }
     }
 
+    func setLocalAudioEnabled(_ enabled: Bool) {
+        lock.withLock {
+            localAudioEnabled = enabled
+            localAudio?.isEnabled = enabled
+        }
+    }
+
     @MainActor
     func close() {
-        lock.withLock { closing = true }
+        lock.withLock {
+            closing = true
+            localAudio = nil
+            remoteAudio = nil
+        }
         channel?.close()
         peer?.close()
         channel = nil

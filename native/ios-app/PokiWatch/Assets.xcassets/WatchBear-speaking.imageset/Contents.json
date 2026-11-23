@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "WatchBear-speaking.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
