@@ -7,11 +7,11 @@ import WidgetKit
 struct TalkToPokiControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "PokiTalk") {
-            ControlWidgetButton(action: TalkToPokiIntent()) {
+            ControlWidgetButton(action: TalkToPokiIntent(fromControl: true)) {
                 Label(String(localized: "Talk to Poki", table: "Entry"), systemImage: "waveform.circle")
             }
         }
         .displayName(LocalizedStringResource("Talk to Poki", table: "Entry"))
-        .description(LocalizedStringResource("Opens Poki and starts talking.", table: "Entry"))
+        .description(LocalizedStringResource("Opens Poki to start or return to a talk.", table: "Entry"))
     }
 }

@@ -17,34 +17,34 @@
         }
       }
     },
-    "Opens Poki and starts talking." : {
+    "Opens Poki to start or return to a talk." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 Poki 并开始说话。"
+            "value" : "打开 Poki，开始或返回通话。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開 Poki 並開始說話。"
+            "value" : "打開 Poki，開始或返回通話。"
           }
         }
       }
     },
-    "Opens Poki and starts talking. If Poki is doing a task, it shows that task and leaves it running." : {
+    "Opens Poki to start or return to a talk. If Poki is doing a task, it shows the task and leaves it running." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 Poki 并开始说话。Poki 正在做任务时，显示这个任务，任务继续进行。"
+            "value" : "打开 Poki，开始或返回通话。如果 Poki 正在执行任务，就显示该任务并继续执行。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開 Poki 並開始說話。Poki 正在做任務時，顯示這個任務，任務繼續進行。"
+            "value" : "打開 Poki，開始或返回通話。如果 Poki 正在執行任務，就顯示該任務並繼續執行。"
           }
         }
       }
@@ -525,6 +525,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先允許 Poki 使用麥克風。"
+          }
+        }
+      }
+    },
+    "Vocal Shortcuts and Back Tap" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "人声快捷指令与轻点背面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "語音捷徑與背面輕點"
+          }
+        }
+      }
+    },
+    "Settings › Accessibility › Vocal Shortcuts" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置 › 无障碍（辅助功能） › 人声快捷指令"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 › 輔助使用 › 語音捷徑"
+          }
+        }
+      }
+    },
+    "Settings › Accessibility › Touch › Back Tap" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置 › 无障碍（辅助功能） › 触控 › 轻点背面"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定 › 輔助使用 › 觸控 › 背面輕點"
+          }
+        }
+      }
+    },
+    "Create a shortcut with the “Talk to Poki” action in Shortcuts. Select it in Vocal Shortcuts or Back Tap to start or return to a talk. Avoid “Poki Anytime” here because running it again ends the current talk." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「快捷指令」App 中创建一条包含「和 Poki 说话」操作的快捷指令。将它设为人声快捷指令或轻点背面的动作，即可开始或返回通话。这里不要选「随时 Poki」，再次运行它会结束当前通话。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在「捷徑」App 中建立一條包含「和 Poki 說話」動作的捷徑。將它設為語音捷徑或背面輕點的動作，即可開始或返回通話。這裡請勿選用「隨時 Poki」，再次執行會結束目前的通話。"
+          }
+        }
+      }
+    },
+    "With Siri, say “Return to my call in Poki.”" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你也可以对 Siri 说「回到和 Poki 的通话」。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你也可以對 Siri 說「回到和 Poki 的通話」。"
           }
         }
       }

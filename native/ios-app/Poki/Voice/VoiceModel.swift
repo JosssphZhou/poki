@@ -464,6 +464,8 @@ final class VoiceModel {
     /// The server opened this session: it takes events now.
     private var ready = false
     private var session = 0
+    @ObservationIgnored private var awaitingFirstLaunchUtterance: PokiEntry.Request?
+    @ObservationIgnored private var inputReadyWatch: Task<Void, Never>?
     private var activeResponse: String?
     private var wantsResponse = false
     private var manualRealtimeTurns = false
@@ -567,6 +569,7 @@ final class VoiceModel {
     /// while AirPods switch to their microphone) the button and the bar already show it, and a second
     /// tap ends it instead of starting another one.
     var isOn: Bool { liveCloseTimeout == nil && (link != nil || dictation != nil || openingDictation != nil || isConnecting) }
+    var activeEntrySession: Int? { isOn ? session : nil }
     private var isConnecting: Bool { if case .connecting = phase { return true }; return false }
 
     /// Voice can start: the OpenAI key on this iPhone (Realtime, no bridge), the Mac's voice bridge, or
@@ -693,24 +696,36 @@ final class VoiceModel {
     }
 
     func start(microphone: Bool = true, captureOpening: Bool = false,
-               presentSpeechPermission: SpeechPermissionPresenter = { request in await request() }) async {
+               presentSpeechPermission: SpeechPermissionPresenter = { request in await request() },
+               admitEntry: (() -> PokiEntry.Request?)? = nil) async {
         if let liveCloseTimeout { await liveCloseTimeout.value }
+        let request = admitEntry?()
+        if admitEntry != nil, request == nil { return }
         guard !isOn else { return }
-        phase = .connecting
-        needsChatGPTSignIn = false
-        session += 1
-        let number = session
-        openingSpeechAuthorized = false
-        let context = microphone ? await recentAppAudio() : nil
-        guard number == session else { return }
-        appAudio = context
         let account = VoiceDirect.account
         let key = VoiceDirect.apiKey(for: account)
         let subscription = usesChatGPTSubscription && microphone && !rehearsing
+        phase = .connecting
+        needsChatGPTSignIn = false
+        session += 1
+        PokiEntry.shared.advanceEpoch()
+        let number = session
+        openingSpeechAuthorized = false
+        if subscription || key != nil || bridge != nil || rehearsing {
+            awaitingFirstLaunchUtterance = request
+            request?.record(.started, reason: "newTalk", session: number)
+        }
+        let context = microphone ? await recentAppAudio() : nil
+        guard number == session else { return }
+        appAudio = context
         if !subscription, key == nil, bridge == nil, !rehearsing {
             if VoiceDirect.canDictate, microphone, appAudio == nil {
                 await startDictation()
-            } else { phase = .lost(VoiceError.noBridge.words) }
+            } else {
+                appAudio = nil
+                phase = .lost(VoiceError.noBridge.words)
+                PokiEntry.shared.advanceEpoch()
+            }
             return
         }
         let bridge = self.bridge
@@ -839,6 +854,10 @@ final class VoiceModel {
             watchForStall(session: number)
             link.setRemoteVolume(muted || liveSpeechStopped ? 0 : 1)
             if usesLive { watchLivePlayback(link, session: number) }
+            if let request {
+                request.recordStage(.transportConnected, session: number)
+                if microphone, !rehearsing { watchForInputReady(link, request: request, session: number) }
+            }
         } catch {
             // Ended while connecting: stop() already put everything back.
             guard number == session, liveCloseTimeout == nil else { return }
@@ -850,6 +869,9 @@ final class VoiceModel {
             transcript = nil
             appAudio = nil
             _ = releaseOpeningCapture(session: number)
+            awaitingFirstLaunchUtterance = nil
+            inputReadyWatch?.cancel()
+            inputReadyWatch = nil
             if subscription {
                 endSession()
             } else {
@@ -858,8 +880,29 @@ final class VoiceModel {
             }
             phase = .lost(captureOpening ? Self.openingAudioUnsent : VoiceError.reason(for: error))
             needsChatGPTSignIn = error as? CodexVoice.Failure == .signIn
+            PokiEntry.shared.advanceEpoch()
             log.add("voice", "could not connect: \(error.localizedDescription)")
         }
+    }
+
+    private func watchForInputReady(_ connection: VoiceConnection, request: PokiEntry.Request, session number: Int) {
+        inputReadyWatch?.cancel()
+        inputReadyWatch = Task { [weak self, time] in
+            while !Task.isCancelled {
+                let sent = await connection.hasSentMicrophoneAudio()
+                guard !Task.isCancelled, self?.session == number, self?.link === connection, self?.isOn == true else { return }
+                if sent {
+                    request.recordStage(.inputReady, session: number)
+                    return
+                }
+                await time.sleep(.milliseconds(250))
+            }
+        }
+    }
+
+    private func recordFirstLaunchUtterance(session number: Int) {
+        awaitingFirstLaunchUtterance?.recordStage(.firstUtterance, session: number)
+        awaitingFirstLaunchUtterance = nil
     }
 
     private static var openingAudioUnsent: String {
@@ -898,6 +941,7 @@ final class VoiceModel {
         endVoiceConnection()
         session += 1
         phase = .lost(Self.openingAudioUnsent)
+        PokiEntry.shared.advanceEpoch()
         return false
     }
 
@@ -917,6 +961,7 @@ final class VoiceModel {
             session += 1
             let note = Self.openingUncertainAfterAction
             phase = .lost(note)
+            PokiEntry.shared.advanceEpoch()
             lines.append(VoiceLine(role: .note, text: note))
             endTranscript()
             return true
@@ -944,7 +989,10 @@ final class VoiceModel {
             openingDictation = Task { [weak self] in
                 guard let self else { return }
                 defer {
-                    if session == number { openingDictation = nil }
+                    if session == number {
+                        openingDictation = nil
+                        PokiEntry.shared.advanceEpoch()
+                    }
                 }
                 await openingSpeech.announce(Self.openingSpeechUnavailable)
                 if session == number { phase = .lost(Self.openingSpeechUnavailable) }
@@ -959,6 +1007,7 @@ final class VoiceModel {
                 if session == number {
                     openingDictation = nil
                     waitsForOpeningDictation = false
+                    PokiEntry.shared.advanceEpoch()
                 }
             }
             let deadline = Task { [time, weak audio = capture.audio] in
@@ -1050,6 +1099,7 @@ final class VoiceModel {
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
         guard liveCloseTimeout == nil else { return }
+        PokiEntry.shared.advanceEpoch()
         releaseOpeningCapture(session: session)
         if let dictation {
             dictation.cancel()
@@ -1112,6 +1162,9 @@ final class VoiceModel {
             usesCodexLive = false
         }
         keepOpen()
+        inputReadyWatch?.cancel()
+        inputReadyWatch = nil
+        awaitingFirstLaunchUtterance = nil
         openingTiming = nil
         livePlayback?.cancel()
         livePlayback = nil
@@ -1353,7 +1406,11 @@ final class VoiceModel {
     }
 
     private func startDictation() async {
-        guard await Dictation.allowed() else { phase = .lost(AppLocalization.text(LocalizedStringResource("Poki needs the microphone and speech recognition: allow them in Settings › Poki."))); return }
+        guard await Dictation.allowed() else {
+            phase = .lost(AppLocalization.text(LocalizedStringResource("Poki needs the microphone and speech recognition: allow them in Settings › Poki.")))
+            PokiEntry.shared.advanceEpoch()
+            return
+        }
         let dictation = Dictation()
         dictation.onHeard = { [weak self] text in
             guard let self, self.phase == .hearing else { return }
@@ -1366,11 +1423,14 @@ final class VoiceModel {
         do {
             try dictation.listen()
             phase = .hearing
+            session += 1
+            PokiEntry.shared.advanceEpoch()
             log.add("voice", "dictation to the chat (no Realtime key or bridge)")
         } catch {
             self.dictation = nil
             holdingMicrophone = false
             phase = .lost(VoiceError.reason(for: error))
+            PokiEntry.shared.advanceEpoch()
         }
     }
 
@@ -1430,6 +1490,7 @@ final class VoiceModel {
         }
         if !confirmed, startOpeningDictation() { return }
         if usesLive && ready { logLiveClose(reason, confirmed: confirmed) }
+        PokiEntry.shared.advanceEpoch()
         endSession()
         session += 1
         phase = .lost(TalkState.connectionLost)
@@ -1455,6 +1516,10 @@ final class VoiceModel {
             lastActivity = time.now()
             keepOpen()
             phase = .hearing
+            if let text = (params["text"] as? String) ?? (params["delta"] as? String),
+               text.contains(where: { !$0.isWhitespace }) {
+                recordFirstLaunchUtterance(session: number)
+            }
             return
         }
         guard method == "thread/realtime/transcript/done", let text = params["text"] as? String,
@@ -1462,6 +1527,7 @@ final class VoiceModel {
         if role == "user" {
             lastActivity = time.now()
             keepOpen()
+            if text.contains(where: { !$0.isWhitespace }) { recordFirstLaunchUtterance(session: number) }
             lines.append(VoiceLine(role: .you, text: text))
             awaitingAnswer = true
             phase = .thinking
@@ -1531,6 +1597,7 @@ final class VoiceModel {
                     endIfDone()
                     return
                 }
+                if text.contains(where: { !$0.isWhitespace }) { recordFirstLaunchUtterance(session: number) }
                 appendLiveSpeech(text, audio: audio, itemID: itemID)
                 let utterance = Self.liveSpeechParts(liveCallerSpeech.text).filter { !Self.liveBackchannels.contains($0) }
                 if !liveCallerSpeech.alreadyHandled, Self.liveRequestsStop(utterance) {
@@ -1647,7 +1714,9 @@ final class VoiceModel {
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
             if let text = event["transcript"] as? String, !text.isEmpty {
-                lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
+                let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !transcript.isEmpty { recordFirstLaunchUtterance(session: number) }
+                lines.append(VoiceLine(role: .you, text: transcript))
             }
         case "response.created":
             guard !usesLive || !liveSpeechStopped else { return }
@@ -1731,7 +1800,7 @@ final class VoiceModel {
         clock.spoken = start
         let elapsed = Int(start.timeIntervalSince(said) * 1000)
         lastTurnMS = elapsed
-        log.add("voice", "turn: end of speech to spoken result \(elapsed) ms (tool result in \(Int(delivered.timeIntervalSince(said) * 1000)) ms)")
+        log.add("voice", "turn: end of speech to spoken result \(elapsed) ms (tool result in \(Int(delivered.timeIntervalSince(said) * 1000)) ms) session=\(session)")
     }
 
     private func appendLiveCaption(_ text: String, role: VoiceLine.Role, start: Int, end: Int) {

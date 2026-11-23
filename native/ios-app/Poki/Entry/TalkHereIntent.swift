@@ -78,7 +78,7 @@ struct TalkHereIntent: AudioRecordingIntent, LiveActivityIntent, ForegroundConti
     @MainActor
     private func openPoki(_ words: LocalizedStringResource) async throws -> IntentResultContainer<Never, Never, Never, Never> {
         AppLog.shared.add("voice", "Talk Here opens Poki: \(String(localized: words))")
-        PokiEntry.shared.ask(.talk)
+        PokiEntry.shared.ask(.talk, from: .anytime)
         if #available(iOS 26.0, *) {
             try await continueInForeground(IntentDialog(words), alwaysConfirm: false)
         } else {
