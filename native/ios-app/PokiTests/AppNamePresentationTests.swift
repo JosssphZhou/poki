@@ -14,13 +14,12 @@ final class AppNamePresentationTests: XCTestCase {
 
     func testTaskCardsShowNamesAndOmitUnknownIdentifiers() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
-        covered.forEach { $0.accessibilityElementsHidden = true }
+        let previousKey = scene.keyWindow
         let window = UIWindow(windowScene: scene)
         window.frame = scene.screen.bounds
         defer {
             window.isHidden = true
-            covered.forEach { $0.accessibilityElementsHidden = false }
+            previousKey?.makeKey()
         }
         let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("AppNameEvidence")
@@ -34,39 +33,38 @@ final class AppNamePresentationTests: XCTestCase {
         unknown.app = "org.example.unlisted"
         let archive = try JSONEncoder().encode([known, unknown])
         let restored = try JSONDecoder().decode([ChatEntry].self, from: archive)
+        let knownTitle = try XCTUnwrap(restored[0].title)
+        let unknownTitle = try XCTUnwrap(restored[1].title)
         let icons = AppIconStore(installed: { _, _ in nil })
         for identity in ["com.tencent.xin", " COM.TENCENT.XIN ", "微信", "WeChat"] {
             XCTAssertNotNil(icons.icon(identity), "WeChat must have its carried icon even without a system icon")
         }
         for (index, state) in [TaskCardState.done, .failed, .stopped, .running, .needsYou, .yourTurn].enumerated() {
-            window.rootViewController = UIHostingController(rootView:
+            let controller = UIHostingController(rootView:
                 VStack(spacing: 20) {
-                    TaskCard(title: restored[0].title ?? "", steps: [], state: state, app: restored[0].app,
+                    TaskCard(title: knownTitle, steps: [], state: state, app: restored[0].app,
                              started: end.addingTimeInterval(-13), ended: end)
-                    TaskCard(title: restored[1].title ?? "", steps: [], state: state, app: restored[1].app,
+                    TaskCard(title: unknownTitle, steps: [], state: state, app: restored[1].app,
                              started: end.addingTimeInterval(-13), ended: end)
                 }.padding().frame(maxHeight: .infinity).background(Color(.systemGroupedBackground))
-                    .accessibilityElement(children: .contain).accessibilityIdentifier("app.names.\(index)"))
+                    .environment(\.accessibilityEnabled, true))
+            window.rootViewController = controller
             window.makeKeyAndVisible()
             window.layoutIfNeeded()
-            CATransaction.flush()
-            var source = ""
-            let deadline = CACurrentMediaTime() + 30
-            repeat {
-                source = await Task.detached {
-                    var code: NSString?
-                    return PKInProcess.shared().sourceXML(nil, code: &code) ?? ""
-                }.value
-                if source.contains("app.names.\(index)") { break }
-            } while CACurrentMediaTime() < deadline
-            XCTAssertTrue(source.contains("app.names.\(index)"), "The task cards must be on screen")
-            try source.write(to: output.appendingPathComponent("cards-\(index).xml"), atomically: true, encoding: .utf8)
+            let view = try XCTUnwrap(controller.view)
+            let rendered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                let labels = renderedAccessibilityLabels(in: view)
+                return labels.contains { $0.contains(knownTitle) } && labels.contains { $0.contains(unknownTitle) }
+            }, object: nil)
+            rendered.expectationDescription = "Both task cards are rendered for \(state)"
+            await fulfillment(of: [rendered], timeout: 5)
+            let source = renderedAccessibilityLabels(in: view).joined(separator: "\n")
+            try source.write(to: output.appendingPathComponent("cards-\(index).txt"), atomically: true, encoding: .utf8)
             if state == .done {
-                let data = await Task.detached {
-                    var code: NSString?
-                    return PKInProcess.shared().screenshot(&code)
-                }.value
-                try XCTUnwrap(UIImage(data: try XCTUnwrap(data))?.pngData()).write(to: output.appendingPathComponent("task-cards.png"))
+                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                    window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+                }
+                try XCTUnwrap(image.pngData()).write(to: output.appendingPathComponent("task-cards.png"))
                 XCTAssertTrue(source.contains("0:13"), "Omitting an app must retain its elapsed time")
             }
             XCTAssertFalse(source.contains("com.tencent.xin") || source.contains("org.example.unlisted"), "An internal identifier reached a task card: \(source)")

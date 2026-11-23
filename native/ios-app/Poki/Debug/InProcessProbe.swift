@@ -748,7 +748,9 @@ final class InProcessProbe: ObservableObject {
         AskPoki.refresh()
         guard let chat = AskPoki.chat else { note("no chat", ["step": "chat_missing"]); return }
         chat.newConversation()
-        let task = probeTask ?? "Open the Poki fixture app and tell me what it shows."
+        let task = probeTask ?? (inSplitView
+            ? "Open the Poki fixture app and tell me what it shows."
+            : "Open Settings and tell me what it shows.")
         if inSplitView || configuredModel {
             _ = await model.phoneTool("look", arguments: "{}")
             note("workspace-chat: ready to restore the two test apps", ["step": "workspace_ready"])
@@ -773,7 +775,8 @@ final class InProcessProbe: ObservableObject {
         guard !inSplitView, !configuredModel else { return }
         // An outside agent hands a task over.
         let t1 = ProcessInfo.processInfo.systemUptime
-        let handoff = await model.phoneToolWithPicture("ask_poki", arguments: "{\"task\":\"Open the Poki fixture app and tell me what it shows.\"}")
+        let handoffArgs = JSON.object(["task": .string(task)])
+        let handoff = await model.phoneToolWithPicture("ask_poki", arguments: handoffArgs.serialized())
         note("ask_poki: \(handoff.isError ? "failed" : "ok") in \(String(format: "%.1f", ProcessInfo.processInfo.systemUptime - t1)) s",
              ["step": "ask_poki", "error": handoff.isError, "text": String(handoff.text.prefix(4000))])
         let handoffs = SessionStore.shared.sessions.filter { $0.kind == .handoff }

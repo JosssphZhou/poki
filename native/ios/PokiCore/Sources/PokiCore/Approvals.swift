@@ -182,7 +182,13 @@ enum Countdown {
         guard before != after else { return true }
         let b = readings(before), a = readings(after)
         guard b.masked == a.masked else { return false }
-        return zip(b.seconds, a.seconds).allSatisfy { old, new in old == new || (new < old && abs(Double(old - new) - elapsed) <= slack) }
+        for (old, new) in zip(b.seconds, a.seconds) {
+            if old == new { continue }
+            guard new < old else { return false }
+            let decrease = Double(old - new)
+            guard abs(decrease - elapsed) <= slack else { return false }
+        }
+        return true
     }
 }
 

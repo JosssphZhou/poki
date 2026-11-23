@@ -292,7 +292,7 @@ private struct LoopbackPage: View {
 
     var body: some View {
         let monitor = model.loopback
-        let localReady = model.hasOpenInProcessSession && !monitor.isWorking
+        let localReady = !monitor.isWorking && (model.hasOpenInProcessSession || model.mountedImageStandsIn)
         let detail = LocalizedStringKey(monitor.detail)
         Section {
             LabeledContent {

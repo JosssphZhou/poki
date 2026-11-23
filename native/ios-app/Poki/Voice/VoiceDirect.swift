@@ -206,6 +206,9 @@ final class Dictation: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     static func allowed() async -> Bool {
+        if LaunchMode.current.suppressesSystemPermissionPrompts {
+            return SFSpeechRecognizer.authorizationStatus() == .authorized && AVAudioApplication.shared.recordPermission == .granted
+        }
         let speech = await withCheckedContinuation { c in SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) } }
         let microphone = await AVAudioApplication.requestRecordPermission()
         return speech && microphone

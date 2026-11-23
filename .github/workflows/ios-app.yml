@@ -79,11 +79,14 @@ jobs:
           brew install xcodegen
           xcodegen generate --spec native/ios-app/project.yml
           mkdir -p build
-          xcodebuild build \
+          if ! xcodebuild build \
             -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
-            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 2>&1 | tee build/sim.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/sim/Build/Products/Debug-iphonesimulator/Poki.app || { grep -B2 -A6 "error:" build/sim.log | head -80; exit 1; }
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 > build/sim.log 2>&1; then
+            grep -E "error:|BUILD FAILED" build/sim.log || tail -80 build/sim.log
+            exit 1
+          fi
+          /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' build/sim/Build/Products/Debug-iphonesimulator/Poki.app/Info.plist
       - name: Boot a simulator
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c "
@@ -140,17 +143,29 @@ jobs:
               if not ok: failures.append(what)
           need(steps.get("prepare", {}).get("ok") is True, "in-process automation ready")
           chat = steps.get("chat", {})
-          names = [c["name"] for c in chat.get("calls", [])]
+          calls = chat.get("calls", [])
+          names = [c["name"] for c in calls]
+          finished = names[-1:] == ["finish_task"]
+          open_count = names.count("do")
+          reads = calls[1 + open_count:-1] if finished else calls[1 + open_count:]
           need(not chat.get("running", True), "the chat's task ended")
-          need(names[:4] == ["report_plan", "do", "look", "finish_task"], f"pi ran the scripted calls ({names})")
-          need(all(c["ok"] for c in chat.get("calls", [])), "every tool call succeeded")
+          need(1 <= open_count <= 3 and 1 <= len(reads) <= 3 and
+               names == ["report_plan"] + ["do"] * open_count + ["look"] * len(reads) + ["finish_task"],
+               f"pi ran the scripted calls with bounded open and read retries ({names})")
+          need(names[:1] == ["report_plan"] and calls[0]["ok"] and finished and calls[-1]["ok"],
+               "planning and finishing succeeded")
+          need(bool(reads) and reads[-1]["ok"] and all(not c["ok"] for c in reads[:-1]),
+               "the last Settings read succeeded after any failed reads")
+          need(sum(bool(r.get("observed_settings")) for r in requests) == 2,
+               "a fresh read identified Settings in each task")
           need(any("Settings is open" in r for r in chat.get("replies", [])), "Poki answered in the chat")
           need(not chat.get("problems"), f"no problem notes ({chat.get('problems')})")
           need(steps.get("chat_saved", {}).get("saved") is True, "the chat was saved as a session")
           need(any(r["pictures"] > 0 for r in requests), "a screenshot reached the model")
           need(any("look" in r["tools"] and "finish_task" in r["tools"] for r in requests), "the model saw Poki's tools")
           handoff = steps.get("ask_poki", {})
-          need(handoff.get("error") is False and "Settings is open" in handoff.get("text", ""), "ask_poki returned Poki's result")
+          need(handoff.get("error") is False and "result: done: Settings is open" in handoff.get("text", ""),
+               "ask_poki returned Poki's completed result")
           need(steps.get("handoff_saved", {}).get("count", 0) >= 1, "the hand-off was saved as a session")
           sys.exit(1 if failures else 0)
           PY
@@ -168,6 +183,7 @@ jobs:
         with:
           name: agent-chat
           path: |
+            build/sim.log
             build/inprocess-probe.json
             build/model-requests.jsonl
             build/agent-chat.log

@@ -7,6 +7,11 @@ import XCTest
 final class IdleReturnTests: XCTestCase {
     func testForegroundDuringIdleReturnKeepsAutomationUntilActivationAnswers() async throws {
         try XCTSkipUnless(AutomationPath.current == .inProcess, "Poki Runner path")
+        try await checkIdleReturn(systemMajor: 26, keepsSession: true)
+        try await checkIdleReturn(systemMajor: 27, keepsSession: false)
+    }
+
+    private func checkIdleReturn(systemMajor: Int, keepsSession: Bool) async throws {
         InProcessWDA.gate.withLock { $0 = InProcessWDA.OpenGate() }
         let defaults = UserDefaults.standard
         let keys = ["relayAddress", "relayEnabled", "idleStopSeconds.v4"]
@@ -14,7 +19,8 @@ final class IdleReturnTests: XCTestCase {
         let setup = SetupState.load()
         let session = FakeAutomation()
         let transport = IdleReturnTransport(session: session)
-        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: session, transport: transport)
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: session, transport: transport,
+                             systemVersion: OperatingSystemVersion(majorVersion: systemMajor, minorVersion: 0, patchVersion: 0))
         defer {
             model.stopSession()
             for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
@@ -50,7 +56,10 @@ final class IdleReturnTests: XCTestCase {
         XCTAssertFalse(model.runnerPaused, "another idle tick must not pause an unfinished return")
 
         await transport.finishActivation()
-        await waitFor("idle closes automation after the return") { model.runnerPaused && !session.isOpen }
+        await waitFor("iOS \(systemMajor) stands by after returning") { model.runnerPaused && model.lastInProcessClose != nil }
+        XCTAssertFalse(model.hasOpenInProcessSession)
+        XCTAssertEqual(session.isOpen, keepsSession, "whether the system session stays open in standby on iOS \(systemMajor)")
+        XCTAssertEqual(session.pauses, keepsSession ? 1 : 0, "Automation Mode pauses when the session stays open")
         let activations = await transport.activationCount
         XCTAssertEqual(activations, 1)
 
