@@ -202,6 +202,10 @@ final class PokiBrowser: NSObject {
     /// The chat's Stop: whatever waits ends, loading stops, the page stays for the owner to see.
     func taskStopped() {
         pendingOpen = nil
+        if let activeNavigation { supersededNavigations.add(activeNavigation) }
+        activeNavigation = nil
+        isLoading = false
+        committed = true
         webView.stopLoading()
         finishLoads()
         let waiters = ownerWaiters
@@ -256,6 +260,7 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         guard navigation === activeNavigation else { return }
         isLoading = false
+        committed = true
         finishLoads()
     }
 

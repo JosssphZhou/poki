@@ -16,6 +16,18 @@ import XCTest
 /// was tapped into the page, so a test reads the page to see whether a tap happened.
 @MainActor
 final class BrowserGuardTests: XCTestCase {
+    func testStopClearsLoadingAndIgnoresLateNavigationCallbacks() throws {
+        let browser = PokiBrowser()
+        let navigation = try XCTUnwrap(browser.webView.loadHTMLString("<p>Page</p>", baseURL: nil))
+        browser.webView(browser.webView, didStartProvisionalNavigation: navigation)
+        XCTAssertTrue(browser.isLoading)
+
+        browser.taskStopped()
+        XCTAssertFalse(browser.isLoading)
+        browser.webView(browser.webView, didStartProvisionalNavigation: navigation)
+        XCTAssertFalse(browser.isLoading, "A queued callback must not restart a stopped load")
+    }
+
     func testCancelledOwnerWaitLeavesThePageWithTheOwner() async {
         let browser = PokiBrowser()
         browser.takeOver()
