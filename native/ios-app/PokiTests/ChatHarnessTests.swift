@@ -537,10 +537,10 @@ final class ChatHarnessTests: XCTestCase {
     /// task with Poki's suggestion selected and the model adds only a conclusion; the item you select
     /// comes back with the conversation as it is saved.
     func testAResultCardTheAppCannotDrawLeavesTheWholeResultToTheReply() async throws {
-        let train = Self.train, finish = Self.finishWithCard
+        let train = Self.train
         let server = try FakeCompletions(replies: [
-            finish([train("G1", "07:00"), ["id": "G3", "title": "G3"]], "把 {title} 次发到公司差旅群"), FakeCompletions.text("G1 07:00, G3 08:00."),
-            finish([train("G1", "07:00"), train("G3", "08:00")], "把 {title} 次发到公司差旅群"), FakeCompletions.text("G1 is the earliest."),
+            Self.finishWithCard([train("G1", "07:00"), ["id": "G3", "title": "G3"]], "把 {title} 次发到公司差旅群"), FakeCompletions.text("G1 07:00, G3 08:00."),
+            Self.finishWithCard([train("G1", "07:00"), train("G3", "08:00")], "把 {title} 次发到公司差旅群"), FakeCompletions.text("G1 is the earliest."),
         ])
         let chat = newChat(on: server)
         var records: [TaskRecord] = []
