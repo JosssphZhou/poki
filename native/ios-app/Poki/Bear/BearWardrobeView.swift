@@ -1,7 +1,7 @@
 import SwiftUI
 
 private enum BearWardrobeTab: Int, CaseIterable {
-    case headwear, clothes, outfits
+    case outfits, headwear, clothes
 
     var slot: BearOutfitSlot? {
         switch self {
@@ -92,7 +92,7 @@ private struct WardrobeGrid: View {
 
 struct BearCustomizationView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var tab = BearWardrobeTab.headwear
+    @State private var tab = BearWardrobeTab.outfits
     @State private var accessibilityScrollPosition = ScrollPosition()
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
