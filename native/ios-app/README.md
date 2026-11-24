@@ -168,7 +168,7 @@ Poki ships English, Simplified Chinese and Traditional Chinese. Settings › Lan
 The app keeps App Transport Security on. `project-base.yml` declares only `NSAllowsLocalNetworking`,
 which covers the voice bridge and loopback services. A Custom Endpoint address normally uses HTTPS.
 
-To use a plain-HTTP gateway, whoever builds Poki must opt in by naming exactly one host:
+To use a plain-HTTP gateway, whoever builds Poki must opt in by naming exactly one canonical host:
 
 ```sh
 POKI_HTTP_ENDPOINT_HOST=203.0.113.9 POKI_HTTP_ENDPOINT_OPT_IN=1 xcodegen generate --spec project.yml
@@ -176,7 +176,16 @@ POKI_HTTP_ENDPOINT_HOST=203.0.113.9 POKI_HTTP_ENDPOINT_OPT_IN=1 xcodegen generat
 
 `project.yml` and `project-external.yml` then include `project-http-endpoint.yml`, which adds one
 `NSExceptionDomains` entry for that host with `NSExceptionAllowsInsecureHTTPLoads` set to YES. The
-built `Poki/Info.plist` contains no `NSAllowsArbitraryLoads` and no denylist.
+built `Poki/Info.plist` contains no `NSAllowsArbitraryLoads` and no denylist. `project-http-endpoint.yml`
+enforces the same single-host contract as the installer through `preGenCommand`
+(`native/ios-app/scripts/validate-http-endpoint-host.py`) before writing `Poki/Info.plist` or
+generating the Xcode project, and rechecks `Poki/Info.plist` in a target pre-build script.
+`POKI_HTTP_ENDPOINT_HOST` must already be one canonical lowercase ASCII RFC 1123 DNS name (no
+trailing dot), strict dotted-quad IPv4 literal, or canonical unbracketed unzoned IPv6 literal (no
+scheme, port, brackets, zone ID, CIDR mask, path, query, fragment, userinfo, or comma-separated
+list). Invalid or non-canonical values fail `xcodegen generate` loudly, and non-canonical values name
+the canonical host to pass. Default builds without `POKI_HTTP_ENDPOINT_OPT_IN` omit
+`project-http-endpoint.yml`, leaving neither an ATS exception nor validation hooks in the project.
 
 **Request scope.** `NSAllowsLocalNetworking` already permits plain HTTP to loopback, `.local`,
 `.localhost`, unqualified, and private or link-local IPv4/IPv6 hosts (`127.0.0.0/8`, `10.0.0.0/8`,
