@@ -147,6 +147,28 @@ final class ScreenHistoryTests: XCTestCase {
         }
     }
 
+    func testAutomaticPruningRejectsInFlightSummaryOfRemovedReads() async {
+        let store = HistoryStore.shared
+        let start = Date().addingTimeInterval(-2 * 86_400)
+        store.add(at: start, app: "com.apple.mobilenotes", title: "Notes", text: "Old shopping list")
+        let generation = await store.summaryGeneration()
+        let source = await store.recent()
+        XCTAssertEqual(source.map(\.text), ["Old shopping list"])
+
+        store.prune(days: 7)
+        let afterNoOp = await store.summaryGeneration()
+        XCTAssertEqual(afterNoOp, generation)
+
+        store.prune(days: 1, summaryDays: 7)
+        let remaining = await store.recent()
+        XCTAssertEqual(remaining.map(\.text), [""])
+        let saved = await store.keep(.init(title: "Old list", body: "Old shopping list"),
+                                     start: start, generation: generation)
+        XCTAssertFalse(saved)
+        let stale = await store.note(start: start)
+        XCTAssertNil(stale)
+    }
+
     func testClearingEverythingLeavesNoReadsSummariesOrRecord() async {
         let capture = HistoryCapture()
         HistoryStore.shared.add(at: Date(), app: "com.apple.mobilenotes", title: "Notes", text: "Shopping list")
