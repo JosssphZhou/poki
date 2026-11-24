@@ -147,6 +147,24 @@ final class ScreenHistoryTests: XCTestCase {
         }
     }
 
+    func testCancelledHistoryReloadDiscardsItsQueuedResult() async {
+        let reading = expectation(description: "History read started")
+        var pending: CheckedContinuation<[HistoryEntry], Never>?
+        let load = Task {
+            await HistoryPage.loadLayout {
+                await withCheckedContinuation {
+                    pending = $0
+                    reading.fulfill()
+                }
+            }
+        }
+        await fulfillment(of: [reading], timeout: 2)
+        load.cancel()
+        pending?.resume(returning: [])
+        let result = await load.value
+        XCTAssertNil(result, "A cancelled view task must not publish a layout")
+    }
+
     func testClearingEverythingLeavesNoReadsSummariesOrRecord() async {
         let capture = HistoryCapture()
         HistoryStore.shared.add(at: Date(), app: "com.apple.mobilenotes", title: "Notes", text: "Shopping list")

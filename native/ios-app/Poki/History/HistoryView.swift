@@ -109,9 +109,16 @@ struct HistoryPage: View {
     }
 
     private func load() async {
-        let entries = await HistoryStore.shared.recent()
-        layout = BacktapeLayout.build(entries)
+        guard let replacement = await Self.loadLayout(read: { await HistoryStore.shared.recent() }),
+              !Task.isCancelled else { return }
+        layout = replacement
         loaded = true
+    }
+
+    static func loadLayout(read: () async -> [HistoryEntry]) async -> BacktapeLayout? {
+        let entries = await read()
+        guard !Task.isCancelled else { return nil }
+        return BacktapeLayout.build(entries)
     }
 }
 
