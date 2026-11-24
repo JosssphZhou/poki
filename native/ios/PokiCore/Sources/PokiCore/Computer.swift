@@ -970,23 +970,32 @@ final class Computer: @unchecked Sendable {
         var actions = actions
         var bound: String?
         if config.appNames() {
-            actions = actions.map(withAppNames)
+            do {
+                actions = try actions.map(resolvingLaunchNames)
+            } catch {
+                return ToolResult(text: "\(error)", jpeg: nil, isError: true)
+            }
             // The session's app: named once, kept until it is let go, a task ends or a new one begins.
             if beginsTask() { sessionApp = nil }
             if let app {
                 if app == .bool(false) || app == .null {
                     sessionApp = nil
-                } else if let given = app.string?.trimmingCharacters(in: .whitespacesAndNewlines), !given.isEmpty {
-                    guard let bundle = config.resolveApp(given) ?? (given.contains(".") && !given.contains(" ") ? given : nil) else {
-                        return ToolResult(text: "do: no app named \"\(given)\" is known on this phone; nothing was sent. Give its bundle id, or go home ({button: \"home\"}), swipe down to search, type its name and tap it", jpeg: nil, isError: true)
+                } else if let text = app.string,
+                          case let given = text.trimmingCharacters(in: .whitespacesAndNewlines), !given.isEmpty {
+                    guard let bundle = config.resolveInstalledApp(text) else {
+                        return ToolResult(text: unknownApp(given).message, jpeg: nil, isError: true)
                     }
                     sessionApp = (bundle, given, session)
-                    if actions.first?["launch"] == nil, actions.count < 20, await !isInFront(bundle) { actions.insert(["launch": .string(bundle)], at: 0) }
+                    if actions.first?["launch"] == nil, actions.count < 20, await !isInFront(bundle) { actions.insert(["launch": ["bundle": .string(bundle)]], at: 0) }
                 } else {
                     return ToolResult(text: "do: app takes the app's name or bundle id, or false to let go of the session's app; nothing was sent", jpeg: nil, isError: true)
                 }
             }
             if let kept = sessionApp, kept.session == session { bound = kept.bundle }
+        } else if let app, app != .bool(false), app != .null {
+            // Apps by Name is off (the app's Testing Options): the actions would go to whatever app is
+            // in front, so none is sent.
+            return ToolResult(text: "do: app is turned off on this phone (Apps by Name, in Poki's Testing Options); nothing was sent. Send the actions without app, starting with {launch: \"bundle id\"} when the app is not in front", jpeg: nil, isError: true)
         }
         var result = restartNote(await actNow(actions: actions, full: full, finish: finish, session: session, answerBy: answerBy, byOwnersVoice: byOwnersVoice, local: local, localTask: localTask))
         if local, let read = authorizationRead, read.task == localTask, let evidence = result.screenEvidence,
@@ -1010,26 +1019,52 @@ final class Computer: @unchecked Sendable {
         return front == bundle
     }
 
-    /// A launch by name as a launch by bundle id, also inside a path's steps. A name the host does not
-    /// know is left as it is, and the launch says so.
-    func withAppNames(_ action: JSON) -> JSON {
-        guard case .object(var o) = action else { return action }
-        if let spec = o["launch"] {
-            if let given = spec.string { if let bundle = config.resolveApp(given) { o["launch"] = .string(bundle) } }
-            else if case .object(var inner) = spec, let given = inner["bundle"]?.string ?? inner["name"]?.string ?? inner["app"]?.string {
-                inner["bundle"] = .string(config.resolveApp(given) ?? given)
-                inner["name"] = nil
-                inner["app"] = nil
-                o["launch"] = .object(inner)
+    private func unknownApp(_ name: String) -> ActionFailure {
+        ActionFailure(message: "do: no app named \"\(name)\" is known on this phone; nothing was sent. Give its bundle id, or go home ({button: \"home\"}), swipe down to search, type its name and tap it", delivery: .notSent)
+    }
+
+    private func resolveLaunch(_ given: String) throws -> JSON {
+        let name = given.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Keep ID-shaped shorthand so an OS refusal can fall back to the same text as a name.
+        if PokiCore.looksLikeBundleID(name) { return .string(name) }
+        guard let bundle = config.resolveInstalledApp(name) else { throw unknownApp(name) }
+        return ["bundle": .string(bundle)]
+    }
+
+    private func resolvingLaunchNames(_ action: JSON) throws -> JSON {
+        guard case .object(var fields) = action else { return action }
+        if let spec = fields["launch"] {
+            if let given = spec.string {
+                fields["launch"] = try resolveLaunch(given)
+            } else if case .object(var launch) = spec {
+                let alias = launch.removeValue(forKey: "app")?.string
+                if launch["bundle"]?.string == nil {
+                    if let name = launch["name"]?.string?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                        guard let bundle = config.resolveApp(name) else { throw unknownApp(name) }
+                        launch["bundle"] = .string(bundle)
+                    } else if let alias {
+                        let resolved = try resolveLaunch(alias)
+                        launch["bundle"] = resolved["bundle"] ?? resolved
+                        // Keep the ambiguous alias alongside the candidate bundle and fresh option.
+                        if resolved.string != nil { launch["app"] = resolved }
+                    } else {
+                        return action
+                    }
+                }
+                launch["name"] = nil
+                fields["launch"] = .object(launch)
             }
-            return .object(o)
+            return .object(fields)
         }
-        if case .object(var path)? = o["path"], let steps = path["steps"]?.array {
-            path["steps"] = .array(steps.map(withAppNames))
-            o["path"] = .object(path)
-            return .object(o)
+        if case .object(var path)? = fields["path"], let steps = path["steps"]?.array {
+            path["steps"] = .array(try steps.map(resolvingLaunchNames))
+            fields["path"] = .object(path)
+            return .object(fields)
         }
-        if let steps = o["path"]?.array { o["path"] = .array(steps.map(withAppNames)); return .object(o) }
+        if let steps = fields["path"]?.array {
+            fields["path"] = .array(try steps.map(resolvingLaunchNames))
+            return .object(fields)
+        }
         return action
     }
 
@@ -1141,6 +1176,7 @@ final class Computer: @unchecked Sendable {
         var did: [String] = []
         var error: String?
         var lastKind: String?
+        var launched: String?
         var toRun = actions
         // What the screen said before these actions, for the send check: a message that was already there does not count as sent.
         let textsBefore = lastAll.filter { !$0.fromPicture && !Self.fieldTypes.contains($0.type) }.map(\.text)
@@ -1161,7 +1197,7 @@ final class Computer: @unchecked Sendable {
                 approvedNote = "approval: approved on the phone (\(reason))"
             } else {
                 if at > 0 {
-                    (did, error, lastKind) = await run(Array(actions[..<at]), started: started, until: until)
+                    (did, error, lastKind, launched) = await run(Array(actions[..<at]), started: started, until: until)
                     if error != nil {
                         return await readAndReply(until: until, full: full, changes: true, did: did, error: error, extra: ["action \(at + 1) and the actions after it were not sent (they would have needed the owner's approval: \(reason))"])
                     }
@@ -1213,11 +1249,12 @@ final class Computer: @unchecked Sendable {
         let actionsStarted = now()
         let approved = approvedNote == nil ? [:] : Dictionary(steps.map { ($0.at, $0.reason) }, uniquingKeysWith: { a, _ in a })
         let movedBefore = actions[..<(actions.count - toRun.count)].contains { ActionKind($0)?.changesScreen($0) == true }
-        let (moreDid, moreError, moreKind) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved)
+        let (moreDid, moreError, moreKind, moreLaunched) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved)
         let actionsTook = now() - actionsStarted
         did += moreDid
         error = moreError
         lastKind = moreKind ?? lastKind
+        launched = moreLaunched ?? launched
         if let lastKind {
             let pause = min(Self.settle[lastKind] ?? 0.4, max(0, until - now() - config.readTimeout - 0.3))
             if pause >= 0.6, config.quickRead(), let seen = seenBefore {
@@ -1247,7 +1284,6 @@ final class Computer: @unchecked Sendable {
         // app's (gym: Photos launched from Safari answered Safari's whole tree under Photos' screen,
         // twice). The read is made again, within the call, until the launched app is in front, or
         // when the whole picture changed over an unchanged tree.
-        let launched = toRun.compactMap { $0["launch"].flatMap { $0.string ?? $0["bundle"]?.string } }.last
         var rereads = 0
         // Up to six re-reads: a cold launch on the simulator (Photos from Safari) had the old app in
         // front past the third re-read at 5.8 s (gym finding 39); the action's time bounds them.
@@ -1274,7 +1310,7 @@ final class Computer: @unchecked Sendable {
         // more from a fresh start, which brings up a process with one, and read again. Only an app the
         // call itself brought forward: ending one the owner was in would lose their place.
         let cameForward = launched ?? (lastForeground?.bundleID != before?.bundleID ? lastForeground?.bundleID : nil)
-        if let app = cameForward, lastForeground?.bundleID == app, !config.isPoki(lastForeground), app != "com.apple.springboard",
+        if error == nil, let app = cameForward, lastForeground?.bundleID == app, !config.isPoki(lastForeground), app != "com.apple.springboard",
            result.text.contains("kAXErrorServerNotFound"), until - now() > config.readTimeout + 4 {
             var how = "it was opened again from a fresh start"
             do {
@@ -1467,11 +1503,12 @@ final class Computer: @unchecked Sendable {
     /// deadline. Stops at the first that fails.
     /// `moved`: an action sent before these may have changed the screen (`ActionKind.changesScreen`). `approved`: why the owner
     /// approved an action, by its number in the do.
-    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0, moved: Bool = false, approved: [Int: String] = [:]) async -> (did: [String], error: String?, lastKind: String?) {
+    func run(_ actions: [JSON], started: Double, until: Double, numberedFrom offset: Int = 0, moved: Bool = false, approved: [Int: String] = [:]) async -> (did: [String], error: String?, lastKind: String?, launched: String?) {
         var did: [String] = []
         var error: String?
         var logError: String?
         var lastKind: String?
+        var launched: String?
         var moved = moved
         // The last action that may have changed the screen, and when it was through.
         var changed: (kind: String, at: Double)?
@@ -1498,12 +1535,13 @@ final class Computer: @unchecked Sendable {
             let givenUp = runner.actionsGivenUp.value
             let recorded = recordable(action)
             do {
-                let (kind, text) = try await withDeadline(left, "action \(index + 1)") { [self] in
+                let receipt = try await withDeadline(left, "action \(index + 1)") { [self] in
                     try await perform(action, until: actionsUntil, backTarget: check.backTarget)
                 }
                 if let recorded { trace.append(recorded) }
-                lastKind = kind
-                did.append("\(text) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
+                lastKind = receipt.kind
+                launched = receipt.openedBundle ?? launched
+                did.append("\(receipt.text) (sent, \(Int(((now() - began) * 1000).rounded())) ms)")
             } catch is CancellationError {
                 did.append("\(action.serialized()) (unknown: cancelled)")
                 error = "cancelled at action \(index + 1)"
@@ -1541,14 +1579,24 @@ final class Computer: @unchecked Sendable {
                 }
                 did.append("\(action.serialized()) (\(delivery.rawValue), \(Int(((now() - began) * 1000).rounded())) ms)")
                 // Nothing after a failed action is sent.
-                let head = "action \(index + 1) \(delivery == .unknown ? "may have been delivered" : "was not sent"): \(why)"
-                let tail = i + 1 < actions.count ? "; the actions after it were not sent" : ""
+                let refusedLaunch = action["launch"] != nil && delivery == .notSent
+                let outcome: String
+                switch delivery {
+                case .unknown: outcome = "may have been delivered"
+                case .sent: outcome = "stopped after sending input"
+                case .notSent: outcome = refusedLaunch ? "was refused" : "was not sent"
+                }
+                let head = "action \(index + 1) \(outcome): \(why)"
+                var tail = i + 1 < actions.count ? "; the actions after it were not sent" : ""
+                if (refusedLaunch && index > 0) || delivery == .sent {
+                    tail += ". Do not repeat the actions marked sent"
+                }
                 error = head + recoveryNote + tail
                 logError = head + recoveryLog + tail
                 break
             }
         }
-        return (did, error, lastKind)
+        return (did, error, lastKind, launched)
     }
 
     /// Why an action that presses the screen is held back on the screen as it is now, after an action
@@ -1686,8 +1734,8 @@ final class Computer: @unchecked Sendable {
             return (nil, value.isEmpty ? "the field is empty; there was no time left to type again" : "the field holds \(shown(value)); there was no time left to type again", "\(state), no time left to type again")
         }
         do {
-            let (_, text) = try await withDeadline(until - now(), "the second try of the action") { [self] in try await perform(action, until: until) }
-            return ("\(text) (sent again after the first try failed: \(why))", "", "")
+            let receipt = try await withDeadline(until - now(), "the second try of the action") { [self] in try await perform(action, until: until) }
+            return ("\(receipt.text) (sent again after the first try failed: \(why))", "", "")
         } catch {
             return (nil, "the text was typed again once and that failed too: \(error)", "\(state), typed again once and that failed too")
         }

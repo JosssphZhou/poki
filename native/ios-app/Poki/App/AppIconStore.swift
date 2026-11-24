@@ -1,5 +1,6 @@
 import ObjectiveC
 import OSLog
+import PokiCore
 import SwiftUI
 import UIKit
 
@@ -106,15 +107,7 @@ final class AppIconStore {
         if DynamicApps.name(forID: name) != nil { return name }
         // An installed app's name comes before the shape of an id: an app called "A.B.C" is that app.
         if let installed = DynamicApps.id(forName: name) { return installed }
-        return looksLikeBundleID(name) ? name : nil
-    }
-
-    /// "com.tencent.xin": reverse-DNS, three parts or more, each of ASCII letters, digits or hyphens
-    /// and at least one longer than a letter, so initials with dots ("A.B.C", "U.S.A") are not ids.
-    static func looksLikeBundleID(_ text: String) -> Bool {
-        let parts = text.split(separator: ".", omittingEmptySubsequences: false)
-        return parts.count >= 3 && text.count <= 155 && parts.contains { $0.count > 1 }
-            && parts.allSatisfy { !$0.isEmpty && $0.unicodeScalars.allSatisfy { ($0.isASCII && CharacterSet.alphanumerics.contains($0)) || $0 == "-" } }
+        return PokiCore.looksLikeBundleID(name) ? name : nil
     }
 
     /// The name an app goes by on this iPhone, in its first language (English, Simplified or

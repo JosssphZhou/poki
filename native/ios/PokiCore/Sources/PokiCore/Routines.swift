@@ -1065,7 +1065,7 @@ extension Computer {
     /// {label, type?}; a point stays a point. Numbers are refused: they are the latest read's, and a
     /// path is for the screens after it.
     static func pathRoutine(_ spec: JSON) throws -> Skill {
-        func refuse(_ why: String) -> ActionFailure { ActionFailure(message: "path: \(why); nothing was sent", delivery: .notSent) }
+        func refuse(_ why: String) -> ActionFailure { ActionFailure(message: "path: \(why); no path steps were sent", delivery: .notSent) }
         guard let given = spec["steps"]?.array ?? spec.array, !given.isEmpty else { throw refuse("give steps: [{tap: \"text\"}, …]") }
         guard given.count <= 20 else { throw refuse("at most 20 steps") }
         func target(_ spec: JSON) throws -> SkillTarget? {
@@ -1101,6 +1101,9 @@ extension Computer {
                 }
             case .scrollTo:
                 if o["scroll_to"]?["ref"] != nil || o["scroll_to"]?["in"] != nil { throw refuse("step \(i + 1): scroll_to takes the text to reach") }
+            case .swipe:
+                // in: n names a list of the latest read; a path's swipe goes in the biggest list on its own screen.
+                if o["in"] != nil || o["swipe"]?["in"] != nil { throw refuse("step \(i + 1): a swipe in a path takes a direction and a distance, not in: a number from an earlier read") }
             case .drag, .pinch:
                 if Computer.refs(in: step).isEmpty == false { throw refuse("step \(i + 1) uses a number from an earlier read") }
             default: break
@@ -1123,7 +1126,7 @@ extension Computer {
         let title = saved ? "run \"\(skill.name)\"" : "path"
         let started = now()
         var log: [String] = []
-        var done = 0
+        var sentSteps: [Int] = []
         /// What was closed on the way because the path said it may be.
         var closed: [String] = []
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
@@ -1145,15 +1148,23 @@ extension Computer {
         }
         func stop(_ index: Int, _ why: String, _ delivery: Delivery = .notSent) -> ActionFailure {
             finish("stopped at step \(index + 1): \(why)", stop: SkillStop(step: index + 1, why: why, at: Date()))
-            let sent = done == 0 ? "no step was sent" : "steps 1 to \(done) were sent"
+            let sent: String
+            if sentSteps.isEmpty {
+                sent = "no step was sent"
+            } else if sentSteps.last == sentSteps.count {
+                sent = "steps 1 to \(sentSteps.count) were sent"
+            } else {
+                sent = "steps \(sentSteps.map(String.init).joined(separator: ", ")) were sent"
+            }
             let after = saved ? "; when the task is done, skills {action: \"save\", name: \"\(skill.name)\"} saves the path that worked over this one" : ""
-            return ActionFailure(message: "\(title) stopped at step \(index + 1) of \(skill.steps.count): \(why); \(sent)\(fixedNote()). Go on by hand from the screen below\(after)", delivery: delivery)
+            let pathDelivery: Delivery = delivery == .notSent && (!sentSteps.isEmpty || !closed.isEmpty) ? .sent : delivery
+            return ActionFailure(message: "\(title) stopped at step \(index + 1) of \(skill.steps.count): \(why); \(sent)\(fixedNote()). Go on by hand from the screen below\(after)", delivery: pathDelivery)
         }
 
         var front = lastForeground
         if let app = skill.startingApp, lastForeground?.bundleID != app, skill.steps.first?.action["launch"] == nil, !config.isPoki(Foreground(bundleID: app, name: nil)) {
             do {
-                _ = try await perform(["launch": .string(app)], until: until)
+                _ = try await perform(["launch": ["bundle": .string(app)]], until: until)
                 log.append("launched \(app)")
                 front = Foreground(bundleID: app, name: nil)
             } catch { throw stop(0, "\(app) could not be launched (\(error))") }
@@ -1280,7 +1291,6 @@ extension Computer {
                 if found == nil, step.optional == true {
                     skipped += 1
                     log.append("\(index + 1) left out: \(target.describe) was not there")
-                    done = index + 1
                     continue steps
                 }
                 guard let element = found else { throw stop(index, why + " (\(reads) reads in \(Int(((now() - readStart) * 1000).rounded())) ms)") }
@@ -1315,8 +1325,8 @@ extension Computer {
                 throw stop(index, "it needs the owner's approval (\(reason)); send it as an ordinary do so the owner is asked")
             }
             let began = now()
-            let kind: String, text: String
-            do { (kind, text) = try await perform(action, until: min(until, now() + actionCap(action))) }
+            let receipt: ActionReceipt
+            do { receipt = try await perform(action, until: min(until, now() + actionCap(action))) }
             catch let failure as ActionFailure {
                 refs[Self.runRef] = nil
                 throw stop(index, failure.message, failure.delivery)
@@ -1329,15 +1339,15 @@ extension Computer {
             var recorded = step
             if let element = refs[Self.runRef], step.target?.type == SkillTarget.anyType { recorded.target = SkillTarget(element) }
             refs[Self.runRef] = nil
-            if let spec = action["launch"] { front = Foreground(bundleID: spec.string ?? spec["bundle"]?.string, name: nil) }
-            done = index + 1
-            log.append("\(index + 1) \(text.prefix(80)) (\(Int(((now() - began) * 1000).rounded())) ms)")
+            if let bundle = receipt.openedBundle { front = Foreground(bundleID: bundle, name: nil) }
+            sentSteps.append(index + 1)
+            log.append("\(index + 1) \(receipt.text.prefix(80)) (\(Int(((now() - began) * 1000).rounded())) ms)")
             recorded.app = lastForeground?.bundleID ?? step.app
             recorded.optional = nil
             // A path's typed text is what a saved skill's parameter is made of.
-            trace.append(RecordedStep(step: recorded, typed: kind == "type" ? action["type"]?.string : nil, keysBefore: []))
+            trace.append(RecordedStep(step: recorded, typed: receipt.kind == "type" ? action["type"]?.string : nil, keysBefore: []))
             previous = listable(lastAll, screen).map { "\($0.key)@\($0.frame.described)" }.joined(separator: ";")
-            if kind == "type" || kind == "key" { previous = nil }
+            if receipt.kind == "type" || receipt.kind == "key" { previous = nil }
             // What the step said must be there afterwards, read from the tree: no model is asked.
             if let wanted = step.expect, !wanted.isEmpty {
                 let ends = min(until, now() + 3)

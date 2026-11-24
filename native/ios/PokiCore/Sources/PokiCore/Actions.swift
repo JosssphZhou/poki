@@ -293,8 +293,20 @@ extension Computer {
         return refs[ref]?.frame
     }
 
+    struct ActionReceipt: Sendable {
+        let kind: String
+        let text: String
+        let openedBundle: String?
+
+        init(_ kind: String, _ text: String, openedBundle: String? = nil) {
+            self.kind = kind
+            self.text = text
+            self.openedBundle = openedBundle
+        }
+    }
+
     /// Returns the action's kind (for the settle pause) and what it did.
-    func perform(_ action: JSON, until: Double, backTarget: BackTarget? = nil) async throws -> (String, String) {
+    func perform(_ action: JSON, until: Double, backTarget: BackTarget? = nil) async throws -> ActionReceipt {
         guard let kind = ActionKind(action) else { throw ActionFailure(message: "unknown action \(action.serialized())", delivery: .notSent) }
         let spec = action[kind.rawValue] ?? .null
         switch kind {
@@ -302,15 +314,15 @@ extension Computer {
             runEndedOnARead = false
             let text = try await runSkill(spec, until: until)
             // A run whose end check found its texts has read the screen it ends on: no pause before the read.
-            return (runEndedOnARead ? "run_read" : "run", text)
+            return .init(runEndedOnARead ? "run_read" : "run", text)
         case .path:
             runEndedOnARead = false
             let text = try await runPath(spec, until: until)
-            return (runEndedOnARead ? "run_read" : "run", text)
+            return .init(runEndedOnARead ? "run_read" : "run", text)
         case .tap:
             let p = try point(spec)
             try await tap(p, within: frame(of: spec))
-            return ("tap", "tap \(describe(action))\(offCentre(spec, p))\(fillsScreen(spec, p))\(container(spec))")
+            return .init("tap", "tap \(describe(action))\(offCentre(spec, p))\(fillsScreen(spec, p))\(container(spec))")
         case .type:
             guard let text = spec.text else { throw ActionFailure(message: "type takes the text to type", delivery: .notSent) }
             let target: Element? = try action["ref"]?.int.map(element)
@@ -340,13 +352,13 @@ extension Computer {
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
             if let ref = action["ref"]?.int { typedInto = (ref, text) }
             typedText = hidden ? nil : text
-            return ("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
+            return .init("type", "\(describe(action)) (\(via))\(readBack)\(focusNote(reads.map { $0.contains(text) } ?? false))\(note)\(safariAddressNote(target, text))")
         case .back:
-            return ("back", try await back(to: backTarget ?? currentBackTarget, until: until))
+            return .init("back", try await back(to: backTarget ?? currentBackTarget, until: until))
         case .handoff:
             if case .bool(false) = spec {
-                guard let current = handoff.apply(.takeBack).takenBack else { return ("handoff", "handoff: nothing is handed to the owner") }
-                return ("handoff", "handoff: taken back (\(current.kind): \"\(current.text.prefix(60))\"); inputs are sent again")
+                guard let current = handoff.apply(.takeBack).takenBack else { return .init("handoff", "handoff: nothing is handed to the owner") }
+                return .init("handoff", "handoff: taken back (\(current.kind): \"\(current.text.prefix(60))\"); inputs are sent again")
             }
             let kind = (spec["kind"]?.string ?? "other").lowercased()
             let kinds = ["passcode", "password", "verification", "payment", "other"]
@@ -354,7 +366,7 @@ extension Computer {
             guard let text = spec.text ?? spec["text"]?.text, !text.isEmpty else { throw ActionFailure(message: "handoff takes {kind, text}: what the owner must do themselves on the phone; or false to take the step back", delivery: .notSent) }
             let trimmed = String(text.prefix(300))
             handoff.apply(.request(id: UUID().uuidString, kind: kind, text: trimmed, app: lastForeground?.describe, now: Date()))
-            return ("handoff", "handed to the owner (\(kind)): \"\(trimmed.prefix(80))\", shown on the phone with a Done button. Keep calling look every few seconds, or {wait_until: {handoff_done: true, ms: 10000}}; no input is sent until the owner taps Done or you send {handoff: false}; status shows handoff: waiting|done")
+            return .init("handoff", "handed to the owner (\(kind)): \"\(trimmed.prefix(80))\", shown on the phone with a Done button. Keep calling look every few seconds, or {wait_until: {handoff_done: true, ms: 10000}}; no input is sent until the owner taps Done or you send {handoff: false}; status shows handoff: waiting|done")
         case .key:
             guard let key = spec.text else { throw ActionFailure(message: "key takes a key name: return, delete, tab, space, escape or one character", delivery: .notSent) }
             let k = key.lowercased()
@@ -365,27 +377,27 @@ extension Computer {
             // address bar with its suggestions on one gym run (the keyboard's Go key submits).
             if text == "\n", let go = await keyboardReturnKey(timeout: min(1, max(0.3, until - now() - 1))) {
                 try await tap(go.frame.centre, within: go.frame)
-                return ("key", "key \(key): tapped the keyboard's \"\(go.text)\" key at [\(Int(go.frame.centre.x)), \(Int(go.frame.centre.y))]")
+                return .init("key", "key \(key): tapped the keyboard's \"\(go.text)\" key at [\(Int(go.frame.centre.x)), \(Int(go.frame.centre.y))]")
             }
             _ = try await runner.call("POST", "/wda/keys", ["value": [.string(text)]], timeout: 3)
-            return ("key", "key \(key)\(text == "\n" ? " (sent as a key event; no keyboard key was listed to tap)" : "")")
+            return .init("key", "key \(key)\(text == "\n" ? " (sent as a key event; no keyboard key was listed to tap)" : "")")
         case .swipe:
             let direction = spec.string ?? spec["direction"]?.string ?? ""
             let screen = try await screenSize(until: until)
             let path = try swipePath(try area(spec["in"] ?? action["in"], screen), direction, spec["distance"]?.string ?? "long")
             try await gesture(path, seconds: 0.25, until: until)
-            return ("swipe", "swipe \(direction) from [\(Int(path.0)), \(Int(path.1))] to [\(Int(path.2)), \(Int(path.3))]")
+            return .init("swipe", "swipe \(direction) from [\(Int(path.0)), \(Int(path.1))] to [\(Int(path.2)), \(Int(path.3))]")
         case .scrollTo:
-            return ("scroll_to", "scroll_to \(spec.serialized()): \(try await scrollTo(spec, until: until))")
+            return .init("scroll_to", "scroll_to \(spec.serialized()): \(try await scrollTo(spec, until: until))")
         case .longPress:
             let p = try point(spec)
             let ms = min(5000, max(100, spec["ms"]?.double ?? action["ms"]?.double ?? 600))
             try await longPress(p, seconds: ms / 1000, within: frame(of: spec))
-            return ("long_press", "long_press \(spec.serialized()) \(Int(ms)) ms")
+            return .init("long_press", "long_press \(spec.serialized()) \(Int(ms)) ms")
         case .drag:
             if spec["to_pane"] != nil {
                 try await crossPaneDrag(spec, from: point(spec["from"]), until: until)
-                return ("drag", "drag to the \(spec["to_pane"]?.string ?? "other") pane; look there to confirm what was dropped")
+                return .init("drag", "drag to the \(spec["to_pane"]?.string ?? "other") pane; look there to confirm what was dropped")
             }
             let from: (x: Double, y: Double), to: (x: Double, y: Double)
             if let a = spec.array, a.count == 4, let v = Optional(a.compactMap(\.double)), v.count == 4 {
@@ -396,7 +408,7 @@ extension Computer {
             let ms = min(3000, max(100, spec["ms"]?.double ?? 400))
             let hold = min(3000, max(0, spec["hold_ms"]?.double ?? 0))
             try await gesture((from.x, from.y, to.x, to.y), seconds: ms / 1000, hold: hold / 1000, rest: 0.15, until: until)
-            return ("drag", "drag from [\(Int(from.x)), \(Int(from.y))] to [\(Int(to.x)), \(Int(to.y))] in \(Int(ms)) ms\(hold > 0 ? " after holding \(Int(hold)) ms" : "")")
+            return .init("drag", "drag from [\(Int(from.x)), \(Int(from.y))] to [\(Int(to.x)), \(Int(to.y))] in \(Int(ms)) ms\(hold > 0 ? " after holding \(Int(hold)) ms" : "")")
         case .pinch:
             let p = try point(spec)
             let screen = try await screenSize(until: until)
@@ -406,7 +418,7 @@ extension Computer {
             // Two fingers either side of the point, each a drag of its own (shaped as a person's when
             // humanize is on), in 500 ms.
             _ = try await runner.call("POST", "/actions", Humanize.actions(humanize.pinch(at: (p.x.rounded(), p.y.rounded()), from: a, to: b, seconds: 0.5)), timeout: 4)
-            return ("pinch", "pinch \(spec.serialized()) x\(scale)")
+            return .init("pinch", "pinch \(spec.serialized()) x\(scale)")
         case .button:
             guard let name = spec.text else { throw ActionFailure(message: "button takes home, lock, volume_up or volume_down", delivery: .notSent) }
             let n = name.lowercased()
@@ -420,7 +432,7 @@ extension Computer {
                 guard let wda = Self.buttons[n] else { throw ActionFailure(message: "button \(name) has no equivalent; use home, lock, volume_up or volume_down", delivery: .notSent) }
                 _ = try await runner.call("POST", "/wda/pressButton", ["name": .string(wda)], timeout: 8, countsAsMiss: false)
             }
-            return ("button", "button \(name)")
+            return .init("button", "button \(name)")
         case .launch:
             guard let bundle = spec.string ?? spec["bundle"]?.string, !bundle.isEmpty else { throw ActionFailure(message: "launch takes a bundle id or an app's name", delivery: .notSent) }
             // A name the host could not turn into a bundle id: nothing is sent for it.
@@ -428,44 +440,64 @@ extension Computer {
                 throw ActionFailure(message: "launch \(bundle): no app named \"\(bundle)\" is known on this phone. Give its bundle id, or go home ({button: \"home\"}), swipe down to search, type its name and tap it", delivery: .notSent)
             }
             let fresh = spec["fresh"]?.bool ?? false
-            // A fresh launch ends the app first, so a page it was left on cannot answer for it, and
-            // starts it through XCTest's launch. Otherwise the app is activated: brought to the front
-            // as it is, or started if it is not running. XCTest's launch always ends a running app
-            // and starts it again, with a handshake that takes several seconds on the phone.
-            var note = ""
-            if fresh {
-                // Ending a running app through XCTest can take over 4 s on the simulator (seen in
-                // CI: a fresh launch gave up at the terminate and Settings never came). A slow end
-                // is not a miss, and the launch goes anyway: it queues behind the end and runs
-                // after it, within the launch's own time.
-                do { _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(bundle)], timeout: 6, countsAsMiss: false) }
-                catch let e as RunnerError where e.delivery == .notSent {}
-                catch let e as RunnerError { note = "; ending the app first did not answer in time (\(e.message)); the launch was sent anyway" }
-                // In-process a launch answers once the app is in front, 9 s for a cold Photos (gym finding 39).
-                do { _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
-                catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
-            } else {
-                do { _ = try await runner.call("POST", "/wda/apps/activate", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
-                catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
+            var target = bundle
+            let note: String
+            do {
+                do {
+                    note = try await openApp(target, fresh: fresh, until: until)
+                } catch let error as RunnerError where error.delivery == .notSent && Self.isMissingApp(error) {
+                    // A timeout can still open the requested app. Only an explicit absence lets
+                    // shorthand fall back to a display name, and never to Poki's own app.
+                    let resolveName = config.resolveInstalledAppByName ?? config.resolveInstalledApp
+                    guard config.appNames(), let name = spec.string ?? spec["app"]?.string,
+                          PokiCore.looksLikeBundleID(name), !Task.isCancelled, until - now() > 0.3,
+                          let resolved = resolveName(name), resolved.caseInsensitiveCompare(target) != .orderedSame,
+                          !config.isPoki(Foreground(bundleID: resolved, name: nil)) else { throw error }
+                    target = resolved
+                    note = try await openApp(target, fresh: fresh, until: until)
+                }
+            } catch let error as RunnerError where error.delivery == .notSent {
+                throw Self.launchRefused(target, error)
             }
-            return ("launch", "launch \(bundle)\(fresh ? " (fresh)" : "")\(note)")
+            return .init("launch", "launch \(target)\(fresh ? " (fresh)" : "")\(note)", openedBundle: target)
         case .waitUntil:
-            return ("wait_until", try await waitUntil(spec, until: until))
+            return .init("wait_until", try await waitUntil(spec, until: until))
         case .wait:
             guard let ms = spec.double, ms.isFinite, ms >= 0 else {
                 throw ActionFailure(message: "wait takes nonnegative milliseconds", delivery: .notSent)
             }
             let seconds = min(ms / 1000, 3, max(0, until - now()))
             await sleep(seconds: seconds)
-            return ("wait", "wait \(Int(seconds * 1000)) ms")
+            return .init("wait", "wait \(Int(seconds * 1000)) ms")
         }
+    }
+
+    private func openApp(_ bundle: String, fresh: Bool, until: Double) async throws -> String {
+        let body: JSON = ["bundleId": .string(bundle)]
+        var note = ""
+        if fresh {
+            // The app may still be exiting when terminate gives up. Send launch within its
+            // own deadline; the runner queues it behind terminate.
+            do { _ = try await runner.call("POST", "/wda/apps/terminate", body, timeout: 6, countsAsMiss: false) }
+            catch let error as RunnerError where error.delivery == .notSent {}
+            catch let error as RunnerError { note = "; ending the app first did not answer in time (\(error.message)); the launch was sent anyway" }
+        }
+        let route = fresh ? "/wda/apps/launch" : "/wda/apps/activate"
+        _ = try await runner.call("POST", route, body, timeout: max(3, min(10, until - now() - 0.3)))
+        return note
+    }
+
+    private static func isMissingApp(_ error: RunnerError) -> Bool {
+        let message = error.message
+        return message.contains("is unknown to FrontBoard") || message.contains("not installed")
+            || message.contains("could not be found") || message.contains("NotFound")
     }
 
     /// A refused launch in one line: the system's error dump (FBSOpenApplication, several hundred
     /// characters) says little more than that the app is not there (gym: Notes on a CI simulator).
     static func launchRefused(_ bundle: String, _ e: RunnerError) -> ActionFailure {
         let m = e.message
-        if m.contains("is unknown to FrontBoard") || m.contains("not installed") || m.contains("could not be found") || m.contains("NotFound") {
+        if isMissingApp(e) {
             return ActionFailure(message: "launch \(bundle): no app with that bundle id is installed on this device", delivery: .notSent)
         }
         guard m.count > 220 else { return ActionFailure(message: m, delivery: .notSent) }
