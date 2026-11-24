@@ -1810,7 +1810,12 @@ final class MCPTests: XCTestCase {
 
     func testCaptureToolUsesTheCurrentMCPTaskAndKeepsOwnerDecisionsVisible() async throws {
         let wda = FakeWDA()
-        wda.source([("Button", "Delete Photo")], app: "Photos")
+        // A confirmation dialog, rather than an ordinary toolbar button.
+        wda.tree([
+            Node("Alert", nil, [16, 80, 358, 120], [
+                Node("Button", "Delete Photo", [16, 100, 358, 44]),
+            ]),
+        ], app: "Photos")
         let (core, _, host) = makeCore(wda) { $0.approvalWait = 0 }
         let hiddenFor = LockedBox<[String]>([])
         core.setHostTools([HostTool(name: "hide_live_activity", description: "Hide for capture.", schemaJSON: #"{"type":"object"}"#,
