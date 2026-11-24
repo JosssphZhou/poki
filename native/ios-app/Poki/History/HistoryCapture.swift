@@ -139,7 +139,7 @@ final class HistoryCapture: ObservableObject {
         HistoryStore.shared.prune(days: retentionDays, summaryDays: summaryDays, megabytes: storageMegabytes) { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                BacktapeNotes.shared.reset()
+                BacktapeNotes.shared.refreshVisible()
                 self.changes += 1
             }
         }

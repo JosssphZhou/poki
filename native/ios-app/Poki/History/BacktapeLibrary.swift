@@ -400,6 +400,12 @@ final class BacktapeNotes {
         failed = []
     }
 
+    /// A retained tile keeps its SwiftUI identity and may never receive another onAppear.
+    func refreshVisible() {
+        reset()
+        for tile in Array(wanted.values) { appeared(tile) }
+    }
+
     private func next() -> BacktapeTile? {
         let centre = focus ?? Date()
         return wanted.values
