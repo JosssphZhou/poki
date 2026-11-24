@@ -53,13 +53,12 @@ enum RailwayTrains {
 
     /// Normalizes model-provided fare strings (such as "¥1568起", "￥1,568 起", "1568起", "¥1568") into a
     /// consistent "元起" / "元" format at render time without depending on prompt output formatting.
-    static func normalizedFare(_ raw: String, preferStartingSuffix: Bool = false) -> String {
+    static func normalizedFare(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let match = trimmed.wholeMatch(of: farePattern.ignoresCase()) else { return trimmed }
         let amount = String(match.output.1).replacingOccurrences(of: ",", with: "")
-        let hasYuan = match.output.2 != nil
         let hasStarting = match.output.3 != nil
-        if hasStarting || (preferStartingSuffix && !hasYuan) {
+        if hasStarting {
             return "\(amount)元起"
         }
         return "\(amount)元"
@@ -81,14 +80,9 @@ struct RailwayTrainsList: View {
         trains.contains { $0.train.price != nil }
     }
 
-    private var prefersStartingSuffix: Bool {
-        trains.contains { $0.train.price?.contains("起") == true }
-    }
-
     var body: some View {
         let rows = trains
         let sharedFareWidth = hasAnyPrice ? fareColumnWidth : 0
-        let preferStarting = prefersStartingSuffix
         VStack(alignment: .leading, spacing: 0) {
             header(rows.first?.train)
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
@@ -99,7 +93,7 @@ struct RailwayTrainsList: View {
                         .opacity(touchesSelection ? 0 : 1)
                 }
                 let displayPrice = row.train.price.map {
-                    RailwayTrains.normalizedFare($0, preferStartingSuffix: preferStarting)
+                    RailwayTrains.normalizedFare($0)
                 }
                 TrainRow(
                     train: row.train,
