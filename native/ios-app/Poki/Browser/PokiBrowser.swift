@@ -235,6 +235,9 @@ final class PokiBrowser: NSObject {
 extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation, !supersededNavigations.contains(navigation) else { return }
+        // A page can start loading before its first delegate callback. If Stop
+        // already ended that load, the queued callback must not revive it.
+        guard navigation === activeNavigation || webView.isLoading else { return }
         trackNavigation(navigation)
     }
 

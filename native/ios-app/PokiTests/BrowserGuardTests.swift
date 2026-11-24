@@ -28,6 +28,17 @@ final class BrowserGuardTests: XCTestCase {
         XCTAssertFalse(browser.isLoading, "A queued callback must not restart a stopped load")
     }
 
+    func testStopBeforeFirstProvisionalCallbackDoesNotRestartLoading() throws {
+        let browser = PokiBrowser()
+        let navigation = try XCTUnwrap(browser.webView.loadHTMLString("<p>Page</p>", baseURL: nil))
+        browser.taskStopped()
+        XCTAssertFalse(browser.webView.isLoading)
+
+        browser.webView(browser.webView, didStartProvisionalNavigation: navigation)
+
+        XCTAssertFalse(browser.isLoading)
+    }
+
     func testCancelledOwnerWaitLeavesThePageWithTheOwner() async {
         let browser = PokiBrowser()
         browser.takeOver()
