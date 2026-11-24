@@ -43,6 +43,7 @@ final class PokiBrowser: NSObject {
     @ObservationIgnored private var committed = true
     @ObservationIgnored private var activeNavigation: WKNavigation?
     @ObservationIgnored private var pendingOpen: (WKNavigation, () -> Void)?
+    @ObservationIgnored private var acceptsUntrackedNavigation = true
     @ObservationIgnored private let supersededNavigations = NSHashTable<WKNavigation>.weakObjects()
     @ObservationIgnored private var loadWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var ownerWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
@@ -204,6 +205,7 @@ final class PokiBrowser: NSObject {
         pendingOpen = nil
         if let activeNavigation { supersededNavigations.add(activeNavigation) }
         activeNavigation = nil
+        acceptsUntrackedNavigation = false
         isLoading = false
         committed = true
         webView.stopLoading()
@@ -235,9 +237,12 @@ final class PokiBrowser: NSObject {
 extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation, !supersededNavigations.contains(navigation) else { return }
-        // A page can start loading before its first delegate callback. If Stop
-        // already ended that load, the queued callback must not revive it.
-        guard navigation === activeNavigation || webView.isLoading else { return }
+        // Stop can run after policy approval but before WebKit reports the
+        // navigation identity. Wait for a new policy decision on page loads.
+        guard navigation === activeNavigation || acceptsUntrackedNavigation else {
+            supersededNavigations.add(navigation)
+            return
+        }
         trackNavigation(navigation)
     }
 
@@ -277,9 +282,14 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     /// A page cannot send the browser to this iPhone or its local network (a link, a redirect or a
     /// frame), whoever is driving. `web_open` refuses such an address itself, with words for the model.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard let target = navigationAction.request.url, BrowserAddress.refusal(target) != nil else { return .allow }
-        AppLog.shared.add("browser", "refused a navigation to a local address")
-        return .cancel
+        if let target = navigationAction.request.url, BrowserAddress.refusal(target) != nil {
+            AppLog.shared.add("browser", "refused a navigation to a local address")
+            return .cancel
+        }
+        if navigationAction.targetFrame?.isMainFrame == true {
+            acceptsUntrackedNavigation = true
+        }
+        return .allow
     }
 
     /// Links that open a new window open here instead: the panel has one page.

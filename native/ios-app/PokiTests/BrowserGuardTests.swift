@@ -32,7 +32,6 @@ final class BrowserGuardTests: XCTestCase {
         let browser = PokiBrowser()
         let navigation = try XCTUnwrap(browser.webView.loadHTMLString("<p>Page</p>", baseURL: nil))
         browser.taskStopped()
-        XCTAssertFalse(browser.webView.isLoading)
 
         browser.webView(browser.webView, didStartProvisionalNavigation: navigation)
 
