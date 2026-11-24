@@ -572,7 +572,7 @@ final class ChatHarnessTests: XCTestCase {
     /// train you select: such a card is not shown, and the model answers in words.
     func testAResultCardWhoseButtonIgnoresTheSelectionIsNotShown() async throws {
         let server = try FakeCompletions(replies: [
-            Self.finishWithCard([Self.train("G1", "07:00"), Self.train("G3", "08:00")], "把 G1 次发到公司差旅群"),
+            Self.finishWithCard([Self.train("G1", "07:00"), Self.train("G3", "08:00")], "发 {title}", primarySay: "打开 G1"),
             FakeCompletions.text("G1 07:00, G3 08:00."),
         ])
         let chat = newChat(on: server)
@@ -581,6 +581,35 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(Self.cards(in: chat), [])
         guard server.requests.count == 2 else { return XCTFail("\(server.requests.count) model requests") }
         XCTAssertTrue(Self.toolAnswer(server.requests[1]).contains("give the whole result in words"), Self.toolAnswer(server.requests[1]))
+    }
+
+    func testMissingActionFieldsPreserveResultAndValidButtons() async throws {
+        var second = Self.train("G3", "08:00")
+        second.removeValue(forKey: "price")
+        let trains = [Self.train("G1", "07:00"), second]
+        let server = try FakeCompletions(replies: [
+            Self.finishWithCard(trains, "发 {title}", primarySay: "{price}"),
+            FakeCompletions.text("G1 07:00, G3 08:00."),
+            Self.finishWithCard(trains, "发 {title}", primaryLabel: "{price}"),
+            FakeCompletions.text("G1 07:00, G3 08:00."),
+            Self.finishWithCard(trains, "预计车费 {price}"),
+            FakeCompletions.text("G1 is the earliest."),
+        ])
+        let chat = newChat(on: server)
+
+        try await Self.ask(chat, "Find trains from Beijing to Shanghai")
+        XCTAssertTrue(Self.cards(in: chat).isEmpty)
+        XCTAssertTrue(Self.toolAnswer(try XCTUnwrap(server.requests.dropFirst().first)).contains("give the whole result in words"))
+
+        try await Self.ask(chat, "Find trains from Beijing to Shanghai again")
+        XCTAssertTrue(Self.cards(in: chat).isEmpty)
+        XCTAssertTrue(Self.toolAnswer(try XCTUnwrap(server.requests.dropFirst(3).first)).contains("give the whole result in words"))
+
+        try await Self.ask(chat, "Find trains from Beijing to Shanghai tomorrow")
+        let entry = try XCTUnwrap(Self.cards(in: chat).last)
+        guard case .card(let card) = entry.kind else { return XCTFail("Expected a result card") }
+        XCTAssertNil(card.next)
+        XCTAssertEqual(card.selected("G3").fill(card.primary.say), "在 12306 打开 G3 次")
     }
 
     /// A query with a single train ("the first high-speed train tomorrow") still gets the train card, as
@@ -628,11 +657,13 @@ final class ChatHarnessTests: XCTestCase {
          "arrive": "12:28", "price": "¥626", "seats": [["name": "二等座", "left": "有"]]]
     }
 
-    private static func finishWithCard(_ items: [[String: Any]], _ nextSay: String) -> String {
+    private static func finishWithCard(_ items: [[String: Any]], _ nextSay: String,
+                                       primaryLabel: String = "在 12306 查看",
+                                       primarySay: String = "在 12306 打开 {title} 次") -> String {
         FakeCompletions.tool("finish_task", [
             "success": true, "summary": "Found 2 trains.", "details": [["label": "G1", "value": "07:00"]], "answer": ["kind": "list"],
             "card": ["app": "cn.12306.rails12306", "kind": "12306.trains", "recommended": "G1", "items": items,
-                     "primary": ["label": "在 12306 查看", "say": "在 12306 打开 {title} 次"],
+                     "primary": ["label": primaryLabel, "say": primarySay],
                      "next": ["label": "发到公司差旅群", "say": nextSay]],
         ])
     }
