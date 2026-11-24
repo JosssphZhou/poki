@@ -343,10 +343,11 @@ final class AppModel {
     init(launcher: RunnerLauncher = RustLauncher(), pairer: DevicePairing = RustPairing(),
          automation: InProcessAutomation = PKInProcess.shared(), transport: HTTPTransport? = nil,
          systemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
-         requiresDiskImageCheck: Bool? = nil, imageMounted: @escaping () -> Bool = { AppModel.localDDIMounted }) {
+         requiresDiskImageCheck: Bool? = nil, imageMounted: @escaping () -> Bool = { AppModel.localDDIMounted },
+         activity: ActivityController? = nil) {
         ActivityController.endAll()
         self.imageMounted = imageMounted
-        self.activity = ActivityController()
+        self.activity = activity ?? ActivityController()
         self.automation = automation
         self.idleSessionPolicy = .forSystem(systemVersion)
         // iOS 27 lets a relaunched Poki open automation without the passcode while the boot's allowance
@@ -2225,7 +2226,8 @@ final class AppModel {
         handoffDone(id: id)
     }
 
-    private func handoffDone(id: String) {
+    func handoffDone(id: String) {
+        guard activity.state.handoff?.id == id else { return }
         log.add("handoff", "done by the owner: \(id)")
         if id == Self.runnerPasscodeHandoff {
             // The runner's own launch: the launcher notices by itself when the runner answers.

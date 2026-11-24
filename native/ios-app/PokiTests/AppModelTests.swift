@@ -101,6 +101,22 @@ final class FakePairing: DevicePairing {
 
 @MainActor
 final class AppModelTests: XCTestCase {
+    func testDelayedHandoffCompletionKeepsCurrentCard() {
+        let activity = ActivityController()
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), activity: activity)
+        activity.update {
+            $0.phase = .handoff
+            $0.headline = "Your turn"
+            $0.handoff = .init(id: "current", kind: .other, since: Date())
+        }
+
+        model.handoffDone(id: "previous")
+
+        XCTAssertEqual(activity.state.handoff?.id, "current")
+        XCTAssertEqual(activity.state.phase, .handoff)
+        XCTAssertEqual(activity.state.headline, "Your turn")
+    }
+
     func testDarwinMailboxDeliveryStopsWhenSubscriptionIsReleased() async {
         let name = "nz.zheha.poki.tests.mailbox.\(UUID().uuidString)"
         let center = CFNotificationCenterGetDarwinNotifyCenter()
