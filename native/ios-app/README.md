@@ -192,8 +192,8 @@ the canonical host to pass. Default builds without `POKI_HTTP_ENDPOINT_OPT_IN` o
 `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`, and local
 `::ffff:0:0/96`). That covers the voice bridge, the in-process debug server at
 `http://127.0.0.1:8765/v1`, and a gateway on the same LAN. `PlainHTTPPolicy` keeps those addresses
-working without an extra exception. The opt-in adds named hosts, normally a public IP literal or a
-DNS name. Only those hosts may then be reached over cleartext HTTP, on any port and path. Apple
+working without an extra exception. The opt-in adds one named host, normally a public IP literal
+or a DNS name. Only that host may then be reached over cleartext HTTP, on any port and path. Apple
 does not allow a port in an `NSExceptionDomains` key, so the exception is host-wide. Only the
 custom provider's chat and model-list requests use that host. Every built-in provider, the relay,
 and all other hosts keep full ATS. An IP-literal exception does not cover a DNS name for the same
@@ -201,22 +201,23 @@ server, and a DNS-name exception does not cover its IP literal.
 
 Plain HTTP sends the key, when there is one, and the whole conversation unencrypted. The Custom
 Endpoint screen warns before the address is used. Use HTTPS when the gateway is not on a network you
-trust. A prebuilt release IPA has no exception until the owner opts in. There are two entry points,
-both using the same host value and the same request scope.
+trust. A prebuilt release IPA has no exception until the owner opts in. Both entry points enforce
+at most one distinct host, the same canonical host format, and the same request scope.
 
-**Install time, for a prebuilt IPA.** Run Poki Setup with `--allow-http-host <host>`, repeatable for
-more than one host:
+**Install time, for a prebuilt IPA.** Run Poki Setup with `--allow-http-host <host>` (at most one
+distinct host, matching the build-time opt-in):
 
 ```sh
 node bin/install-iphone.mjs run --allow-http-host 203.0.113.9
 ```
 
-The installer passes the hosts to the signing bridge in `POKI_HTTP_ENDPOINT_HOST`.
-`desktop/core/src/sign/mod.rs` writes one `NSExceptionDomains` entry per host into
-`Payload/Poki.app/Info.plist` before signing. It keeps `NSAllowsLocalNetworking`, preserves any
-entry the build declared, and never writes `NSAllowsArbitraryLoads`. Extensions are untouched. A
-host with a scheme, port, brackets, zone ID, CIDR mask, path or userinfo is rejected by the
-installer and ignored by the signer.
+The installer passes that single canonical host to the signing bridge in `POKI_HTTP_ENDPOINT_HOST`
+(repeated flags that normalize to the same host deduplicate to one; multiple distinct flags are
+rejected before signing starts). `desktop/core/src/sign/mod.rs` writes that one `NSExceptionDomains`
+entry into `Payload/Poki.app/Info.plist` before signing. It keeps `NSAllowsLocalNetworking`,
+preserves any entry the build declared, and never writes `NSAllowsArbitraryLoads`. Extensions are
+untouched. A malformed host (with a scheme, port, brackets, zone ID, CIDR mask, path or userinfo) or
+a multi-host value is rejected by both the installer and the signer.
 Bring the flag again on a renewal, because a renewal re-signs a freshly downloaded IPA. Both
 `run` and `--update-only` accept it, so an existing exception is not silently lost. A plain-HTTP
 gateway sends its key in cleartext, so name only a host you trust.

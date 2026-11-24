@@ -54,20 +54,32 @@ pub fn team_bundle_id(released: &str, team: &str) -> String {
 
 pub fn team_app_group(team: &str) -> String { format!("{}.{}", crate::POKI_APP_GROUP, team) }
 
-/// The hosts the owner explicitly allowed for plain-HTTP Custom Endpoints. Poki Setup sets
-/// POKI_HTTP_ENDPOINT_HOST from --allow-http-host. An entry is a DNS name or an IP literal in the
-/// form NSExceptionDomains expects: lowercase ASCII, canonical IPv6, no scheme, port, brackets,
-/// zone ID, CIDR prefix (subnet-wide on iOS 17+), path, userinfo or trailing dot. Empty and
-/// malformed entries are ignored, so a stray value cannot widen ATS or write a dead key.
-pub fn http_endpoint_hosts() -> Vec<String> {
-    let Ok(raw) = std::env::var("POKI_HTTP_ENDPOINT_HOST") else { return vec![] };
-    let mut hosts = Vec::new();
-    for entry in raw.split(',').filter_map(normalize_exception_host) {
-        if !hosts.contains(&entry) {
-            hosts.push(entry);
-        }
+/// The single host the owner explicitly allowed for plain-HTTP Custom Endpoints. Poki Setup sets
+/// POKI_HTTP_ENDPOINT_HOST from --allow-http-host. Must be at most one DNS name or IP literal in
+/// the form NSExceptionDomains expects: lowercase ASCII, canonical IPv6, no scheme, port, brackets,
+/// zone ID, CIDR prefix (subnet-wide on iOS 17+), path, userinfo or trailing dot. Empty/unset
+/// returns None; malformed or multi-host values fail signing so nothing widens ATS silently.
+pub fn http_endpoint_host() -> Result<Option<String>> {
+    let raw = std::env::var("POKI_HTTP_ENDPOINT_HOST").ok();
+    parse_http_endpoint_host(raw.as_deref())
+}
+
+fn parse_http_endpoint_host(raw: Option<&str>) -> Result<Option<String>> {
+    let Some(raw) = raw else { return Ok(None) };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
     }
-    hosts
+    if trimmed.contains(',') {
+        return Err(Error::Sign(format!(
+            "POKI_HTTP_ENDPOINT_HOST accepts at most one host (got {trimmed:?})"
+        )));
+    }
+    normalize_exception_host(trimmed).map(Some).ok_or_else(|| {
+        Error::Sign(format!(
+            "POKI_HTTP_ENDPOINT_HOST must be one DNS name or IP literal, without scheme, port, brackets, zone ID, CIDR mask, path, query, fragment or userinfo (got {trimmed:?})"
+        ))
+    })
 }
 
 fn normalize_exception_host(raw: &str) -> Option<String> {
@@ -121,20 +133,18 @@ fn is_exception_host(value: &str) -> bool {
     is_dns_host(value)
 }
 
-/// Adds one NSExceptionDomains entry per named host to the main app's Info.plist. Every other host
+/// Adds the single named NSExceptionDomains entry to the main app's Info.plist. Every other host
 /// keeps full ATS, NSAllowsLocalNetworking stays for the voice bridge, and any entry the build
 /// already declared is preserved. No global NSAllowsArbitraryLoads is written.
-fn add_http_exceptions(info: &mut plist::Dictionary, hosts: &[String]) {
-    if hosts.is_empty() { return; }
+fn add_http_exception(info: &mut plist::Dictionary, host: Option<&str>) {
+    let Some(host) = host else { return };
     let mut ats = info.get("NSAppTransportSecurity")
         .and_then(|v| v.as_dictionary()).cloned().unwrap_or_default();
     let mut domains = ats.get("NSExceptionDomains")
         .and_then(|v| v.as_dictionary()).cloned().unwrap_or_default();
-    for host in hosts {
-        let mut entry = plist::Dictionary::new();
-        entry.insert("NSExceptionAllowsInsecureHTTPLoads".into(), true.into());
-        domains.insert(host.clone(), entry.into());
-    }
+    let mut entry = plist::Dictionary::new();
+    entry.insert("NSExceptionAllowsInsecureHTTPLoads".into(), true.into());
+    domains.insert(host.to_string(), entry.into());
     ats.insert("NSExceptionDomains".into(), domains.into());
     info.insert("NSAppTransportSecurity".into(), ats.into());
 }
@@ -142,6 +152,7 @@ fn add_http_exceptions(info: &mut plist::Dictionary, hosts: &[String]) {
 /// Unpacks and rewrites ids. `requested` maps a bundle name (Poki, PokiWidgets) to its built
 /// entitlements when Poki-signing.zip is at hand.
 pub fn unpack(ipa: &Path, team: &str, requested: &std::collections::HashMap<String, plist::Dictionary>, reporter: &Reporter) -> Result<Unpacked> {
+    let http_host = http_endpoint_host()?;
     let work = tempfile::Builder::new().prefix("poki-sign-").tempdir()?;
     reporter.part("sign", 0.05, Some("Unpacking".into()));
     unzip(ipa, work.path())?;
@@ -199,7 +210,7 @@ pub fn unpack(ipa: &Path, team: &str, requested: &std::collections::HashMap<Stri
             info.insert("PokiAppGroup".into(), group.clone().into());
         }
         if p == app_dir {
-            add_http_exceptions(&mut info, &http_endpoint_hosts());
+            add_http_exception(&mut info, http_host.as_deref());
         }
         write_info(&p, &info)?;
         let name = p.file_stem().unwrap().to_string_lossy().to_string();
@@ -441,60 +452,59 @@ mod tests {
         );
         assert_eq!(normalize_exception_host("Gateway.Example.COM.."), None);
         assert_eq!(normalize_exception_host("203.0.113.9."), None);
-    }
 
-    /// The injected dictionary grants insecure loads to exactly the named hosts. It keeps
-    /// NSAllowsLocalNetworking, preserves entries the build declared, and writes no global key.
-    #[test]
-    fn http_exceptions_scope_ats_to_named_hosts() {
-        let mut info = plist::Dictionary::new();
-        let mut ats = plist::Dictionary::new();
-        ats.insert("NSAllowsLocalNetworking".into(), true.into());
-        let mut existing = plist::Dictionary::new();
-        existing.insert("built.example.com".into(), {
-            let mut e = plist::Dictionary::new();
-            e.insert("NSExceptionAllowsInsecureHTTPLoads".into(), false.into());
-            e.into()
-        });
-        ats.insert("NSExceptionDomains".into(), existing.into());
-        info.insert("NSAppTransportSecurity".into(), ats.into());
-
-        add_http_exceptions(&mut info, &["203.0.113.9".into(), "gateway.example.com".into()]);
-        let ats = info.get("NSAppTransportSecurity").unwrap().as_dictionary().unwrap();
-        assert!(matches!(ats.get("NSAllowsLocalNetworking"), Some(plist::Value::Boolean(true))));
-        assert!(!ats.contains_key("NSAllowsArbitraryLoads"));
-        let domains = ats.get("NSExceptionDomains").unwrap().as_dictionary().unwrap();
-        assert_eq!(domains.len(), 3);
-        assert_eq!(domains.get("built.example.com").unwrap().as_dictionary().unwrap()
-            .get("NSExceptionAllowsInsecureHTTPLoads"), Some(&plist::Value::Boolean(false)));
-        for host in ["203.0.113.9", "gateway.example.com"] {
-            let entry = domains.get(host).unwrap().as_dictionary().unwrap();
-            assert!(matches!(entry.get("NSExceptionAllowsInsecureHTTPLoads"), Some(plist::Value::Boolean(true))));
-            assert!(!entry.contains_key("NSIncludesSubdomains"));
+        assert_eq!(parse_http_endpoint_host(None).unwrap(), None);
+        assert_eq!(parse_http_endpoint_host(Some("")).unwrap(), None);
+        assert_eq!(parse_http_endpoint_host(Some("   ")).unwrap(), None);
+        assert_eq!(parse_http_endpoint_host(Some("203.0.113.9")).unwrap(), Some("203.0.113.9".into()));
+        assert_eq!(parse_http_endpoint_host(Some(" Gateway.Example.COM. ")).unwrap(), Some("gateway.example.com".into()));
+        assert_eq!(parse_http_endpoint_host(Some(" 2001:0DB8:0012:0:0:0:0:0034 ")).unwrap(), Some("2001:db8:12::34".into()));
+        assert_eq!(parse_http_endpoint_host(Some("::ffff:cb00:7109")).unwrap(), Some("::ffff:203.0.113.9".into()));
+        for multi in [
+            "203.0.113.9,gateway.example.com",
+            "203.0.113.9,evil.com",
+            "203.0.113.9,203.0.113.9",
+        ] {
+            assert!(parse_http_endpoint_host(Some(multi)).is_err(), "should reject multiple hosts {multi}");
+        }
+        for invalid in [
+            "http://gateway.example.com",
+            "192.168.1.0/24",
+            "*.example.com",
+            "${POKI_HTTP_ENDPOINT_HOST}",
+        ] {
+            assert!(parse_http_endpoint_host(Some(invalid)).is_err(), "should reject invalid host {invalid}");
         }
     }
 
-    #[test]
-    fn no_http_hosts_leaves_the_plist_alone() {
-        let mut info = plist::Dictionary::new();
-        let mut ats = plist::Dictionary::new();
-        ats.insert("NSAllowsLocalNetworking".into(), true.into());
-        info.insert("NSAppTransportSecurity".into(), ats.into());
-        let before = format!("{:?}", info);
-        add_http_exceptions(&mut info, &[]);
-        assert_eq!(format!("{:?}", info), before);
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        previous: Option<String>,
     }
 
-    /// End to end: a release IPA with only NSAllowsLocalNetworking gets the named host, and only
-    /// the main app bundle is touched.
-    #[test]
-    fn signed_ipa_gets_only_the_named_exceptions() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        let previous = std::env::var("POKI_HTTP_ENDPOINT_HOST").ok();
-        unsafe { std::env::set_var("POKI_HTTP_ENDPOINT_HOST", " 203.0.113.9, Gateway.Example.COM. ") };
+    impl EnvGuard {
+        fn set(value: Option<&str>) -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let previous = std::env::var("POKI_HTTP_ENDPOINT_HOST").ok();
+            match value {
+                Some(v) => unsafe { std::env::set_var("POKI_HTTP_ENDPOINT_HOST", v) },
+                None => unsafe { std::env::remove_var("POKI_HTTP_ENDPOINT_HOST") },
+            }
+            Self { _lock: lock, previous }
+        }
+    }
 
-        let dir = tempfile::tempdir().unwrap();
-        let app = dir.path().join("Payload/Poki.app");
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => unsafe { std::env::set_var("POKI_HTTP_ENDPOINT_HOST", value) },
+                None => unsafe { std::env::remove_var("POKI_HTTP_ENDPOINT_HOST") },
+            }
+        }
+    }
+
+    fn build_minimal_ipa(dir: &Path) -> PathBuf {
+        let app = dir.join("Payload/Poki.app");
         std::fs::create_dir_all(app.join("PlugIns/PokiWidgets.appex")).unwrap();
         let mut info = plist::Dictionary::new();
         info.insert("CFBundleIdentifier".into(), "nz.zheha.poki".into());
@@ -507,21 +517,69 @@ mod tests {
         let mut w = plist::Dictionary::new();
         w.insert("CFBundleIdentifier".into(), "nz.zheha.poki.widgets".into());
         plist::to_file_xml(app.join("PlugIns/PokiWidgets.appex/Info.plist"), &w).unwrap();
-        let ipa = dir.path().join("Poki.ipa");
-        {
-            let f = std::fs::File::create(&ipa).unwrap();
-            let mut z = zip::ZipWriter::new(f);
-            let o = zip::write::SimpleFileOptions::default();
-            for e in walkdir::WalkDir::new(dir.path().join("Payload")) {
-                let e = e.unwrap();
-                let rel = e.path().strip_prefix(dir.path()).unwrap().to_string_lossy().to_string();
-                if e.file_type().is_file() {
-                    z.start_file(rel, o).unwrap();
-                    std::io::copy(&mut std::fs::File::open(e.path()).unwrap(), &mut z).unwrap();
-                }
+        let ipa = dir.join("Poki.ipa");
+        let f = std::fs::File::create(&ipa).unwrap();
+        let mut z = zip::ZipWriter::new(f);
+        let o = zip::write::SimpleFileOptions::default();
+        for e in walkdir::WalkDir::new(dir.join("Payload")) {
+            let e = e.unwrap();
+            let rel = e.path().strip_prefix(dir).unwrap().to_string_lossy().to_string();
+            if e.file_type().is_file() {
+                z.start_file(rel, o).unwrap();
+                std::io::copy(&mut std::fs::File::open(e.path()).unwrap(), &mut z).unwrap();
             }
-            z.finish().unwrap();
         }
+        z.finish().unwrap();
+        ipa
+    }
+
+    /// The injected dictionary grants insecure loads to the single named host. It keeps
+    /// NSAllowsLocalNetworking, preserves entries the build declared, and writes no global key.
+    #[test]
+    fn http_exceptions_scope_ats_to_named_host() {
+        let mut info = plist::Dictionary::new();
+        let mut ats = plist::Dictionary::new();
+        ats.insert("NSAllowsLocalNetworking".into(), true.into());
+        let mut existing = plist::Dictionary::new();
+        existing.insert("built.example.com".into(), {
+            let mut e = plist::Dictionary::new();
+            e.insert("NSExceptionAllowsInsecureHTTPLoads".into(), false.into());
+            e.into()
+        });
+        ats.insert("NSExceptionDomains".into(), existing.into());
+        info.insert("NSAppTransportSecurity".into(), ats.into());
+
+        add_http_exception(&mut info, Some("203.0.113.9"));
+        let ats = info.get("NSAppTransportSecurity").unwrap().as_dictionary().unwrap();
+        assert!(matches!(ats.get("NSAllowsLocalNetworking"), Some(plist::Value::Boolean(true))));
+        assert!(!ats.contains_key("NSAllowsArbitraryLoads"));
+        let domains = ats.get("NSExceptionDomains").unwrap().as_dictionary().unwrap();
+        assert_eq!(domains.len(), 2);
+        assert_eq!(domains.get("built.example.com").unwrap().as_dictionary().unwrap()
+            .get("NSExceptionAllowsInsecureHTTPLoads"), Some(&plist::Value::Boolean(false)));
+        let entry = domains.get("203.0.113.9").unwrap().as_dictionary().unwrap();
+        assert!(matches!(entry.get("NSExceptionAllowsInsecureHTTPLoads"), Some(plist::Value::Boolean(true))));
+        assert!(!entry.contains_key("NSIncludesSubdomains"));
+    }
+
+    #[test]
+    fn no_http_host_leaves_the_plist_alone() {
+        let mut info = plist::Dictionary::new();
+        let mut ats = plist::Dictionary::new();
+        ats.insert("NSAllowsLocalNetworking".into(), true.into());
+        info.insert("NSAppTransportSecurity".into(), ats.into());
+        let before = format!("{:?}", info);
+        add_http_exception(&mut info, None);
+        assert_eq!(format!("{:?}", info), before);
+    }
+
+    /// End to end: a release IPA with only NSAllowsLocalNetworking gets the single named host, and
+    /// only the main app bundle is touched.
+    #[test]
+    fn signed_ipa_gets_only_the_named_exception() {
+        let _env = EnvGuard::set(Some(" Gateway.Example.COM. "));
+        let dir = tempfile::tempdir().unwrap();
+        let ipa = build_minimal_ipa(dir.path());
 
         let u = unpack(&ipa, "ABC123", &Default::default(), &crate::Reporter::silent()).unwrap();
         let main = read_info(&u.app_dir).unwrap();
@@ -529,23 +587,30 @@ mod tests {
         assert!(!ats.contains_key("NSAllowsArbitraryLoads"));
         assert!(matches!(ats.get("NSAllowsLocalNetworking"), Some(plist::Value::Boolean(true))));
         let domains = ats.get("NSExceptionDomains").unwrap().as_dictionary().unwrap();
-        assert_eq!(domains.len(), 2, "only the two named hosts");
-        for host in ["203.0.113.9", "gateway.example.com"] {
-            assert!(matches!(domains.get(host).unwrap().as_dictionary().unwrap()
-                .get("NSExceptionAllowsInsecureHTTPLoads"), Some(plist::Value::Boolean(true))));
-        }
+        assert_eq!(domains.len(), 1, "only the single named host");
+        assert!(matches!(domains.get("gateway.example.com").unwrap().as_dictionary().unwrap()
+            .get("NSExceptionAllowsInsecureHTTPLoads"), Some(plist::Value::Boolean(true))));
         let widget = read_info(&u.app_dir.join("PlugIns/PokiWidgets.appex")).unwrap();
         assert!(!widget.contains_key("NSAppTransportSecurity"), "extensions are untouched");
+    }
 
-        match previous {
-            Some(value) => unsafe { std::env::set_var("POKI_HTTP_ENDPOINT_HOST", value) },
-            None => unsafe { std::env::remove_var("POKI_HTTP_ENDPOINT_HOST") },
+    #[test]
+    fn signed_ipa_rejects_multiple_or_invalid_http_hosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let ipa = build_minimal_ipa(dir.path());
+        for bad in ["203.0.113.9,gateway.example.com", "http://evil.example.com"] {
+            let _env = EnvGuard::set(Some(bad));
+            let err = unpack(&ipa, "ABC123", &Default::default(), &crate::Reporter::silent())
+                .err()
+                .expect("should reject invalid/multi host");
+            assert!(err.to_string().contains("POKI_HTTP_ENDPOINT_HOST"), "unexpected error: {err}");
         }
     }
 
     /// An installed .app packs into an IPA that unpacks with the same ids for the same team.
     #[test]
     fn package_installed_app_round_trip() {
+        let _env = EnvGuard::set(None);
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("Poki.app");
         std::fs::create_dir_all(app.join("PlugIns/PokiWidgets.appex")).unwrap();
@@ -572,6 +637,7 @@ mod tests {
     /// and the result zips back with the same layout.
     #[test]
     fn unpack_rewrites_and_drops_tunnel() {
+        let _env = EnvGuard::set(None);
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("Payload/Poki.app");
         std::fs::create_dir_all(app.join("PlugIns/PokiWidgets.appex")).unwrap();

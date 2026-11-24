@@ -74,9 +74,19 @@ test('host validation matches the signer', () => {
     for (const bad of BAD_HOSTS) {
         assert.equal(isHttpHost(bad), false, `reject ${bad}`);
     }
-    assert.deepEqual(
-        normalizeHttpHosts([' 203.0.113.9 ', 'Gateway.Example.COM.', '2001:0DB8:0012:0:0:0:0:0034', '2001:db8:12::34', '::ffff:cb00:7109']),
-        ['203.0.113.9', 'gateway.example.com', '2001:db8:12::34', '::ffff:203.0.113.9'],
+    assert.deepEqual(normalizeHttpHosts([' 203.0.113.9 ']), ['203.0.113.9']);
+    assert.deepEqual(normalizeHttpHosts(['Gateway.Example.COM.']), ['gateway.example.com']);
+    assert.deepEqual(normalizeHttpHosts(['2001:0DB8:0012:0:0:0:0:0034']), ['2001:db8:12::34']);
+    assert.deepEqual(normalizeHttpHosts(['::ffff:cb00:7109']), ['::ffff:203.0.113.9']);
+    assert.deepEqual(normalizeHttpHosts(['Gateway.Example.COM.', 'gateway.example.com']), ['gateway.example.com']);
+    assert.deepEqual(normalizeHttpHosts(['2001:0DB8:0012:0:0:0:0:0034', '2001:db8:12::34']), ['2001:db8:12::34']);
+    assert.throws(
+        () => normalizeHttpHosts(['203.0.113.9', 'gateway.example.com']),
+        /at most one distinct host/,
+    );
+    assert.throws(
+        () => normalizeHttpHosts(['203.0.113.9', 'http://evil.example.com']),
+        /takes a DNS name or IP literal/,
     );
 });
 
@@ -158,6 +168,22 @@ test('a malformed --allow-http-host is refused before the bridge starts', async 
     assert.equal(updateBad.events[0].code, 'update_options_conflict');
 });
 
+test('multiple distinct --allow-http-host flags are refused before the bridge starts', async t => {
+    const state = await stateDir(t);
+    const result = await installer(state, ['--allow-http-host', '203.0.113.9', '--allow-http-host', 'gateway.example.com']);
+    assert.equal(result.code, 2, result.stderr);
+    assert.match(result.stderr, /--allow-http-host accepts at most one distinct host/);
+    assert.equal(result.events.length, 0, 'no install events');
+
+    const updateMulti = await installer(state, ['--update-only', '--allow-http-host', '203.0.113.9', '--allow-http-host', 'gateway.example.com']);
+    assert.equal(updateMulti.code, 2, updateMulti.stderr);
+    assert.equal(updateMulti.events.length, 1);
+    assert.equal(updateMulti.events[0].event, 'update_result');
+    assert.equal(updateMulti.events[0].ok, false);
+    assert.equal(updateMulti.events[0].code, 'update_options_conflict');
+    assert.match(updateMulti.events[0].reason, /at most one distinct host/);
+});
+
 test('--update-only keeps the opt-in, because a renewal re-signs a fresh IPA', async t => {
     const state = await stateDir(t);
     const envLog = join(state, 'bridge-env.json');
@@ -167,11 +193,12 @@ test('--update-only keeps the opt-in, because a renewal re-signs a fresh IPA', a
 });
 
 test('the named host reaches the signing bridge, and no opt-in clears any ambient env var', async t => {
-    for (const [args, extraEnv, expected] of [
-        [['--allow-http-host', '203.0.113.9', '--allow-http-host', 'Gateway.Example.COM.', '--allow-http-host', '2001:0DB8:0012:0:0:0:0:0034'], {}, '203.0.113.9,gateway.example.com,2001:db8:12::34'],
-        [[], { POKI_HTTP_ENDPOINT_HOST: 'stale.example.com' }, null],
+    for (const [label, args, extraEnv, expected] of [
+        ['single normalized host', ['--allow-http-host', 'Gateway.Example.COM.'], {}, 'gateway.example.com'],
+        ['repeated equivalent hosts deduplicate to one', ['--allow-http-host', '2001:0DB8:0012:0:0:0:0:0034', '--allow-http-host', '2001:db8:12::34'], {}, '2001:db8:12::34'],
+        ['no flag clears ambient env', [], { POKI_HTTP_ENDPOINT_HOST: 'stale.example.com' }, null],
     ]) {
-        await t.test(expected === null ? 'no flag clears ambient env' : 'normalized hosts', async t => {
+        await t.test(label, async () => {
             const state = await stateDir(t);
             const envLog = join(state, 'bridge-env.json');
             const result = await installer(state, args, { POKI_FAKE_ENV_LOG: envLog, ...extraEnv });
