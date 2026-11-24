@@ -23,7 +23,7 @@ struct PokiActivityAttributes: ActivityAttributes {
         }
         /// Live voice session state when Poki's voice mode is active.
         enum Voice: String, Codable, Hashable {
-            case listening, thinking, speaking
+            case connecting, listening, thinking, speaking, finishingOpening
         }
         /// Refreshes an existing activity when the shared UI language changes; older states decode nil.
         var uiLanguage: String? = nil
@@ -131,6 +131,8 @@ struct PendingApproval: Codable, Hashable {
     /// chat app on a screen not read yet reads as sending, and stops, while a payment, a deletion, Wallet
     /// and a tap after a launch do not.
     var stopsWhenOff: Bool? = nil
+    /// The origin of this one approval, captured inside PokiCore. Not the visible chat.
+    var sourceSession: String? = nil
 
     /// The card offers Don’t Ask Again.
     var offersStopAsking: Bool { stopsWhenOff == true }

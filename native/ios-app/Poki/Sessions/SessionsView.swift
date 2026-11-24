@@ -190,7 +190,13 @@ struct SessionsView: View {
         .accessibilityElement(children: .combine)
         // The icon says which app the conversation worked in; VoiceOver says its name, as the iPhone names it.
         .accessibilityValue(Text(verbatim: [AppName.display(app), needs ? AppLocalization.text(LocalizedStringResource("Needs your attention")) : nil,
-                                                         trouble.map { $0 == .failed ? AppLocalization.text(LocalizedStringResource("Failed")) : AppLocalization.text(LocalizedStringResource("Stopped")) }]
+                                                         trouble.map {
+                                                             switch $0 {
+                                                             case .failed: AppLocalization.text(LocalizedStringResource("Failed"))
+                                                             case .interrupted: AppLocalization.text(LocalizedStringResource("Task interrupted"))
+                                                             default: AppLocalization.text(LocalizedStringResource("Stopped"))
+                                                             }
+                                                         }]
             .compactMap { $0 }.joined(separator: ", ")))
         // In the drawer a sideways drag closes it, so Rename, Archive and Delete are only in the menu there.
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -494,19 +500,30 @@ struct SessionView: View {
     @Environment(AppModel.self) private var model
     var id: String
     var back: () -> Void
+    var searchJump: ConversationSearchJump? = nil
+    var onSearchJumpApplied: (UUID) -> Void = { _ in }
+    var sessionStore: SessionStore = .shared
+    /// Settings search/source previews may inspect another session but must never mutate it.
+    var readOnly = false
+    var revealedSearchEntryID: UUID? = nil
 
     @State private var renaming = false
     @State private var newName = ""
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let session = SessionStore.shared.session(id)
+        let session = sessionStore.session(id)
         let running = AskPoki.live(id)
         let sample = GuestSample.isOn && id == "sample-1"
         let live = sample || (running?.running ?? (session?.live ?? false))
         // The live task's card shows what Poki last saw of the screen, as in the chat.
         let shot: Image? = sample ? SampleShot.image(dark: scheme == .dark) : live ? model.lastShot.map { Image(uiImage: $0) } : nil
-        ChatTranscript(entries: sample ? GuestSample.entries : (running?.entries ?? session?.entries) ?? [],
+        let entries = sample ? GuestSample.entries : (running?.entries ?? session?.entries) ?? []
+        let visibleEntries = readOnly && session?.kind == .poki
+            ? ChatView.transcriptEntries(entries, revealed: searchJump?.entryID ?? revealedSearchEntryID)
+            : entries
+        ChatTranscript(entries: visibleEntries,
+                       jump: searchJump, onSearchJumpApplied: onSearchJumpApplied,
                        typing: running?.awaitingModel ?? false, canRetry: false, retry: {}, session: id,
                        live: live, waiting: live && !model.approvals.isEmpty, handedOver: live && model.handoffText != nil,
                        plan: sample ? GuestSample.plan : running?.planSteps, app: sample ? "TestFlight" : running.map(\.taskApp) ?? model.currentApp, shot: shot) { EmptyView() }
@@ -514,7 +531,7 @@ struct SessionView: View {
         // them and the bars keep their scroll-edge behaviour (as in the chat).
         .bottomBar {
             let asking = session?.live == true && (!model.approvals.isEmpty || model.handoffText != nil)
-            if asking || running != nil || sample {
+            if !readOnly && (asking || running != nil || sample) {
                 VStack(spacing: 8) {
                     if session?.live == true, let approval = model.approvals.first {
                         ApprovalAskCard(title: approval.question, expires: approval.expires,
@@ -541,12 +558,14 @@ struct SessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sessionSubtitle(caption(session))
         .toolbarTitleMenu {
-            Button("Rename", systemImage: "pencil") { newName = session?.name ?? ""; renaming = true }
+            if !readOnly {
+                Button("Rename", systemImage: "pencil") { newName = session?.name ?? ""; renaming = true }
+            }
         }
         .alert("Rename Session", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Cancel", role: .cancel) {}
-            Button("Save") { SessionStore.shared.rename(id, to: newName) }
+            Button("Save") { sessionStore.rename(id, to: newName) }
         }
     }
 
