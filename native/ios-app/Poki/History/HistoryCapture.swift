@@ -136,7 +136,13 @@ final class HistoryCapture: ObservableObject {
 
     private func prune() {
         guard !loading else { return }
-        HistoryStore.shared.prune(days: retentionDays, summaryDays: summaryDays, megabytes: storageMegabytes)
+        HistoryStore.shared.prune(days: retentionDays, summaryDays: summaryDays, megabytes: storageMegabytes) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                BacktapeNotes.shared.reset()
+                self.changes += 1
+            }
+        }
     }
 
     // MARK: State

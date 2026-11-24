@@ -169,6 +169,27 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertNil(stale)
     }
 
+    func testRetentionChangeReloadsHistoryAfterPruning() async {
+        let capture = HistoryCapture()
+        let original = capture.retentionDays
+        defer { capture.retentionDays = original }
+        let store = HistoryStore.shared
+        let start = Date().addingTimeInterval(-4 * 86_400)
+        store.add(at: start, app: "com.apple.mobilenotes", title: "Notes", text: "Old shopping list")
+        let source = await store.recent()
+        XCTAssertEqual(source.map(\.text), ["Old shopping list"])
+        let before = capture.changes
+        capture.retentionDays = 3
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while capture.changes == before, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(capture.changes, before)
+        let remaining = await store.recent()
+        XCTAssertFalse(remaining.contains { !$0.text.isEmpty })
+    }
+
     func testClearingEverythingLeavesNoReadsSummariesOrRecord() async {
         let capture = HistoryCapture()
         HistoryStore.shared.add(at: Date(), app: "com.apple.mobilenotes", title: "Notes", text: "Shopping list")

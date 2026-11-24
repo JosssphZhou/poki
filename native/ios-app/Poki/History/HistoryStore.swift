@@ -183,7 +183,7 @@ final class HistoryStore: @unchecked Sendable {
     /// summaries stay. Past `summaryDays` (never less than `days`) everything goes. Over
     /// `megabytes`: the oldest trees go, then the oldest screen text with its 10 minute notes, then
     /// the oldest reads and summaries whole.
-    func prune(days: Int, summaryDays: Int = 0, megabytes: Int = 200) {
+    func prune(days: Int, summaryDays: Int = 0, megabytes: Int = 200, onChange: (@Sendable () -> Void)? = nil) {
         queue.async {
             guard self.open(), let db = self.db else { return }
             let now = Date().timeIntervalSince1970
@@ -192,7 +192,10 @@ final class HistoryStore: @unchecked Sendable {
             self.run("DELETE FROM record WHERE at < ?", [.real(now - 30 * 86_400)])
             let before = sqlite3_total_changes64(db)
             defer {
-                if sqlite3_total_changes64(db) != before { self.generation = UUID() }
+                if sqlite3_total_changes64(db) != before {
+                    self.generation = UUID()
+                    onChange?()
+                }
             }
             self.run("UPDATE entries SET tree = NULL, text = '' WHERE at < ? AND (tree IS NOT NULL OR text != '')", [.real(cut)])
             self.run("DELETE FROM notes WHERE start < ? AND start = CAST(start AS INTEGER)", [.real(cut)])
