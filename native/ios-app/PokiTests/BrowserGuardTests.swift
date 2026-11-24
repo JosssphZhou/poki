@@ -60,6 +60,31 @@ final class BrowserGuardTests: XCTestCase {
         XCTAssertFalse(browser.isLoading)
     }
 
+    func testActWaitsForSlowLinkAfterStopOnOlderWebKit() async throws {
+        if #available(iOS 27.0, *) { throw XCTSkip("Requires the older WebKit policy callback") }
+        let priorLocalFixtures = BrowserAddress.allowsLocal
+        BrowserAddress.allowsLocal = true
+        defer { BrowserAddress.allowsLocal = priorLocalFixtures }
+        let pages = try PageServer(pages: [
+            "/first": "<title>First</title><a id='next' href='/second'>Next</a>",
+            "/second": "<title>Second</title>",
+        ], delayedPath: "/second")
+        let browser = PokiBrowser()
+        let first = try XCTUnwrap(URL(string: "http://127.0.0.1:\(pages.port)/first"))
+        await browser.open(first)
+        _ = try XCTUnwrap(browser.url, "The fixture must load before Stop")
+        XCTAssertEqual(browser.url?.path, "/first")
+        browser.taskStopped()
+
+        let clicked = await browser.act {
+            (try? await browser.webView.evaluateJavaScript("document.querySelector('#next').click(); true")) as? Bool
+        }
+        XCTAssertEqual(clicked, true)
+        XCTAssertEqual(browser.url?.path, "/second")
+        let title = try await browser.webView.evaluateJavaScript("document.title") as? String
+        XCTAssertEqual(title, "Second")
+    }
+
     func testPageInitiatedNavigationAfterStopUpdatesBrowser() async throws {
         let pages = try PageServer(pages: [
             "/first": "<html><title>First</title></html>",
@@ -566,11 +591,13 @@ final class PageServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "page-server")
     private let pages: [String: String]
+    private let delayedPath: String?
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
 
-    init(pages: [String: String]) throws {
+    init(pages: [String: String], delayedPath: String? = nil) throws {
         self.pages = pages
+        self.delayedPath = delayedPath
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -597,7 +624,16 @@ final class PageServer: @unchecked Sendable {
                 let body = self.pages[path] ?? ""
                 let status = self.pages[path] == nil ? "404 Not Found" : "200 OK"
                 let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
-                return connection.send(content: Data((head + body).utf8), completion: .contentProcessed { _ in connection.cancel() })
+                let response = Data((head + body).utf8)
+                let send: @Sendable () -> Void = {
+                    connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
+                }
+                if path == self.delayedPath {
+                    self.queue.asyncAfter(deadline: .now() + 2, execute: send)
+                } else {
+                    send()
+                }
+                return
             }
             if done || error != nil { return connection.cancel() }
             self.read(connection, received)

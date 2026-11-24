@@ -45,6 +45,7 @@ final class PokiBrowser: NSObject {
     @ObservationIgnored private var pendingOpen: (WKNavigation, () -> Void)?
     @ObservationIgnored private var approvedNavigation: WKNavigation?
     @ObservationIgnored private var hasStopped = false
+    @ObservationIgnored private var legacyMainFrameApproved = false
     @ObservationIgnored private let supersededNavigations = NSHashTable<WKNavigation>.weakObjects()
     @ObservationIgnored private var loadWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var ownerWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
@@ -159,6 +160,7 @@ final class PokiBrowser: NSObject {
             supersededNavigations.add(approvedNavigation)
         }
         approvedNavigation = nil
+        legacyMainFrameApproved = false
         activeNavigation = navigation
         committed = false
         isLoading = true
@@ -221,6 +223,7 @@ final class PokiBrowser: NSObject {
         if let approvedNavigation { supersededNavigations.add(approvedNavigation) }
         approvedNavigation = nil
         hasStopped = true
+        legacyMainFrameApproved = false
         isLoading = false
         committed = true
         webView.stopLoading()
@@ -255,19 +258,15 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
         if #available(iOS 27.0, *) {
             guard navigation === activeNavigation || navigation === approvedNavigation else { return }
         } else if hasStopped {
-            // Older WebKit does not expose the policy's navigation identity.
-            // A provisional callback alone cannot establish that this is a new load.
-            guard navigation === activeNavigation else { return }
+            // Older WebKit cannot identify the navigation at policy time.
+            // Require a fresh main-frame approval after Stop.
+            guard navigation === activeNavigation || legacyMainFrameApproved else { return }
         }
         trackNavigation(navigation)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard let navigation, !supersededNavigations.contains(navigation) else { return }
-        if #unavailable(iOS 27.0), hasStopped, committed {
-            // A page-driven load on older iOS becomes trackable once WebKit installs its document.
-            trackNavigation(navigation)
-        }
         guard navigation === activeNavigation else { return }
         committed = true
         url = webView.url
@@ -310,6 +309,9 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
         if #available(iOS 27.0, *), navigationAction.targetFrame?.isMainFrame == true,
            let navigation = navigationAction.mainFrameNavigation {
             approveMainFrameNavigation(navigation)
+        }
+        if #unavailable(iOS 27.0), navigationAction.targetFrame?.isMainFrame == true {
+            legacyMainFrameApproved = true
         }
         return .allow
     }
