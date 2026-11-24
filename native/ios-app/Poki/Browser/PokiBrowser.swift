@@ -43,7 +43,8 @@ final class PokiBrowser: NSObject {
     @ObservationIgnored private var committed = true
     @ObservationIgnored private var activeNavigation: WKNavigation?
     @ObservationIgnored private var pendingOpen: (WKNavigation, () -> Void)?
-    @ObservationIgnored private var acceptsUntrackedNavigation = true
+    @ObservationIgnored private var approvedNavigation: WKNavigation?
+    @ObservationIgnored private var hasStopped = false
     @ObservationIgnored private let supersededNavigations = NSHashTable<WKNavigation>.weakObjects()
     @ObservationIgnored private var loadWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var ownerWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
@@ -143,9 +144,21 @@ final class PokiBrowser: NSObject {
         waiters.values.forEach { $0.resume() }
     }
 
+    func approveMainFrameNavigation(_ navigation: WKNavigation) {
+        guard navigation !== activeNavigation, !supersededNavigations.contains(navigation) else { return }
+        if let approvedNavigation, approvedNavigation !== navigation {
+            supersededNavigations.add(approvedNavigation)
+        }
+        approvedNavigation = navigation
+    }
+
     private func trackNavigation(_ navigation: WKNavigation?) {
         guard let navigation, navigation !== activeNavigation else { return }
         if let activeNavigation { supersededNavigations.add(activeNavigation) }
+        if let approvedNavigation, approvedNavigation !== navigation {
+            supersededNavigations.add(approvedNavigation)
+        }
+        approvedNavigation = nil
         activeNavigation = navigation
         committed = false
         isLoading = true
@@ -205,7 +218,9 @@ final class PokiBrowser: NSObject {
         pendingOpen = nil
         if let activeNavigation { supersededNavigations.add(activeNavigation) }
         activeNavigation = nil
-        acceptsUntrackedNavigation = false
+        if let approvedNavigation { supersededNavigations.add(approvedNavigation) }
+        approvedNavigation = nil
+        hasStopped = true
         isLoading = false
         committed = true
         webView.stopLoading()
@@ -237,16 +252,22 @@ final class PokiBrowser: NSObject {
 extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation, !supersededNavigations.contains(navigation) else { return }
-        // Stop can run after policy approval but before WebKit reports the
-        // navigation identity. Wait for a new policy decision on page loads.
-        guard navigation === activeNavigation || acceptsUntrackedNavigation else {
-            supersededNavigations.add(navigation)
-            return
+        if #available(iOS 27.0, *) {
+            guard navigation === activeNavigation || navigation === approvedNavigation else { return }
+        } else if hasStopped {
+            // Older WebKit does not expose the policy's navigation identity.
+            // A provisional callback alone cannot establish that this is a new load.
+            guard navigation === activeNavigation else { return }
         }
         trackNavigation(navigation)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard let navigation, !supersededNavigations.contains(navigation) else { return }
+        if #unavailable(iOS 27.0), hasStopped, committed {
+            // A page-driven load on older iOS becomes trackable once WebKit installs its document.
+            trackNavigation(navigation)
+        }
         guard navigation === activeNavigation else { return }
         committed = true
         url = webView.url
@@ -286,8 +307,9 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
             AppLog.shared.add("browser", "refused a navigation to a local address")
             return .cancel
         }
-        if navigationAction.targetFrame?.isMainFrame == true {
-            acceptsUntrackedNavigation = true
+        if #available(iOS 27.0, *), navigationAction.targetFrame?.isMainFrame == true,
+           let navigation = navigationAction.mainFrameNavigation {
+            approveMainFrameNavigation(navigation)
         }
         return .allow
     }

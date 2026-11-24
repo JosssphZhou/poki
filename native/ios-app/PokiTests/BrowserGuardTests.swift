@@ -19,6 +19,7 @@ final class BrowserGuardTests: XCTestCase {
     func testStopClearsLoadingAndIgnoresLateNavigationCallbacks() throws {
         let browser = PokiBrowser()
         let navigation = try XCTUnwrap(browser.webView.loadHTMLString("<p>Page</p>", baseURL: nil))
+        browser.approveMainFrameNavigation(navigation)
         browser.webView(browser.webView, didStartProvisionalNavigation: navigation)
         XCTAssertTrue(browser.isLoading)
 
@@ -35,6 +36,51 @@ final class BrowserGuardTests: XCTestCase {
 
         browser.webView(browser.webView, didStartProvisionalNavigation: navigation)
 
+        XCTAssertFalse(browser.isLoading)
+    }
+
+    func testNewPolicyDoesNotReadmitStoppedNavigationEvenForSameURL() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("Requires WebKit navigation identity in the policy callback") }
+        let browser = PokiBrowser()
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "about:blank")))
+        let old = try XCTUnwrap(browser.webView.load(request))
+        browser.approveMainFrameNavigation(old)
+        browser.taskStopped()
+        let new = try XCTUnwrap(browser.webView.load(request))
+        browser.approveMainFrameNavigation(new)
+
+        browser.webView(browser.webView, didStartProvisionalNavigation: old)
+        XCTAssertFalse(browser.isLoading, "Approving a new request must not revive the old navigation")
+
+        browser.webView(browser.webView, didStartProvisionalNavigation: new)
+        XCTAssertTrue(browser.isLoading)
+        browser.webView(browser.webView, didFailProvisionalNavigation: old, withError: URLError(.cancelled))
+        XCTAssertTrue(browser.isLoading, "A late failure must not finish the new navigation")
+        browser.webView(browser.webView, didFinish: new)
+        XCTAssertFalse(browser.isLoading)
+    }
+
+    func testPageInitiatedNavigationAfterStopUpdatesBrowser() async throws {
+        let pages = try PageServer(pages: [
+            "/first": "<html><title>First</title></html>",
+            "/second": "<html><title>Second</title></html>",
+        ])
+        let browser = PokiBrowser()
+        let first = try XCTUnwrap(URL(string: "http://127.0.0.1:\(pages.port)/first"))
+        await browser.open(first)
+        XCTAssertEqual(browser.url?.path, "/first")
+        browser.taskStopped()
+
+        let loaded = expectation(description: "Page-initiated navigation finished")
+        let observation = browser.webView.observe(\.isLoading, options: [.new]) { view, _ in
+            if !view.isLoading, view.url?.path == "/second" { loaded.fulfill() }
+        }
+        defer { observation.invalidate() }
+        _ = try await browser.webView.evaluateJavaScript("setTimeout(() => { location.href = '/second' }, 0);")
+        await fulfillment(of: [loaded], timeout: 5)
+        XCTAssertEqual(browser.url?.path, "/second")
+        let title = try await browser.webView.evaluateJavaScript("document.title") as? String
+        XCTAssertEqual(title, "Second")
         XCTAssertFalse(browser.isLoading)
     }
 
