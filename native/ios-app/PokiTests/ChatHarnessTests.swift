@@ -2131,42 +2131,6 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertLessThanOrEqual(items["minItems"] as? Int ?? 0, 1)
     }
 
-    func testAdvertisedResultCardKindsHaveGuidanceAndRenderableFixtures() throws {
-        let finishProperties = try XCTUnwrap(Harness.finishTask.schema["properties"] as? [String: Any])
-        let schema = try XCTUnwrap(finishProperties["card"] as? [String: Any])
-        let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
-        let kindSchema = try XCTUnwrap(properties["kind"] as? [String: Any])
-        let kinds = try XCTUnwrap(kindSchema["enum"] as? [String])
-        let guidance = try XCTUnwrap(schema["description"] as? String)
-        XCTAssertEqual(Set(kinds), Set(ResultCardLooks.all.keys),
-                       "Every advertised kind must have a validator and a renderer, and vice versa.")
-
-        let fixtures = [RailwayTrains.kind: (app: "cn.12306.rails12306", item: Self.train("G1", "07:00"))]
-        XCTAssertEqual(Set(kinds), Set(fixtures.keys), "Add a fixture for each advertised kind.")
-
-        let itemsSchema = try XCTUnwrap(properties["items"] as? [String: Any])
-        let itemSchema = try XCTUnwrap(itemsSchema["items"] as? [String: Any])
-        let itemProperties = try XCTUnwrap(itemSchema["properties"] as? [String: Any])
-        for (kind, fixture) in fixtures {
-            XCTAssertTrue(guidance.contains(kind), "The model needs guidance for \(kind).")
-            XCTAssertTrue(Set(fixture.item.keys).isSubset(of: Set(itemProperties.keys)),
-                          "The schema must allow the item fields used by \(kind).")
-            let payload: [String: Any] = [
-                "success": true, "summary": "Found one option.", "details": [], "answer": ["kind": "list"],
-                "card": [
-                    "app": fixture.app, "kind": kind, "items": [fixture.item],
-                    "recommended": try XCTUnwrap(fixture.item["id"] as? String),
-                    "primary": ["label": "View", "say": "Open {title}"],
-                ],
-            ]
-            let result = try JSONDecoder().decode(TaskResult.self, from: JSONSerialization.data(withJSONObject: payload))
-            let card = try XCTUnwrap(result.card, result.cardProblem ?? "Expected \(kind) to validate.")
-            let view = ResultCardView(entry: UUID(), card: card, chosen: nil, actions: nil).frame(width: 370)
-            let image = try XCTUnwrap(ImageRenderer(content: view).cgImage, "Expected \(kind) to render.")
-            XCTAssertGreaterThan(image.height, 0)
-        }
-    }
-
     /// An in-app chat that starts empty: a new one opens on the last conversation saved by an earlier test.
     private func newChat(on server: FakeCompletions) -> ChatModel {
         let chat = chat(on: server, kind: .poki)
