@@ -253,8 +253,8 @@ final class ResultCardLookTests: XCTestCase {
         XCTAssertEqual(RailwayTrains.normalizedFare("¥1568起"), "1568元起")
         XCTAssertEqual(RailwayTrains.normalizedFare("￥1,568 起"), "1568元起")
         XCTAssertEqual(RailwayTrains.normalizedFare("1568起"), "1568元起")
-        XCTAssertEqual(RailwayTrains.normalizedFare("¥553", preferStartingSuffix: true), "553元起")
-        XCTAssertEqual(RailwayTrains.normalizedFare("¥553", preferStartingSuffix: false), "553元")
+        let prices = ["498元起", "¥553"].map { RailwayTrains.normalizedFare($0) }
+        XCTAssertEqual(prices, ["498元起", "553元"])
         XCTAssertEqual(RailwayTrains.normalizedFare("待公布"), "待公布")
     }
 
