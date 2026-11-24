@@ -1800,7 +1800,12 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
         PKDuoCompanionTask *companionTask = self.duoCompanionTask;
         PKDisplayGeometry geometry = self.displayGeometry;
         BOOL companion = selected && (selected.leftPID == getpid() || selected.rightPID == getpid());
-        if (companionTask && (CGRectIsNull(geometry.peer) || (!refreshViewport && !self.isPokiSceneVisible))) {
+        // The owner can replace a pane's app without changing its frame.
+        if (!refreshViewport && (selected || companionTask || !CGRectIsNull(geometry.peer))) {
+            if (code) *code = @"target_pane_unconfirmed";
+            return nil;
+        }
+        if (companionTask && CGRectIsNull(geometry.peer)) {
             if (code) *code = @"target_pane_unconfirmed";
             return nil;
         }
@@ -1828,30 +1833,6 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
 #endif
         NSDictionary *workspaceFront = nil;
         if (selected && refreshViewport && ![self sharedFront:&workspaceFront ax:NULL code:code]) return nil;
-        NSValue *heldPane = nil;
-        if (!refreshViewport && !CGRectIsNull(geometry.peer)) {
-            if (companionTask) {
-                workspaceFront = [self heldCompanionInfo:geometry];
-                PKWorkspace *target = companionTask.target;
-                NSString *pokiPane = target.selectRight ? @"left" : @"right";
-                int targetPID = target.selectRight ? target.rightPID : target.leftPID;
-                if (target && [workspaceFront[@"pokiPane"] isEqualToString:pokiPane] &&
-                    [workspaceFront[@"pid"] intValue] == targetPID &&
-                    [workspaceFront[@"bundleId"] isEqualToString:target.targetBundle])
-                    heldPane = workspaceFront[@"pane"];
-            } else if (companion) {
-                workspaceFront = [self heldCompanionInfo:geometry];
-                if ([workspaceFront[@"identity"] isEqualToString:selected.identity]) heldPane = workspaceFront[@"pane"];
-            } else if (selected && selected.generation == self.generation && PKSameDisplay(selected.display, geometry)) {
-                heldPane = [NSValue valueWithCGRect:selected.selectRight ? selected.right : selected.left];
-            } else if (!selected) {
-                heldPane = [self heldCompanionInfo:geometry][@"pane"];
-            }
-        }
-        if ((selected || companionTask) && !refreshViewport && !heldPane) {
-            if (code) *code = @"target_pane_unconfirmed";
-            return nil;
-        }
         id screen = request ? PKUniqueAutomationScreen(geometry) : PKAutomationScreen(geometry);
         if (!screen) { if (code) *code = @"target_display_unavailable"; return nil; }
         // A JPEG from testmanagerd (what WebDriverAgent uses): a fraction of the PNG's bytes to
@@ -1876,20 +1857,16 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
         if (!picture.length) picture = [[screen screenshot] PNGRepresentation];
         if (picture.length) {
             NSLog(@"PokiInProcess timing: screenshot %d ms, %lu bytes (%@)", (int)lround((NSProcessInfo.processInfo.systemUptime - started) * 1000), (unsigned long)picture.length, kind);
-            // Read the crop before exposing any pixels to PokiCore. Share the target lookup with
-            // the tree read; during a held request use only a previously confirmed split crop.
+            // Resolve the crop before exposing any pixels to PokiCore.
             PKDisplayGeometry current = self.displayGeometry;
             if (companionTask != self.duoCompanionTask ||
-                (companionTask && !refreshViewport && !self.isPokiSceneVisible) ||
                 ((request || selected || !CGRectIsNull(geometry.peer) || !CGRectIsNull(current.peer)) &&
                  (selected != self.selectedWorkspace || !PKSameDisplay(geometry, current)))) {
                 if (code) *code = @"display_changed_during_screenshot";
                 return nil;
             }
             CGRect viewport = geometry.peer;
-            if (heldPane) {
-                viewport = [self noteViewport:CGRectNull confirmedPane:heldPane geometry:geometry];
-            } else if (selected) {
+            if (selected) {
                 if (!workspaceFront[@"pane"]) { if (code) *code = @"target_pane_unconfirmed"; return nil; }
                 viewport = [self noteViewport:CGRectNull confirmedPane:workspaceFront[@"pane"] geometry:geometry];
             } else if (refreshViewport) {
@@ -1906,9 +1883,7 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
                     if (code) *code = @"target_pane_unconfirmed";
                     return nil;
                 }
-
             } else {
-                if (!CGRectIsNull(geometry.peer)) { if (code) *code = @"target_pane_unconfirmed"; return nil; }
                 viewport = self.viewport;
             }
             if (CGRectIsNull(viewport) && !geometry.routesDisplay) return picture;
@@ -1932,8 +1907,7 @@ static BOOL PKSameWorkspace(PKWorkspace *a, PKWorkspace *b) {
                 }
                 @synchronized (self) {
                     if ((request && request != _duoCaptureRequest) ||
-                        (companionTask && (companionTask != _duoCompanionTask || inputs != _inputs ||
-                         (!refreshViewport && [workspaceFront[@"companionGeneration"] unsignedLongLongValue] != _sessions.generation))) ||
+                        (companionTask && (companionTask != _duoCompanionTask || inputs != _inputs)) ||
                         (companion && (selected != _workspace || inputs != _inputs || selected.generation != _sessions.generation))) {
                         if (code) *code = @"display_changed_during_screenshot";
                         return nil;
@@ -2034,22 +2008,6 @@ static const NSTimeInterval PKWorkspaceFrontSeconds = 4.0;
     if (client) *client = search.ax;
     if (code && !search.element) *code = search.code;
     return search.element;
-}
-
-// A held AX request cannot recheck the app. Reuse only a crop from the same
-// session and layout, with no input between the verified read and this picture.
-- (nullable NSDictionary *)heldCompanionInfo:(PKDisplayGeometry)geometry {
-    uint64_t generation = self.generation;
-    @synchronized (self) {
-        PKFrontSearch *search = _search;
-        if (!search || search.inputs != _inputs || dispatch_group_wait(search.done, DISPATCH_TIME_NOW) != 0 ||
-            [search.info[@"companionGeneration"] unsignedLongLongValue] != generation) return nil;
-        NSValue *observation = search.info[@"companionDisplay"];
-        if (!observation) return nil;
-        PKDisplayGeometry read;
-        [observation getValue:&read size:sizeof(read)];
-        return PKSameDisplay(geometry, read) ? search.info : nil;
-    }
 }
 
 - (void)rememberFront:(NSDictionary<NSString *, id> *)front {
@@ -2250,10 +2208,6 @@ static const int PKFrontKey = -1;
         }
         if (!CGRectIsNull(pane)) {
             answer[@"pane"] = [NSValue valueWithCGRect:pane];
-            if (PKIsDuo() && !CGRectIsNull(geometry.peer)) {
-                answer[@"companionDisplay"] = [NSValue value:&geometry withObjCType:@encode(PKDisplayGeometry)];
-                answer[@"companionGeneration"] = @(generation);
-            }
         }
         if (paneLocal) answer[@"paneLocal"] = @YES;
         if (chosen && pid > 0) {
