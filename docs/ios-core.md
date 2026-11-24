@@ -383,7 +383,11 @@ on the phone; the next first `look` of a task in that app names the saved skills
   chat runs on, asked through `PromptDecider`, and for an OpenAI API key also Luna on OpenAI's
   Decisions API, `POST /v1/decisions`), or under Local Models (Apple Intelligence, through
   `PromptDecider`, which asks in one prompt, reads the JSON in the answer strictly, and sends
-  nothing out). An account's request goes from the phone straight to its provider. PokiCore also
+  nothing out; or a model the owner downloads to the iPhone, run with MLX, also through
+  `PromptDecider` with 15 s of its own time: it needs an iPhone with 6 GB of memory, its answer
+  belongs to the model revision picked when it was asked and is dropped after a switch or a
+  removal, and a decision that runs out of time stops the model so the next one does not wait
+  behind it). An account's request goes from the phone straight to its provider. PokiCore also
   speaks the System One format of TypeSafe's Jev and Cloudflare's Clef (`DeciderSettings`), which
   the app does not offer for now. The request holds the goal, the step
   wanted, and the screen's elements as text, with no picture and nothing from a secure field. The
