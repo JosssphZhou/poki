@@ -22,12 +22,13 @@ struct ModelSettingsView: View {
     @State private var enteringVoiceKey = false
     @State private var showingLiveVoice = false
     @State private var openedForVoice = false
+    @State private var decision = QuickFixes.name
 
     var body: some View {
         List {
             // ESP-469 board "02 模型": what runs now, on a card on top, with the way to change the chat's model.
             Section {
-                InUseCard(add: { adding = true })
+                InUseCard(decision: decision ?? AppLocalization.text("Off"), add: { adding = true })
             } header: {
                 Text("In Use").textCase(nil)
             } footer: {
@@ -56,6 +57,9 @@ struct ModelSettingsView: View {
                 Text("Keys and sign-ins stay in this iPhone’s Keychain. Poki sends each one only to its own provider.")
             }
             }
+
+            // The models on this iPhone, listed like the accounts.
+            LocalModelsSection(version: version)
         }
         // Reads the version so the page redraws with the new keys and models, without rebuilding it
         // (a rebuild dropped taps and the sheets it was presenting).
@@ -64,7 +68,11 @@ struct ModelSettingsView: View {
         .listSectionSpacing(16)
         .navigationTitle(AppLocalization.text("Models"))
         .navigationBarTitleDisplayMode(.inline)
-        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in
+            version = ModelKeys.saved
+            decision = QuickFixes.name
+        }
+        .onAppear { decision = QuickFixes.name }
         .sheet(isPresented: $adding) { AddAccount() }
         .sheet(isPresented: $enteringVoiceKey) { KeyEntry(provider: .openai) }
         .navigationDestination(isPresented: $showingLiveVoice) { LiveVoiceFeature(account: .openai) }
@@ -81,6 +89,8 @@ struct ModelSettingsView: View {
 /// card, its one place.
 private struct InUseCard: View {
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// The decision model's name, or Off.
+    var decision: String
     var add: () -> Void
 
     var body: some View {
@@ -112,7 +122,7 @@ private struct InUseCard: View {
     @ViewBuilder private func uses(has: Bool, provider: ModelProvider, singleLine: Bool) -> some View {
         chip("Text Chat", has ? ModelKeys.selectedAccountName : AppLocalization.text(LocalizedStringResource("No Account")), singleLine: singleLine)
         chip("Live Voice", VoiceDirect.account?.name ?? AppLocalization.text(LocalizedStringResource("No Account")), singleLine: singleLine)
-        chip("Dictation", AppLocalization.text(LocalizedStringResource("On This iPhone")), singleLine: singleLine)
+        chip("Decision", decision, singleLine: singleLine)
     }
 
     private func chip(_ title: LocalizedStringKey, _ value: String, singleLine: Bool) -> some View {
@@ -245,6 +255,13 @@ private struct AccountDetail: View {
                     } label: { SettingsLabel("Live Voice", systemImage: "waveform") }
                 }
                 .disabled(!ModelAccounts.canTalkLive(provider))
+                NavigationLink { DecisionFeature(provider: provider) } label: {
+                    LabeledContent {
+                        Text(verbatim: QuickFixes.accountModel(provider).map { AccountDecisions.name(provider, $0) } ?? AppLocalization.text(AccountDecisions.canDecide(provider) ? "Off" : "Not Supported"))
+                    } label: { SettingsLabel("Decisions", systemImage: "bolt") }
+                }
+                .disabled(!AccountDecisions.canDecide(provider))
+                .accessibilityIdentifier("account.decisions")
             } header: {
                 Text("Use This Account For")
             } footer: {

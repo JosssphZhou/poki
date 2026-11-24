@@ -98,6 +98,8 @@ struct MemoryItem: Identifiable, Equatable {
     var params: [String] = []
     var otherApps: [String] = []
     var savedBy: String?
+    /// Skills: the steps fixed on the way and kept (a renamed button, a prompt closed).
+    var fixes = 0
 }
 
 /// Where a memory was heard: the app the conversation was about, when, and the conversation itself.
@@ -352,7 +354,7 @@ final class MemoryLibrary {
             source: .task, updated: routine.updated, locked: routine.isLocked, steps: routine.steps.count, ok: routine.ok, runs: routine.runs,
             lastMs: routine.lastMs, stale: routine.stale,
             stop: routine.lastStop.map { AppLocalization.text(LocalizedStringResource("Step \($0.step): \($0.why)")) },
-            params: routine.params.keys.sorted(), otherApps: routine.otherApps, savedBy: routine.savedBy)
+            params: routine.params.keys.sorted(), otherApps: routine.otherApps, savedBy: routine.savedBy, fixes: routine.fixes ?? 0)
     }
 
     /// A line of Recent Updates from the store's log. The item is the one on the page when it is
