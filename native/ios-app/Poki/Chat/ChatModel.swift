@@ -44,6 +44,10 @@ struct ChatEntry: Identifiable, Equatable, Codable {
     var continuedTask: String?
     /// The item you selected on a result card; nil while it is the one Poki suggested.
     var chosen: String?
+    /// Said or done in a live talk with Poki (`SessionStore.entries(voice:)`), which already heard and
+    /// handled it: a record of the talk in the conversation, never a request for the chat to run again.
+    /// nil in conversations saved before it existed.
+    var spoken: Bool?
     init(_ kind: Kind) { id = UUID(); self.kind = kind }
 
     /// The same delimited owner request for the model, consent evidence and task routing.
@@ -360,15 +364,27 @@ final class ChatModel {
 
     /// The last message again, after a problem (the Retry button under it).
     func retry() {
-        guard !running, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), case .you(let text, _) = last.kind else { return }
+        guard canRetry, let last = retryable, case .you(let text, _) = last.kind else { return }
         while let tail = entries.last, case .note(.problem) = tail.kind { entries.removeLast() }
         send(text, again: true, documents: last.textDocuments ?? [], inSplitView: usesSplitView && expectedSplitViewApps == nil, chooseWorkspace: true)
     }
 
-    /// The conversation ended on a problem the owner can try again.
-    var canRetry: Bool {
+    /// The conversation ended on a problem: its own task's, or a talk's that ended on one (its connection
+    /// dropped, the server stopped answering). The bear trips over either.
+    var endedOnProblem: Bool {
         guard !running, let tail = entries.last, case .note(.problem) = tail.kind else { return false }
         return entries.contains { if case .you = $0.kind { return true }; return false }
+    }
+
+    /// The conversation ended on a problem the owner can try again: one of the chat's own tasks. A talk
+    /// that ended on a problem has nothing to try again here: the live voice already heard and handled
+    /// what was said in it, and sending its words to the chat would do it all a second time.
+    var canRetry: Bool { endedOnProblem && entries.last?.spoken != true && retryable != nil }
+
+    /// What Try Again sends: the owner's last message, unless it was said in a talk.
+    private var retryable: ChatEntry? {
+        guard let last = entries.last(where: { if case .you = $0.kind { return true }; return false }), last.spoken != true else { return nil }
+        return last
     }
 
     /// What the model reads when the owner sent pictures without words.
@@ -509,7 +525,7 @@ final class ChatModel {
         // A pause of half an hour or more gets its own time line, as in Messages.
         if !again, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
         let you: ChatEntry
-        if again, let last = entries.last(where: { if case .you = $0.kind { return true }; return false }) {
+        if again, let last = retryable {
             you = last
         } else {
             var entry = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))

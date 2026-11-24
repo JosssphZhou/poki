@@ -383,6 +383,51 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Attached file: sample.md\n~~~~\n\(content)\n~~~~"))
     }
 
+    /// A live talk goes into the chat as its record, and the live voice already heard and handled what was
+    /// said in it. A talk that ended on a problem (its connection dropped) offers no Try Again: that sent
+    /// the talk's last words to the chat's agent, which did again what the talk had done. A typed task that
+    /// failed after a talk is tried again with its own words, and the agent reads the talk as handled, not
+    /// as the task to resume.
+    func testATalksWordsInTheChatAreNeverSentToTheAgentAgain() async throws {
+        let server = try FakeCompletions(replies: [FakeCompletions.tool("finish_task", ["success": true, "summary": "Safari is open."]),
+                                                   FakeCompletions.text("Safari is open.")])
+        let chat = chat(on: server, kind: .poki)
+        let talk = SessionStore.entries(voice: [
+            VoiceLine(role: .you, text: "Text Mom on my way."),
+            VoiceLine(role: .tool, text: "Using the phone"),
+            VoiceLine(role: .note, text: "Connection lost. Nothing is sent again. Talk again to hear how running steps ended."),
+        ], started: Date())
+        let id = UUID().uuidString
+        defer { SessionStore.shared.delete(id) }
+        let talked = SavedSession(id: id, kind: .poki, title: "Text Mom on my way.", started: Date(), updated: Date(), live: false,
+                                  entries: talk, calls: [])
+        chat.restore(talked)
+        XCTAssertTrue(chat.endedOnProblem, "the bear still trips over the talk's problem")
+        XCTAssertFalse(chat.canRetry, "Try Again for words the live voice already handled")
+        chat.retry()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(chat.running)
+        XCTAssertTrue(server.requests.isEmpty, "Try Again sent the talk's words to the chat's agent")
+        XCTAssertNil(talked.continuationTask, "a talk's words are no chat task to resume")
+        XCTAssertTrue(talked.modelContext.contains("Live talk, already handled. Owner: Text Mom on my way."), talked.modelContext)
+        XCTAssertFalse(talked.modelContext.contains("Latest task: Text Mom"), talked.modelContext)
+
+        // A typed task after the talk, which failed: Try Again sends it, and only it.
+        chat.restore(SavedSession(id: id, kind: .poki, title: "Text Mom on my way.", started: Date(), updated: Date(), live: false,
+                                  entries: talk + [ChatEntry(.you("Open Safari", delivered: false)), ChatEntry(.note(.problem("The model did not answer.")))],
+                                  calls: []))
+        XCTAssertTrue(chat.canRetry)
+        chat.retry()
+        try await waitForTask(chat)
+        let request = try XCTUnwrap(server.requests.first)
+        let asked = (request["messages"] as? [[String: Any]] ?? []).filter { $0["role"] as? String == "user" }.map(Self.messageText)
+        XCTAssertTrue(asked.contains { $0.contains("Open Safari") }, asked.description)
+        XCTAssertFalse(asked.contains { $0.contains("Text Mom") }, asked.description)
+        let context = FakeCompletions.system(request)
+        XCTAssertTrue(context.contains("Live talk, already handled. Owner: Text Mom on my way."), context)
+        XCTAssertTrue(context.contains("Latest task: Open Safari"), context)
+    }
+
     private func approvalUserMessage(in server: FakeCompletions) throws -> String {
         let request = try XCTUnwrap(server.requests.last)
         let messages = try XCTUnwrap(request["messages"] as? [[String: Any]])
