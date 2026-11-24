@@ -74,11 +74,23 @@ final class BrowserGuardTests: XCTestCase {
         await browser.open(first)
         _ = try XCTUnwrap(browser.url, "The fixture must load before Stop")
         XCTAssertEqual(browser.url?.path, "/first")
+        let second = try XCTUnwrap(URL(string: "http://127.0.0.1:\(pages.port)/second"))
+        let stopped = try XCTUnwrap(browser.webView.load(URLRequest(url: second)))
         browser.taskStopped()
+
+        let lateStart = expectation(description: "New policy decision delivered before the delayed old start")
+        browser.didAllowMainFrameForTesting = { [weak browser] in
+            guard let browser else { return }
+            browser.didAllowMainFrameForTesting = nil
+            browser.webView(browser.webView, didStartProvisionalNavigation: stopped)
+            XCTAssertFalse(browser.isLoading, "A delayed start must not claim a new policy decision")
+            lateStart.fulfill()
+        }
 
         let clicked = await browser.act {
             (try? await browser.webView.evaluateJavaScript("document.querySelector('#next').click(); true")) as? Bool
         }
+        await fulfillment(of: [lateStart], timeout: 1)
         XCTAssertEqual(clicked, true)
         XCTAssertEqual(browser.url?.path, "/second")
         let title = try await browser.webView.evaluateJavaScript("document.title") as? String
