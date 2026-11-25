@@ -24,8 +24,7 @@ enum NativeTools {
     The iPhone's own abilities are tools too: health_steps, calendar_events and calendar_create_event, reminder_create and reminder_lists, home_set_light, contacts_find, bluetooth_scan, clipboard_read, read_aloud, alarm_set, battery_status, photos_find/export/save/add_to_album/albums, location_current, maps_geocode/maps_search/maps_route, and weather_forecast. Use them directly for the owner's requests about these things; they do not need Automation Mode and never touch the screen. Ask the owner before acting when a tool reports ambiguous; do not guess between matches. A read-only request should answer with the values the tool returned, not with values from memory. Weather answers include Apple Weather attribution; keep it in the reply.
     """
 
-    static func install(app: AppModel, chat: ChatModel) {
-        _ = chat
+    static func install(app: AppModel) {
         app.refreshHostTools()
     }
 
@@ -35,17 +34,17 @@ enum NativeTools {
         specs.compactMap { spec in
             guard let data = try? JSONSerialization.data(withJSONObject: spec.schema),
                   let schema = String(data: data, encoding: .utf8) else { return nil }
-            return HostTool(name: spec.name, description: spec.description, schemaJSON: schema) { arguments, session, _ in
-                await NativeTools.perform(spec.name, arguments: arguments, session: session)
+            return HostTool(name: spec.name, description: spec.description, schemaJSON: schema) { arguments, _, _ in
+                await NativeTools.perform(spec.name, arguments: arguments)
             }
         }
     }
 
-    static func perform(_ name: String, arguments: String, session: String? = nil) async -> PokiCore.ToolAnswer {
-        await dispatch(name, arguments: arguments, session: session)
+    static func perform(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
+        await dispatch(name, arguments: arguments)
     }
 
-    private static func dispatch(_ name: String, arguments: String, session: String?) async -> PokiCore.ToolAnswer {
+    private static func dispatch(_ name: String, arguments: String) async -> PokiCore.ToolAnswer {
         switch name {
         case "health_steps": return await HealthTools.perform(arguments)
         case "calendar_events": return await CalendarTools.events(arguments)

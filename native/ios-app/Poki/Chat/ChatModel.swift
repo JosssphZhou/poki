@@ -1434,7 +1434,7 @@ final class ChatModel {
             guard !Task.isCancelled else {
                 return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)
             }
-            let answer = await NativeTools.perform(name, arguments: call.arguments, session: session)
+            let answer = await NativeTools.perform(name, arguments: call.arguments)
             if name == "weather_forecast", !answer.isError { weatherCredit = PlaceTools.lastWeatherCredit }
             return answer
         case let name where WebTools.names.contains(name):
