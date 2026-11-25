@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 
 /// A time-sensitive notification that keeps an unanswered approval available after iOS collapses
@@ -67,6 +68,18 @@ final class ApprovalNoticeDelegate: NSObject, UNUserNotificationCenterDelegate, 
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo["approval"] as? String
         let action = response.actionIdentifier
+        // The default tap on a finished task's notice opens the task's own conversation. A tap on an
+        // approval (which has no poki_link) keeps going to the chat below.
+        if action == UNNotificationDefaultActionIdentifier,
+           let raw = response.notification.request.content.userInfo["poki_link"] as? String,
+           let url = URL(string: raw), url.scheme == "poki" {
+            Task { @MainActor in
+                PokiNotificationLink.post(url)
+                UIApplication.shared.open(url)
+            }
+            completionHandler()
+            return
+        }
         DispatchQueue.main.async {
             guard let id, [ApprovalNotice.allow, ApprovalNotice.deny, ApprovalNotice.stopAsking].contains(action) else {
                 completionHandler()

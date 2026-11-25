@@ -68,6 +68,12 @@ struct PokiActivityAttributes: ActivityAttributes {
         var previous: String?
         /// When the run finished (phase `done`), so the summary shows a fixed duration.
         var endedAt: Date?
+        /// The conversation the run belongs to. A tap on the finished or stopped card opens that task;
+        /// optional so states saved before this field still decode.
+        var session: String? = nil
+        /// The run ended without doing what was asked. The face says Error rather than Done; optional
+        /// for the same reason.
+        var failed: Bool? = nil
         /// What the chat's finished task came to, in the model's words: finish_task's summary, set only
         /// when it says the task succeeded. And the task as the owner asked it, for when there is no
         /// summary and no plan title. Both set when the run finishes, cleared with its plan.

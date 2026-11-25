@@ -408,6 +408,7 @@ final class ActivityController {
         update { state in
             state.phase = .stopped
             state.headline = "Stopped"
+            state.failed = nil
             state.approval = nil
             state.decision = nil
             state.handoff = nil
@@ -426,7 +427,7 @@ final class ActivityController {
     /// that succeeded (or, in a talk, what Poki said at its end), `task` the task as the owner asked it:
     /// the finished run says what it came to.
     @discardableResult
-    func finishNow(alert: Bool, result: String? = nil, task: String? = nil) -> Bool {
+    func finishNow(alert: Bool, result: String? = nil, task: String? = nil, failed: Bool = false) -> Bool {
         finishTimer?.cancel()
         chatOwnsCompletion = false
         guard state.phase == .working, state.approval == nil, state.handoff == nil else {
@@ -436,6 +437,7 @@ final class ActivityController {
         inStep = false
         state.result = result.map(Self.oneLine)
         state.task = task.map(Self.oneLine)
+        state.failed = failed ? true : nil
         return finish(alert: alert)
     }
 
