@@ -270,6 +270,17 @@ final class HistoryLockTests: XCTestCase {
         XCTAssertEqual(grants.last, false, "A failed replacement must not restore the old grant")
     }
 
+    func testPINConfirmationDistinguishesMismatchFromCredentialWriteFailure() {
+        let phone = Phone()
+        phone.biometrics = .unavailable
+        let lock = phone.launch()
+
+        XCTAssertEqual(lock.setPIN("2468", confirming: "8642"), .mismatch)
+        phone.failPINWrite = true
+        XCTAssertEqual(lock.setPIN("2468", confirming: "2468"), .saveFailed)
+        XCTAssertFalse(lock.unlocked, "A failed credential write must leave history locked")
+    }
+
     func testUnreadableKeychainRevokesAnUnlockedGrantUntilFreshAuthentication() {
         let phone = Phone()
         phone.biometrics = .unavailable

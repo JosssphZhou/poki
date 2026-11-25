@@ -35,6 +35,13 @@ final class HistoryLock: ObservableObject {
         var blockedUntil: Date?
     }
 
+    enum PINEntryResult: Equatable {
+        case saved
+        case invalid
+        case mismatch
+        case saveFailed
+    }
+
     enum State: Equatable {
         case unconfigured
         case locked(methods: AuthMethods, evaluatingBiometrics: UUID?, cooldown: PINCooldown)
@@ -214,6 +221,13 @@ final class HistoryLock: ObservableObject {
     /// Keeps a new PIN. Allowed while history is unlocked, or when nothing can unlock it yet.
     @discardableResult
     func setPIN(_ pin: String) -> Bool { transition(.setPIN(pin)) }
+
+    /// Distinguishes an input mismatch from a failed credential write for the settings UI.
+    func setPIN(_ pin: String, confirming confirmation: String) -> PINEntryResult {
+        guard Self.valid(pin), Self.valid(confirmation) else { return .invalid }
+        guard pin == confirmation else { return .mismatch }
+        return setPIN(pin) ? .saved : .saveFailed
+    }
 
     func unlock(pin: String) -> Bool { transition(.unlockWithPIN(pin)) }
 
@@ -756,6 +770,7 @@ struct HistoryUnlockSections: View {
     @State private var pin = ""
     @State private var again = ""
     @State private var wrong = false
+    @State private var pinSaveFailed = false
     @State private var now = Date()
 
     private var waiting: Bool { lock.blockedUntil.map { $0 > now } ?? false }
@@ -767,14 +782,20 @@ struct HistoryUnlockSections: View {
                     SecureField("New PIN", text: $pin).keyboardType(.numberPad).textContentType(.oneTimeCode)
                     SecureField("Repeat PIN", text: $again).keyboardType(.numberPad).textContentType(.oneTimeCode)
                     Button("Set PIN") {
-                        wrong = !(pin == again && lock.setPIN(pin))
-                        if wrong { again = "" }
+                        let result = lock.setPIN(pin, confirming: again)
+                        wrong = result == .mismatch
+                        pinSaveFailed = result == .saveFailed
+                        if result != .saved { again = "" }
                     }
                     .disabled(!HistoryLock.valid(pin) || again.isEmpty)
                 } header: {
                     Text("Make a PIN for Screen History")
                 } footer: {
-                    Text(LocalizedStringKey(wrong ? "The two PINs did not match. Try again." : "Screen History is locked with a PIN of 4 to 8 digits that belongs to Poki alone. The iPhone's passcode does not open it."))
+                    Text(LocalizedStringKey(pinSaveFailed
+                        ? "Could not save the PIN. Try again."
+                        : wrong
+                            ? "The two PINs did not match. Try again."
+                            : "Screen History is locked with a PIN of 4 to 8 digits that belongs to Poki alone. The iPhone's passcode does not open it."))
                 }
             } else {
                 if lock.usesBiometrics {
@@ -824,6 +845,7 @@ struct HistoryLockSettings: View {
     @State private var pin = ""
     @State private var again = ""
     @State private var mismatch = false
+    @State private var pinSaveFailed = false
 
     var body: some View {
         List {
@@ -841,7 +863,9 @@ struct HistoryLockSettings: View {
                 SecureField(LocalizedStringKey(lock.hasPIN ? "New PIN" : "PIN"), text: $pin).keyboardType(.numberPad).textContentType(.oneTimeCode)
                 SecureField("Repeat PIN", text: $again).keyboardType(.numberPad).textContentType(.oneTimeCode)
                 Button(LocalizedStringKey(lock.hasPIN ? "Change PIN" : "Set PIN")) {
-                    mismatch = !(pin == again && lock.setPIN(pin))
+                    let result = lock.setPIN(pin, confirming: again)
+                    mismatch = result == .mismatch
+                    pinSaveFailed = result == .saveFailed
                     pin = ""
                     again = ""
                 }
@@ -852,7 +876,11 @@ struct HistoryLockSettings: View {
             } header: {
                 Text("Poki PIN")
             } footer: {
-                Text(LocalizedStringKey(mismatch ? "The two PINs did not match. Try again." : "A PIN of 4 to 8 digits that belongs to Poki alone. One of the two ways in always stays on."))
+                Text(LocalizedStringKey(pinSaveFailed
+                    ? "Could not save the PIN. Try again."
+                    : mismatch
+                        ? "The two PINs did not match. Try again."
+                        : "A PIN of 4 to 8 digits that belongs to Poki alone. One of the two ways in always stays on."))
             }
         }
         .navigationTitle(AppLocalization.text("Screen History Lock"))
