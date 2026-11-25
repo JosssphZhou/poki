@@ -2688,6 +2688,16 @@ final class ChatHarnessTests: XCTestCase {
         (request["tools"] as? [[String: Any]] ?? []).compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
     }
 
+    private static func toolDescription(_ name: String, in request: [String: Any]) -> String? {
+        let tools = request["tools"] as? [[String: Any]] ?? []
+        guard let tool = tools.first(where: {
+            let fn = ($0["function"] as? [String: Any]) ?? $0
+            return (fn["name"] as? String) == name
+        }) else { return nil }
+        let fn = (tool["function"] as? [String: Any]) ?? tool
+        return fn["description"] as? String
+    }
+
     /// A question from the model (ask_user) waits for the owner, as long as it takes: the task stays
     /// open, nothing is chosen for the owner and the model is not asked again until the owner picks an
     /// option. The answer goes back as the call's result, says it is no approval, never reaches the
@@ -2785,6 +2795,33 @@ final class ChatHarnessTests: XCTestCase {
         }
         XCTAssertTrue(Self.toolNames(requests[4]).contains("ask_user"), "the next typed task may ask again")
         XCTAssertNil(chat.waitingQuestion)
+    }
+
+    /// In-app chat requests tell the model to keep each ask_user question within two lines because
+    /// the Lock Screen shows only the question itself, with extra details in the reply text.
+    func testAskUserTellsTheModelToKeepQuestionsWithinTwoLines() async throws {
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Done."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+        chat.newConversation()
+
+        chat.send("Book a ticket to Shanghai for tomorrow")
+        try await until(10) { !chat.running }
+
+        let request = try XCTUnwrap(server.requests.first)
+        let description = try XCTUnwrap(Self.toolDescription("ask_user", in: request), "typed in-app chat exposes ask_user")
+        XCTAssertTrue(description.contains("One question per call, with no other call in the same reply"), description)
+        XCTAssertTrue(description.contains("two lines"), description)
+        XCTAssertTrue(description.contains("30 Chinese characters"), description)
+        XCTAssertTrue(description.contains("Lock Screen"), description)
+        XCTAssertTrue(description.contains("reply text"), description)
+
+        let system = FakeCompletions.system(request)
+        XCTAssertTrue(system.contains("two lines"), system)
+        XCTAssertTrue(system.contains("Lock Screen"), system)
+        XCTAssertTrue(system.contains("reply text"), system)
     }
 
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
