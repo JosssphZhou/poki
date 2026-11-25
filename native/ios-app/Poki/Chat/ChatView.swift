@@ -222,6 +222,7 @@ struct ChatView: View {
                         .accessibilityIdentifier("chat.counted-scroll.reply")
                     }
                 }
+                if let credit = chat.weatherCredit { WeatherCreditView(credit: credit) }
                 ComposerInputView(input: draft, focused: $writing, adding: $adding,
                                   settingsPresented: $composerSettingsPresented, running: busy, progress: progress, restarts: restarts, conversationID: chat.sessionID,
                                   send: { text, attachments in
