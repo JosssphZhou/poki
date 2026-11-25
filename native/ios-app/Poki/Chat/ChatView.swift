@@ -1849,7 +1849,7 @@ struct ComposerInputView: View {
         let _ = modelVersion
         let visible = showsModelShortcut && (isSettingsPreview || shortcutsVisible)
         let hasModel = isSettingsPreview || ModelKeys.hasUsableKey(in: model.storage)
-        let name = isSettingsPreview || !hasModel ? nil : ModelKeys.selectedModelName(in: model.storage)
+        let name = isSettingsPreview || !hasModel ? nil : ModelKeys.selectedShortModelName(in: model.storage)
         return Button {
             guard !isSettingsPreview else { previewTaps += 1; return }
             settingsPresented = true

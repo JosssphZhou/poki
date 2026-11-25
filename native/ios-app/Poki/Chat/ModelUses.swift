@@ -293,7 +293,7 @@ enum ModelPicks {
     private static func split(_ choices: [ChatModelChoice], _ custom: CustomProvider, as pick: (String) -> ModelPick) -> [ModelGroup.Item] {
         choices.compactMap { choice in
             guard let parsed = CustomProviders.parse(choice.id), parsed.provider == custom.id else { return nil }
-            return ModelGroup.Item(name: parsed.model, pick: pick(choice.id))
+            return ModelGroup.Item(name: choice.shortName, pick: pick(choice.id))
         }
     }
 
@@ -312,9 +312,9 @@ enum ModelPicks {
                 guard ref.uses.contains(use) else { continue }
                 let items: [ModelGroup.Item]
                 switch use {
-                case .chat: items = ModelCatalog.available(provider).map { .init(name: $0.name, pick: .account(provider, $0.id)) }
+                case .chat: items = ModelCatalog.available(provider).map { .init(name: $0.shortName, pick: .account(provider, $0.id)) }
                 case .voice: items = ModelCatalog.voiceOffered(for: .openai).map { .init(name: $0.name, pick: .voice(.openai, $0.id)) }
-                case .decision: items = DecisionOffers.available(provider).map { .init(name: $0.name, pick: .account(provider, $0.id)) }
+                case .decision: items = DecisionOffers.available(provider).map { .init(name: $0.shortName, pick: .account(provider, $0.id)) }
                 case .senses: items = []
                 }
                 if !items.isEmpty { groups.append(ModelGroup(id: ref.id, name: ref.name, items: items)) }
@@ -501,22 +501,22 @@ struct ModelTickList: View {
             return LocalModels.onPhone.map { Row(id: $0.id, name: $0.name, fast: false, on: LocalModels.isOffered($0, for: use)) }
         case (.account(let p), .chat):
             let on = ModelCatalog.enabled(p)
-            return ModelCatalog.all(p).map { Row(id: $0.id, name: $0.name, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
+            return ModelCatalog.all(p).map { Row(id: $0.id, name: $0.shortName, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
         case (.custom(let id), .chat):
             let on = ModelCatalog.enabled(.custom)
-            return ModelCatalog.all(custom: id).map { Row(id: $0.id, name: CustomProviders.parse($0.id)?.model ?? $0.name, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
+            return ModelCatalog.all(custom: id).map { Row(id: $0.id, name: $0.shortName, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
         case (.account, .voice), (.custom, .voice):
             let account = voiceAccount
             let on = ModelCatalog.voiceOn(for: account)
             return ModelCatalog.voiceChoices(for: account).map { Row(id: $0.id, name: $0.name, fast: false, on: on.contains($0.id)) }
         case (.account(let p), .decision):
             let on = DecisionOffers.offered(p)
-            return AccountDecisions.models(p).map { Row(id: $0.id, name: $0.name, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
+            return AccountDecisions.models(p).map { Row(id: $0.id, name: $0.shortName, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
         case (.custom(let id), .decision):
             let on = DecisionOffers.offered(.custom)
             return AccountDecisions.models(.custom).compactMap { choice in
                 guard let parsed = CustomProviders.parse(choice.id), parsed.provider == id else { return nil }
-                return Row(id: choice.id, name: parsed.model, fast: ModelCatalog.fast(parsed.model), on: on.contains(choice.id))
+                return Row(id: choice.id, name: choice.shortName, fast: ModelCatalog.fast(parsed.model), on: on.contains(choice.id))
             }
         default:
             return []

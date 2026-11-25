@@ -48,7 +48,7 @@ struct SetupSections: View {
     var guideMe = false
 
     @State private var hasModel = ModelKeys.hasUsableKey
-    @State private var modelName = ModelKeys.selectedModelName
+    @State private var modelName = ModelKeys.selectedShortModelName
     /// Nil until the card is opened or closed by hand: open while a step is missing, closed once all are done.
     @State private var stepsOpen: Bool?
 
@@ -164,7 +164,7 @@ struct SetupSections: View {
 
     private func refresh() {
         hasModel = ModelKeys.hasUsableKey
-        modelName = ModelKeys.selectedModelName
+        modelName = ModelKeys.selectedShortModelName
     }
 }
 

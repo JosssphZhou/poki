@@ -266,8 +266,8 @@ struct PokiDetailsView: View {
 
     private var hasModel: Bool { isSample || ModelKeys.hasUsableKey(in: model.storage) }
     private var brainValue: String {
-        if isSample { return "GPT-6.1 Terra" }
-        return hasModel ? ModelKeys.selectedModelName(in: model.storage) : AppLocalization.text(LocalizedStringResource("Add Model"))
+        if isSample { return "6.1 Terra" }
+        return hasModel ? ModelKeys.selectedShortModelName(in: model.storage) : AppLocalization.text(LocalizedStringResource("Add Model"))
     }
 
     private var connectorsValue: String? {

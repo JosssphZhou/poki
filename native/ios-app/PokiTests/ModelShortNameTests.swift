@@ -503,7 +503,7 @@ final class ModelShortNameTests: XCTestCase {
             )
             settle { self.visibleTexts(in: tickWindow).contains("6.2 Sol") }
             let tickTexts = visibleTexts(in: tickWindow)
-            XCTAssertTrue(tickTexts.contains("6.1 Terra"), "Expected short name in ChatGPT ModelTickList, got: \(tickTexts)")
+            XCTAssertTrue(tickTexts.contains { $0.contains("6.1 Terra") }, "Expected short name in ChatGPT ModelTickList, got: \(tickTexts)")
             XCTAssertTrue(tickTexts.contains("6.2 Sol"), "Expected short name in ChatGPT ModelTickList, got: \(tickTexts)")
             XCTAssertFalse(tickTexts.contains { $0.contains("ChatGPT GPT-") }, "Provider prefix must not appear in ModelTickList, got: \(tickTexts)")
 
@@ -514,9 +514,9 @@ final class ModelShortNameTests: XCTestCase {
                 }
                 .environment(\.locale, AppLocalization.locale)
             )
-            settle { self.visibleTexts(in: customTickWindow).contains("v4.1-flash") }
+            settle { self.visibleTexts(in: customTickWindow).contains { $0.contains("v4.1-flash") } }
             let customTickTexts = visibleTexts(in: customTickWindow)
-            XCTAssertTrue(customTickTexts.contains("v4.1-flash"), "Expected short name in custom ModelTickList, got: \(customTickTexts)")
+            XCTAssertTrue(customTickTexts.contains { $0.contains("v4.1-flash") }, "Expected short name in custom ModelTickList, got: \(customTickTexts)")
             XCTAssertFalse(customTickTexts.contains { $0.contains("workbuddy/") }, "Provider prefix must not appear in custom ModelTickList, got: \(customTickTexts)")
 
             // ModelTickList for Voice keeps Realtime model labels intact.
@@ -551,6 +551,44 @@ final class ModelShortNameTests: XCTestCase {
             XCTAssertTrue(accountsTexts.contains { $0.contains("6.1 Terra") }, "Expected short name on Setup Accounts row, got: \(accountsTexts)")
             XCTAssertFalse(accountsTexts.contains { $0.contains("ChatGPT GPT-") }, "Provider prefix must not appear on Setup Accounts row, got: \(accountsTexts)")
         }
+    }
+
+    func testShortDisplayNameEdgeCasesAndMultiCustomSelection() throws {
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "o4-mini"), "o4-mini")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "GPT-"), "GPT-")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "openai/gpt-6.2-sol"), "6.2-sol")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "anthropic/claude-opus-5-6"), "opus-5-6")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "google/gemini-4.0-pro"), "4.0-pro")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "deepseek/deepseek-reasoner"), "reasoner")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "workbuddy/deepseek-v4.1-flash"), "v4.1-flash")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "workbuddy/qwen3-coder"), "qwen3-coder")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "workbuddy/"), "workbuddy/")
+        XCTAssertEqual(ChatModelChoice.stripProviderPrefix(from: "Model A / Model B"), "Model A / Model B")
+
+        let store = storage.storage
+        let first = CustomProviders.upsert(
+            CustomProvider(name: "Office", endpoints: [CustomEndpoint(url: "http://127.0.0.1:8765/v1")], model: "shared-model"),
+            storage: store
+        )
+        ModelKeys.choose(.custom, model: CustomProviders.choiceID(first.id, "shared-model"), in: store)
+        XCTAssertEqual(ModelKeys.selectedModelName(in: store), "shared-model")
+        XCTAssertEqual(ModelKeys.selectedShortModelName(in: store), "shared-model")
+
+        let second = CustomProviders.upsert(
+            CustomProvider(name: "Home", endpoints: [CustomEndpoint(url: "http://127.0.0.1:8766/v1")], model: "shared-model"),
+            storage: store
+        )
+        ModelKeys.choose(.custom, model: CustomProviders.choiceID(second.id, "shared-model"), in: store)
+        XCTAssertEqual(ModelKeys.selectedModelName(in: store), "shared-model (Home)")
+        XCTAssertEqual(ModelKeys.selectedShortModelName(in: store), "shared-model (Home)")
+        XCTAssertNotEqual(first.id, second.id)
+
+        let uniqueCustom = CustomProviders.upsert(
+            CustomProvider(name: "WorkBuddy", endpoints: [CustomEndpoint(url: "http://127.0.0.1:8767/v1")], model: "workbuddy/qwen3-coder"),
+            storage: store
+        )
+        ModelKeys.choose(.custom, model: CustomProviders.choiceID(uniqueCustom.id, "workbuddy/qwen3-coder"), in: store)
+        XCTAssertEqual(ModelKeys.selectedShortModelName(in: store), "qwen3-coder")
     }
 
     // MARK: Helpers
