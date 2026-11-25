@@ -78,7 +78,16 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: ["$(POKI_BUNDLE_ID).run.*"]
         # Documents/AgentBackup holds the agent's memory backup, which Poki Setup copies off and puts back.
         UIFileSharingEnabled: true
-        NSLocationWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
+        NSLocationWhenInUseUsageDescription: Poki uses your location only when you ask for the current place, nearby places, a route or the weather. Poki does not keep or send your location.
+        NSCalendarsFullAccessUsageDescription: Poki reads your calendar to answer what is scheduled, and adds events only when you ask it to.
+        NSRemindersFullAccessUsageDescription: Poki creates reminders and their alerts only when you ask it to.
+        NSContactsUsageDescription: Poki looks up a contact's name and phone number only when you ask it to.
+        NSHomeKitUsageDescription: Poki turns lights on or off in your home only when you ask it to.
+        NSBluetoothAlwaysUsageDescription: Poki scans for nearby Bluetooth devices only while you ask it to, and stops when the scan ends.
+        NSAlarmKitUsageDescription: Poki sets a system alarm only when you ask it to, using the time you choose.
+        NSHealthShareUsageDescription: Poki reads your step count when you ask how many steps you walked. It only reads, and does not send health data anywhere.
+        NSPhotoLibraryUsageDescription: Poki searches your photo library and exports, saves or adds photos and videos only when you ask it to.
+        NSPhotoLibraryAddUsageDescription: Poki saves photos and videos to your library only when you ask it to.
         NSLocationAlwaysAndWhenInUseUsageDescription: Poki keeps running in the background while it is on, so agents can reach this iPhone. Poki does not record or send your location.
         CFBundleURLTypes:
           - CFBundleURLName: nz.zheha.poki
@@ -111,6 +120,11 @@ targets:
       path: Poki/Poki.entitlements
       properties:
         com.apple.security.application-groups: [$(POKI_APP_GROUP)]
+        # Capabilities for the native iPhone tools. The App ID and provisioning profile must carry
+        # these too; a build without them compiles, and the tools report the missing authorization.
+        com.apple.developer.healthkit: true
+        com.apple.developer.homekit: true
+        com.apple.developer.weatherkit: true
     dependencies:
       - target: PokiWidgets
       - package: PokiCore

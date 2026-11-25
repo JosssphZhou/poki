@@ -32,13 +32,17 @@ enum AskPoki {
     static let onKey = "askPoki.on"
     static var isOn: Bool { UserDefaults.standard.bool(forKey: onKey) }
 
-    static func refresh() {
-        guard let app else { return }
-        guard isOn else { app.setHostTools([]); return }
-        guard ModelKeys.hasUsableKey || ModelKeys.selectedProvider == .custom && !ModelKeys.customURL.isEmpty else { app.setHostTools([]); return }
-        app.setHostTools([HostTool(name: "ask_poki", description: description, schemaJSON: schema) { arguments, session, timeLeft in
+    /// `ask_poki` as it appears to MCP, or nil when the owner turned it off or has no model yet.
+    static var hostTool: HostTool? {
+        guard isOn else { return nil }
+        guard ModelKeys.hasUsableKey || ModelKeys.selectedProvider == .custom && !ModelKeys.customURL.isEmpty else { return nil }
+        return HostTool(name: "ask_poki", description: description, schemaJSON: schema) { arguments, session, timeLeft in
             await run(arguments: arguments, session: session, timeLeft: timeLeft)
-        }])
+        }
+    }
+
+    static func refresh() {
+        app?.refreshHostTools()
     }
 
     static func run(arguments: String, session: String?, timeLeft: Double? = nil) async -> PokiCore.ToolAnswer {

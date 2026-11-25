@@ -128,19 +128,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki stays active in the background while on so agents can reach this iPhone. Poki never records or sends your location."
+            "value" : "Poki uses your location only when you ask for the current place, nearby places, a route or the weather. Poki does not keep or send your location."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 开启时会在后台保持运行，以便智能体连接此 iPhone。Poki 不会记录或发送你的位置。"
+            "value" : "只有当你询问当前位置、附近地点、路线或天气时，Poki 才会使用你的位置。它不会保留或发送你的位置。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Poki 開啟時會在背景保持執行，以便智慧體連線此 iPhone。Poki 不會記錄或傳送你的位置。"
+            "value" : "只有當你詢問目前位置、附近地點、路線或天氣時，Poki 才會使用你的位置。它不會保留或傳送你的位置。"
           }
         }
       }
@@ -189,6 +189,222 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你在「語音」中與 Poki 交談時，Poki 會收音並將音訊傳送給 OpenAI 以理解你的請求。"
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki reads your step count when you ask how many steps you walked. It only reads, and does not send health data anywhere."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你询问走了多少步时，Poki 会读取你的步数。它只读取，不会把健康数据发送到任何地方。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "當你詢問走了多少步時，Poki 會讀取你的步數。它只會讀取，不會把健康資料傳送到任何地方。"
+          }
+        }
+      }
+    },
+    "NSCalendarsFullAccessUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki reads your calendar to answer what is scheduled, and adds events only when you ask it to."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 读取你的日历以回答日程安排，只有在你要求时才添加事件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會讀取你的行事曆以回答行程，只有在你要求時才加入活動。"
+          }
+        }
+      }
+    },
+    "NSRemindersFullAccessUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki creates reminders and their alerts only when you ask it to."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会创建提醒事项及其提醒。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會建立提醒事項及其提示。"
+          }
+        }
+      }
+    },
+    "NSContactsUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki looks up a contact's name and phone number only when you ask it to."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会查找联系人的姓名和电话号码。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會查詢聯絡人的姓名和電話號碼。"
+          }
+        }
+      }
+    },
+    "NSHomeKitUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki turns lights on or off in your home only when you ask it to."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会打开或关闭家中的灯。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會開啟或關閉家中的燈。"
+          }
+        }
+      }
+    },
+    "NSBluetoothAlwaysUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki scans for nearby Bluetooth devices only while you ask it to, and stops when the scan ends."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会扫描附近的蓝牙设备，并在扫描结束时停止。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會掃描附近的藍牙裝置，並在掃描結束時停止。"
+          }
+        }
+      }
+    },
+    "NSAlarmKitUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki sets a system alarm only when you ask it to, using the time you choose."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会按你选择的时间设置系统闹钟。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會依你選擇的時間設定系統鬧鐘。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki searches your photo library and exports, saves or adds photos and videos only when you ask it to."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会搜索照片图库，并导出、保存照片和视频或将其加入相簿。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會搜尋照片圖庫，並匯出、儲存照片和影片或將其加入相簿。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki saves photos and videos to your library only when you ask it to."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求时，Poki 才会把照片和视频保存到你的图库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只有在你要求時，Poki 才會把照片和影片儲存到你的圖庫。"
           }
         }
       }

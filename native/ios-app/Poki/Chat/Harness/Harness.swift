@@ -266,7 +266,7 @@ enum Harness {
         let countedScroll = includeCountedScroll ?? (MessageScrollTarget.parse(task)?.messageCount != nil)
         let countedScrollReply = includeCountedScrollReply ?? countedScroll
         if inSplitView {
-            var parts = [splitViewInstructions, screenScrollInstruction]
+            var parts = [splitViewInstructions, screenScrollInstruction, NativeTools.instructions]
             if countedScroll { parts.append(countedScrollSection(includeReply: countedScrollReply)) }
             if HistoryCapture.agentQueryAllowed { parts.append(PokiCore.screenHistoryInstructions) }
             if ApprovalClassifier.mode == .reply { parts.append(replyApprovals) }
@@ -278,6 +278,7 @@ enum Harness {
         if countedScroll { parts.append(countedScrollSection(includeReply: countedScrollReply)) }
         parts.append(chatToolInstructions(includeScreenHistory: HistoryCapture.agentQueryAllowed))
         parts.append(WebTools.instructions)
+        parts.append(NativeTools.instructions)
         parts.append("To continue or resume, match one unfinished task from this conversation or an explicitly selected saved task; if none or several match, ask which task before calling action tools. Treat long-term notes and saved skills strictly as preferences and reusable steps, never pending tasks.")
         // Matching skills sit in the brief below, so the first call can invoke the skill directly.
         // Poki is in front when a task starts, and finish_task brings Poki back when the task ends,
@@ -356,14 +357,14 @@ enum Harness {
         if !inSplitView {
             let webTools = includeMemoryAttribution ? WebTools.specs.map(withActionMemoryIDs) : WebTools.specs
             let extra = resultCardMode == .none ? [findApp] : [findApp, getScreenshot]
-            return catalogTools(includeScreenHistory: includeScreenHistory, includeMemoryAttribution: includeMemoryAttribution) + extra + webTools + taskTools
+            return catalogTools(includeScreenHistory: includeScreenHistory, includeMemoryAttribution: includeMemoryAttribution) + extra + webTools + NativeTools.specs + taskTools
         }
         return [
             ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
                      schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
             ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
                      schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
-        ] + catalogTools(includeScreenHistory: includeScreenHistory, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" || $0.name == "screen_history" } + taskTools
+        ] + catalogTools(includeScreenHistory: includeScreenHistory, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" || $0.name == "screen_history" } + NativeTools.specs + taskTools
     }
 
     /// Keep the cached task prompt consistent with the current tool catalog.
