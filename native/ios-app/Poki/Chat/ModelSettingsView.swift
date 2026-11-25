@@ -184,6 +184,50 @@ enum ModelAccounts {
         if VoiceDirect.account == .custom(custom.id) { out.append(AppLocalization.text(LocalizedStringResource("Live Voice"))) }
         return out.isEmpty ? AppLocalization.text(LocalizedStringResource("Not in use")) : out.joined(separator: ", ")
     }
+
+    /// The Text Chat row. The switches on that page write `models.enabled.<provider>`, which is what
+    /// Poki's menu offers. They do not change the account the chat is using, so this row must not say
+    /// "Off" just because another account answers. The account in use shows the model that answers.
+    /// Any other account shows the models switched on for it, or "Off" when every one of them is off.
+    static func textChatSummary(_ provider: ModelProvider, storage: PokiStorage = .live) -> String {
+        guard canChat(provider) else { return AppLocalization.text(LocalizedStringResource("Not Supported")) }
+        if ModelKeys.selectedProvider(in: storage) == provider {
+            return ModelKeys.selectedModelName(in: storage)
+        }
+        return summary(offeredNames(provider, storage: storage))
+    }
+
+    /// The same for one custom provider. A selected service shows the model id the chat is using.
+    static func textChatSummary(_ custom: CustomProvider, storage: PokiStorage = .live) -> String {
+        if ModelKeys.selectedProvider(in: storage) == .custom,
+           let chosen = CustomProviders.parse(ModelKeys.selectedModel(in: storage)),
+           chosen.provider == custom.id {
+            return chosen.model
+        }
+        return summary(offeredNames(custom, storage: storage))
+    }
+
+    private static func summary(_ names: [String]) -> String {
+        if names.isEmpty { return AppLocalization.text(LocalizedStringResource("Off")) }
+        let formatter = ListFormatter()
+        formatter.locale = AppLocalization.locale
+        return formatter.string(from: names) ?? names.joined(separator: ", ")
+    }
+
+    /// Display names, in the menu's order, of the models switched on for this account.
+    private static func offeredNames(_ provider: ModelProvider, storage: PokiStorage) -> [String] {
+        let on = ModelCatalog.enabled(provider, storage: storage)
+        return ModelCatalog.all(provider, storage: storage).filter { on.contains($0.id) }.map(\.name)
+    }
+
+    /// Model ids switched on for one custom service. The menu shows the id under the service's name.
+    private static func offeredNames(_ custom: CustomProvider, storage: PokiStorage) -> [String] {
+        let on = ModelCatalog.enabled(.custom, storage: storage)
+        return ModelCatalog.all(custom: custom.id, storage: storage).compactMap { choice in
+            guard on.contains(choice.id), let model = CustomProviders.parse(choice.id)?.model else { return nil }
+            return model
+        }
+    }
 }
 
 private struct AccountRow: View {
@@ -251,7 +295,7 @@ private struct AccountDetail: View {
             Section {
                 NavigationLink { TextChatFeature(provider: provider) } label: {
                     LabeledContent {
-                        Text(ModelKeys.selectedProvider == provider ? ModelKeys.selectedModelName : ModelAccounts.canChat(provider) ? AppLocalization.text(LocalizedStringResource("Off")) : AppLocalization.text(LocalizedStringResource("Not Supported")))
+                        Text(verbatim: ModelAccounts.textChatSummary(provider))
                     } label: { SettingsLabel("Text Chat", systemImage: "bubble.left.and.text.bubble.right") }
                 }
                 .disabled(!ModelAccounts.canChat(provider))
