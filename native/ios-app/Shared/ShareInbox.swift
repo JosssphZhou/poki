@@ -124,8 +124,25 @@ enum ShareInbox {
         }
     }
 
+    /// A claimed batch left by a crash before import becomes ready again. A live import holds the
+    /// batch only for the synchronous store call, so a refresh cannot race one.
+    static func recoverClaimed(root: URL? = nil) {
+        guard let root = root ?? container() else { return }
+        let claimed = root.appendingPathComponent("claimed", isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: claimed.path)) ?? []
+        for name in names {
+            let from = claimed.appendingPathComponent(name, isDirectory: true)
+            let to = root.appendingPathComponent("ready/\(name)", isDirectory: true)
+            guard FileManager.default.fileExists(atPath: from.path),
+                  !FileManager.default.fileExists(atPath: to.path) else { continue }
+            try? FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.moveItem(at: from, to: to)
+        }
+    }
+
     /// Every published batch, oldest first. Only folders with a decodable manifest are returned.
     static func readyBatches(root: URL? = nil) -> [Batch] {
+        recoverClaimed(root: root)
         guard let folder = readyFolder(root) else { return [] }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let batches = names.compactMap { name -> Batch? in
