@@ -63,6 +63,7 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     /// Silent audio could not hold Poki up (it would be suspended): location stands in until it can.
     private(set) var audioLost = false
     private var interruption: NSObjectProtocol?
+    private var audioRecovery: Task<Void, Never>?
 
     private func startAudio() {
         do { try audio.start(); setAudioLost(false) } catch { setAudioLost(true) }
@@ -81,23 +82,45 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
             guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt, let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             Task { @MainActor in
                 guard let self, self.isOn, !self.audioPaused else { return }
+                self.audioRecovery?.cancel()
                 switch type {
                 case .began: self.setAudioLost(true)
                 case .ended:
                     // KeepAlive restarts its engine on its own; check a moment later.
-                    try? await Task.sleep(for: .seconds(1))
-                    if self.audio.isOn { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
+                    self.scheduleAudioRecovery { [weak self] in
+                        guard let self else { return }
+                        if self.audio.isOn { self.setAudioLost(false) } else { self.audio.stop(); self.startAudio() }
+                    }
                 @unknown default: break
                 }
             }
         }
     }
 
+    @discardableResult
+    func scheduleAudioRecovery(
+        wait: @escaping @MainActor () async -> Void = { try? await Task.sleep(for: .seconds(1)) },
+        recover: @escaping @MainActor () -> Void
+    ) -> Task<Void, Never> {
+        let task = Task { @MainActor in
+            await wait()
+            guard !Task.isCancelled else { return }
+            recover()
+        }
+        audioRecovery = task
+        return task
+    }
+
     /// A voice conversation needs the audio session for the microphone; the voice-chat session keeps
     /// Poki running meanwhile. The silent audio comes back when it ends, if Poki is still on.
     /// While a voice conversation holds the audio session (it keeps Poki running itself).
     private var audioPaused = false
-    func pauseAudio() { audioPaused = true; audio.stop() }
+    func pauseAudio() {
+        audioRecovery?.cancel()
+        audioRecovery = nil
+        audioPaused = true
+        audio.stop()
+    }
     func resumeAudio() {
         audioPaused = false
         guard isOn else { return }
@@ -108,6 +131,8 @@ final class BackgroundKeeper: NSObject, CLLocationManagerDelegate {
     func stop() {
         guard isOn else { return }
         isOn = false
+        audioRecovery?.cancel()
+        audioRecovery = nil
         if #available(iOS 26.0, *) { (continued as? ContinuedRun)?.end() }
         audioLost = false
         if let interruption { NotificationCenter.default.removeObserver(interruption) }
