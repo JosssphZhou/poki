@@ -77,6 +77,23 @@ final class ScreenHistoryTests: XCTestCase {
         ["ok": true, "app": app, "title": "", "text": text, "changed": true]
     }
 
+    func testLauncherReadPreparesTextAndTreeBeforeMainActorDelivery() throws {
+        let rows = [[0, "Button", "Open", "", 1, 2, 3, 4] as [Any]]
+        var line = read("com.example.reader", ["Café", "你好"])
+        line["tree"] = rows
+        let prepared = HistoryBridge.Read(line)
+        XCTAssertEqual(prepared.text, "Café\n你好")
+        let decoded = try JSONSerialization.jsonObject(with: XCTUnwrap(prepared.tree)) as? NSArray
+        XCTAssertEqual(decoded, rows as NSArray)
+
+        line.removeValue(forKey: "text")
+        XCTAssertNil(HistoryBridge.Read(line).tree)
+        line["text"] = ["Ignored"]
+        line["ok"] = false
+        XCTAssertNil(HistoryBridge.Read(line).text)
+        XCTAssertNil(HistoryBridge.Read(line).tree)
+    }
+
     func testALeftOutAppAndTheHomeScreenLeaveNothingInTheStore() async {
         let capture = HistoryCapture()
         capture.exclude("com.example.bank")
@@ -239,8 +256,8 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertFalse(Harness.tools.map(\.name).contains("screen_history"))
         XCTAssertFalse(Harness.splitViewTools.map(\.name).contains("screen_history"))
         XCTAssertFalse(listedOff.contains("screen_history"))
-        XCTAssertFalse(Harness.instructions(for: "我刚才在备忘录里写了什么").contains("screen_history"))
-        XCTAssertFalse(Harness.instructions(for: "我刚才在备忘录里写了什么", inSplitView: true).contains("screen_history"))
+        XCTAssertFalse(Harness.taskInstructions(for: "我刚才在备忘录里写了什么").text.contains("screen_history"))
+        XCTAssertFalse(Harness.taskInstructions(for: "我刚才在备忘录里写了什么", inSplitView: true).text.contains("screen_history"))
         let initial = await app.runTool("screen_history", arguments: "{}")
         XCTAssertTrue(initial.isError)
         XCTAssertEqual(initial.text, "Screen History is not turned on.")
@@ -252,8 +269,8 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertTrue(Harness.tools.map(\.name).contains("screen_history"))
         XCTAssertTrue(Harness.splitViewTools.map(\.name).contains("screen_history"))
         XCTAssertTrue(listedOn.contains("screen_history"))
-        XCTAssertTrue(Harness.instructions(for: "我刚才在备忘录里写了什么").contains("screen_history"))
-        XCTAssertTrue(Harness.instructions(for: "我刚才在备忘录里写了什么", inSplitView: true).contains("screen_history"))
+        XCTAssertTrue(Harness.taskInstructions(for: "我刚才在备忘录里写了什么").text.contains("screen_history"))
+        XCTAssertTrue(Harness.taskInstructions(for: "我刚才在备忘录里写了什么", inSplitView: true).text.contains("screen_history"))
 
         HistoryCapture.shared.enabled = false
         let listedOffAgain = try await mcpTools()
@@ -452,7 +469,7 @@ final class ScreenHistoryTests: XCTestCase {
         lock.lock()
         XCTAssertFalse(Harness.tools.map(\.name).contains("screen_history"))
         XCTAssertFalse(Harness.splitViewTools.map(\.name).contains("screen_history"))
-        XCTAssertFalse(Harness.instructions(for: "Recall the earlier note").contains(PokiCore.screenHistoryInstructions))
+        XCTAssertFalse(Harness.taskInstructions(for: "Recall the earlier note").text.contains(PokiCore.screenHistoryInstructions))
         let locked = await app.runTool("screen_history", arguments: "{}")
         XCTAssertTrue(locked.isError)
         XCTAssertFalse(locked.text.contains(canary))
