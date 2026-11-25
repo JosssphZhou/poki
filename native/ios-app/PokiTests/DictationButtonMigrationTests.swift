@@ -79,30 +79,25 @@ final class DictationButtonMigrationTests: XCTestCase {
         XCTAssertEqual(written, false)
     }
 
-    func testDisabledButtonSurvivesSettingsVaultRestoration() throws {
-        let standard = UserDefaults.standard
+    func testDisabledButtonSurvivesSettingsVaultRestoration() {
         let button = FieldDictation.buttonKey
         let settled = FieldDictation.buttonSettledKey
-        let savedButton = standard.object(forKey: button)
-        let savedSettled = standard.object(forKey: settled)
-        let backup = try Keychain.read("settings.v1")
-        defer {
-            standard.set(savedButton, forKey: button)
-            standard.set(savedSettled, forKey: settled)
-            if let backup { try? Keychain.write(backup, account: "settings.v1") }
-            else { Keychain.delete("settings.v1") }
-        }
+        var backup: Data?
 
-        standard.set(false, forKey: button)
-        standard.set(true, forKey: settled)
-        SettingsVault.save()
-        standard.removeObject(forKey: button)
-        standard.removeObject(forKey: settled)
+        defaults.set(false, forKey: button)
+        defaults.set(true, forKey: settled)
+        defaults.set(Data([1]), forKey: "setup")
+        SettingsVault.save(defaults: defaults, read: { backup }, write: { backup = $0 })
+        defaults.removeObject(forKey: button)
+        defaults.removeObject(forKey: settled)
+        defaults.removeObject(forKey: "setup")
 
-        SettingsVault.restore()
+        SettingsVault.restore(defaults: defaults, read: { backup })
+        XCTAssertEqual(defaults.object(forKey: settled) as? Bool, true)
+        XCTAssertEqual(defaults.data(forKey: "setup"), Data([1]))
 
-        XCTAssertEqual(standard.object(forKey: button) as? Bool, false)
-        XCTAssertEqual(standard.object(forKey: settled) as? Bool, true)
+        launch()
+        XCTAssertEqual(written, false)
     }
 
     func testAChoiceAlreadyMadeIsNotOverwritten() throws {

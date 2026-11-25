@@ -14,10 +14,11 @@ enum SettingsVault {
     private static func kept(_ key: String) -> Bool { keys.contains(key) || prefixes.contains { key.hasPrefix($0) } }
 
     /// Puts back every kept setting UserDefaults does not have.
-    static func restore() {
-        guard let data = try? Keychain.read(account),
+    static func restore() { restore(defaults: .standard, read: { try Keychain.read(account) }) }
+
+    static func restore(defaults: UserDefaults, read: () throws -> Data?) {
+        guard let data = try? read(),
               let saved = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else { return }
-        let defaults = UserDefaults.standard
         var restored = 0
         for (key, value) in saved where kept(key) && defaults.object(forKey: key) == nil {
             defaults.set(value, forKey: key)
@@ -28,9 +29,14 @@ enum SettingsVault {
 
     /// The current kept settings, written to the Keychain.
     static func save() {
-        let all = UserDefaults.standard.dictionaryRepresentation().filter { kept($0.key) }
+        save(defaults: .standard, read: { try Keychain.read(account) },
+             write: { try Keychain.write($0, account: account) })
+    }
+
+    static func save(defaults: UserDefaults, read: () throws -> Data?, write: (Data) throws -> Void) {
+        let all = defaults.dictionaryRepresentation().filter { kept($0.key) }
         guard !all.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: all, format: .binary, options: 0) else { return }
-        if (try? Keychain.read(account)) != data { try? Keychain.write(data, account: account) }
+        if (try? read()) != data { try? write(data) }
     }
 
     nonisolated(unsafe) private static var observer: NSObjectProtocol?
