@@ -2824,6 +2824,55 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(system.contains("reply text"), system)
     }
 
+    /// Typed chat tells the model to ask with ask_user before acting when the owner is unsure
+    /// between the web and an app (even if they name an app) or when several installed apps on
+    /// this iPhone fit the task and nothing picks one, without leaking ask_user into Voice mode.
+    func testAskUserPromptGuidesWebVsAppUncertaintyAndMultipleInstalledApps() async throws {
+        let finish = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]])
+        let server = try FakeCompletions(replies: [
+            finish, FakeCompletions.text("Done."),
+            finish, FakeCompletions.text("Done."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+        chat.newConversation()
+
+        chat.send("帮我查一下周六深圳演唱会的门票，不确定用网页版看还是直接打开大麦 App")
+        try await until(10) { !chat.running }
+        let typedCount = server.requests.count
+        chat.send(spoken: "帮我查一下周六深圳演唱会的门票，不确定用网页版看还是直接打开大麦 App")
+        try await until(10) { !chat.running }
+
+        let summary = server.requests.enumerated().map { index, req in
+            let msgs = (req["messages"] as? [[String: Any]]) ?? []
+            let roles = msgs.compactMap { $0["role"] as? String }.joined(separator: ",")
+            return "#\(index)(hasAsk=\(Self.toolNames(req).contains("ask_user")),tools=\(Self.toolNames(req).count),roles=\(roles))"
+        }.joined(separator: " ")
+        XCTAssertEqual(typedCount, 2, "typedCount=\(typedCount) total=\(server.requests.count) \(summary)")
+        XCTAssertEqual(server.requests.count, 4, "typedCount=\(typedCount) total=\(server.requests.count) \(summary)")
+        let typed = try XCTUnwrap(server.requests.first)
+        let typedSystem = FakeCompletions.system(typed)
+        XCTAssertFalse(typedSystem.contains("names an app, or needs signed-in app data"), "agent-system.md should no longer route every app mention straight to phone controls")
+        XCTAssertTrue(typedSystem.contains("unsure between the web and an app"), "prompt should tell the model to clarify web-vs-app uncertainty")
+        XCTAssertTrue(typedSystem.contains("even if they name an app"), "prompt should keep web-vs-app clarification active even when an app is named")
+        XCTAssertFalse(typedSystem.contains("ask which app only when the screen or the saved notes list several apps"), "prompt should not limit multi-app ask_user to screen or saved notes")
+        XCTAssertTrue(typedSystem.contains("installed apps listed for this iPhone"), "prompt should cover multiple installed apps listed for this iPhone")
+        XCTAssertTrue(typedSystem.contains("use the usual app for the task"), "prompt should preserve default app selection when unambiguous")
+        XCTAssertTrue(typedSystem.contains("two lines"), "prompt should preserve two-line Lock Screen constraint")
+
+        let description = try XCTUnwrap(Self.toolDescription("ask_user", in: typed), "typed in-app chat exposes ask_user")
+        XCTAssertTrue(description.contains("unsure between the web and an app"), "ask_user description should include web-vs-app uncertainty")
+        XCTAssertTrue(description.contains("installed apps listed for this iPhone"), "ask_user description should include installed apps listed for this iPhone")
+        XCTAssertFalse(description.contains("Never ask which app when the owner named one or one is usual for the task"), "ask_user description should not contradict web-vs-app uncertainty or multi-app selection")
+        XCTAssertTrue(description.contains("One question per call, with no other call in the same reply"), "ask_user description should preserve single-tool-call rule")
+        XCTAssertTrue(description.contains("two lines"), "ask_user description should preserve two-line question rule")
+
+        let spoken = server.requests[typedCount]
+        let spokenSystem = FakeCompletions.system(spoken)
+        XCTAssertFalse(Self.toolNames(spoken).contains("ask_user"), "Voice dictation does not expose ask_user")
+        XCTAssertFalse(spokenSystem.contains("ask_user"), "Voice dictation instructions never mention ask_user")
+        XCTAssertTrue(spokenSystem.contains("unsure between the web and an app"), "agent-system.md web-vs-app clarification remains visible in Voice mode without ask_user")
+    }
+
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
     /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {
