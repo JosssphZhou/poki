@@ -132,7 +132,17 @@ struct CustomProviderEditor: View {
                 Section {
                     ForEach($draft.endpoints) { $endpoint in
                         VStack(alignment: .leading, spacing: 8) {
-                            TextField("https://…/v1", text: $endpoint.url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            TextField("https://…/v1 or http://…/v1", text: $endpoint.url).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            if PlainHTTPPolicy.isPlainHTTP(endpoint.url) {
+                                Text("This address is plain HTTP. The key and your chats travel unencrypted. Use it only on a network you trust, or switch the gateway to HTTPS.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Color(.systemOrange))
+                                if !PlainHTTPPolicy.isAllowed(endpoint.url) {
+                                    Text("This build has no plain-HTTP exception for this host. Install Poki with --allow-http-host set to this host, or build with POKI_HTTP_ENDPOINT_HOST.")
+                                        .font(.footnote)
+                                        .foregroundStyle(Color(.systemRed))
+                                }
+                            }
                             Picker("API", selection: $endpoint.api) {
                                 ForEach(CustomAPIStyle.allCases) { Text(verbatim: $0.name).tag($0) }
                             }
@@ -239,7 +249,7 @@ struct CustomProviderEditor: View {
     }
 
     private static func valid(_ address: String) -> Bool {
-        (try? ModelCatalog.customRequest(address: address, key: nil)) != nil
+        (try? ModelCatalog.customRequest(address: address, key: nil)) != nil && PlainHTTPPolicy.hasValidHostAndPort(address)
     }
 
     /// The addresses filled in, in order.

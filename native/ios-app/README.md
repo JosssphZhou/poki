@@ -163,6 +163,69 @@ Poki ships English, Simplified Chinese and Traditional Chinese. Settings › Lan
 - The Live Activity starts from the foreground, because iOS does not allow it from the background:
   when Poki turns on, when pairing starts, and when a setup step opens Settings.
 
+## Plain-HTTP Custom Endpoint hosts
+
+The app keeps App Transport Security on. `project-base.yml` declares only `NSAllowsLocalNetworking`,
+which covers the voice bridge and loopback services. A Custom Endpoint address normally uses HTTPS.
+
+To use a plain-HTTP gateway, whoever builds Poki must opt in by naming exactly one canonical host:
+
+```sh
+POKI_HTTP_ENDPOINT_HOST=203.0.113.9 POKI_HTTP_ENDPOINT_OPT_IN=1 xcodegen generate --spec project.yml
+```
+
+`project.yml` and `project-external.yml` then include `project-http-endpoint.yml`, which adds one
+`NSExceptionDomains` entry for that host with `NSExceptionAllowsInsecureHTTPLoads` set to YES. The
+built `Poki/Info.plist` contains no `NSAllowsArbitraryLoads` and no denylist. `project-http-endpoint.yml`
+enforces the same single-host contract as the installer through `preGenCommand`
+(`native/ios-app/scripts/validate-http-endpoint-host.py`) before writing `Poki/Info.plist` or
+generating the Xcode project, and rechecks `Poki/Info.plist` in a target pre-build script.
+`POKI_HTTP_ENDPOINT_HOST` must already be one canonical lowercase ASCII RFC 1123 DNS name (no
+trailing dot), strict dotted-quad IPv4 literal, or canonical unbracketed unzoned IPv6 literal (no
+scheme, port, brackets, zone ID, CIDR mask, path, query, fragment, userinfo, or comma-separated
+list). Invalid or non-canonical values fail `xcodegen generate` loudly, and non-canonical values name
+the canonical host to pass. Default builds without `POKI_HTTP_ENDPOINT_OPT_IN` omit
+`project-http-endpoint.yml`, leaving neither an ATS exception nor validation hooks in the project.
+
+**Request scope.** `NSAllowsLocalNetworking` already permits plain HTTP to loopback, `.local`,
+`.localhost`, unqualified, and private or link-local IPv4/IPv6 hosts (`127.0.0.0/8`, `10.0.0.0/8`,
+`172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7`, `fe80::/10`, and local
+`::ffff:0:0/96`). That covers the voice bridge, the in-process debug server at
+`http://127.0.0.1:8765/v1`, and a gateway on the same LAN. `PlainHTTPPolicy` keeps those addresses
+working without an extra exception. The opt-in adds one named host, normally a public IP literal
+or a DNS name. Only that host may then be reached over cleartext HTTP, on any port and path. Apple
+does not allow a port in an `NSExceptionDomains` key, so the exception is host-wide. Only the
+custom provider's chat and model-list requests use that host. Every built-in provider, the relay,
+and all other hosts keep full ATS. An IP-literal exception does not cover a DNS name for the same
+server, and a DNS-name exception does not cover its IP literal.
+
+Plain HTTP sends the key, when there is one, and the whole conversation unencrypted. The Custom
+Endpoint screen warns before the address is used. Use HTTPS when the gateway is not on a network you
+trust. A prebuilt release IPA has no exception until the owner opts in. Both entry points enforce
+at most one distinct host, the same canonical host format, and the same request scope.
+
+**Install time, for a prebuilt IPA.** Run Poki Setup with `--allow-http-host <host>` (at most one
+distinct host, matching the build-time opt-in):
+
+```sh
+node bin/install-iphone.mjs run --allow-http-host 203.0.113.9
+```
+
+The installer passes that single canonical host to the signing bridge in `POKI_HTTP_ENDPOINT_HOST`
+(repeated flags that normalize to the same host deduplicate to one; multiple distinct flags are
+rejected before signing starts). `desktop/core/src/sign/mod.rs` writes that one `NSExceptionDomains`
+entry into `Payload/Poki.app/Info.plist` before signing. It keeps `NSAllowsLocalNetworking`,
+preserves any entry the build declared, and never writes `NSAllowsArbitraryLoads`. Extensions are
+untouched. A malformed host (with a scheme, port, brackets, zone ID, CIDR mask, path or userinfo) or
+a multi-host value is rejected by both the installer and the signer.
+Bring the flag again on a renewal, because a renewal re-signs a freshly downloaded IPA. Both
+`run` and `--update-only` accept it, so an existing exception is not silently lost. A plain-HTTP
+gateway sends its key in cleartext, so name only a host you trust.
+
+**Build time, for a self-built IPA.** Set the variables in the example above when running
+`xcodegen generate`. `PlainHTTPPolicy` reads `NSExceptionDomains` from the app's own Info.plist, so
+both entry points produce the same behaviour in the app.
+
 ## Voice
 
 Voice (the waveform button beside the gear on Home) uses OpenAI's Live API (`gpt-live-1.1`) over WebRTC.
