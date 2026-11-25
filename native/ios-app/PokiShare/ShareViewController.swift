@@ -110,12 +110,10 @@ final class ShareViewController: UIViewController {
                                    typeIdentifier: type, byteCount: data.count)
         }
         if let type = types.first(where: { isMovie($0) }) {
-            let url = try await loadFile(provider, type)
-            let ut = UTType(type)
-            let name = provider.suggestedName ?? url.lastPathComponent
-            let stored = try ShareInbox.store(fileAt: url, originalName: name, type: ut, in: folder)
-            return ShareInbox.Item(kind: .video, storedName: stored, originalName: name, typeIdentifier: type,
-                                   byteCount: size(of: folder.appendingPathComponent(stored)))
+            let name = provider.suggestedName ?? "video"
+            let stored = try await loadFile(provider, type, into: folder, originalName: name, ut: UTType(type))
+            return ShareInbox.Item(kind: .video, storedName: stored.name, originalName: name, typeIdentifier: type,
+                                   byteCount: stored.size)
         }
         if let type = types.first(where: { UTType($0)?.conforms(to: .url) == true || UTType($0)?.conforms(to: .text) == true }) {
             if let url = try await loadURL(provider, type), url.scheme == "http" || url.scheme == "https" {
@@ -125,9 +123,9 @@ final class ShareViewController: UIViewController {
                 let ut = UTType(filenameExtension: url.pathExtension)
                 let name = provider.suggestedName ?? url.lastPathComponent
                 let kind: ShareInbox.Item.Kind = ut?.conforms(to: .image) == true ? .image : (ut?.conforms(to: .movie) == true ? .video : .file)
-                let stored = try ShareInbox.store(fileAt: url, originalName: name, type: ut, in: folder)
-                return ShareInbox.Item(kind: kind, storedName: stored, originalName: name, typeIdentifier: type,
-                                       byteCount: size(of: folder.appendingPathComponent(stored)))
+                let stored = try await storeFileURL(provider, type, into: folder, originalName: name, ut: ut)
+                return ShareInbox.Item(kind: kind, storedName: stored.name, originalName: name, typeIdentifier: type,
+                                       byteCount: stored.size)
             }
             if let text = try await loadText(provider, type) {
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -138,13 +136,12 @@ final class ShareViewController: UIViewController {
         }
         if let type = types.first(where: { UTType($0)?.conforms(to: .item) == true }) ?? types.first {
             do {
-                let url = try await loadFile(provider, type)
-                let ut = UTType(type) ?? UTType(filenameExtension: url.pathExtension)
-                let name = provider.suggestedName ?? url.lastPathComponent
+                let name = provider.suggestedName ?? "shared"
+                let ut = UTType(type)
                 let kind: ShareInbox.Item.Kind = ut?.conforms(to: .image) == true ? .image : (isMovie(type) ? .video : .file)
-                let stored = try ShareInbox.store(fileAt: url, originalName: name, type: ut, in: folder)
-                return ShareInbox.Item(kind: kind, storedName: stored, originalName: name, typeIdentifier: type,
-                                       byteCount: size(of: folder.appendingPathComponent(stored)))
+                let stored = try await loadFile(provider, type, into: folder, originalName: name, ut: ut)
+                return ShareInbox.Item(kind: kind, storedName: stored.name, originalName: name, typeIdentifier: type,
+                                       byteCount: stored.size)
             } catch {
                 // A provider that cannot give a file may still give its bytes below.
             }
@@ -171,12 +168,40 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private func loadFile(_ provider: NSItemProvider, _ type: String) async throws -> URL {
+    /// The provider's file URL is valid only while its callback runs, so the copy happens here.
+    private func loadFile(_ provider: NSItemProvider, _ type: String, into folder: URL,
+                          originalName: String, ut: UTType?) async throws -> (name: String, size: Int?) {
         try await withCheckedThrowingContinuation { continuation in
             provider.loadFileRepresentation(forTypeIdentifier: type) { url, error in
-                if let error { continuation.resume(throwing: error) }
-                else if let url { continuation.resume(returning: url) }
-                else { continuation.resume(throwing: ShareInbox.InboxError.itemMissing(type)) }
+                if let error { continuation.resume(throwing: error); return }
+                guard let url else { continuation.resume(throwing: ShareInbox.InboxError.itemMissing(type)); return }
+                do {
+                    let name = try ShareInbox.store(fileAt: url, originalName: originalName, type: ut, in: folder)
+                    let size = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(name).path))?[.size] as? Int
+                    continuation.resume(returning: (name, size))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// The same for a provider that gives a file URL through `loadItem`; the copy stays in the callback.
+    private func storeFileURL(_ provider: NSItemProvider, _ type: String, into folder: URL,
+                              originalName: String, ut: UTType?) async throws -> (name: String, size: Int?) {
+        try await withCheckedThrowingContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: type, options: nil) { item, error in
+                if let error { continuation.resume(throwing: error); return }
+                guard let url = (item as? URL) ?? (item as? NSURL) as URL? else {
+                    continuation.resume(throwing: ShareInbox.InboxError.itemMissing(type)); return
+                }
+                do {
+                    let name = try ShareInbox.store(fileAt: url, originalName: originalName, type: ut, in: folder)
+                    let size = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(name).path))?[.size] as? Int
+                    continuation.resume(returning: (name, size))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
