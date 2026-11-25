@@ -364,7 +364,7 @@ enum Harness {
                      schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
             ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
                      schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
-        ] + catalogTools(includeScreenHistory: includeScreenHistory, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" || $0.name == "screen_history" } + NativeTools.specs + taskTools
+        ] + catalogTools(includeScreenHistory: includeScreenHistory, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" || $0.name == "screen_history" } + taskTools
     }
 
     /// Keep the cached task prompt consistent with the current tool catalog.

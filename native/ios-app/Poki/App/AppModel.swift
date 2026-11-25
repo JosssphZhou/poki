@@ -2318,9 +2318,9 @@ final class AppModel {
             content.userInfo = ["poki_link": "poki://chat"]
         }
         content.threadIdentifier = "chat"
-        // One banner per task: a later task's notice must not replace an earlier one still waiting.
-        let identifier = session.map { "poki-reply-\($0)" } ?? "poki-reply"
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        // One banner id keeps the existing completion-notification contract; the tap still carries
+        // the task's own conversation in userInfo.
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "poki-reply", content: content, trigger: nil))
     }
 
     /// A native tool ran inside a task. It updates the same Live Activity as a phone step, so the
