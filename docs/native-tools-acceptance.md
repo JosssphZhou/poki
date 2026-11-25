@@ -42,13 +42,18 @@ AlarmKit, PhotoKit, Contacts, Calendars and Reminders need their usage strings, 
 
 ## Verification
 
-Local build (Xcode 26.6, iOS 26.5 SDK) succeeds after omitting one iOS 27 SDK-only
-`WKNavigationAction.mainFrameNavigation` block in `PokiBrowser.swift`; that source change is not part
-of this change and CI must build with the iOS 27.1 SDK the project documents. The simulator build
-embeds `PokiShare.appex` with `com.apple.share-services` and
-`PokiShare.ShareViewController`.
+The final tree was built with Xcode 27.2 (27B52) and the iOS 27.2 SDK, with no iOS 26 compatibility
+workaround. The generic simulator Debug build succeeded. A signed QA build (`com.junweizhang.pokiqa`,
+with `group.com.junweizhang.pokiqa`) was installed on an iPhone 17 Pro Max running iOS 27.2.
 
-Tests were run inside Poki on an iPhone 17 Pro, iOS 26.5 simulator:
+WeatherKit needs **two** settings on the App ID: the WeatherKit capability (which supplies the
+entitlement and provisioning profile) and the WeatherKit entry under **App Services**, which
+activates the Apple Weather service. With only the capability, `WeatherService` returns
+`WeatherKit could not generate an authentication token` even though the entitlement and profile are
+present. The QA App ID was enabled and returned Apple Weather data on the device.
+
+Tests were run inside Poki on the iOS 26.5 simulator, and the signed build was exercised on the
+physical iPhone:
 
 ```sh
 xcodegen generate --spec native/ios-app/project.yml
@@ -62,22 +67,24 @@ xcodebuild -quiet build-for-testing -project native/ios-app/Poki.xcodeproj \
 The repository's `scripts/app-tests.sh` uses `timeout`, which is not installed on this Mac; the
 harness above is the same launch without it.
 
-## Local verification results (2026-11-25)
+## Local verification results (2026-11-25 to 2026-11-26)
 
-- Simulator Debug build (`generic/platform=iOS Simulator`, arm64, Xcode 26.6 / iOS 26.5 SDK):
+- Simulator Debug build (`generic/platform=iOS Simulator`, arm64, Xcode 27.2 / iOS 27.2 SDK):
   **BUILD SUCCEEDED**.
-- The built app embeds `PokiShare.appex`; its Info.plist declares
-  `com.apple.share-services` with principal class `PokiShare.ShareViewController`.
-- The app launched to the chat screen on an iPhone 17e simulator.
-- Focused in-app tests after the revert (NativeToolsTests, ShareInboxTests): 14 passed, 1 skipped.
-  The skipped PhotoLibraryTests test needs full photo access; the simulator showed the
-  limited/full-access prompt even after `simctl privacy grant photos`, so it is marked skipped rather
-  than blocking the test host.
-- The earlier full-suite run (before the revert) reached 481 passing tests and 11 failures before its
-  15-minute harness limit. The Live Activity/notification failures and the Split View tool-list failure
-  were removed with the revert, but the full suite was not rerun afterwards. Treat the remaining
-  pre-existing failures as incomplete until the suite is run on a clean simulator whose setup and
-  notification state match CI.
+- Signed device build with `Apple Development: Junwei Zhang (M955Q5TD7S)`; the app embeds
+  `PokiShare.appex` and `PokiWidgets.appex` and installs as a separate QA app.
+- `NativeToolsTests`: 9 passed. `PhotoLibraryTests`: 1 passed with full photo access.
+  `ShareInboxTests`: 5 passed.
+- On the physical iPhone, a scripted local OpenAI-compatible model exercised the real native tools:
+  battery, clipboard, calendar read/create, HealthKit steps, location, Maps geocode/search/route,
+  Photos albums/find/export/save/add, read-aloud start/stop, and an AlarmKit alarm. Reminders and
+  Contacts passed after their system permissions were granted. WeatherKit returned current, daily and
+  hourly Apple Weather data after the App Services entry was enabled.
+- The earlier full-suite simulator run was not green: 767 tests, 13 skipped and 162 failures, mostly
+  in existing chat/UI harness paths and the simulator environment. The focused tests above are the
+  relevant pass surface for this change; the full suite has not been rerun after the final cleanup.
+- The Share Extension was visible in the Safari share sheet and its staging/inbox tests pass; the
+  complete Safari → preview → Send flow was not finished before this PR.
 
 ## Commits on `dev/native-ios-capabilities`
 
@@ -90,21 +97,23 @@ harness above is the same launch without it.
 | `7f3b1522` | Share Extension, inbox, preview and task submission |
 | `1fb1c337` | Follow-up whitespace cleanup |
 | Revert commit | Restores the original Live Activity, Lock Screen and notification behavior |
+| `5a1b2307` | Drops unused native-tool parameters |
 
 ## Pending real-device checks
 
 - HealthKit steps with real data and limited read access.
 - A real HomeKit home with a test light, including a duplicate name and a partial batch failure.
-- AlarmKit: authorization, a test alarm ringing on the Lock Screen, and a repeating schedule.
+- AlarmKit: a test alarm ringing on the Lock Screen and a repeating schedule; the alarm was scheduled
+  on the device but its ring was not observed.
 - A broadcasting BLE peripheral, Bluetooth off, permission denied and cancellation.
-- WeatherKit with a Developer Program App ID and WeatherKit capability; simulator builds without the
-  entitlement must report the authorization failure.
+- WeatherKit on a fresh App ID: enable both the capability and **App Services > WeatherKit**; the
+  simulator build without the entitlement must report the authorization failure.
 - Location permission denial, reduced accuracy, timeout and cancellation on a physical iPhone.
 - The photo library with limited access, a Live Photo, a RAW asset, an iCloud-only original and a
   same-named album.
 - Out of scope: the existing Live Activity, Lock Screen, Dynamic Island and completion notifications
   are not changed; no new device check is needed for them.
-- The Share Extension from Safari, Photos, Files: multi-attachment order, file contents and names,
-  kill-and-reopen before Send, and a shared web page → calendar event → read-back.
+- The Share Extension submit path from Safari, Photos and Files: multi-attachment order, file
+  contents and names, kill-and-reopen before Send, and a shared web page → calendar event → read-back.
 - Signing: HealthKit, HomeKit and WeatherKit entitlements on the App ID and profile; the Share
   Extension's App Group in the built entitlements.
