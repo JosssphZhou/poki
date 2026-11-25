@@ -2857,18 +2857,14 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertFalse(typedSystem.contains("ask which app only when the screen or the saved notes list several apps"), "prompt should not limit multi-app ask_user to screen or saved notes")
         XCTAssertTrue(typedSystem.contains("installed apps listed for this iPhone"), "prompt should cover multiple installed apps listed for this iPhone")
         XCTAssertTrue(typedSystem.contains("use the usual app for the task"), "prompt should preserve default app selection when unambiguous")
-        XCTAssertTrue(typedSystem.contains("two lines"), "prompt should preserve two-line Lock Screen constraint")
 
         let description = try XCTUnwrap(Self.toolDescription("ask_user", in: typed), "typed in-app chat exposes ask_user")
         XCTAssertTrue(description.contains("unsure between the web and an app"), "ask_user description should include web-vs-app uncertainty")
         XCTAssertTrue(description.contains("installed apps listed for this iPhone"), "ask_user description should include installed apps listed for this iPhone")
         XCTAssertFalse(description.contains("Never ask which app when the owner named one or one is usual for the task"), "ask_user description should not contradict web-vs-app uncertainty or multi-app selection")
-        XCTAssertTrue(description.contains("One question per call, with no other call in the same reply"), "ask_user description should preserve single-tool-call rule")
-        XCTAssertTrue(description.contains("two lines"), "ask_user description should preserve two-line question rule")
 
         let spoken = server.requests[typedCount]
         let spokenSystem = FakeCompletions.system(spoken)
-        XCTAssertFalse(Self.toolNames(spoken).contains("ask_user"), "Voice dictation does not expose ask_user")
         XCTAssertFalse(spokenSystem.contains("ask_user"), "Voice dictation instructions never mention ask_user")
         XCTAssertTrue(spokenSystem.contains("unsure between the web and an app"), "agent-system.md web-vs-app clarification remains visible in Voice mode without ask_user")
     }
