@@ -43,8 +43,8 @@ AlarmKit, PhotoKit, Contacts, Calendars and Reminders need their usage strings, 
 ## Verification
 
 The final tree was built with Xcode 27.2 (27B52) and the iOS 27.2 SDK, with no iOS 26 compatibility
-workaround. The generic simulator Debug build succeeded. A signed QA build (`com.junweizhang.pokiqa`,
-with `group.com.junweizhang.pokiqa`) was installed on an iPhone 17 Pro Max running iOS 27.2.
+workaround. The generic simulator Debug build succeeded. A signed QA build with a separate QA App ID and App Group was installed on an iPhone 17 Pro Max
+running iOS 27.2.
 
 WeatherKit needs **two** settings on the App ID: the WeatherKit capability (which supplies the
 entitlement and provisioning profile) and the WeatherKit entry under **App Services**, which
