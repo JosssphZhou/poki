@@ -170,10 +170,6 @@ enum ActivityLink {
     static let activity = URL(string: "poki://activity")!
     /// The Activity Log, where a problem's details are.
     static let log = URL(string: "poki://log")!
-    /// The conversation a finished or stopped task ran in.
-    static func session(_ id: String) -> URL {
-        URL(string: "poki://session/\(id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id)")!
-    }
     static func setup(_ step: String? = nil) -> URL {
         URL(string: step.map { "poki://setup?step=\($0)" } ?? "poki://setup")!
     }
@@ -262,10 +258,6 @@ extension PokiState {
         face.talkGlow = voice != nil && !stale
         face.shieldsTaps = !stale && ([.working, .approval, .deciding, .handoff].contains(phase) || voice != nil)
         if face.shieldsTaps, face.link == ActivityLink.chat { face.link = ActivityLink.activity }
-        if !face.shieldsTaps, let session, phase == .done || phase == .stopped {
-            // A finished or stopped task opens the conversation it ran in, including a native task.
-            face.link = ActivityLink.session(session)
-        }
         // A fresh event ("Started", "Denied") shows beside the app's name for a few seconds. An app
         // switch is the app's name itself, already there; so is a word the face already says (Done
         // over a finished run, Paired over Paired), which said twice read as a fault (ESP-954).
@@ -319,21 +311,8 @@ extension PokiState {
                 thumbnail: hasThumbnail ? .small : .none,
                 compact: .asking(String(activity: "Allow?"), approval.expires))
         case .done:
-            // Done once: over what the run came to where that is known, else as the title. A run that
-            // did not do what was asked says Error, not Done.
+            // Done once: over what the run came to where that is known, else as the title.
             let line = doneLine
-            if failed == true {
-                return ActivityFace(
-                    symbol: "xmark.circle.fill",
-                    bear: .paused, size: .low,
-                    kicker: StatusWord.error.text,
-                    meta: .symbol("xmark", .problem), lockMeta: ActivityFace.Meta.none,
-                    content: line ?? StatusWord.error.text,
-                    subtitle: runTime,
-                    bottom: .none,
-                    thumbnail: hasThumbnail ? .large : .none,
-                    compact: .text(StatusWord.error.text, .quiet))
-            }
             return ActivityFace(
                 symbol: "checkmark.circle.fill",
                 bear: .done, size: .low,

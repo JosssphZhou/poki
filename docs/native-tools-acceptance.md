@@ -1,18 +1,20 @@
 # Native iPhone tools: implementation and acceptance
 
-This change adds five groups of native iPhone abilities to the Poki app. Every ability is one
-implementation behind two catalog projections: the chat's model sees it as a `ToolSpec`, and MCP
-clients see the same spec as a `HostTool` from `NativeTools.hostTools()`. Native calls do not open an
-automation session and never read or act on the screen.
+This change adds four groups of native iPhone abilities to the Poki app. It deliberately leaves the
+fifth group of the source manual — the Lock Screen, Dynamic Island and task-notification changes —
+unapplied, because Poki already has a Live Activity for phone automation and it is kept as it was.
+Every ability is one implementation behind two catalog projections: the chat's model sees it as a
+`ToolSpec`, and MCP clients see the same spec as a `HostTool` from `NativeTools.hostTools()`. Native
+calls do not open an automation session and never read or act on the screen.
 
 ## What is implemented
 
 | Batch | Abilities | Main files |
 |---|---|---|
 | 1 | Steps (HealthKit), calendar read and create, reminders, HomeKit lights, contacts, Bluetooth LE scan, clipboard, read-aloud, AlarmKit alarm, battery | `native/ios-app/Poki/NativeTools/` |
-| 2 | Photo search by date, album, kind or place; original export (iCloud, Live Photo, RAW resources); save with optional album; add existing assets to an album; album list | `NativeTools/PhotoTools.swift`, `NativeFileStore` in `ToolSupport.swift` |
+| 2 | Photo search by date, album, kind or place; original export (iCloud, Live Photo, RAW resources); save with optional album; add existing assets to an album; album list | `NativeTools/PhotoTools.swift`, `NativeWorkspace` in `ToolSupport.swift` |
 | 3 | One-shot location with timeout/cancel and reverse geocoding; geocode; nearby POI search; routes with ETA and steps; WeatherKit current, daily and hourly forecast with Apple Weather attribution | `NativeTools/PlaceTools.swift` |
-| 4 | Task identity in the Live Activity, failed vs finished state, link back to the task's conversation, a native tool counted as a task step, per-task notification routing | `Shared/PokiActivityAttributes.swift`, `Poki/Activity/`, `Poki/App/AppModel.swift`, `Poki/App/PokiNotificationLink.swift` |
+| 4 | **Not applied:** Poki's existing Live Activity, Lock Screen, Dynamic Island and completion notifications are unchanged. The original batch-4 change was reverted; native tools do not enter the activity or reroute notification taps. | none |
 | 5 | Share Extension for web URLs, text, images, videos and files; App Group staging and atomic ready queue; in-app preview, Later, Remove and Send; path-contained import into the app workspace | `PokiShare/`, `Shared/ShareInbox.swift`, `Poki/App/SharedInboxStore.swift`, `Poki/App/SharedInboxView.swift` |
 
 ## Integration points
@@ -67,16 +69,15 @@ harness above is the same launch without it.
 - The built app embeds `PokiShare.appex`; its Info.plist declares
   `com.apple.share-services` with principal class `PokiShare.ShareViewController`.
 - The app launched to the chat screen on an iPhone 17e simulator.
-- Focused in-app tests (NativeTaskActivityTests, NativeToolsTests, ShareInboxTests): 18 passed,
-  1 skipped. The skipped PhotoLibraryTests test needs full photo access; the simulator showed the
+- Focused in-app tests after the revert (NativeToolsTests, ShareInboxTests): 14 passed, 1 skipped.
+  The skipped PhotoLibraryTests test needs full photo access; the simulator showed the
   limited/full-access prompt even after `simctl privacy grant photos`, so it is marked skipped rather
   than blocking the test host.
-- A full-suite run reached 481 passing tests and 11 failures before its 15-minute harness limit. Five
-  failures came from this change (native tools in the Split View list and the changed completion
-  notification id); those two were fixed after the run. The remaining failures were in Split View
-  preparation timings, Interface Size, Idle Return, Frontend setup state, Message Markdown and the
-  existing notification delivery tests. They were not re-run after the fixes; treat them as
-  incomplete until the suite is run on a fresh simulator whose setup and notification state match CI.
+- The earlier full-suite run (before the revert) reached 481 passing tests and 11 failures before its
+  15-minute harness limit. The Live Activity/notification failures and the Split View tool-list failure
+  were removed with the revert, but the full suite was not rerun afterwards. Treat the remaining
+  pre-existing failures as incomplete until the suite is run on a clean simulator whose setup and
+  notification state match CI.
 
 ## Commits on `dev/native-ios-capabilities`
 
@@ -85,9 +86,10 @@ harness above is the same launch without it.
 | `e06cfcc9` | Native tool registry, batch 1 tools and permissions |
 | `35ac9564` | Photo-library search, export, save and album workflows |
 | `58e564c4` | Location, Apple Maps and WeatherKit |
-| `2664e914` | Live Activity task identity, failure state and deep links |
+| `2664e914` | Live Activity task identity, failure state and deep links — **reverted**; not in the final tree |
 | `7f3b1522` | Share Extension, inbox, preview and task submission |
-| `1fb1c337`, `9eaefc1b` | Follow-up cleanups and Split View/notification compatibility |
+| `1fb1c337` | Follow-up whitespace cleanup |
+| Revert commit | Restores the original Live Activity, Lock Screen and notification behavior |
 
 ## Pending real-device checks
 
@@ -100,8 +102,8 @@ harness above is the same launch without it.
 - Location permission denial, reduced accuracy, timeout and cancellation on a physical iPhone.
 - The photo library with limited access, a Live Photo, a RAW asset, an iCloud-only original and a
   same-named album.
-- Lock Screen and Dynamic Island layout, notification permission denied, a cold launch from a
-  notification tap, and background completion.
+- Out of scope: the existing Live Activity, Lock Screen, Dynamic Island and completion notifications
+  are not changed; no new device check is needed for them.
 - The Share Extension from Safari, Photos, Files: multi-attachment order, file contents and names,
   kill-and-reopen before Send, and a shared web page → calendar event → read-back.
 - Signing: HealthKit, HomeKit and WeatherKit entitlements on the App ID and profile; the Share

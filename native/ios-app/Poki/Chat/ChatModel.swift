@@ -930,7 +930,7 @@ final class ChatModel {
         if isRetry { _ = taskCardIndex(create: true) }
         // Split View needs both apps before the first model tool runs.
         if splitViewSession != nil { app.prepareForTask() }
-        await app.chatTaskBegan(splitViewSession: splitViewSession, session: sessionID)
+        await app.chatTaskBegan(splitViewSession: splitViewSession)
         // find_app and the task's icons see the phone's current apps.
         InstalledApps.shared.refreshSoon()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
@@ -1137,18 +1137,7 @@ final class ChatModel {
             // A finished run on the Live Activity says what it came to: finish_task's summary when the
             // task succeeded, else the task itself. A failure's summary under Done would read as success.
             app.chatTaskEnded(reply: reply, session: sessionID, acted: toolCalls > 0, inSplitView: usesSplitView,
-                              result: taskResult.flatMap { $0.success ? $0.summary : nil }, task: taskText,
-                              localTask: localTask, failed: Self.taskFailed(outcome, result: taskResult))
-        }
-    }
-
-    /// A run that ended without doing what was asked. A user's Stop is not a failure; a stopped run
-    /// has its own Stopped face.
-    private static func taskFailed(_ outcome: PiLoop.Outcome, result: TaskResult?) -> Bool {
-        if let result { return !result.success }
-        switch outcome {
-        case .done, .waitingForReply, .stopped, .authorizationDeclined: return false
-        case .overTurns, .stuck, .failed: return true
+                              result: taskResult.flatMap { $0.success ? $0.summary : nil }, task: taskText, localTask: localTask)
         }
     }
 

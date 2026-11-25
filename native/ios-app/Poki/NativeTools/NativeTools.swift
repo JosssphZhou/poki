@@ -24,12 +24,8 @@ enum NativeTools {
     The iPhone's own abilities are tools too: health_steps, calendar_events and calendar_create_event, reminder_create and reminder_lists, home_set_light, contacts_find, bluetooth_scan, clipboard_read, read_aloud, alarm_set, battery_status, photos_find/export/save/add_to_album/albums, location_current, maps_geocode/maps_search/maps_route, and weather_forecast. Use them directly for the owner's requests about these things; they do not need Automation Mode and never touch the screen. Ask the owner before acting when a tool reports ambiguous; do not guess between matches. A read-only request should answer with the values the tool returned, not with values from memory. Weather answers include Apple Weather attribution; keep it in the reply.
     """
 
-    private(set) static weak var app: AppModel?
-    private(set) static weak var chat: ChatModel?
-
     static func install(app: AppModel, chat: ChatModel) {
-        self.app = app
-        self.chat = chat
+        _ = chat
         app.refreshHostTools()
     }
 
@@ -46,11 +42,7 @@ enum NativeTools {
     }
 
     static func perform(_ name: String, arguments: String, session: String? = nil) async -> PokiCore.ToolAnswer {
-        let answer = await dispatch(name, arguments: arguments, session: session)
-        // A native call runs inside the same ordinary task as a phone step: the Live Activity counts it
-        // and says what it is doing, including a task that never opened Automation Mode.
-        app?.nativeToolStep(summary: stepSummary(name, arguments: arguments), ok: !answer.isError, session: session)
-        return answer
+        await dispatch(name, arguments: arguments, session: session)
     }
 
     private static func dispatch(_ name: String, arguments: String, session: String?) async -> PokiCore.ToolAnswer {
@@ -79,41 +71,6 @@ enum NativeTools {
         case "weather_forecast": return await PlaceTools.weather(arguments)
         default:
             return NativeToolAnswer.invalid("unknown native tool \(name); nothing was done")
-        }
-    }
-
-    /// The Live Activity's one-line description of a native call, in the app's UI language.
-    static func stepSummary(_ name: String, arguments: String) -> String {
-        let args = ToolArgs(arguments)
-        switch name {
-        case "health_steps":
-            let range = args.string("range") ?? (args.date("start") == nil ? "week" : "range")
-            switch range {
-            case "today": return AppLocalization.text(LocalizedStringResource("Reading today's steps"))
-            case "week": return AppLocalization.text(LocalizedStringResource("Reading this week's steps"))
-            default: return AppLocalization.text(LocalizedStringResource("Reading steps"))
-            }
-        case "calendar_events": return AppLocalization.text(LocalizedStringResource("Reading the calendar"))
-        case "calendar_create_event": return AppLocalization.text(LocalizedStringResource("Adding a calendar event"))
-        case "reminder_create": return AppLocalization.text(LocalizedStringResource("Adding a reminder"))
-        case "home_set_light": return AppLocalization.text(LocalizedStringResource("Setting a light"))
-        case "contacts_find": return AppLocalization.text(LocalizedStringResource("Looking up a contact"))
-        case "bluetooth_scan": return AppLocalization.text(LocalizedStringResource("Scanning for Bluetooth devices"))
-        case "clipboard_read": return AppLocalization.text(LocalizedStringResource("Reading the clipboard"))
-        case "read_aloud": return AppLocalization.text(LocalizedStringResource("Reading it aloud"))
-        case "alarm_set": return AppLocalization.text(LocalizedStringResource("Setting an alarm"))
-        case "battery_status": return AppLocalization.text(LocalizedStringResource("Reading the battery"))
-        case "photos_find": return AppLocalization.text(LocalizedStringResource("Looking through the photo library"))
-        case "photos_export": return AppLocalization.text(LocalizedStringResource("Exporting photos"))
-        case "photos_save": return AppLocalization.text(LocalizedStringResource("Saving to the photo library"))
-        case "photos_add_to_album": return AppLocalization.text(LocalizedStringResource("Adding photos to an album"))
-        case "photos_albums": return AppLocalization.text(LocalizedStringResource("Listing photo albums"))
-        case "location_current": return AppLocalization.text(LocalizedStringResource("Finding this iPhone"))
-        case "maps_geocode": return AppLocalization.text(LocalizedStringResource("Looking up an address"))
-        case "maps_search": return AppLocalization.text(LocalizedStringResource("Searching nearby places"))
-        case "maps_route": return AppLocalization.text(LocalizedStringResource("Planning a route"))
-        case "weather_forecast": return AppLocalization.text(LocalizedStringResource("Reading the forecast"))
-        default: return AppLocalization.text(LocalizedStringResource("Using this iPhone"))
         }
     }
 }

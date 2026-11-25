@@ -2209,7 +2209,7 @@ final class AppModel {
     /// The chat's task began (Poki is in front): the Live Activity is there for it, with no old plan.
     /// The chat says when the task ends (chatTaskEnded), so until then a pause between steps, while the
     /// model thinks, never reads as the end of the run (ESP-954).
-    func chatTaskBegan(splitViewSession: String? = nil, session: String? = nil) async {
+    func chatTaskBegan(splitViewSession: String? = nil) async {
         log.add("session-timing", String(format: "task_submitted uptime=%.6f", ProcessInfo.processInfo.systemUptime))
         chatTaskActive = automationPath == .inProcess
         endLiveActivityTaskGeneration()
@@ -2235,8 +2235,6 @@ final class AppModel {
         if sessionOn {
             activity.update { state in
                 state.plan = nil
-                state.failed = nil
-                if let session { state.session = session }
                 guard state.approval == nil, state.handoff == nil, state.phase == .idle || state.phase.isRunOutcome else { return }
                 state.phase = .working
                 state.headline = "Thinking"
@@ -2268,7 +2266,7 @@ final class AppModel {
     }
 
     /// End the task, return to Poki and finish its Live Activity.
-    func chatTaskEnded(reply: String?, session: String, acted: Bool, inSplitView: Bool = false, result: String? = nil, task: String? = nil, localTask: String? = nil, failed: Bool = false) {
+    func chatTaskEnded(reply: String?, session: String, acted: Bool, inSplitView: Bool = false, result: String? = nil, task: String? = nil, localTask: String? = nil) {
         lastShot = nil
         guard acted else {
             if !inSplitView { finishTask(localTask: localTask) }
@@ -2280,12 +2278,11 @@ final class AppModel {
                 state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil
             }
             // The owner's own reply still reaches them when they are elsewhere (a task sent from a shortcut).
-            if !inFront, let reply, session == AskPoki.chat?.sessionID { postReply(reply, session: session) }
+            if !inFront, let reply, session == AskPoki.chat?.sessionID { postReply(reply) }
             return
         }
         // On a Dynamic Island the activity's own pop-up says the task is over: no banner on top of it.
-        activity.update { $0.session = session }
-        let islandTold = activity.finishNow(alert: true, result: result, task: task, failed: failed)
+        let islandTold = activity.finishNow(alert: true, result: result, task: task)
         if !inSplitView {
             finishTask(localTask: localTask) { [weak self] in
                 guard !islandTold else { return }
@@ -2297,7 +2294,7 @@ final class AppModel {
                     guard let self, UIApplication.shared.applicationState != .active else { return }
                     self.log.add("chat", "the task ended away from Poki: time-sensitive notification sent")
                     // The result stays in Poki: a reply can hold what the task just read on the screen.
-                    self.postReply(AppLocalization.text(LocalizedStringResource("The task has ended. Open Poki to see the result.")), timeSensitive: true, session: session)
+                    self.postReply(AppLocalization.text(LocalizedStringResource("The task has ended. Open Poki to see the result.")), timeSensitive: true)
                 }
             }
         }
@@ -2305,40 +2302,17 @@ final class AppModel {
 
     /// A reply that touched no phone, while Poki is not in front (Send Task to Poki from a shortcut): the
     /// notification is where the owner reads it. A tap opens Poki.
-    private func postReply(_ reply: String, timeSensitive: Bool = false, session: String? = nil) {
+    private func postReply(_ reply: String, timeSensitive: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = "Poki"
         content.body = reply
         content.sound = .default
-        if timeSensitive { content.interruptionLevel = .timeSensitive }
-        // A tap opens the conversation this task ran in, not whatever conversation is current later.
-        if let session {
-            content.userInfo = ["poki_link": "poki://session/\(session)"]
-        } else {
+        if timeSensitive {
+            content.interruptionLevel = .timeSensitive
             content.userInfo = ["poki_link": "poki://chat"]
         }
         content.threadIdentifier = "chat"
-        // One banner id keeps the existing completion-notification contract; the tap still carries
-        // the task's own conversation in userInfo.
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "poki-reply", content: content, trigger: nil))
-    }
-
-    /// A native tool ran inside a task. It updates the same Live Activity as a phone step, so the
-    /// Lock Screen and island show ordinary tasks that never opened Automation Mode.
-    func nativeToolStep(summary: String, ok: Bool, session: String?) {
-        guard !summary.isEmpty else { return }
-        if !activity.isRunning, inFront, UIApplication.shared.applicationState == .active {
-            activity.start(deviceName: deviceName)
-            activity.setChatOwnsCompletion(true)
-        }
-        activity.update { state in
-            if let session, SessionStore.shared.session(session) != nil { state.session = session }
-            guard state.approval == nil, state.handoff == nil else { return }
-            state.phase = .working
-            state.headline = summary
-            if state.since == nil { state.since = Date() }
-        }
-        activity.record(step: summary, ok: ok)
     }
 
     func saveTaskMemories(_ writes: [TaskMemoryWrite], conversation: String, task: String) -> [Int] {

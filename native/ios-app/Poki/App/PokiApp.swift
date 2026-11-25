@@ -483,7 +483,6 @@ struct RootView: View {
         sceneHasBeenActive = true
         scheduleWhatsNewIfDue()
         model.becameActive()
-        if let url = PokiNotificationLink.take() { open(link: url) }
         ShareInboxStore.shared.refresh()
         if !ShareInboxStore.shared.batches.isEmpty, !chat.running { sharedInboxOpen = true }
         HistoryCapture.shared.appDidBecomeActive()
