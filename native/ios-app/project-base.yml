@@ -52,7 +52,7 @@ targets:
         # English, Simplified Chinese and Traditional Chinese (Shared/Localizable.xcstrings, Poki/InfoPlist.xcstrings); Poki
         # follows the iPhone's language.
         CFBundleDevelopmentRegion: en
-        CFBundleLocalizations: [en, zh-Hans, zh-Hant]
+        CFBundleLocalizations: [en, zh-Hans, zh-Hant, vi]
         # The status bar follows the system appearance: dark text in Light Mode, white in Dark Mode.
         UIStatusBarStyle: UIStatusBarStyleDefault
         # Display links may run at the display's full rate (120 a second on ProMotion iPhones): the
@@ -183,7 +183,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         PokiAppGroup: $(POKI_APP_GROUP)
         CFBundleDevelopmentRegion: en
-        CFBundleLocalizations: [en, zh-Hans, zh-Hant]
+        CFBundleLocalizations: [en, zh-Hans, zh-Hant, vi]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
         UIAppFonts: [Geist-Regular.ttf, Geist-Medium.ttf, Geist-SemiBold.ttf, Geist-Bold.ttf, Geist-Black.ttf]

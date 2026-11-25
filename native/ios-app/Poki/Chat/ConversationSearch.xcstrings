@@ -14,6 +14,12 @@
             "state": "translated",
             "value": "搜尋所有訊息"
           }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tìm kiếm tất cả tin nhắn"
+          }
         }
       }
     },
@@ -29,6 +35,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "僅顯示前 150 筆結果。請縮小搜尋範圍以查看更多。"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang hiển thị 150 kết quả đầu tiên. Hãy thu hẹp tìm kiếm để xem thêm."
           }
         }
       }
@@ -46,6 +58,12 @@
             "state": "translated",
             "value": "你"
           }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bạn"
+          }
         }
       }
     },
@@ -61,6 +79,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "任務"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tác vụ"
           }
         }
       }
@@ -78,6 +102,12 @@
             "state": "translated",
             "value": "瀏覽器"
           }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trình duyệt"
+          }
         }
       }
     },
@@ -93,6 +123,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在搜尋訊息…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang tìm kiếm tin nhắn…"
           }
         }
       }

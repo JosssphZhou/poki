@@ -14,6 +14,12 @@
             "state" : "translated",
             "value" : "動作按鈕"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nút Tác vụ"
+          }
         }
       }
     },
@@ -29,6 +35,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打開 Poki 並開始說話。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở Poki và bắt đầu trò chuyện."
           }
         }
       }
@@ -46,6 +58,12 @@
             "state" : "translated",
             "value" : "打開 Poki 並開始說話。Poki 正在做任務時，顯示這個任務，任務繼續進行。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở Poki và bắt đầu trò chuyện. Nếu Poki đang thực hiện một tác vụ, nó sẽ hiển thị tác vụ đó và để tác vụ tiếp tục chạy."
+          }
         }
       }
     },
@@ -61,6 +79,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 沒能開始這個任務，原因在聊天裡。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki không thể bắt đầu tác vụ. Lý do có trong cuộc trò chuyện."
           }
         }
       }
@@ -78,6 +102,12 @@
             "state" : "translated",
             "value" : "Poki 還在忙，這個任務沒有開始。這裡是 Poki 正在做的事。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki vẫn đang bận nên tác vụ này chưa bắt đầu. Đây là việc Poki đang làm."
+          }
         }
       }
     },
@@ -93,6 +123,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 正在忙，請等目前的任務結束後再試。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đang bận. Hãy chờ tác vụ hiện tại hoàn tất rồi thử lại."
           }
         }
       }
@@ -110,6 +146,12 @@
             "state" : "translated",
             "value" : "請先在 Poki 的設定裡選擇模型，再回到分割顯示重試。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy chọn một mô hình trong phần cài đặt của Poki, rồi quay lại Split View và thử lại."
+          }
         }
       }
     },
@@ -125,6 +167,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 已開始這個任務。開啟 Poki 後它才能操作手機。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đã bắt đầu tác vụ. Hãy bật Poki để nó có thể thao tác trên điện thoại."
           }
         }
       }
@@ -142,6 +190,12 @@
             "state" : "translated",
             "value" : "Poki 在這台 iPhone 上開始做這個任務，做完後告訴你。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki bắt đầu tác vụ trên iPhone này và sẽ báo cho bạn khi hoàn tất."
+          }
         }
       }
     },
@@ -157,6 +211,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 還沒準備好，請稍後再試。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki chưa sẵn sàng. Hãy thử lại sau giây lát."
           }
         }
       }
@@ -174,6 +234,12 @@
             "state" : "translated",
             "value" : "按住動作按鈕，不離開目前的 App 就能和 Poki 說話，再按住一次就結束。想打開 Poki 在裡面說話，選「控制項目」，再選「和 Poki 說話」。想輸入任務，選「捷徑」，再選「傳送任務」。控制中心和鎖定畫面也可以放「和 Poki 說話」。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ nút Tác vụ để trò chuyện với Poki mà không cần rời khỏi ứng dụng bạn đang dùng. Nhấn giữ lần nữa để kết thúc cuộc trò chuyện. Để mở Poki và trò chuyện ở đó, hãy chọn Điều khiển, rồi chọn Trò chuyện với Poki. Để nhập một tác vụ, hãy chọn Phím tắt, rồi chọn Gửi tác vụ. Trung tâm điều khiển và Màn hình khóa cũng có thể chứa Trò chuyện với Poki."
+          }
         }
       }
     },
@@ -189,6 +255,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "把 ${task} 發給 Poki"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi ${task} tới Poki"
           }
         }
       }
@@ -206,6 +278,12 @@
             "state" : "translated",
             "value" : "發任務"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi tác vụ"
+          }
         }
       }
     },
@@ -221,6 +299,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "先開啟 Poki 並啟用裝置上的自動化，再以分割顯示開啟兩個 App，然後重新執行捷徑。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bật Poki với tự động hóa trên thiết bị, rồi mở hai ứng dụng trong Split View và chạy lại phím tắt."
           }
         }
       }
@@ -238,6 +322,12 @@
             "state" : "translated",
             "value" : "使用分割顯示"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dùng Split View"
+          }
         }
       }
     },
@@ -253,6 +343,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "給 Poki 發任務"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi tác vụ tới Poki"
           }
         }
       }
@@ -270,6 +366,12 @@
             "state" : "translated",
             "value" : "設定 › 動作按鈕 › 捷徑 › 隨時 Poki"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cài đặt › Nút Tác vụ › Phím tắt › Poki Anytime"
+          }
         }
       }
     },
@@ -285,6 +387,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "和 Poki 說話"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trò chuyện với Poki"
           }
         }
       }
@@ -302,6 +410,12 @@
             "state" : "translated",
             "value" : "任務"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tác vụ"
+          }
         }
       }
     },
@@ -317,6 +431,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要 Poki 做什麼？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki nên làm gì?"
           }
         }
       }
@@ -334,6 +454,12 @@
             "state" : "translated",
             "value" : "隨時 Poki"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki Anytime"
+          }
         }
       }
     },
@@ -349,6 +475,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不離開目前的 App，直接和 Poki 說話。Poki 能看到這個 App，也能在裡面操作。再執行一次可結束對話；若語音沒連上或接通後斷線且仍有未確認錄音，再執行一次會把它轉成文字送出。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bắt đầu trò chuyện với Poki mà không cần rời khỏi ứng dụng bạn đang dùng. Poki có thể xem ứng dụng đó và thao tác trong đó. Chạy lại để kết thúc cuộc trò chuyện, hoặc để gửi lời nói mở đầu chưa xác nhận dưới dạng văn bản nếu giọng nói không kết nối được hoặc bị ngắt kết nối."
           }
         }
       }
@@ -366,6 +498,12 @@
             "state" : "translated",
             "value" : "Poki 沒能在鎖定畫面上顯示對話，所以打開 Poki 來說話。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki không thể hiển thị cuộc trò chuyện trên Màn hình khóa nên sẽ mở Poki để trò chuyện."
+          }
         }
       }
     },
@@ -381,6 +519,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先完成 Poki 的設定。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy hoàn tất thiết lập Poki trước."
           }
         }
       }
@@ -398,6 +542,12 @@
             "state" : "translated",
             "value" : "請先設定 Poki 的語音。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy thiết lập giọng nói của Poki trước."
+          }
         }
       }
     },
@@ -413,6 +563,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 正在做任務，這是它在做的事。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đang thực hiện một tác vụ. Đây là tác vụ đó."
           }
         }
       }
@@ -430,6 +586,12 @@
             "state" : "translated",
             "value" : "剛才那段錄音沒有送出去。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bản ghi mở đầu đã không gửi được."
+          }
         }
       }
     },
@@ -445,6 +607,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "語音沒連上，我會按文字任務處理。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giọng nói không kết nối được. Tôi sẽ xử lý việc này dưới dạng văn bản."
           }
         }
       }
@@ -462,6 +630,12 @@
             "state" : "translated",
             "value" : "打開 Poki 授權本機聽寫，以便語音接不通時把錄音轉成文字。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở Poki để cho phép nhận dạng giọng nói trên thiết bị, dùng khi giọng nói không kết nối được."
+          }
         }
       }
     },
@@ -477,6 +651,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "語音沒連上，也沒辦法轉成文字。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giọng nói không kết nối được, và tôi không thể chuyển bản ghi thành văn bản."
           }
         }
       }
@@ -494,6 +674,12 @@
             "state" : "translated",
             "value" : "Poki 已開始處理後連線中斷，未重複送出前半句。請確認後半句是否已收到。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối bị mất sau khi Poki đã bắt đầu xử lý. Không có gì được gửi lại. Hãy kiểm tra xem phần còn lại của điều bạn nói đã được gửi đi chưa."
+          }
         }
       }
     },
@@ -509,6 +695,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 已開始處理後連線中斷，僅將確定未送出的尾段轉成文字送出。請確認剛才那部分是否已執行，避免重複操作。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối bị mất sau khi Poki đã bắt đầu xử lý. Chỉ phần cuối chưa gửi mới được gửi dưới dạng văn bản. Hãy kiểm tra xem phần trước đó đã được xử lý chưa."
           }
         }
       }
@@ -526,6 +718,12 @@
             "state" : "translated",
             "value" : "Poki 沒能在背景取得麥克風，所以打開 Poki 來說話。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki không thể thu âm qua micrô ở chế độ nền nên sẽ mở Poki để trò chuyện."
+          }
         }
       }
     },
@@ -542,6 +740,12 @@
             "state" : "translated",
             "value" : "Poki 沒能在背景取得麥克風，請打開 Poki 來說話。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki không thể thu âm qua micrô ở chế độ nền. Hãy mở Poki để trò chuyện."
+          }
         }
       }
     },
@@ -557,6 +761,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先允許 Poki 使用麥克風。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy cho phép Poki sử dụng micrô trước."
           }
         }
       }

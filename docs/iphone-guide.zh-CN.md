@@ -1,6 +1,6 @@
 # Poki iPhone 使用指南
 
-[English](iphone-guide.md) | 简体中文 | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | [한국어](iphone-guide.ko.md) | [Español](iphone-guide.es.md)
+[English](iphone-guide.md) | 简体中文 | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | [한국어](iphone-guide.ko.md) | [Español](iphone-guide.es.md) | [Tiếng Việt](iphone-guide.vi.md)
 
 本指南涵盖 Poki iPhone 应用的完整环境要求、安装细节、更新方法、常见问题、已知限制和任务示例。
 
