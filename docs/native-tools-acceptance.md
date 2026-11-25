@@ -60,6 +60,35 @@ xcodebuild -quiet build-for-testing -project native/ios-app/Poki.xcodeproj \
 The repository's `scripts/app-tests.sh` uses `timeout`, which is not installed on this Mac; the
 harness above is the same launch without it.
 
+## Local verification results (2026-11-25)
+
+- Simulator Debug build (`generic/platform=iOS Simulator`, arm64, Xcode 26.6 / iOS 26.5 SDK):
+  **BUILD SUCCEEDED**.
+- The built app embeds `PokiShare.appex`; its Info.plist declares
+  `com.apple.share-services` with principal class `PokiShare.ShareViewController`.
+- The app launched to the chat screen on an iPhone 17e simulator.
+- Focused in-app tests (NativeTaskActivityTests, NativeToolsTests, ShareInboxTests): 18 passed,
+  1 skipped. The skipped PhotoLibraryTests test needs full photo access; the simulator showed the
+  limited/full-access prompt even after `simctl privacy grant photos`, so it is marked skipped rather
+  than blocking the test host.
+- A full-suite run reached 481 passing tests and 11 failures before its 15-minute harness limit. Five
+  failures came from this change (native tools in the Split View list and the changed completion
+  notification id); those two were fixed after the run. The remaining failures were in Split View
+  preparation timings, Interface Size, Idle Return, Frontend setup state, Message Markdown and the
+  existing notification delivery tests. They were not re-run after the fixes; treat them as
+  incomplete until the suite is run on a fresh simulator whose setup and notification state match CI.
+
+## Commits on `dev/native-ios-capabilities`
+
+| Commit | Contents |
+|---|---|
+| `e06cfcc9` | Native tool registry, batch 1 tools and permissions |
+| `35ac9564` | Photo-library search, export, save and album workflows |
+| `58e564c4` | Location, Apple Maps and WeatherKit |
+| `2664e914` | Live Activity task identity, failure state and deep links |
+| `7f3b1522` | Share Extension, inbox, preview and task submission |
+| `1fb1c337`, `9eaefc1b` | Follow-up cleanups and Split View/notification compatibility |
+
 ## Pending real-device checks
 
 - HealthKit steps with real data and limited read access.
