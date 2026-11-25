@@ -150,4 +150,3 @@ private final class HomeService: NSObject, HMHomeManagerDelegate {
         return manager.homes
     }
 }
-
