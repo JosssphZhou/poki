@@ -346,7 +346,7 @@ struct TextChatFeature: View {
                         }
                     }
                 }
-                if provider != .chatgpt {
+                if lists {
                     Button(loading ? "Reading the Model List…" : "Refresh Model List") { refresh() }.disabled(loading)
                 }
             } header: {
@@ -363,10 +363,15 @@ struct TextChatFeature: View {
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
         .task {
+            // A list that is missing or a day old is read again, so the provider's new models show up.
             let empty = custom.map { ModelCatalog.listedCustom($0).isEmpty } ?? ModelCatalog.listed(provider).isEmpty
-            if empty, provider != .chatgpt { refresh() }
+            let list = custom.map(ModelCatalog.ModelList.custom) ?? .provider(provider)
+            if lists, empty || ModelCatalog.isStale(list) && !ModelCatalog.isBackingOff(list) { refresh() }
         }
     }
+
+    /// A ChatGPT sign-in has a model list only through Codex.
+    private var lists: Bool { provider != .chatgpt || ModelCatalog.listable().contains(.chatgpt) }
 
     private var accountName: String { custom.flatMap { CustomProviders.provider($0) }?.displayName ?? provider.name }
 
@@ -638,6 +643,12 @@ struct KeyEntry: View {
                 try ModelKeys.saveCustom(address: url, model: modelID, typedKey: key)
                 discovery.reset()
             } else if !key.isEmpty { try ModelKeys.save(key, for: provider) }
+            // A new key or address is read at once, not after the old one's wait.
+            if provider == .custom {
+                if let saved = CustomProviders.current() { ModelCatalog.clearFailures(.custom(saved.id)) }
+            } else {
+                ModelCatalog.clearFailures(provider)
+            }
             // A new key picks its provider; the model page's picker switches between providers with keys.
             if provider.wired, !key.isEmpty, provider != .custom {
                 // Ready at once: chat on this account's first fast model, live voice on where it can.
