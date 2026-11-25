@@ -72,16 +72,20 @@ final class AppIconStore {
 
     /// Fetches the App Store's icon for `app` when nothing nearer has one, and keeps it. Returns when it
     /// has arrived or failed.
-    func load(_ app: String) async {
+    func load(_ app: String, lookup: (String) async -> AppStoreLookup.Answer = AppStoreLookup.icon) async {
         followDirectory()
         guard let key = Self.key(app), memory[key] == nil, !unknown.contains(key), let id = Self.bundleID(app),
               !fetching.contains(id), !DiskCache.missedRecently(id) else { return }
+        let lookupDirectory = directory
         fetching.insert(id)
         defer { fetching.remove(id) }
-        switch await AppStoreLookup.icon(id) {
+        switch await lookup(id) {
         case .found(let image):
             DiskCache.write(image, id)
-            memory[key] = image
+            // A refresh may have reassigned this name or made an installed icon available.
+            if DynamicApps.version == lookupDirectory {
+                memory[key] = image
+            }
             announce()
         case .absent:
             DiskCache.missed(id)
@@ -325,7 +329,7 @@ private enum DiskCache {
 }
 
 /// The App Store's public lookup (iTunes Search API) by bundle ID, in the store of the phone's region.
-private enum AppStoreLookup {
+enum AppStoreLookup {
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 6
