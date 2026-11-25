@@ -127,6 +127,7 @@ targets:
         com.apple.developer.weatherkit: true
     dependencies:
       - target: PokiWidgets
+      - target: PokiShare
       - package: PokiCore
       - package: WebRTC
       - package: PiSwift
@@ -183,6 +184,38 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).uitests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Poki
+  PokiShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PokiShare
+      - path: Shared/ShareInbox.swift
+    info:
+      path: PokiShare/Info.plist
+      properties:
+        CFBundleDisplayName: Poki
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        PokiAppGroup: $(POKI_APP_GROUP)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsImageWithMaxCount: 6
+              NSExtensionActivationSupportsMovieWithMaxCount: 3
+              NSExtensionActivationSupportsFileWithMaxCount: 6
+    entitlements:
+      path: PokiShare/PokiShare.entitlements
+      properties:
+        com.apple.security.application-groups: [$(POKI_APP_GROUP)]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(POKI_BUNDLE_ID).share
+        APPLICATION_EXTENSION_API_ONLY: YES
   PokiWidgets:
     type: app-extension
     platform: iOS
@@ -215,6 +248,7 @@ schemes:
       targets:
         Poki: all
         PokiWidgets: all
+        PokiShare: all
         PokiTests: [test]
         PokiUITests: [test]
     run:

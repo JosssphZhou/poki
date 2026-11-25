@@ -64,6 +64,7 @@ struct PokiApp: App {
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
         AskPoki.install(app: model, chat: chat)
+        NativeTools.install(app: model, chat: chat)
     }
 
     var body: some Scene {
@@ -123,6 +124,7 @@ struct RootView: View {
     @State private var threadsOpen = false
     @State private var detailsOpen = false
     @State private var signingInForVoice = false
+    @State private var sharedInboxOpen = false
     @State private var resumeVoiceAfterSignIn = false
     @State private var detailsPath = NavigationPath()
     @State private var searchNavigation = ConversationSearchNavigation()
@@ -279,6 +281,7 @@ struct RootView: View {
             .sheet(isPresented: Binding(get: { detailsOpen && showsSidebar }, set: { detailsOpen = $0 })) {
                 profilePage.presentationSizing(.page).presentationDragIndicator(.visible)
             }
+            .modifier(SharedInboxSheet(isPresented: $sharedInboxOpen))
             .sheet(isPresented: $signingInForVoice, onDismiss: {
                 if resumeVoiceAfterSignIn {
                     resumeVoiceAfterSignIn = false
@@ -412,19 +415,10 @@ struct RootView: View {
         }
         .modifier(AutomationNotices(enabled: !detailsOpen))
         .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active {
-                sceneHasBeenActive = true
-                scheduleWhatsNewIfDue()
-                model.becameActive()
-                HistoryCapture.shared.appDidBecomeActive()
-                AskPoki.refresh()
-                // New models a provider adds show up without a Poki release (lists a day old are read again).
-                Task { await ModelCatalog.refreshStale() }
-                model.startSigner()
-                model.signer.maintain()
-                Task { await model.verifyPairing() }
-            } else if phase == .background {
-                model.wentToBackground()
+            switch phase {
+            case .active: sceneActivated()
+            case .background: model.wentToBackground()
+            default: break
             }
         }
         // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): `poki://activity`
@@ -432,30 +426,9 @@ struct RootView: View {
         // step, or the Activity Log for a problem, and `poki://voice` brings the chat to the front.
         .onOpenURL { url in open(link: url) }
         // On the window, not the view: sheets and full-screen covers take it too, and Automatic hands back to iOS.
-        .onChange(of: appearance, initial: true) { _, value in
-            let style = (Appearance(rawValue: value) ?? .automatic).style
-            for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-                for window in scene.windows where window.overrideUserInterfaceStyle != style {
-                    window.overrideUserInterfaceStyle = style
-                }
-            }
-        }
-        .task(id: interfaceSize) {
-            // Apply outside the current layout pass. Coalesce events within roughly one frame,
-            // while the preview and the rest of the window inherit the same native category.
-            try? await Task.sleep(for: .milliseconds(16))
-            guard !Task.isCancelled else { return }
-            for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-                for window in scene.windows { AppInterfaceSize.apply(interfaceSize, to: window) }
-            }
-        }
-        .task(id: typeSize) {
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
-                for window in scene.windows { AppInterfaceSize.updateNavigationFonts(in: window) }
-            }
-        }
+        .onChange(of: appearance, initial: true) { _, value in applyAppearance(value) }
+        .task(id: interfaceSize) { await applyInterfaceSize() }
+        .task(id: typeSize) { await applyTypeSize() }
         .onAppear {
             openLaunchScreen()
             #if DEBUG
@@ -467,15 +440,59 @@ struct RootView: View {
         .onChange(of: SessionStore.shared.removed) { _, removed in
             if let removed { leave(removed.id) }
         }
-        .task {
-            #if DEBUG
-            // Development builds: `-pokiVoiceLink "poki://voice?…"` at launch starts a silent test run.
-            if let link = UserDefaults.standard.string(forKey: "pokiVoiceLink"), let url = URL(string: link), url.host() == "voice" {
-                show(.chat)
-                model.voice.openAtLaunch(url)
-            }
-            #endif
+        .task { runLaunchVoiceLinkIfAsked() }
+    }
+
+    /// Applies the chosen text size after the current layout pass, coalescing events within a frame.
+    private func applyInterfaceSize() async {
+        try? await Task.sleep(for: .milliseconds(16))
+        guard !Task.isCancelled else { return }
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows { AppInterfaceSize.apply(interfaceSize, to: window) }
         }
+    }
+
+    /// Rebuilds the navigation fonts for the chosen interface size.
+    private func applyTypeSize() async {
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows { AppInterfaceSize.updateNavigationFonts(in: window) }
+        }
+    }
+
+    private func applyAppearance(_ value: String) {
+        let style = (Appearance(rawValue: value) ?? .automatic).style
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows where window.overrideUserInterfaceStyle != style {
+                window.overrideUserInterfaceStyle = style
+            }
+        }
+    }
+
+    private func runLaunchVoiceLinkIfAsked() {
+        #if DEBUG
+        if let link = UserDefaults.standard.string(forKey: "pokiVoiceLink"), let url = URL(string: link), url.host() == "voice" {
+            show(.chat)
+            model.voice.openAtLaunch(url)
+        }
+        #endif
+    }
+
+    private func sceneActivated() {
+        sceneHasBeenActive = true
+        scheduleWhatsNewIfDue()
+        model.becameActive()
+        if let url = PokiNotificationLink.take() { open(link: url) }
+        ShareInboxStore.shared.refresh()
+        if !ShareInboxStore.shared.batches.isEmpty, !chat.running { sharedInboxOpen = true }
+        HistoryCapture.shared.appDidBecomeActive()
+        AskPoki.refresh()
+        // New models a provider adds show up without a Poki release (lists a day old are read again).
+        Task { await ModelCatalog.refreshStale() }
+        model.startSigner()
+        model.signer.maintain()
+        Task { await model.verifyPairing() }
     }
 
     private func open(link url: URL) {
@@ -741,5 +758,17 @@ struct ConversationSearchNavigation {
 
     func revealedEntry(in sessionID: String) -> UUID? {
         selected?.sessionID == sessionID ? selected?.entryID : nil
+    }
+}
+
+
+/// Presents the shared-items preview without adding another modifier chain to RootView's large body.
+private struct SharedInboxSheet: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
+            SharedInboxView()
+        }
     }
 }
