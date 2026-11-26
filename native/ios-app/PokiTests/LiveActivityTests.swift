@@ -128,6 +128,29 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(activity.state.hasThumbnail, "a step without a fresh screenshot clears the thumbnail")
     }
 
+    func testQuestionPhaseSetsStaleDateAndReachesStaleFace() throws {
+        let activity = ActivityController()
+        let before = Date.now
+        activity.update {
+            $0.phase = .question
+            $0.question = .init(id: "q-stale", text: "A train ticket, or a flight?", since: before)
+        }
+        let after = Date.now
+
+        let content = try XCTUnwrap(activity.content())
+        XCTAssertEqual(content.state.phase, .question)
+        let staleDate = try XCTUnwrap(content.staleDate, "question phase must set a staleDate so a killed or suspended app goes stale")
+        let delay = staleDate.timeIntervalSince(before)
+        XCTAssertGreaterThanOrEqual(delay, 600, "question staleDate should not expire sooner than working phase")
+        XCTAssertLessThanOrEqual(staleDate.timeIntervalSince(after), 3_600, "question staleDate should be bounded")
+
+        let staleFace = content.state.face(stale: true)
+        XCTAssertTrue(staleFace.stale)
+        XCTAssertEqual(staleFace.event, "Not updating")
+        XCTAssertEqual(staleFace.meta, .none)
+        XCTAssertEqual(staleFace.bottom, .none)
+    }
+
     private var language = AppLocalization.system
 
     override func setUp() async throws {

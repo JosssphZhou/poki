@@ -2711,6 +2711,12 @@ final class ChatHarnessTests: XCTestCase {
         ])
         let chat = chat(on: server, kind: .poki)
         chat.newConversation()
+        defer {
+            if chat.running { chat.stop() }
+            app?.stopSession()
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
 
         chat.send("Find Saturday’s concert tickets on Damai")
         try await until(10) { chat.waitingQuestion != nil }
@@ -2752,6 +2758,12 @@ final class ChatHarnessTests: XCTestCase {
         ])
         let chat = chat(on: server, kind: .poki)
         chat.newConversation()
+        defer {
+            if chat.running { chat.stop() }
+            app?.stopSession()
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
 
         chat.send("Book a ticket to Shanghai for tomorrow")
         try await until(10) { chat.waitingQuestion != nil }
@@ -2762,6 +2774,549 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertNil(chat.waitingQuestion)
         XCTAssertTrue(chat.entries.contains { if case .question(let q) = $0.kind { q.state == .stopped } else { false } })
         XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } })
+    }
+
+    private static func userMessages(_ request: [String: Any]) -> [String] {
+        let messages = request["messages"] as? [[String: Any]] ?? []
+        return messages.compactMap { msg -> String? in
+            guard (msg["role"] as? String) == "user" else { return nil }
+            if let text = msg["content"] as? String { return text }
+            if let parts = msg["content"] as? [[String: Any]] {
+                return parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
+            }
+            return nil
+        }
+    }
+
+    /// Resuming an unanswered question must never promote the model's question text into the owner's
+    /// message, `taskRequest`, or app targeting (`bundleIDs` / `TaskApps`).
+    func testResumedQuestionAnswerDoesNotPromoteQuestionTextOrUnselectedAppsIntoTaskRequest() async throws {
+        let questionText = "Meituan Waimai, Ele.me and JD can all deliver it. Which one?"
+        let question = ChatQuestion(
+            id: "q-resumed-apps",
+            text: questionText,
+            options: [
+                .init(label: "Meituan Waimai", app: "com.meituan.itakeaway"),
+                .init(label: "Ele.me", app: "me.ele.ios.eleme"),
+                .init(label: "JD Takeaway", app: "com.360buy.jdmobile"),
+            ],
+            suggested: true,
+            other: true,
+            state: .asking
+        )
+
+        for picked in [true, false] {
+            let session = FakeAutomation()
+            _ = session.prepare()
+            let server = try FakeCompletions(replies: [
+                FakeCompletions.tool("do", ["actions": [["launch": "me.ele.ios.eleme"]]]),
+                FakeCompletions.tool("do", ["actions": [["launch": "com.360buy.jdmobile"]]]),
+                FakeCompletions.tool("finish_task", ["success": true, "summary": "Ordered on Ele.me.", "details": [], "answer": ["kind": "action"]]),
+                FakeCompletions.text("Ordered on Ele.me."),
+            ])
+            let chat = chat(on: server, transport: SessionScreenTransport(session: session), kind: .poki)
+            defer {
+                if chat.running { chat.stop() }
+                QuestionNotice.cancel()
+                SessionStore.shared.delete(chat.sessionID)
+            }
+
+            let saved = SavedSession(
+                id: UUID().uuidString.lowercased(),
+                kind: .poki,
+                client: nil,
+                title: "Order my usual beef noodles",
+                started: Date(),
+                updated: Date(),
+                live: false,
+                outcome: .interrupted,
+                entries: [
+                    ChatEntry(.you("Order my usual beef noodles", delivered: true)),
+                    ChatEntry(.question(question)),
+                ],
+                calls: []
+            )
+            chat.restore(saved)
+
+            var recordedTask: String?
+            ChatModel.afterTask = { recordedTask = $0.task }
+
+            let ownerAnswer = picked ? "Ele.me" : "Use Ele.me"
+            chat.answer(ownerAnswer, picked: picked)
+            try await until(10) { !chat.running }
+            ChatModel.afterTask = nil
+
+            let taskText = try XCTUnwrap(recordedTask, "resumed answer should finish a task")
+            XCTAssertFalse(taskText.contains(questionText), "model question text must not become taskRequest: \(taskText)")
+            XCTAssertFalse(taskText.contains("You asked:"), "taskRequest must not include model question header: \(taskText)")
+            let namedApps = AppIconStore.bundleIDs(namedIn: taskText)
+            XCTAssertEqual(namedApps, ["me.ele.ios.eleme"], "unselected apps from question text must not pollute bundleIDs(namedIn:)")
+            XCTAssertEqual(chat.taskApp, "me.ele.ios.eleme", "unselected JD in question text must not hijack TaskApps targeting")
+
+            let firstRequest = try XCTUnwrap(server.requests.first)
+            let userTexts = Self.userMessages(firstRequest).joined(separator: "\n")
+            XCTAssertFalse(userTexts.contains("You asked:"), "user-role message must not promote model question text: \(userTexts)")
+            XCTAssertFalse(userTexts.contains(questionText), "user-role message must not contain model question text: \(userTexts)")
+            XCTAssertTrue(userTexts.contains("Order my usual beef noodles"), userTexts)
+            XCTAssertTrue(userTexts.contains(ownerAnswer), userTexts)
+            XCTAssertTrue(userTexts.contains("not an approval"), userTexts)
+
+            let system = FakeCompletions.system(firstRequest)
+            XCTAssertTrue(system.contains(questionText), "earlier question should remain available as attributed system context")
+            XCTAssertTrue(system.lowercased().contains("assistant"), "earlier question must be attributed to the assistant, not the owner")
+        }
+    }
+
+    /// `ask_user` must forbid passwords, passcodes, verification codes, card numbers, and account
+    /// credentials both in its tool contract and at the client execution boundary, while allowing
+    /// ordinary non-sensitive choices.
+    func testAskUserRefusesPasswordAndVerificationCodePromptsInEnglishAndChinese() async throws {
+        let sensitiveQuestions = [
+            "Type the 6-digit code you just got",
+            "Enter your Apple ID password to continue",
+            "What is your credit card number?",
+            "Enter the OTP sent by SMS",
+            "请输入你刚收到的6位验证码",
+            "请输入支付密码",
+            "请填写银行卡号",
+            "請輸入簡訊驗證碼",
+        ]
+        var replies = sensitiveQuestions.map { prompt in
+            FakeCompletions.tool("ask_user", [
+                "question": prompt,
+                "options": [["label": "Skip"], ["label": "Cancel"]],
+                "allow_other": true,
+            ])
+        }
+        replies.append(FakeCompletions.tool("ask_user", [
+            "question": "Apply the promo code or skip it?",
+            "options": [["label": "Apply promo code"], ["label": "Skip"]],
+            "allow_other": true,
+        ]))
+        replies.append(FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]]))
+        replies.append(FakeCompletions.text("Done."))
+
+        let server = try FakeCompletions(replies: replies)
+        let chat = chat(on: server, kind: .poki)
+        chat.newConversation()
+        defer {
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
+
+        chat.send("Sign in and finish checkout")
+        try await until(10) { chat.waitingQuestion != nil || !chat.running }
+
+        let firstRequest = try XCTUnwrap(server.requests.first)
+        let description = try XCTUnwrap(Self.toolDescription("ask_user", in: firstRequest))
+        XCTAssertTrue(description.lowercased().contains("password"), description)
+        XCTAssertTrue(description.lowercased().contains("verification code"), description)
+        XCTAssertTrue(description.lowercased().contains("handoff"), description)
+
+        let waiting = try XCTUnwrap(chat.waitingQuestion, "benign promo-code question should still be allowed after sensitive calls are refused")
+        XCTAssertEqual(waiting.text, "Apply the promo code or skip it?", "sensitive prompt should have been refused instead of waiting: \(waiting.text)")
+
+        let refusedCalls = chat.savedCalls.filter { $0.name == "ask_user" }
+        XCTAssertEqual(refusedCalls.count, sensitiveQuestions.count, "every sensitive ask_user call must be refused before reaching the UI")
+        for call in refusedCalls {
+            XCTAssertFalse(call.ok, "sensitive ask_user must return an error: \(call.arguments)")
+            XCTAssertTrue(call.answer.lowercased().contains("handoff"), "refusal should direct the model to handoff: \(call.answer)")
+        }
+        for prompt in sensitiveQuestions {
+            XCTAssertFalse(chat.entries.contains {
+                if case .question(let q) = $0.kind { return q.text == prompt }
+                return false
+            }, "refused secret prompt must never appear in chat history: \(prompt)")
+        }
+
+        chat.answer("Skip", picked: true)
+        try await until(10) { !chat.running }
+    }
+
+    /// Loading saved sessions after relaunch must expire any `.asking` questions, clear `SessionsView`
+    /// waiting indicators (`needsYou`), and leave no orphan tappable buttons in `ChatTranscript`.
+    func testRelaunchExpiresStaleAskingQuestionsAndClearsSessionsWaitingState() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("poki-relaunch-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "poki-relaunch-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let liveQuestion = ChatQuestion(
+            id: "q-live-relaunch",
+            text: "Damai isn’t installed. Search on the web, or install it first?",
+            options: [.init(label: "Search on the web"), .init(label: "Install it first")],
+            suggested: true,
+            other: true,
+            state: .asking
+        )
+        let idleQuestion = ChatQuestion(
+            id: "q-idle-relaunch",
+            text: "A train ticket, or a flight?",
+            options: [.init(label: "Train ticket"), .init(label: "Flight")],
+            suggested: false,
+            other: true,
+            state: .asking
+        )
+        let liveSession = SavedSession(
+            id: "relaunch-live-asking",
+            kind: .poki,
+            client: nil,
+            title: "Find concert tickets",
+            started: Date().addingTimeInterval(-60),
+            updated: Date(),
+            live: true,
+            outcome: nil,
+            entries: [ChatEntry(.you("Find concert tickets", delivered: true)), ChatEntry(.question(liveQuestion))],
+            calls: []
+        )
+        let idleSession = SavedSession(
+            id: "relaunch-idle-asking",
+            kind: .poki,
+            client: nil,
+            title: "Book a ticket",
+            started: Date().addingTimeInterval(-120),
+            updated: Date().addingTimeInterval(-30),
+            live: false,
+            outcome: .stopped,
+            entries: [ChatEntry(.you("Book a ticket", delivered: true)), ChatEntry(.question(idleQuestion))],
+            calls: []
+        )
+        XCTAssertTrue(liveSession.needsYou, "precondition: a live session with an asking question shows as waiting")
+
+        let encoder = JSONEncoder()
+        try encoder.encode(liveSession).write(to: folder.appendingPathComponent("\(liveSession.id).json"))
+        try encoder.encode(idleSession).write(to: folder.appendingPathComponent("\(idleSession.id).json"))
+
+        let reloaded = SessionStore(folder: folder, defaults: defaults)
+        let afterLive = try XCTUnwrap(reloaded.session(liveSession.id))
+        let afterIdle = try XCTUnwrap(reloaded.session(idleSession.id))
+
+        XCTAssertFalse(afterLive.live)
+        XCTAssertEqual(afterLive.outcome, .interrupted)
+        XCTAssertFalse(afterLive.needsYou, "SessionsView must not stay in waiting state after relaunch")
+        XCTAssertTrue(afterLive.entries.contains {
+            if case .question(let q) = $0.kind { return q.id == liveQuestion.id && q.state == .stopped }
+            return false
+        }, "relaunch must expire live asking questions")
+
+        XCTAssertFalse(afterIdle.needsYou)
+        XCTAssertTrue(afterIdle.entries.contains {
+            if case .question(let q) = $0.kind { return q.id == idleQuestion.id && q.state == .stopped }
+            return false
+        }, "relaunch must also expire stale asking questions in non-live saved sessions")
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
+        covered.forEach { $0.accessibilityElementsHidden = true }
+        let window = UIWindow(windowScene: scene)
+        defer {
+            window.isHidden = true
+            covered.forEach { $0.accessibilityElementsHidden = false }
+        }
+        window.rootViewController = UIHostingController(rootView: ChatTranscript(entries: afterLive.entries, live: false, waitingQuestion: nil) { EmptyView() })
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        CATransaction.flush()
+        let source = await Task.detached {
+            var code: NSString?
+            return PKInProcess.shared().sourceXML(nil, code: &code) ?? ""
+        }.value
+        XCTAssertTrue(source.contains("Damai"), source)
+        XCTAssertFalse(source.contains("Install it first"), "expired relaunch question must not show tappable option buttons")
+        XCTAssertFalse(source.contains("Other answer"), "expired relaunch question must not show Other answer")
+    }
+
+    /// Starting a new request (`answer == nil`) when an `.asking` question exists must expire every
+    /// pending question, update `SavedSession`, and `ChatTranscript` must not keep buttons open without
+    /// a live `waitingQuestion`.
+    func testSendingANewRequestExpiresAnyStaleAskingQuestion() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("poki-newreq-\(UUID().uuidString)", isDirectory: true)
+        let suiteName = "poki-newreq-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.set(true, forKey: SessionStore.archivedEarlierKey)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let store = SessionStore(folder: folder, defaults: defaults)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Sunny, 24C.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Sunny, 24C."),
+        ])
+        let chat = chat(on: server, kind: .poki, store: store)
+        defer {
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+        }
+
+        let staleQuestion = ChatQuestion(
+            id: "q-stale-newreq",
+            text: "Damai isn’t installed. Search on the web, or install it first?",
+            options: [.init(label: "Search on the web"), .init(label: "Install it first")],
+            suggested: true,
+            other: true,
+            state: .asking
+        )
+        let saved = SavedSession(
+            id: "stale-newreq-session",
+            kind: .poki,
+            client: nil,
+            title: "Find concert tickets",
+            started: Date(),
+            updated: Date(),
+            live: false,
+            outcome: .interrupted,
+            entries: [ChatEntry(.you("Find concert tickets", delivered: true)), ChatEntry(.question(staleQuestion))],
+            calls: []
+        )
+
+        // Even before a new message is sent, ChatTranscript without waitingQuestion must not expose orphan option buttons.
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
+        covered.forEach { $0.accessibilityElementsHidden = true }
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(rootView: ChatTranscript(entries: saved.entries, live: false, waitingQuestion: nil) { EmptyView() })
+        window.makeKeyAndVisible()
+        window.layoutIfNeeded()
+        CATransaction.flush()
+        let staleSource = await Task.detached {
+            var code: NSString?
+            return PKInProcess.shared().sourceXML(nil, code: &code) ?? ""
+        }.value
+        window.isHidden = true
+        covered.forEach { $0.accessibilityElementsHidden = false }
+        XCTAssertFalse(staleSource.contains("Install it first"), "ChatTranscript must not leave orphan tappable buttons open when waitingQuestion is nil")
+        XCTAssertFalse(staleSource.contains("Other answer"), "ChatTranscript must not leave orphan Other answer open when waitingQuestion is nil")
+
+        chat.restore(saved)
+        chat.send("Check tomorrow’s weather")
+        try await until(10) { !chat.running }
+
+        XCTAssertFalse(chat.entries.contains {
+            if case .question(let q) = $0.kind { return q.state == .asking }
+            return false
+        }, "starting a new task must expire every earlier asking question")
+        XCTAssertTrue(chat.entries.contains {
+            if case .question(let q) = $0.kind { return q.id == staleQuestion.id && q.state == .stopped }
+            return false
+        })
+        let persisted = try XCTUnwrap(store.session(saved.id))
+        XCTAssertFalse(persisted.needsYou)
+        XCTAssertFalse(persisted.entries.contains {
+            if case .question(let q) = $0.kind { return q.state == .asking }
+            return false
+        }, "SavedSession must persist the expired question state")
+    }
+
+    /// Attachments added before or while a question waits must never be silently dropped on send.
+    func testAttachmentsAreNotSilentlyDroppedWhileAQuestionWaits() async throws {
+        let savedLanguage = AppLocalization.shared.preference
+        AppLocalization.shared.preference = "en"
+        defer { AppLocalization.shared.preference = savedLanguage }
+
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("ask_user", ["question": "Damai isn’t installed. Search on the web, or install it first?",
+                                              "options": [["label": "Search on the web"], ["label": "Install it first"]]]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Done."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+        chat.newConversation()
+        defer {
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
+
+        chat.send("Find concert tickets")
+        try await until(10) { chat.waitingQuestion != nil }
+
+        let photo = ChatAttachment(kind: .photo, thumbnail: Data([0xFF, 0xD8, 0xFF]), images: [Data([0xFF, 0xD8, 0xFF])])
+
+        // Attachment-only send while waiting must explain attachments cannot go with an answer.
+        chat.send("", attachments: [photo])
+        XCTAssertNotNil(chat.waitingQuestion, "attachment-only send must not resolve the question")
+        XCTAssertTrue(chat.entries.contains {
+            if case .note(.problem(let text)) = $0.kind { return text.lowercased().contains("attachment") }
+            return false
+        }, "attachment-only send must tell the owner that attachments cannot be sent with an answer")
+
+        // Text + attachment while waiting must not silently drop the attachment and answer the question.
+        chat.send("Use Safari", attachments: [photo])
+        XCTAssertNotNil(chat.waitingQuestion, "text with attachment must not silently drop the attachment and answer")
+        XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } },
+                       "no answer should be recorded when attachments were blocked")
+
+        // Sending plain text without attachments answers cleanly.
+        chat.send("Use Safari", attachments: [])
+        try await until(10) { !chat.running }
+        XCTAssertNil(chat.waitingQuestion)
+        XCTAssertTrue(chat.entries.contains { if case .answer("Use Safari") = $0.kind { true } else { false } })
+    }
+
+    /// Option app icons may appear only when the option's label names that app or when `find_app`
+    /// returned that app during the same task.
+    func testOptionAppIconsRequireLabelMentionOrTaskFindAppResult() async throws {
+        // Part 1: Without find_app, spoofed app icons are ignored while label-mentioned ones stay.
+        let server1 = try FakeCompletions(replies: [
+            FakeCompletions.tool("ask_user", [
+                "question": "How should I continue?",
+                "options": [
+                    ["label": "Continue", "app": "com.alipay.iphoneclient"],
+                    ["label": "Open Notes", "app": "com.alipay.iphoneclient"],
+                    ["label": "Meituan Waimai", "app": "com.meituan.itakeaway"],
+                ],
+            ]),
+            FakeCompletions.text("Stopped."),
+        ])
+        let chat1 = chat(on: server1, kind: .poki)
+        chat1.newConversation()
+        defer {
+            if chat1.running { chat1.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat1.sessionID)
+        }
+
+        chat1.send("Help me check this")
+        try await until(10) { chat1.waitingQuestion != nil }
+        let q1 = try XCTUnwrap(chat1.waitingQuestion)
+        XCTAssertNil(q1.options.first(where: { $0.label == "Continue" })?.app,
+                     "unmentioned model-chosen app icon must be stripped")
+        XCTAssertNotEqual(q1.options.first(where: { $0.label == "Open Notes" })?.app, "com.alipay.iphoneclient",
+                          "mismatched model-chosen app icon must not impersonate another app")
+        XCTAssertEqual(q1.options.first(where: { $0.label == "Meituan Waimai" })?.app, "com.meituan.itakeaway",
+                       "app named in option label should keep its icon")
+        chat1.stop()
+        try await until(5) { !chat1.running }
+
+        // Part 2: An app returned by find_app in this task is allowed even when the label uses generic words.
+        let apps = InstalledApps.shared
+        let oldPhone = apps.phone
+        let oldHasIcon = apps.hasIcon
+        let oldSearch = apps.search
+        let oldNow = apps.now
+        defer {
+            apps.phone = oldPhone
+            apps.hasIcon = oldHasIcon
+            apps.search = oldSearch
+            apps.now = oldNow
+        }
+        apps.phone = { nil }
+        apps.now = { Date().addingTimeInterval(600) }
+        apps.hasIcon = { $0 == "com.meituan.itakeaway" }
+        apps.search = { _ in
+            [InstalledApps.StoreApp(id: "com.meituan.itakeaway", name: "Meituan Waimai", url: nil)]
+        }
+
+        let server2 = try FakeCompletions(replies: [
+            FakeCompletions.tool("find_app", ["purpose": "food delivery"]),
+            FakeCompletions.tool("ask_user", [
+                "question": "Which option should I use?",
+                "options": [
+                    ["label": "Use this delivery app", "app": "com.meituan.itakeaway"],
+                    ["label": "Use another option", "app": "com.alipay.iphoneclient"],
+                ],
+            ]),
+            FakeCompletions.text("Stopped."),
+        ])
+        let chat2 = chat(on: server2, kind: .poki)
+        chat2.newConversation()
+        defer {
+            if chat2.running { chat2.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat2.sessionID)
+        }
+
+        chat2.send("Order food delivery")
+        try await until(10) { chat2.waitingQuestion != nil }
+        let q2 = try XCTUnwrap(chat2.waitingQuestion)
+        XCTAssertEqual(q2.options.first(where: { $0.label == "Use this delivery app" })?.app, "com.meituan.itakeaway",
+                       "app returned by find_app in this task should be allowed")
+        XCTAssertNil(q2.options.first(where: { $0.label == "Use another option" })?.app,
+                     "app not returned by find_app and not named in label must be stripped")
+        chat2.stop()
+        try await until(5) { !chat2.running }
+    }
+
+    /// `LiveActivity.xcstrings` uses Traditional Chinese 裡 (not Simplified 里) for zh-Hant.
+    func testLiveActivityQuestionPromptUsesTraditionalChineseCharacterInZhHant() {
+        let saved = AppLocalization.shared.preference
+        defer { AppLocalization.shared.preference = saved }
+        AppLocalization.shared.preference = "zh-Hant"
+        let value = AppLocalization.bundle.localizedString(forKey: "Answer in Poki", value: "Answer in Poki", table: "LiveActivity")
+        XCTAssertEqual(value, "在 Poki 裡回答")
+    }
+
+    /// The `questionApps` sample aligns its English JD Takeaway label with Simplified and Traditional Chinese.
+    func testQuestionAppsSampleAlignsEnglishAndChineseJDLabel() {
+        let saved = AppLocalization.shared.preference
+        defer { AppLocalization.shared.preference = saved }
+        AppLocalization.shared.preference = "en"
+        let sample = ChatModel.Sample.question("questionApps")
+        XCTAssertEqual(sample.question.options.map(\.label), ["Meituan Waimai", "Ele.me", "JD Takeaway"])
+        XCTAssertEqual(sample.question.text, "Meituan Waimai, Ele.me and JD Takeaway can all deliver it. Which one?")
+    }
+
+    /// `ChatQuestion(id:arguments:)` validates option count, non-empty labels, single recommendation,
+    /// and `allow_other: false` blocks free-text answers while allowing option picks.
+    func testAskUserValidationAndAllowOtherFalse() async throws {
+        XCTAssertNil(ChatQuestion(id: "empty-q", arguments: ["question": "  ", "options": [["label": "A"], ["label": "B"]]]))
+        XCTAssertNil(ChatQuestion(id: "one-opt", arguments: ["question": "Which?", "options": [["label": "A"]]]))
+        XCTAssertNil(ChatQuestion(id: "four-opt", arguments: ["question": "Which?", "options": [["label": "A"], ["label": "B"], ["label": "C"], ["label": "D"]]]))
+        XCTAssertNil(ChatQuestion(id: "blank-opt", arguments: ["question": "Which?", "options": [["label": "A"], ["label": "  "]]]))
+
+        let twoRec = try XCTUnwrap(ChatQuestion(id: "two-rec", arguments: [
+            "question": "Which?",
+            "options": [
+                ["label": "First"],
+                ["label": "Second", "recommended": true],
+                ["label": "Third", "recommended": true],
+            ],
+            "allow_other": false,
+        ]))
+        XCTAssertEqual(twoRec.options.map(\.label), ["Second", "First", "Third"])
+        XCTAssertTrue(twoRec.suggested)
+        XCTAssertFalse(twoRec.other)
+
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("ask_user", [
+                "question": "A train ticket, or a flight?",
+                "options": [["label": "Train ticket"], ["label": "Flight"]],
+                "allow_other": false,
+            ]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Booked train.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Booked train."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+        chat.newConversation()
+        defer {
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
+
+        chat.send("Book a ticket to Shanghai")
+        try await until(10) { chat.waitingQuestion != nil }
+        XCTAssertEqual(chat.waitingQuestion?.other, false)
+
+        // Free text must be ignored when allow_other is false.
+        chat.send("Take a bus instead")
+        XCTAssertNotNil(chat.waitingQuestion)
+        XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } })
+
+        // Picking one of the options resolves the question and finishes the task.
+        chat.answer("Train ticket", picked: true)
+        try await until(10) { !chat.running }
+        XCTAssertNil(chat.waitingQuestion)
+        XCTAssertTrue(chat.entries.contains { if case .answer("Train ticket") = $0.kind { true } else { false } })
     }
 
     /// A task from Voice dictation offers no ask_user: Voice waits for the task's end to speak the reply
@@ -2872,9 +3427,7 @@ final class ChatHarnessTests: XCTestCase {
     /// The system prompt names no tool the model does not have (the app has no unlock_device or
     /// handle_alert).
     func testThePromptNamesOnlyToolsTheModelHas() throws {
-        // The text is the in-app chat's and the outside agents' both; it names ask_user only "when
-        // available", which is the chat's tools.
-        let tools = Set(Harness.chatTools.map(\.name))
+        let tools = Set(Harness.tools.map(\.name))
         let regex = try NSRegularExpression(pattern: "\\b[a-z]+(?:_[a-z]+)+\\b")
         let text = Harness.system
         XCTAssertFalse(text.isEmpty, "agent-system.md is in the app")
