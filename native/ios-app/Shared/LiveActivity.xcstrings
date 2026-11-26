@@ -21,6 +21,12 @@
             "state" : "translated",
             "value" : "%1$lld/%2$lld"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / %lld"
+          }
         }
       }
     },
@@ -37,6 +43,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "操作螢幕"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thao tác trên màn hình"
           }
         }
       }
@@ -55,6 +67,12 @@
             "state" : "translated",
             "value" : "允許"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép"
+          }
         }
       }
     },
@@ -71,6 +89,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許撥打電話嗎？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép gọi điện?"
           }
         }
       }
@@ -89,6 +113,12 @@
             "state" : "translated",
             "value" : "允許在受保護的 App 裡操作嗎？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép thao tác trong ứng dụng được bảo vệ?"
+          }
         }
       }
     },
@@ -105,6 +135,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許刪除嗎？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép xóa?"
           }
         }
       }
@@ -123,6 +159,12 @@
             "state" : "translated",
             "value" : "允許付款嗎？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép thanh toán?"
+          }
         }
       }
     },
@@ -140,6 +182,12 @@
             "state" : "translated",
             "value" : "允許傳送訊息嗎？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép gửi tin nhắn?"
+          }
         }
       }
     },
@@ -156,6 +204,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許輸入密碼嗎？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép nhập mật khẩu?"
           }
         }
       }
@@ -180,6 +234,12 @@
             "state" : "translated",
             "value" : "開啟 UI 自動化"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bật Tự động hóa UI"
+          }
         }
       }
     },
@@ -202,6 +262,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "定位設使用期間，開啟即時動態"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đặt Vị trí thành Khi dùng ứng dụng, và giữ Hoạt động trực tiếp luôn bật."
           }
         }
       }
@@ -226,6 +292,12 @@
             "state" : "translated",
             "value" : "待批准"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép?"
+          }
         }
       }
     },
@@ -242,6 +314,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "允許這一步嗎？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho phép bước này?"
           }
         }
       }
@@ -266,6 +344,12 @@
             "state" : "translated",
             "value" : "已允許"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã cho phép"
+          }
         }
       }
     },
@@ -282,6 +366,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "操作確認"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xác nhận thao tác"
           }
         }
       }
@@ -306,6 +396,12 @@
             "state" : "translated",
             "value" : "等待操作確認"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cần xác nhận thao tác"
+          }
         }
       }
     },
@@ -322,6 +418,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "背景執行"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạy nền"
           }
         },
         "en" : {
@@ -345,6 +447,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法連線"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không kết nối được tới iPhone"
           }
         },
         "en" : {
@@ -375,6 +483,12 @@
             "state" : "translated",
             "value" : "Poki 接著辦"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đang tiếp tục"
+          }
         }
       }
     },
@@ -391,6 +505,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢查開發者模式"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiểm tra Chế độ nhà phát triển"
           }
         }
       }
@@ -415,6 +535,12 @@
             "state" : "translated",
             "value" : "正在檢查配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang kiểm tra ghép đôi"
+          }
         }
       }
     },
@@ -437,6 +563,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配對碼已產生"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mã ghép đôi đã sẵn sàng"
           }
         }
       }
@@ -461,6 +593,12 @@
             "state" : "translated",
             "value" : "請連線網路"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy kết nối Internet"
+          }
         }
       }
     },
@@ -484,6 +622,12 @@
             "state" : "translated",
             "value" : "正在連線至 iPhone"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang kết nối tới iPhone"
+          }
         }
       }
     },
@@ -500,6 +644,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待恢復分割顯示"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang chờ khôi phục Split View"
           }
         }
       }
@@ -524,6 +674,12 @@
             "state" : "translated",
             "value" : "Poki 接著辦"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đang tiếp tục"
+          }
         }
       }
     },
@@ -541,6 +697,12 @@
             "state" : "translated",
             "value" : "在「%@」裡刪除？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xóa trong “%@”?"
+          }
         }
       }
     },
@@ -557,6 +719,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xóa mục này?"
           }
         }
       }
@@ -581,6 +749,12 @@
             "state" : "translated",
             "value" : "正在刪除"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang xóa"
+          }
         }
       }
     },
@@ -603,6 +777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「%@」中刪除"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang xóa trong “%@”"
           }
         }
       }
@@ -627,6 +807,12 @@
             "state" : "translated",
             "value" : "你拒絕了"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bạn đã từ chối"
+          }
         }
       }
     },
@@ -643,6 +829,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拒絕"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Từ chối"
           }
         }
       }
@@ -661,6 +853,12 @@
             "state" : "translated",
             "value" : "開發者模式"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chế độ nhà phát triển"
+          }
         }
       }
     },
@@ -677,6 +875,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開發者模式未開"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chế độ nhà phát triển đang tắt"
           }
         }
       }
@@ -701,6 +905,12 @@
             "state" : "translated",
             "value" : "開發者 › 啟用 UI 自動化"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhà phát triển › Bật Tự động hóa UI."
+          }
         }
       }
     },
@@ -718,6 +928,12 @@
             "state" : "translated",
             "value" : "磁碟映像過舊"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ảnh đĩa đã cũ"
+          }
         }
       }
     },
@@ -734,6 +950,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請親自完成此步"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy tự thực hiện bước này"
           }
         },
         "en" : {
@@ -758,6 +980,12 @@
             "state" : "translated",
             "value" : "完成"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xong"
+          }
         }
       }
     },
@@ -780,6 +1008,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不允許"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không cho phép"
           }
         }
       }
@@ -804,6 +1038,12 @@
             "state" : "translated",
             "value" : "下載磁碟映像"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tải ảnh đĩa"
+          }
         }
       }
     },
@@ -820,6 +1060,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拖動"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kéo"
           }
         }
       }
@@ -838,6 +1084,12 @@
             "state" : "translated",
             "value" : "結束"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết thúc"
+          }
         }
       }
     },
@@ -854,6 +1106,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "結束對話"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết thúc cuộc trò chuyện"
           }
         }
       }
@@ -872,6 +1130,12 @@
             "state" : "translated",
             "value" : "輸入密碼"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mật mã"
+          }
         }
       }
     },
@@ -888,6 +1152,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸密碼允許自動化"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mật mã để cho phép tự động hóa"
           }
         },
         "en" : {
@@ -913,6 +1183,12 @@
             "value" : "輸密碼啟動 Runner"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mật mã để khởi động Runner"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -935,6 +1211,12 @@
             "state" : "translated",
             "value" : "失敗"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thất bại"
+          }
         }
       }
     },
@@ -951,6 +1233,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載磁碟映像"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tải ảnh đĩa"
           }
         },
         "en" : {
@@ -976,6 +1264,12 @@
             "value" : "請填寫密碼"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy điền mật khẩu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -998,6 +1292,12 @@
             "state" : "translated",
             "value" : "正在尋找配對連接埠"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tìm cổng ghép đôi"
+          }
         }
       }
     },
@@ -1015,6 +1315,12 @@
             "state" : "translated",
             "value" : "正在尋找配對連接埠"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tìm cổng ghép đôi"
+          }
         }
       }
     },
@@ -1031,6 +1337,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請親自付款"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy tự hoàn tất thanh toán"
           }
         },
         "en" : {
@@ -1061,6 +1373,12 @@
             "state" : "translated",
             "value" : "一般 › 裝置管理 › 信任開發者"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cài đặt chung › VPN & Quản lý thiết bị. Hãy tin cậy nhà phát triển của Poki Runner."
+          }
         }
       }
     },
@@ -1084,6 +1402,12 @@
             "state" : "translated",
             "value" : "長按"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ"
+          }
         }
       }
     },
@@ -1100,6 +1424,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "待機"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang chờ"
           }
         }
       }
@@ -1124,6 +1454,12 @@
             "state" : "translated",
             "value" : "在配置中重配"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi lại trong Thiết lập Poki."
+          }
         }
       }
     },
@@ -1146,6 +1482,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連線 LocalDevVPN 或開啟代理"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối LocalDevVPN hoặc bật trong ứng dụng proxy."
           }
         }
       }
@@ -1170,6 +1512,12 @@
             "state" : "translated",
             "value" : "連 LocalDevVPN 或開代理後返回"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối LocalDevVPN hoặc bật proxy, rồi quay lại Poki."
+          }
         }
       }
     },
@@ -1192,6 +1540,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開代理或在配置重配"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiểm tra ứng dụng proxy, hoặc ghép đôi lại trong Thiết lập."
           }
         }
       }
@@ -1216,6 +1570,12 @@
             "state" : "translated",
             "value" : "安裝 Poki Runner"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cài đặt Poki Runner"
+          }
         }
       }
     },
@@ -1238,6 +1598,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "背景執行"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cho Poki chạy nền"
           }
         }
       }
@@ -1262,6 +1628,12 @@
             "state" : "translated",
             "value" : "查看"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xem"
+          }
         }
       }
     },
@@ -1278,6 +1650,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢視螢幕"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xem màn hình"
           }
         }
       }
@@ -1296,6 +1674,12 @@
             "state" : "translated",
             "value" : "本機連線"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kết nối loopback"
+          }
         }
       }
     },
@@ -1312,6 +1696,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本機連線未開"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loopback đang tắt"
           }
         }
       }
@@ -1330,6 +1720,12 @@
             "state" : "translated",
             "value" : "本機連線或配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loopback hoặc Ghép đôi"
+          }
         }
       }
     },
@@ -1346,6 +1742,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "付款？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thanh toán?"
           }
         }
       }
@@ -1370,6 +1772,12 @@
             "state" : "translated",
             "value" : "正在付款"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang thanh toán"
+          }
         }
       }
     },
@@ -1392,6 +1800,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「%@」中付款"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang thanh toán trong “%@”"
           }
         }
       }
@@ -1416,6 +1830,12 @@
             "state" : "translated",
             "value" : "訊息"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tin nhắn"
+          }
         }
       }
     },
@@ -1439,6 +1859,12 @@
             "state" : "translated",
             "value" : "需要本機連線"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cần kết nối loopback"
+          }
         }
       }
     },
@@ -1456,6 +1882,12 @@
             "state" : "translated",
             "value" : "沒有網路"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có Internet"
+          }
         }
       }
     },
@@ -1472,6 +1904,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở %@"
           }
         }
       }
@@ -1496,6 +1934,12 @@
             "state" : "translated",
             "value" : "點「與 Poki 配對」看配對碼"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn Ghép đôi với Poki ở đó. Mã sẽ hiện ở đây."
+          }
         }
       }
     },
@@ -1518,6 +1962,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 Poki"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở Poki"
           }
         }
       }
@@ -1542,6 +1992,12 @@
             "state" : "translated",
             "value" : "開啟 Poki 處理"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở Poki để khắc phục."
+          }
         }
       }
     },
@@ -1565,6 +2021,12 @@
             "state" : "translated",
             "value" : "在配置下載最新映像"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở phần thiết lập của Poki để tải bản mới nhất."
+          }
         }
       }
     },
@@ -1581,6 +2043,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 App"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở một ứng dụng"
           }
         }
       }
@@ -1605,6 +2073,12 @@
             "state" : "translated",
             "value" : "正在建立本機連線"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang thiết lập kết nối nội bộ"
+          }
         }
       }
     },
@@ -1627,6 +2101,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新配對"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi lại"
           }
         }
       }
@@ -1651,6 +2131,12 @@
             "state" : "translated",
             "value" : "配對此手機"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi iPhone này"
+          }
         }
       }
     },
@@ -1667,6 +2153,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "前往設定配對"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi trong Cài đặt"
           }
         },
         "en" : {
@@ -1697,6 +2189,12 @@
             "state" : "translated",
             "value" : "已配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã ghép đôi"
+          }
         }
       }
     },
@@ -1714,6 +2212,12 @@
             "state" : "translated",
             "value" : "配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi"
+          }
         }
       }
     },
@@ -1730,6 +2234,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配對碼"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mã ghép đôi"
           }
         }
       }
@@ -1754,6 +2264,12 @@
             "state" : "translated",
             "value" : "已配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã ghép đôi"
+          }
         }
       }
     },
@@ -1770,6 +2286,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配對失敗"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi thất bại"
           }
         }
       }
@@ -1788,6 +2310,12 @@
             "state" : "translated",
             "value" : "配對被拒絕"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghép đôi bị từ chối"
+          }
         }
       }
     },
@@ -1805,6 +2333,12 @@
             "state" : "translated",
             "value" : "配對碼 %@"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mã ghép đôi %@"
+          }
         }
       }
     },
@@ -1821,6 +2355,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請親自完成驗證"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hãy tự hoàn tất xác minh"
           }
         },
         "en" : {
@@ -1846,6 +2386,12 @@
             "value" : "輸密碼允許自動化"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mật mã để cho phép tự động hóa"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1867,6 +2413,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸密碼啟動 Runner"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mật mã để khởi động Runner"
           }
         },
         "en" : {
@@ -1891,6 +2443,12 @@
             "state" : "translated",
             "value" : "在「%@」裡付款？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thanh toán trong “%@”?"
+          }
         }
       }
     },
@@ -1904,6 +2462,12 @@
           }
         },
         "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki Runner"
+          }
+        },
+        "vi" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki Runner"
@@ -1924,6 +2488,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Runner 未啟動"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki Runner chưa khởi động"
           }
         },
         "en" : {
@@ -1948,6 +2518,12 @@
             "state" : "translated",
             "value" : "缺少 Poki Runner"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thiếu Poki Runner"
+          }
         }
       }
     },
@@ -1970,6 +2546,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 會自動重下"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki sẽ tự tải lại."
           }
         }
       }
@@ -1994,6 +2576,12 @@
             "state" : "translated",
             "value" : "每次重啟後只需連線一次，連上後自動重試。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki cần kết nối một lần sau mỗi lần khởi động lại, rồi sẽ thử lại."
+          }
         }
       }
     },
@@ -2016,6 +2604,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在傳訊息給%@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đang gửi tin nhắn tới %@"
           }
         }
       }
@@ -2040,6 +2634,12 @@
             "state" : "translated",
             "value" : "已配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đã ghép đôi"
+          }
         }
       }
     },
@@ -2062,6 +2662,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在準備"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang chuẩn bị"
           }
         }
       }
@@ -2086,6 +2692,12 @@
             "state" : "translated",
             "value" : "按鍵"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn"
+          }
         }
       }
     },
@@ -2102,6 +2714,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按 %@ 鍵"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn %@"
           }
         }
       }
@@ -2120,6 +2738,12 @@
             "state" : "translated",
             "value" : "按 %@ 鍵"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn nút %@"
+          }
         }
       }
     },
@@ -2136,6 +2760,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "長按 %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ tại %@"
           }
         }
       }
@@ -2154,6 +2784,12 @@
             "state" : "translated",
             "value" : "長按螢幕"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ trên màn hình"
+          }
         }
       }
     },
@@ -2170,6 +2806,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "長按「%@」"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ “%@”"
           }
         }
       }
@@ -2194,6 +2836,12 @@
             "state" : "translated",
             "value" : "隱私權與安全性 › 開發者模式配對"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quyền riêng tư & Bảo mật › Chế độ nhà phát triển › Ghép đôi với Poki."
+          }
         }
       }
     },
@@ -2216,6 +2864,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟開發者模式後重啟"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, rồi khởi động lại."
           }
         }
       }
@@ -2240,6 +2894,12 @@
             "state" : "translated",
             "value" : "開開發者模式，重啟後點開啟"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quyền riêng tư & Bảo mật › Chế độ nhà phát triển. Khởi động lại, rồi nhấn Bật."
+          }
         }
       }
     },
@@ -2263,6 +2923,12 @@
             "state" : "translated",
             "value" : "發生問題"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã xảy ra sự cố"
+          }
         }
       }
     },
@@ -2279,6 +2945,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "就緒"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sẵn sàng"
           }
         }
       }
@@ -2303,6 +2975,12 @@
             "state" : "translated",
             "value" : "已繼續"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã tiếp tục"
+          }
         }
       }
     },
@@ -2326,6 +3004,12 @@
             "state" : "translated",
             "value" : "已完成"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã chạy xong"
+          }
         }
       }
     },
@@ -2342,6 +3026,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已停止"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runner đã dừng"
           }
         }
       }
@@ -2366,6 +3056,12 @@
             "state" : "translated",
             "value" : "等待任務"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runner đang bật. Đang chờ agent."
+          }
         }
       }
     },
@@ -2382,6 +3078,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "滾動"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuộn"
           }
         }
       }
@@ -2400,6 +3102,12 @@
             "state" : "translated",
             "value" : "滾動到「%@」"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuộn tới “%@”"
+          }
         }
       }
     },
@@ -2417,6 +3125,12 @@
             "state" : "translated",
             "value" : "傳送資訊？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi tin nhắn?"
+          }
         }
       }
     },
@@ -2433,6 +3147,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「%@」裡傳送？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi trong “%@”?"
           }
         }
       }
@@ -2457,6 +3177,12 @@
             "state" : "translated",
             "value" : "正在傳訊息"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang gửi tin nhắn"
+          }
         }
       }
     },
@@ -2479,6 +3205,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「%@」傳訊息"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang gửi tin nhắn trong “%@”"
           }
         }
       }
@@ -2503,6 +3235,12 @@
             "state" : "translated",
             "value" : "設定"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cài đặt"
+          }
         }
       }
     },
@@ -2526,6 +3264,12 @@
             "state" : "translated",
             "value" : "設定 › 開發者模式"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cài đặt › Chế độ nhà phát triển"
+          }
         }
       }
     },
@@ -2542,6 +3286,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配置"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thiết lập"
           }
         },
         "en" : {
@@ -2572,6 +3322,12 @@
             "state" : "translated",
             "value" : "無進展"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tiến triển"
+          }
         }
       }
     },
@@ -2594,6 +3350,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已開始"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã bắt đầu"
           }
         }
       }
@@ -2618,6 +3380,12 @@
             "state" : "translated",
             "value" : "正在啟動"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang khởi động"
+          }
         }
       }
     },
@@ -2640,6 +3408,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "第 %1$lld/%2$lld 步"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bước %lld / %lld"
           }
         }
       }
@@ -2664,6 +3438,12 @@
             "state" : "translated",
             "value" : "Poki 跳過了這一步"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đã bỏ qua bước này"
+          }
         }
       }
     },
@@ -2680,6 +3460,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dừng"
           }
         }
       }
@@ -2704,6 +3490,12 @@
             "state" : "translated",
             "value" : "Poki 停下了"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki đã dừng"
+          }
         }
       }
     },
@@ -2720,6 +3512,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輕掃"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuốt"
           }
         }
       }
@@ -2738,6 +3536,12 @@
             "state" : "translated",
             "value" : "向下輕掃"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuốt xuống"
+          }
         }
       }
     },
@@ -2754,6 +3558,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向左輕掃"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuốt sang trái"
           }
         }
       }
@@ -2772,6 +3582,12 @@
             "state" : "translated",
             "value" : "向右輕掃"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuốt sang phải"
+          }
         }
       }
     },
@@ -2788,6 +3604,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向上輕掃"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuốt lên"
           }
         }
       }
@@ -2806,6 +3628,12 @@
             "state" : "translated",
             "value" : "說完後，再執行一次「隨時 Poki」轉成文字。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạy lại Poki Anytime để gửi dưới dạng văn bản."
+          }
         }
       }
     },
@@ -2822,6 +3650,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "和 Poki 對話"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trò chuyện với Poki"
           }
         }
       }
@@ -2846,6 +3680,12 @@
             "state" : "translated",
             "value" : "輕點"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm"
+          }
         }
       }
     },
@@ -2869,6 +3709,12 @@
             "state" : "translated",
             "value" : "點「與 Poki 配對」輸配對碼"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn Ghép đôi với Poki, rồi nhập mã này."
+          }
         }
       }
     },
@@ -2885,6 +3731,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輕點 %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm tại %@"
           }
         }
       }
@@ -2903,6 +3755,12 @@
             "state" : "translated",
             "value" : "輕點螢幕"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm vào màn hình"
+          }
         }
       }
     },
@@ -2919,6 +3777,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輕點「%@」"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm “%@”"
           }
         }
       }
@@ -2943,6 +3807,12 @@
             "state" : "translated",
             "value" : "正在通知智慧體"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang thông báo cho agent"
+          }
         }
       }
     },
@@ -2959,6 +3829,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此頁需你操作，等待中"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent không thể thao tác trên màn hình này. Đang chờ bạn."
           }
         },
         "en" : {
@@ -2989,6 +3865,12 @@
             "state" : "translated",
             "value" : "智慧體已繼續"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent đã tự tiếp tục"
+          }
         }
       }
     },
@@ -3005,6 +3887,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不代付款，等你付完繼續"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent không thanh toán thay bạn. Agent sẽ chờ, rồi tiếp tục."
           }
         },
         "en" : {
@@ -3028,6 +3916,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Runner 已停"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runner đã dừng"
           }
         },
         "en" : {
@@ -3058,6 +3952,12 @@
             "state" : "translated",
             "value" : "收到任務時自動喚醒"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Runner sẽ thức dậy khi agent yêu cầu."
+          }
         }
       }
     },
@@ -3080,6 +3980,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此 iPhone 已可供 Poki 使用"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone này đã sẵn sàng cho Poki"
           }
         }
       }
@@ -3104,6 +4010,12 @@
             "state" : "translated",
             "value" : "已逾時"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã hết thời gian chờ"
+          }
         }
       }
     },
@@ -3120,6 +4032,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用時 %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mất %@"
           }
         }
       }
@@ -3144,6 +4062,12 @@
             "state" : "translated",
             "value" : "開啟開發者模式"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bật Chế độ nhà phát triển"
+          }
         }
       }
     },
@@ -3166,6 +4090,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟本機連線"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bật Loopback"
           }
         }
       }
@@ -3190,6 +4120,12 @@
             "state" : "translated",
             "value" : "輸入"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập"
+          }
         }
       }
     },
@@ -3206,6 +4142,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸入 %lld 個隱藏字元"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập %lld ký tự ẩn"
           }
         }
       }
@@ -3224,6 +4166,12 @@
             "state" : "translated",
             "value" : "輸入密碼？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mật khẩu?"
+          }
         }
       }
     },
@@ -3240,6 +4188,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "去設定輸入配對碼"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập mã trên màn hình Ghép đôi với Poki trong Cài đặt"
           }
         },
         "en" : {
@@ -3264,6 +4218,12 @@
             "state" : "translated",
             "value" : "輸入「%@」"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập “%@”"
+          }
         }
       }
     },
@@ -3286,6 +4246,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在輸密碼"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang nhập mật khẩu"
           }
         }
       }
@@ -3310,6 +4276,12 @@
             "state" : "translated",
             "value" : "在「%@」輸密碼"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang nhập mật khẩu trong “%@”"
+          }
         }
       }
     },
@@ -3327,6 +4299,12 @@
             "state" : "translated",
             "value" : "UI 自動化"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tự động hóa UI"
+          }
         }
       }
     },
@@ -3343,6 +4321,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新 iOS"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cập nhật iOS"
           }
         },
         "en" : {
@@ -3373,6 +4357,12 @@
             "state" : "translated",
             "value" : "更新磁碟映像"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cập nhật ảnh đĩa"
+          }
         }
       }
     },
@@ -3389,6 +4379,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用 %@？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dùng %@?"
           }
         }
       }
@@ -3413,6 +4409,12 @@
             "state" : "translated",
             "value" : "語音"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giọng nói"
+          }
         }
       }
     },
@@ -3429,6 +4431,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chờ"
           }
         }
       }
@@ -3453,6 +4461,12 @@
             "state" : "translated",
             "value" : "用同款簽名工具與帳號安裝"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dùng cùng công cụ ký và Apple ID như Poki."
+          }
         }
       }
     },
@@ -3469,6 +4483,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行中"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang hoạt động"
           }
         }
       }
@@ -3493,6 +4513,12 @@
             "state" : "translated",
             "value" : "正在規劃下一步"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tính bước tiếp theo."
+          }
         }
       }
     },
@@ -3515,6 +4541,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "換你操作"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đến lượt bạn"
           }
         }
       }
@@ -3539,6 +4571,12 @@
             "state" : "translated",
             "value" : "縮放"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thu phóng"
+          }
         }
       }
     },
@@ -3555,6 +4593,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放大"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Phóng to"
           }
         }
       }
@@ -3573,6 +4617,12 @@
             "state" : "translated",
             "value" : "縮小"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thu nhỏ"
+          }
         }
       }
     },
@@ -3589,6 +4639,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重啟或滿 8 小時需輸密碼"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS sẽ yêu cầu sau khi Poki khởi động lại hoặc sau 8 giờ. Agent sẽ chờ."
           }
         },
         "en" : {
@@ -3612,6 +4668,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重啟後需輸一次密碼"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS sẽ yêu cầu một lần sau khi khởi động lại. Agent sẽ chờ."
           }
         },
         "en" : {
@@ -3642,6 +4704,12 @@
             "state" : "translated",
             "value" : "請更新 iOS 版本"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tính năng này cần phiên bản iOS mới hơn."
+          }
         }
       }
     },
@@ -3658,6 +4726,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在執行任務"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang thực hiện tác vụ của bạn"
           }
         },
         "en" : {
@@ -3681,6 +4755,12 @@
             "state" : "translated",
             "value" : "配對碼"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mã ghép đôi"
+          }
         }
       }
     },
@@ -3696,6 +4776,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在設定"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang thiết lập Poki"
           }
         },
         "en" : {
@@ -3720,6 +4806,12 @@
             "value" : "已從即時動態停止"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã dừng từ Hoạt động trực tiếp"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3740,6 +4832,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸鎖屏密碼啟動 Runner"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Điện thoại yêu cầu mật mã để Runner có thể khởi động"
           }
         },
         "en" : {
@@ -3764,6 +4862,12 @@
             "value" : "輸鎖屏密碼允許自動化"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Điện thoại yêu cầu mật mã để cho phép tự động hóa"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3784,6 +4888,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "螢幕需輸鎖屏密碼"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Màn hình yêu cầu mật mã của bạn"
           }
         },
         "en" : {
@@ -3808,6 +4918,12 @@
             "value" : "螢幕需輸入密碼"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Màn hình yêu cầu mật khẩu"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3828,6 +4944,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "螢幕需完成驗證"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Màn hình yêu cầu một bước xác minh"
           }
         },
         "en" : {
@@ -3852,6 +4974,12 @@
             "value" : "請在螢幕確認付款"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Màn hình yêu cầu bạn xác nhận thanh toán"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3872,6 +5000,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此步需你親自完成"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent không thể thao tác trên màn hình này, hãy tự thực hiện bước này"
           }
         },
         "en" : {
@@ -3895,6 +5029,12 @@
             "state" : "translated",
             "value" : "執行「%@」"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạy “%@”"
+          }
         }
       }
     },
@@ -3910,6 +5050,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@，然後%2$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, rồi %@"
           }
         }
       }
@@ -3932,6 +5078,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未更新"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không cập nhật"
           }
         }
       }
@@ -3956,6 +5108,12 @@
             "state" : "translated",
             "value" : "開啟"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở"
+          }
         }
       }
     },
@@ -3977,6 +5135,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "傳送資訊"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gửi tin nhắn"
           }
         }
       }
@@ -4000,6 +5164,12 @@
             "state" : "translated",
             "value" : "付款"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "một khoản thanh toán"
+          }
         }
       }
     },
@@ -4021,6 +5191,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "xóa"
           }
         }
       }
@@ -4044,6 +5220,12 @@
             "state" : "translated",
             "value" : "在密碼欄中輸入"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "nhập vào trường mật khẩu"
+          }
         }
       }
     },
@@ -4059,6 +5241,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在「%@」中輸入"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập trong “%@”"
           }
         }
       }
@@ -4077,6 +5265,12 @@
             "state" : "translated",
             "value" : "在 %lld 裡刪除？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xóa trong %lld?"
+          }
         }
       }
     },
@@ -4093,6 +5287,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟 %lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở %lld"
           }
         }
       }
@@ -4111,6 +5311,12 @@
             "state" : "translated",
             "value" : "配對碼 %lld"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mã ghép đôi %lld"
+          }
         }
       }
     },
@@ -4127,6 +5333,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 %lld 裡付款？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thanh toán trong %lld?"
           }
         }
       }
@@ -4145,6 +5357,12 @@
             "state" : "translated",
             "value" : "按 %lld 鍵"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn %lld"
+          }
         }
       }
     },
@@ -4161,6 +5379,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按 %lld 鍵"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn nút %lld"
           }
         }
       }
@@ -4179,6 +5403,12 @@
             "state" : "translated",
             "value" : "長按 %lld"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ tại %lld"
+          }
         }
       }
     },
@@ -4195,6 +5425,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "長按「%lld」"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhấn giữ “%lld”"
           }
         }
       }
@@ -4213,6 +5449,12 @@
             "state" : "translated",
             "value" : "滾動到「%lld」"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cuộn tới “%lld”"
+          }
         }
       }
     },
@@ -4229,6 +5471,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 %lld 裡傳送？"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi trong %lld?"
           }
         }
       }
@@ -4247,6 +5495,12 @@
             "state" : "translated",
             "value" : "輕點 %lld"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm tại %lld"
+          }
         }
       }
     },
@@ -4263,6 +5517,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輕點「%lld」"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm “%lld”"
           }
         }
       }
@@ -4281,6 +5541,12 @@
             "state" : "translated",
             "value" : "輸入 %@ 個隱藏字元"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập %@ ký tự ẩn"
+          }
         }
       }
     },
@@ -4297,6 +5563,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸入「%lld」"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập “%lld”"
           }
         }
       }
@@ -4315,6 +5587,12 @@
             "state" : "translated",
             "value" : "使用 %lld？"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dùng %lld?"
+          }
         }
       }
     },
@@ -4330,6 +5608,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "執行「%lld」"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạy “%lld”"
           }
         }
       }
@@ -4347,6 +5631,12 @@
             "state" : "translated",
             "value" : "%1$@，然後%2$lld"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, rồi %lld"
+          }
         }
       }
     },
@@ -4362,6 +5652,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$lld，然後%2$@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld, rồi %@"
           }
         }
       }
@@ -4379,6 +5675,12 @@
             "state" : "translated",
             "value" : "%1$lld，然後%2$lld"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld, rồi %lld"
+          }
         }
       }
     },
@@ -4394,6 +5696,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 %lld 中輸入"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nhập trong %lld"
           }
         }
       }
@@ -4418,6 +5726,12 @@
             "state" : "translated",
             "value" : "繼續"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiếp tục"
+          }
         }
       }
     },
@@ -4440,6 +5754,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不再詢問"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không hỏi lại"
           }
         }
       }

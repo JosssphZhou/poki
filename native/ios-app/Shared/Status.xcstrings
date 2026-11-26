@@ -20,6 +20,12 @@
             "state" : "translated",
             "value" : "檢查中"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang kiểm tra"
+          }
         }
       }
     },
@@ -41,6 +47,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連線中斷"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã ngắt kết nối"
           }
         }
       }
@@ -64,6 +76,12 @@
             "state" : "translated",
             "value" : "已完成"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã hoàn tất"
+          }
         }
       }
     },
@@ -85,6 +103,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "發生錯誤"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lỗi"
           }
         }
       }
@@ -108,6 +132,12 @@
             "state" : "translated",
             "value" : "聆聽中"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang nghe"
+          }
         }
       }
     },
@@ -129,6 +159,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待確認"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cần phê duyệt"
           }
         }
       }
@@ -152,6 +188,12 @@
             "state" : "translated",
             "value" : "等待你操作"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cần bạn thao tác"
+          }
         }
       }
     },
@@ -173,6 +215,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未設定"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa thiết lập"
           }
         }
       }
@@ -196,6 +244,12 @@
             "state" : "translated",
             "value" : "未啟動"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa bắt đầu"
+          }
         }
       }
     },
@@ -217,6 +271,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已關閉"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tắt"
           }
         }
       }
@@ -240,6 +300,12 @@
             "state" : "translated",
             "value" : "已暫停"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã tạm dừng"
+          }
         }
       }
     },
@@ -261,6 +327,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "就緒"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sẵn sàng"
           }
         }
       }
@@ -284,6 +356,12 @@
             "state" : "translated",
             "value" : "執行中"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang chạy"
+          }
         }
       }
     },
@@ -305,6 +383,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播報中"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang nói"
           }
         }
       }
@@ -328,6 +412,12 @@
             "state" : "translated",
             "value" : "啟動中"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang khởi động"
+          }
         }
       }
     },
@@ -343,6 +433,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已停止"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đã dừng"
           }
         }
       }
@@ -365,6 +461,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "思考中"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang suy nghĩ"
           }
         }
       }

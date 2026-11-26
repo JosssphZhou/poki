@@ -22,6 +22,12 @@
             "state" : "translated",
             "value" : "Poki"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki"
+          }
         }
       }
     },
@@ -45,6 +51,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 使用相機拍攝你在訊息裡傳送的照片，以及掃描電腦上 Poki Setup 顯示的配對碼。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki sử dụng máy ảnh để chụp ảnh bạn gửi trong tin nhắn, và để quét mã ghép đôi từ Poki Setup trên máy tính của bạn."
           }
         }
       }
@@ -70,6 +82,12 @@
             "state" : "translated",
             "value" : "Poki 使用 Face ID 解鎖螢幕記錄，確保只有你能打開。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki sử dụng Face ID để mở khóa Lịch sử màn hình, để chỉ bạn mới có thể mở nó."
+          }
         }
       }
     },
@@ -93,6 +111,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 會連線此 iPhone 的開發者服務以完成配對與自動化，並連線 Mac 上的語音橋接。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki kết nối tới các dịch vụ dành cho nhà phát triển trên iPhone này để ghép đôi và tự động hóa, và tới cầu nối giọng nói trên máy Mac của bạn."
           }
         }
       }
@@ -118,6 +142,12 @@
             "state" : "translated",
             "value" : "Poki 開啟時會在背景保持執行，以便智慧體連線此 iPhone。Poki 不會記錄或傳送你的位置。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki duy trì hoạt động ở chế độ nền khi đang bật để các agent có thể kết nối tới iPhone này. Poki không bao giờ ghi lại hay gửi vị trí của bạn."
+          }
         }
       }
     },
@@ -141,6 +171,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 開啟時會在背景保持執行，以便智慧體連線此 iPhone。Poki 不會記錄或傳送你的位置。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki duy trì hoạt động ở chế độ nền khi đang bật để các agent có thể kết nối tới iPhone này. Poki không bao giờ ghi lại hay gửi vị trí của bạn."
           }
         }
       }
@@ -166,6 +202,12 @@
             "state" : "translated",
             "value" : "Poki 會聽你選擇共享的 App 聲音，用來回答相關問題。"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki lắng nghe âm thanh của ứng dụng mà bạn chọn chia sẻ để có thể trả lời các câu hỏi về nó."
+          }
         }
       }
     },
@@ -189,6 +231,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你在「語音」中與 Poki 交談時，Poki 會收音並將音訊傳送給 OpenAI 以理解你的請求。"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki lắng nghe khi bạn nói trong mục Giọng nói và gửi âm thanh tới OpenAI để hiểu yêu cầu của bạn."
           }
         }
       }

@@ -1,6 +1,6 @@
 # Poki iPhone App Guide
 
-English | [简体中文](iphone-guide.zh-CN.md) | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | [한국어](iphone-guide.ko.md) | [Español](iphone-guide.es.md)
+English | [简体中文](iphone-guide.zh-CN.md) | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | [한국어](iphone-guide.ko.md) | [Español](iphone-guide.es.md) | [Tiếng Việt](iphone-guide.vi.md)
 
 This guide covers full system requirements, installation details, updating, common questions, known limits, and task examples for the Poki iPhone app.
 

@@ -14,6 +14,12 @@
             "state" : "translated",
             "value" : "隨時 ${applicationName}"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} mọi lúc"
+          }
         }
       }
     },
@@ -29,6 +35,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "讓${applicationName}做件事"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Giao tác vụ cho ${applicationName}"
           }
         }
       }
@@ -46,6 +58,12 @@
             "state" : "translated",
             "value" : "給${applicationName}發任務"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gửi tác vụ tới ${applicationName}"
+          }
         }
       }
     },
@@ -61,6 +79,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開始和${applicationName}說話"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bắt đầu trò chuyện với ${applicationName}"
           }
         }
       }
@@ -78,6 +102,12 @@
             "state" : "translated",
             "value" : "和${applicationName}說話"
           }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trò chuyện với ${applicationName}"
+          }
         }
       }
     },
@@ -93,6 +123,12 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不離開這個 App 和${applicationName}說話"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trò chuyện với ${applicationName} mà không rời ứng dụng này"
           }
         }
       }

@@ -20,6 +20,12 @@
             "state": "translated",
             "value": "最新訊息"
           }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tin nhắn mới nhất"
+          }
         }
       }
     }

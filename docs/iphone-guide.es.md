@@ -1,6 +1,6 @@
 # Guía de Poki para iPhone
 
-[English](iphone-guide.md) | [简体中文](iphone-guide.zh-CN.md) | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | [한국어](iphone-guide.ko.md) | Español
+[English](iphone-guide.md) | [简体中文](iphone-guide.zh-CN.md) | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | [한국어](iphone-guide.ko.md) | Español | [Tiếng Việt](iphone-guide.vi.md)
 
 Esta guía cubre los requisitos completos del sistema, los detalles de instalación, las actualizaciones, las preguntas frecuentes, los límites conocidos y ejemplos de tareas para la app Poki para iPhone.
 

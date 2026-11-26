@@ -1,6 +1,6 @@
 # Poki iPhone 앱 가이드
 
-[English](iphone-guide.md) | [简体中文](iphone-guide.zh-CN.md) | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | 한국어 | [Español](iphone-guide.es.md)
+[English](iphone-guide.md) | [简体中文](iphone-guide.zh-CN.md) | [繁體中文](iphone-guide.zh-TW.md) | [日本語](iphone-guide.ja.md) | 한국어 | [Español](iphone-guide.es.md) | [Tiếng Việt](iphone-guide.vi.md)
 
 이 가이드는 Poki iPhone 앱의 전체 시스템 요구 사항, 설치 안내, 업데이트, 자주 묻는 질문, 알려진 제한, 작업 예제를 다룹니다.
 

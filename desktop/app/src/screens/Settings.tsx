@@ -22,7 +22,7 @@ export default function Settings({ info }: { info: AppInfo | null }) {
       <ErrorBox error={error} />
       <Card>
         <h2>{t("Language")}</h2>
-        <div className="seg"><button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>English</button><button className={lang === "zh-Hans" ? "on" : ""} onClick={() => setLang("zh-Hans")}>简体中文</button></div>
+        <div className="seg"><button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>English</button><button className={lang === "zh-Hans" ? "on" : ""} onClick={() => setLang("zh-Hans")}>简体中文</button><button className={lang === "vi" ? "on" : ""} onClick={() => setLang("vi")}>Tiếng Việt</button></div>
       </Card>
       <Card>
         <h2>{t("Anisette")}</h2>
