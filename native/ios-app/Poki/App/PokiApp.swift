@@ -67,6 +67,7 @@ struct PokiApp: App {
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
         AskPoki.install(app: model, chat: chat)
+        NativeTools.install(app: model)
     }
 
     var body: some Scene {

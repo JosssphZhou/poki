@@ -336,8 +336,16 @@ final class AppModel {
     func addShellObserver(_ observer: @escaping (ShellEvent) -> Void) { shellObservers.append(observer) }
     /// A Debug probe drives PokiCore on the simulator without a runner session (the chat's end-to-end check).
     private(set) var probeDriven = false
-    /// The app's MCP tools (ask_poki), set by AskPoki.
+    /// The app's MCP tools (ask_poki and the native iPhone tools), set by AskPoki and NativeTools.
     func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
+
+    /// The one composer for the app's MCP tools: every provider adds its tools here, so one refreshing
+    /// does not replace another's list.
+    func refreshHostTools() {
+        var tools = NativeTools.hostTools()
+        if let ask = AskPoki.hostTool { tools.append(ask) }
+        setHostTools(tools)
+    }
     /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
     var onProbeApproval: ((PendingApproval) -> Void)?
 
