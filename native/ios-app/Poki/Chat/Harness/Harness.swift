@@ -2,6 +2,11 @@
 // with agent/task-runner.mjs and agent/prompts/pi-app.md, adapted to the app's in-process tools
 // (look, do, skills, status) and sandbox browser tools (WebTools). finish_task also takes a result
 // card, which the chat draws and the Mac agent's terminal and message channels do not.
+// ask_user is the Mac Poki Agent's ask_user, from agent/task-runner.mjs as it was before the agent
+// dropped the tool on 2026-11-05 (MIT License, Copyright (c) 2026 Joseph Zhou and contributors): a
+// question with two or three options that waits for the answer. Changed: options are objects with
+// a suggested one, an app and an emoji, the owner may type an answer of their own, there is no
+// timeout, and the description says when to ask and that an answer approves nothing.
 import Foundation
 import PokiCore
 
@@ -271,7 +276,10 @@ enum Harness {
     }
 
     /// The instructions for a task: the above, then the saved notes and the skills that fit it.
+    /// `asking`: the model has ask_user (the in-app chat; not a task an outside agent handed over or
+    /// Voice dictation, which wait for the end and have nobody looking at the chat to answer).
     @MainActor static func taskInstructions(for task: String, inSplitView: Bool = false,
+                                            asking: Bool = false,
                                             includeMemoryAttribution: Bool? = nil,
                                             includeCountedScroll: Bool? = nil,
                                             includeCountedScrollReply: Bool? = nil,
@@ -297,6 +305,12 @@ enum Harness {
         // Poki is in front when a task starts, and finish_task brings Poki back when the task ends,
         // so saving a new skill happens in the same reply as finish_task.
         parts.append("Start an app task with do {run: name} when a skill below fits, else do {launch: bundle id}, sending report_plan with that first action and updating currentStep as you progress. When an app's bundle id is not listed below, or a launch answers that no app with that bundle id is installed, call find_app {name} before anything else and launch the id it gives; never launch an id from memory. Say an app is not installed only after find_app says so, and then give the owner the App Store link it found. When find_app says more than one app could be the one, ask the owner which instead of picking. If find_app cannot read the installed apps, send do {button: \"home\"} by itself. Use the returned screen to swipe down on the Home Screen to search, then type the app's name and tap the matching result. Recommend an app the owner does not have only when the task really needs one that no installed app and the built-in browser (web tools) can do: find it with find_app {purpose}, name it, and give its App Store link; never install apps. When you already know the taps a part of the task takes, send them as one do {path: {goal, steps}} with each target named by the text it shows, in place of one call per tap. In a path, put expect: \"text\" on a step whose result you can name, dismiss: [...] for prompts that may be closed on the way, and read: [\"label\"] when the task is to read a value, so the whole task is one call. After a new app task succeeds, call finish_task together with skills {action: \"save\", name, description} named as the owner would ask for it.")
+        if asking {
+            parts.append("Ask with ask_user before the first action only when the owner's words can mean two different tasks, such as a train ticket or a flight.")
+            // Two kinds of unclear: an operation the model settles by trying, and a choice made for the
+            // owner, which it takes when something gives a default and asks with ask_user otherwise.
+            parts.append("Settle every operation yourself: which app to use, where to tap, which route, what a page holds; try it and look. Use the app the owner named. When they named none, use the one their saved notes name, else the usual app for the task, and name it in your reply; ask which app only when the screen or the saved notes list several apps for the task and nothing says which the owner uses. A choice is a pick made for the owner, such as which hospital branch and department, a date or time they did not give, which of two contacts with the same name, or which product option. Take a choice yourself when their words, the saved notes or the screen give a default for it (a usual or nearest store, a size already selected, the default address or payment), and name what you chose in your reply. Ask the owner with ask_user about every other choice that costs money or is hard to undo, and about what to do when the app they named is not installed: one choice per call, on the page that shows its options, before the step that submits it. Keep each answer with skills {action: \"remember\", text} so the next task of its kind starts from it.")
+        }
         if AutomationPath.current == .inProcess, let placement = PKInProcess.shared().duoPlacement() {
             if placement == "fullscreen" {
                 parts.append("Poki is full screen on Duo. Use the normal app task flow without selecting a pane.")
@@ -310,7 +324,7 @@ enum Harness {
         // A model decides approvals from what the owner said. A refused step goes through once the
         // owner says yes to it, so the agent asks in words and tries again.
         if ApprovalClassifier.mode == .reply {
-            parts.append(replyApprovals)
+            parts.append(replyApprovals + (asking ? " Ask this in your reply, never with ask_user: ask_user is for choices, not permission." : ""))
         }
         parts.append(recipients)
         if includeMemoryAttribution ?? !SkillStore.shared.notes.isEmpty {
@@ -352,6 +366,11 @@ enum Harness {
         toolSpecs(inSplitView: false, includeScreenHistory: false)
     }
 
+    /// The in-app chat's tools: the above and ask_user, as `taskInstructions(for:asking:)` says.
+    static var chatTools: [ToolSpec] {
+        toolSpecs(inSplitView: false, includeScreenHistory: HistoryCapture.agentQueryAllowed, includeAskUser: true)
+    }
+
     /// Bundle ids from the phone's own app list, with the App Store's search as the backup (InstalledApps).
     static let findApp = ToolSpec(
         name: "find_app",
@@ -368,9 +387,11 @@ enum Harness {
                           includeMemoryAttribution: Bool = true,
                           includeCountedScroll: Bool = true,
                           includeCountedScrollReply: Bool = true,
+                          includeAskUser: Bool = false,
                           resultCardMode: ResultCardMode = .all) -> [ToolSpec] {
         let taskTools = Self.taskTools(includeCountedScroll: includeCountedScroll,
                                        includeCountedScrollReply: includeCountedScrollReply,
+                                       includeAskUser: !inSplitView && includeAskUser,
                                        resultCardMode: resultCardMode)
         if !inSplitView {
             let webTools = includeMemoryAttribution ? WebTools.specs.map(withActionMemoryIDs) : WebTools.specs
@@ -453,6 +474,7 @@ enum Harness {
         schema: object(["screenshot_id": string], ["screenshot_id"]))
     private static func taskTools(includeCountedScroll: Bool,
                                   includeCountedScrollReply: Bool,
+                                  includeAskUser: Bool,
                                   resultCardMode: ResultCardMode) -> [ToolSpec] {
         var tools = [reportPlan]
         if includeCountedScroll {
@@ -462,6 +484,7 @@ enum Harness {
             }
         }
         tools.append(finishTask(resultCardMode: resultCardMode))
+        if includeAskUser { tools.append(askUser) }
         return tools
     }
 
@@ -584,6 +607,25 @@ enum Harness {
             "For pictured items, send image (bounds of the complete photo itself) and image_screenshot (screenshot_id from the same observation) together. The bounds exclude the row, text, and controls. Items may use different screenshots. Omit both fields if the full photo is clipped or there is no screenshot_id. Never guess.",
         ].joined(separator: "\n\n")
     }
+
+    static let askUser = ToolSpec(
+        name: "ask_user",
+        description: "Ask the owner one question with two or three options, and wait for the answer: it comes back as this call's result. Ask only when the answer changes what you do next and nothing settles it: not the owner's words, this conversation, the saved notes or the screen. For example: the app the owner named is not installed (search on the web, or install it first?); the screen or the saved notes list several apps for the task and nothing says which the owner uses; the words can mean two different tasks. Never ask which app when the owner named one or one is usual for the task, never ask before looking at a page that will show the options, never ask how to operate the phone (try it and look), never ask to confirm a step you can take, and never ask for permission. The answer is a choice, not an approval, and lets no step through: payments, deletions, Wallet and every step the rules flag still ask the owner on their own approval card. One question per call, with no other call in the same reply. question: one short sentence in the owner's language. options: short answers of a few words each. recommended: true on at most one option, the one the owner's past choices or the screen favour; on none when nothing does. app: the option's app, as a bundle ID, when the option is to use an app. emoji: one emoji for an option that is not an app when one fits it well (🚄 for a train ticket, ✈️ for a flight); leave it out otherwise, and never put emoji in the question or a label. allow_other: false only when no answer but the options makes sense; otherwise the owner may also type their own. The task waits for the answer, however long it takes.",
+        schema: object([
+            "question": string,
+            "options": ["type": "array", "minItems": 2, "maxItems": 3,
+                        "items": object(["label": string, "recommended": ["type": "boolean"], "app": string, "emoji": string], ["label"])],
+            "allow_other": ["type": "boolean"],
+        ], ["question", "options"]))
+
+    /// What ask_user answers. The answer is the owner's choice; the line after it keeps it from being
+    /// read as a yes to a step.
+    static func answered(_ text: String, picked: Bool) -> String {
+        (picked ? "The owner chose: \(text)" : "The owner answered in their own words: \(text)")
+            + "\nThis is their choice, not an approval: steps that need approval still ask on their own card."
+    }
+    static let invalidQuestion = "Invalid question: one question and two or three options with labels."
+    static let questionStopped = "Task stopped. No answer."
 
     /// task-runner.mjs's answers to its harness tools.
     static let planPublished = "Plan published. Continue."

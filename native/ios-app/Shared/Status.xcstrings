@@ -111,6 +111,28 @@
         }
       }
     },
+    "Needs answer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs answer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待回答"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待回答"
+          }
+        }
+      }
+    },
     "Needs approval" : {
       "localizations" : {
         "en" : {

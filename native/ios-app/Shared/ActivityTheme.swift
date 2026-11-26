@@ -168,6 +168,8 @@ struct ActivityTheme {
     var place: Font { Self.font(.text, .medium, 13) }
     /// A question or a thing to do: 20 points, bold.
     var title: Font { Self.font(.rounded, .bold, 20) }
+    /// A question in the model's words as the title, in two lines: 17 points, semibold.
+    var question: Font { Self.font(.rounded, .semibold, 17) }
     /// What the step under way does, and a finished run's title: 19 points, semibold.
     var step: Font { Self.font(.rounded, .semibold, 19) }
     /// What Poki is up to on a short Lock Screen card ("Poki's asleep", "Poki's done"): the card's main

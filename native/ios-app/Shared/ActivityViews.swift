@@ -87,7 +87,8 @@ enum ActivityMetrics {
                   islandBear: 96, islandLeft: 104,
                   lock: face.bottom.hasLine ? 134 : 124, lockBear: 116, lockLeft: 122, lockBearInset: 4)
         case .asking:
-            Sizes(island: face.offersStopAsking ? 160 : 150, islandBear: 128, islandLeft: 130,
+            // A two-line question as the title, or a Don’t Ask Again row, takes the island's full 160 points.
+            Sizes(island: face.contentLines > 1 || face.offersStopAsking ? 160 : 150, islandBear: 128, islandLeft: 130,
                   lock: face.offersStopAsking ? 160 : 154, lockBear: 134, lockLeft: 138, lockBearInset: 0)
         case .tall:
             Sizes(island: 160, islandBear: 134, islandLeft: 134, lock: 160, lockBear: 136, lockLeft: 138, lockBearInset: 0)
@@ -110,7 +111,8 @@ extension ActivityFace.Bottom {
     /// A run in an app, or with a plan, draws the line that says work goes on.
     var hasLine: Bool { if case .progress(let line, _) = self { line } else { false } }
     var isProgress: Bool { if case .progress = self { true } else { false } }
-    var isHandoff: Bool { if case .handoff = self { true } else { false } }
+    /// One button across the card (Continue, Answer in Poki): the time goes beside it.
+    var isHandoff: Bool { switch self { case .handoff, .answer: true; default: false } }
     var isApproval: Bool { if case .approval = self { true } else { false } }
 }
 
@@ -432,6 +434,9 @@ struct CompactTrailing: View {
         case .symbol(let name, let tone):
             StateSymbol(name: name, tone: tone, palette: palette, size: name == "checkmark" ? 15.5 : name.hasPrefix("exclamationmark") ? 16 : 15)
                 .frame(width: side, height: side)
+        case .waiting:
+            StateSymbol(name: "questionmark", tone: .accent, palette: palette, size: 15)
+                .frame(width: side, height: side)
         default:
             EmptyView()
         }
@@ -461,6 +466,16 @@ struct CompactTrailing: View {
                         .lineLimit(1).minimumScaleFactor(0.7)
                     // No fixedSize on timer text (see TimerText): a fixed frame instead.
                     Text(timerInterval: Countdown.range(until), countsDown: true)
+                        .font(theme.compactCount).foregroundStyle(palette.quiet)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: ActivityMetrics.compactWords, height: 13, alignment: .trailing)
+                }
+                .frame(width: ActivityMetrics.compactWords, alignment: .trailing)
+            case .waiting(let text, let since):
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(text).font(theme.compact).foregroundStyle(palette.accent).frame(height: 15)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(timerInterval: since...since.addingTimeInterval(12 * 3600), countsDown: false)
                         .font(theme.compactCount).foregroundStyle(palette.quiet)
                         .multilineTextAlignment(.trailing)
                         .frame(width: ActivityMetrics.compactWords, height: 13, alignment: .trailing)
@@ -611,13 +626,17 @@ private struct Title: View {
         } else {
             // 19 points semibold for a step and a finished run, 20 bold for a question or a thing to do,
             // 24 bold for Poki's state on a short Lock Screen card.
+            // A title of two lines (a question) grows with its words instead of keeping one line's height.
             let stepLike = face.size == .working || face.size == .low
+            let lines = large ? 1 : max(face.contentLines, 1)
             Text(face.content)
-                .font(large ? theme.status : stepLike ? theme.step : theme.title).tracking(theme.titleTracking)
+                .font(large ? theme.status : lines > 1 ? theme.question : stepLike ? theme.step : theme.title).tracking(theme.titleTracking)
                 .foregroundStyle(palette.text.opacity(face.stale ? 0.72 : 1))
-                .lineLimit(1).minimumScaleFactor(large ? 0.65 : 0.8)
+                .lineLimit(lines).minimumScaleFactor(large ? 0.65 : 0.8)
+                .lineSpacing(lines > 1 ? 1 : 0)
+                .fixedSize(horizontal: false, vertical: lines > 1)
                 .contentTransition(.interpolate)
-                .frame(height: large ? 30 : stepLike ? 24 : 25, alignment: .leading)
+                .frame(height: lines > 1 ? nil : large ? 30 : stepLike ? 24 : 25, alignment: .leading)
         }
     }
 }
@@ -721,9 +740,9 @@ private struct Control: View {
         case .handoff(let id):
             HandoffDoneButton(handoffID: id, surface: surface)
                 .transition(.activityRow)
-        case .openPoki:
+        case .openPoki, .answer:
             Link(destination: face.link) {
-                Text(String(activity: "Open Poki"))
+                Text(face.bottom == .answer ? String(activity: "Answer in Poki") : String(activity: "Open Poki"))
                     .font(theme.button)
                     .foregroundStyle(palette.text)
                     .frame(maxWidth: .infinity, minHeight: ActivityMetrics.button, maxHeight: ActivityMetrics.button)
