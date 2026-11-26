@@ -11,6 +11,16 @@ use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 
+/// The cached RSD handshake does not advertise the native accessibility service.
+#[derive(Debug)]
+pub(crate) struct MissingAccessibilityService(&'static str);
+impl std::fmt::Display for MissingAccessibilityService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+impl std::error::Error for MissingAccessibilityService {}
+
 // The first DTX auxiliary argument carries the archived NSData payload.
 // The handshake advertises capabilities before subscribing to accessibility:
 // capabilities {DTXBlockCompression:0, DTXConnection:1}, then clientNeedsAccessibility:true.
@@ -77,7 +87,9 @@ async fn subscribe(
     let port = rsd
         .services
         .get("com.apple.accessibility.axAuditDaemon.remoteAXService")
-        .ok_or("Native accessibility service is unavailable")?
+        .ok_or(MissingAccessibilityService(
+            "Native accessibility service is unavailable",
+        ))?
         .port;
     let mut socket = adapter.connect(port).await?;
     let mut capabilities = plist::Dictionary::new();
@@ -798,7 +810,7 @@ async fn read_live(
     let port = rsd
         .services
         .get("com.apple.accessibility.axAuditDaemon.remoteAXService")
-        .ok_or("AX service unavailable")?
+        .ok_or(MissingAccessibilityService("AX service unavailable"))?
         .port;
     let mut socket = adapter.connect(port).await?;
     let caps = plist::Dictionary::from_iter([
