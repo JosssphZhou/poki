@@ -24,7 +24,7 @@ struct QuestionCard: View {
             if open {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(question.options.enumerated()), id: \.offset) { i, option in
-                        OptionButton(option: option, suggested: question.suggested && i == 0) { answer(option.label) }
+                        OptionButton(option: option, foundApps: question.foundApps ?? [], suggested: question.suggested && i == 0) { answer(option.label) }
                     }
                     if question.other {
                         Button(action: other) {
@@ -53,6 +53,7 @@ struct QuestionCard: View {
 /// suggested option is Poki's solid blue with Suggested at its end; the others are soft blue.
 private struct OptionButton: View {
     var option: ChatQuestion.Option
+    var foundApps: [String] = []
     var suggested: Bool
     var tap: () -> Void
     @Environment(\.colorScheme) private var scheme
@@ -60,11 +61,10 @@ private struct OptionButton: View {
     /// The icon grows with the words, from 26 points at the default size.
     @ScaledMetric(relativeTo: .callout) private var side: CGFloat = 26
 
-    /// The app the option is to use: the one the model named, else the one app its words name.
+    /// The app the option is to use: trusted only when named in the option's label or returned by
+    /// `find_app` during this task.
     private var app: String? {
-        if let named = option.app, let id = AppIconStore.bundleID(named) { return id }
-        let named = AppIconStore.bundleIDs(namedIn: option.label)
-        return named.count == 1 ? named[0] : nil
+        ChatQuestion.trustedApp(for: option, foundApps: Set(foundApps))
     }
 
     var body: some View {

@@ -660,14 +660,27 @@ final class ActivityController {
         return fits() ? state : nil
     }
 
+    static let workingStaleInterval: TimeInterval = 600
+    static let questionStaleInterval: TimeInterval = 1800
+
     func content() -> ActivityContent<PokiState>? {
         guard let state = Self.fittedState(state) else {
             AppLog.shared.add("activity", "Live Activity state exceeds the payload budget")
             return nil
         }
-        // An approval goes stale when it expires. A run goes stale when no update has come for ten
-        // minutes (Poki was closed or suspended), and then says it is not updating.
-        let stale = state.approval?.expires ?? (state.phase == .working ? Date.now.addingTimeInterval(600) : nil)
+        // An approval goes stale when it expires. A run goes stale after ten minutes without an
+        // update, and a waiting question goes stale after thirty minutes if Poki was closed or
+        // suspended so the Lock Screen does not keep showing an active question forever.
+        let stale: Date?
+        if let expires = state.approval?.expires {
+            stale = expires
+        } else if state.phase == .working {
+            stale = Date.now.addingTimeInterval(Self.workingStaleInterval)
+        } else if state.phase == .question {
+            stale = Date.now.addingTimeInterval(Self.questionStaleInterval)
+        } else {
+            stale = nil
+        }
         return ActivityContent(state: state, staleDate: stale, relevanceScore: state.approval == nil && state.handoff == nil && state.question == nil ? 50 : 100)
     }
 

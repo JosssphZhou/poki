@@ -2808,13 +2808,28 @@ final class ChatHarnessTests: XCTestCase {
         for picked in [true, false] {
             let session = FakeAutomation()
             _ = session.prepare()
+            final class FrontAppBox: @unchecked Sendable {
+                private let lock = NSLock()
+                private var current = ("com.apple.Preferences", "Settings")
+                func set(_ bundle: String) {
+                    let name = bundle == "me.ele.ios.eleme" ? "Ele.me" : bundle == "com.360buy.jdmobile" ? "JD" : bundle
+                    lock.withLock { current = (bundle, name) }
+                }
+                func get() -> (String, String) { lock.withLock { current } }
+            }
+            let frontApp = FrontAppBox()
+            let transport = SessionScreenTransport(
+                session: session,
+                beforeActivation: { bundle in frontApp.set(bundle) },
+                activeApp: { frontApp.get() }
+            )
             let server = try FakeCompletions(replies: [
-                FakeCompletions.tool("do", ["actions": [["launch": "me.ele.ios.eleme"]]]),
-                FakeCompletions.tool("do", ["actions": [["launch": "com.360buy.jdmobile"]]]),
+                FakeCompletions.tool("do", ["actions": [["launch": ["bundle": "me.ele.ios.eleme"]]]]),
+                FakeCompletions.tool("do", ["actions": [["launch": ["bundle": "com.360buy.jdmobile"]]]]),
                 FakeCompletions.tool("finish_task", ["success": true, "summary": "Ordered on Ele.me.", "details": [], "answer": ["kind": "action"]]),
                 FakeCompletions.text("Ordered on Ele.me."),
             ])
-            let chat = chat(on: server, transport: SessionScreenTransport(session: session), kind: .poki)
+            let chat = chat(on: server, transport: transport, automation: session, kind: .poki)
             defer {
                 if chat.running { chat.stop() }
                 QuestionNotice.cancel()

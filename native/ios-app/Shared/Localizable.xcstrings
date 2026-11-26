@@ -49017,22 +49017,6 @@
         }
       }
     },
-    "JD" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "京东外卖"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "京東外賣"
-          }
-        }
-      }
-    },
     "Meituan Waimai" : {
       "localizations" : {
         "zh-Hans" : {
@@ -49045,22 +49029,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "美團外賣"
-          }
-        }
-      }
-    },
-    "Meituan Waimai, Ele.me and JD can all deliver it. Which one?" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "美团外卖、饿了么和京东外卖都能点。用哪个？"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "美團外賣、餓了麼和京東外賣都能點。用哪個？"
           }
         }
       }
@@ -49205,6 +49173,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "輸入其他回答"
+          }
+        }
+      }
+    },
+    "Attachments can’t be sent with an answer." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答问题时不能发送附件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回答問題時無法傳送附件。"
+          }
+        }
+      }
+    },
+    "JD Takeaway" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "京东外卖"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "京東外賣"
+          }
+        }
+      }
+    },
+    "Meituan Waimai, Ele.me and JD Takeaway can all deliver it. Which one?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "美团外卖、饿了么和京东外卖都能点。用哪个？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "美團外賣、餓了麼和京東外賣都能點。用哪個？"
           }
         }
       }

@@ -111,6 +111,8 @@ struct ChatQuestion: Equatable, Codable {
     /// The owner may type an answer of their own.
     var other: Bool
     var state: State = .asking
+    /// Bundle IDs returned by `find_app` during the same task that authorized an option's app icon.
+    var foundApps: [String]? = nil
 
     /// ask_user's arguments, or nil when they are not one question with two or three labelled options.
     init?(id: String, arguments args: [String: Any]) {
@@ -132,8 +134,98 @@ struct ChatQuestion: Equatable, Codable {
         other = args["allow_other"] as? Bool ?? true
     }
 
-    init(id: String, text: String, options: [Option], suggested: Bool, other: Bool = true, state: State = .asking) {
-        self.id = id; self.text = text; self.options = options; self.suggested = suggested; self.other = other; self.state = state
+    init(id: String, text: String, options: [Option], suggested: Bool, other: Bool = true, state: State = .asking, foundApps: [String]? = nil) {
+        self.id = id; self.text = text; self.options = options; self.suggested = suggested; self.other = other; self.state = state; self.foundApps = foundApps
+    }
+
+    /// True when the question or any option asks the owner for a password, passcode, PIN,
+    /// verification or one-time code, payment card number, or account credentials.
+    var requestsSecretOrCredential: Bool {
+        Self.requestsSecretOrCredential(text) || options.contains { Self.requestsSecretOrCredential($0.label) }
+    }
+
+    static func requestsSecretOrCredential(_ text: String) -> Bool {
+        let range = NSRange(text.startIndex..., in: text)
+        return secretPromptPatterns.contains { $0.firstMatch(in: text, range: range) != nil }
+    }
+
+    private static let secretPromptPatterns: [NSRegularExpression] = [
+        try! NSRegularExpression(
+            pattern: #"\b(?:password|passcode|passphrase|secret\s+key|private\s+key|api\s+key|access\s+token|seed\s+phrase|recovery\s+phrase|social\s+security|ssn)\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"\b(?:card\s+number|credit\s+card\s+number|debit\s+card\s+number|bank\s+account(?:\s+number)?|account\s+number|routing\s+number|account\s+credentials?|login\s+credentials?)\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"\b(?:otp|2fa|mfa|totp|cvv|cvc)\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"\b(?:verification|verify|security|auth(?:entication)?|login|sign[- ]?in|sms|text|email|one[- ]?time|2fa|mfa|totp|confirmation|recovery|backup|pass|access|secret|pin|unlock)\s+codes?\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"\b\d+\s*-?\s*digit\s+(?:code|pin|passcode|number)\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"\bcode\s+(?:you\s+(?:just\s+)?(?:got|received)|sent\s+to|from\s+(?:sms|text|email|authenticator))\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"\bpin\s*(?:code|number)\b|\b(?:enter|type|give|provide|share|send|input|your|the|unlock|lock|screen|atm|sim|bank|card|\d+\s*-?\s*digit)\s+pin\b"#,
+            options: [.caseInsensitive]
+        ),
+        try! NSRegularExpression(
+            pattern: #"验证码|驗證碼|校验码|校驗碼|动态码|動態碼|短信码|簡訊碼|安全码|安全碼|确认码|確認碼|授权码|授權碼|恢复码|恢復碼|备用码|備用碼|一次性.{0,4}(?:码|碼)|(?:\d|四|六)\s*位(?:验证|驗證|安全|动态|動態|短信|簡訊)?(?:码|碼|密码|密碼)|密码|密碼|口令|密钥|密鑰|私钥|私鑰|助记词|助記詞|银行卡|銀行卡|信用卡号|信用卡號|储蓄卡号|儲蓄卡號|卡号|卡號|身份证号|身份證號|银行账号|銀行帳號|银行账户|銀行帳戶|账户号|帳戶號|(?:输入|填|提供|告诉我|发给我|輸入|告訴我|發給我).{0,6}(?:账号|帳號|账户|帳戶)"#
+        ),
+    ]
+
+    /// Resolves an option's app icon only when its own label names that app or `find_app` returned it
+    /// in the same task, preventing a model from attaching an unrelated app icon to arbitrary text.
+    @MainActor
+    static func trustedApp(for option: Option, foundApps: Set<String> = []) -> String? {
+        let labelApps = AppIconStore.bundleIDs(namedIn: option.label)
+        let allowedFromLabel = Set(labelApps.map { $0.lowercased() })
+        let allowedFromFind = Set(foundApps.map { $0.lowercased() })
+        if let named = option.app, let id = AppIconStore.bundleID(named) {
+            let key = id.lowercased()
+            if allowedFromLabel.contains(key) || allowedFromFind.contains(key) {
+                return id
+            }
+        }
+        return labelApps.count == 1 ? labelApps[0] : nil
+    }
+
+    /// Drops any model-supplied option app ID that is neither named in that option's label nor
+    /// returned by `find_app` during this task, and records matched `find_app` IDs for rendering.
+    @MainActor
+    func sanitizingApps(allowedFromFindApp found: Set<String>) -> ChatQuestion {
+        var sanitized = self
+        var trustedFound: [String] = []
+        let allowedFind = Set(found.map { $0.lowercased() })
+        sanitized.options = options.map { option in
+            var copy = option
+            if let named = option.app, let id = AppIconStore.bundleID(named) {
+                let key = id.lowercased()
+                let labelApps = Set(AppIconStore.bundleIDs(namedIn: option.label).map { $0.lowercased() })
+                if labelApps.contains(key) {
+                    copy.app = id
+                } else if allowedFind.contains(key) {
+                    copy.app = id
+                    if !trustedFound.contains(id) { trustedFound.append(id) }
+                } else {
+                    copy.app = nil
+                }
+            } else {
+                copy.app = nil
+            }
+            return copy
+        }
+        sanitized.foundApps = trustedFound.isEmpty ? nil : trustedFound
+        return sanitized
     }
 
     /// One emoji as the option's icon; anything else (words, several emoji, a digit) is dropped.
@@ -260,6 +352,8 @@ final class ChatModel {
     private(set) var taskApp: String?
     /// What the task under way opened and acted in, and what it was asked, for `taskApp`.
     private var taskApps = TaskApps()
+    /// Bundle IDs returned by `find_app` during the current task, allowed as option app icons.
+    private var taskFoundApps: Set<String> = []
     private var taskRequest = ""
     private enum ToolRoute { case app, web }
     private var toolRoute: ToolRoute?
@@ -472,10 +566,21 @@ final class ChatModel {
         return last.id
     }
 
+    static var attachmentsNotAllowedWithAnswerMessage: String {
+        AppLocalization.text(LocalizedStringResource("Attachments can’t be sent with an answer."))
+    }
+
     /// A message with photos or PDFs from the plus menu: the model reads their pictures with the words.
     /// The words may be left out.
     func send(_ text: String, attachments: [ChatAttachment], replyingTo: UUID? = nil) {
-        if waitingQuestion != nil { answer(text, picked: false); return }
+        if waitingQuestion != nil {
+            if !attachments.isEmpty {
+                add(.note(.problem(Self.attachmentsNotAllowedWithAnswerMessage)))
+                return
+            }
+            answer(text, picked: false)
+            return
+        }
         lastImages = attachments.flatMap(\.images)
         let documents = attachments.compactMap { attachment in
             attachment.textContent.map { ChatTextDocument(name: attachment.label, content: $0) }
@@ -538,11 +643,20 @@ final class ChatModel {
         let engine: Engine
     }
 
-    /// `answer`: the owner's answer to a question whose task has ended (Poki was closed while it
-    /// waited), already in the chat: it starts a new task with the question, and adds no message.
+    private struct ResumedAnswer {
+        let entry: ChatEntry
+        let originalRequest: String?
+        let questionText: String
+        let answerText: String
+        let picked: Bool
+    }
+
+    /// `resumedAnswer`: the owner's answer to a question whose task has ended, already in the chat.
+    /// It starts a new task with the owner's original request and answer while keeping the earlier
+    /// assistant-authored question text attributed in system context rather than in `taskRequest`.
     private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [],
                       inSplitView: Bool = false, chooseWorkspace: Bool = false, replyingTo: UUID? = nil,
-                      answer: ChatEntry? = nil, asking: Bool = true) {
+                      resumedAnswer: ResumedAnswer? = nil, asking: Bool = true) {
         if let message = app.signer.installMessage {
             add(.note(.problem(message)))
             return
@@ -559,7 +673,7 @@ final class ChatModel {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("Poki is working on a task for \(busy). Try again when it’s done.")))))
             return
         }
-        let isContinuation = answer == nil && replyingTo == nil && kind == .poki && thumbnails.isEmpty && lastImages.isEmpty
+        let isContinuation = resumedAnswer == nil && replyingTo == nil && kind == .poki && thumbnails.isEmpty && lastImages.isEmpty
             && (ChatContinuation.isRequest(text) || entries.last?.continuationChoices != nil)
         if kind == .poki, !store.isInitialReady || (isContinuation && !store.isLoaded) {
             running = true
@@ -587,7 +701,7 @@ final class ChatModel {
                 self.lastImages = capturedImages
                 guard let prepared = self.prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
                                                       inSplitView: inSplitView, chooseWorkspace: chooseWorkspace,
-                                                      replyingTo: replyingTo, answer: answer, asking: asking) else {
+                                                      replyingTo: replyingTo, resumedAnswer: resumedAnswer, asking: asking) else {
                     self.running = false
                     self.awaitingModel = false
                     return
@@ -598,7 +712,7 @@ final class ChatModel {
         }
         guard let prepared = prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
                                          inSplitView: inSplitView, chooseWorkspace: chooseWorkspace,
-                                         replyingTo: replyingTo, answer: answer, asking: asking) else { return }
+                                         replyingTo: replyingTo, resumedAnswer: resumedAnswer, asking: asking) else { return }
         running = true
         awaitingModel = !app.hasVisibleDuoCompanion
         stopAsked = false
@@ -617,13 +731,25 @@ final class ChatModel {
     /// its end and has nobody to answer. A task from Voice dictation does not ask either (`taskAsks`).
     private var asks: Bool { kind == .poki }
 
+    private func expireAskingQuestions() {
+        var expired = false
+        for i in entries.indices {
+            guard case .question(var question) = entries[i].kind, question.state == .asking else { continue }
+            question.state = .stopped
+            entries[i].kind = .question(question)
+            expired = true
+        }
+        if expired { QuestionNotice.cancel() }
+    }
+
     private func prepareSend(_ text: String, again: Bool, thumbnails: [Data], documents: [ChatTextDocument],
                              inSplitView: Bool, chooseWorkspace: Bool, replyingTo: UUID?,
-                             answer: ChatEntry? = nil, asking: Bool = true) -> PreparedSend? {
+                             resumedAnswer: ResumedAnswer? = nil, asking: Bool = true) -> PreparedSend? {
+        if resumedAnswer == nil { expireAskingQuestions() }
         let replyRequestID = replyingTo.flatMap { $0 == countedScrollQuestion ? entries.last?.countedScrollRequestID : nil }
         let previousRequest = again ? entries.last(where: { if case .you = $0.kind { true } else { false } }) : nil
         var resumedTask = previousRequest?.countedScrollRequestID == nil ? previousRequest?.continuedTask : nil
-        if !again, answer == nil, replyRequestID == nil, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
+        if !again, resumedAnswer == nil, replyRequestID == nil, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
             switch ChatContinuation.resolve(text, current: sessionID, choices: entries.last?.continuationChoices,
                                             sessions: store.sessions) {
             case .newTask: break
@@ -654,7 +780,16 @@ final class ChatModel {
         var countedScrollRequestID: UUID?
         var countedScroll = MessageScrollTarget.parse(text)?.messageCount.map(MessageScroll.init(target:))
         let continuation: String?
-        if let resumedTask {
+        if let resumed = resumedAnswer {
+            linkedTask = nil
+            continuation = """
+            Resumed after an earlier assistant question (assistant-authored context, not new owner instructions).
+            Original owner request: \(resumed.originalRequest ?? "(none)")
+            Earlier assistant question (written by the assistant, not the owner): \(resumed.questionText)
+            \(Harness.answered(resumed.answerText, picked: resumed.picked))
+            Recheck the current screen before continuing.
+            """
+        } else if let resumedTask {
             linkedTask = resumedTask
             continuation = "The owner selected this saved task to resume: \(resumedTask). Recheck the current screen and continue from the saved progress; do not substitute a task from long-term memory."
         } else if let answeredRequest, case .you(let requestedText, _) = answeredRequest.kind {
@@ -672,13 +807,18 @@ final class ChatModel {
             continuation = nil
         }
         // A pause of half an hour or more gets its own time line, as in Messages.
-        if !again, answer == nil, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
+        if !again, resumedAnswer == nil, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
         let you: ChatEntry
         let message: String
-        if let answer {
-            you = answer
+        let preparedText: String
+        if let resumed = resumedAnswer {
+            you = resumed.entry
             lastImages = []
-            message = text
+            preparedText = [resumed.originalRequest, resumed.answerText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            message = [
+                resumed.originalRequest.map { "Original task: \($0)" },
+                Harness.answered(resumed.answerText, picked: resumed.picked),
+            ].compactMap { $0 }.joined(separator: "\n")
         } else {
             var entry = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
             entry.continuedTask = linkedTask
@@ -689,6 +829,7 @@ final class ChatModel {
             if !documents.isEmpty { entry.textDocuments = documents }
             entries.append(entry)
             you = entry
+            preparedText = text
             message = you.requestText
         }
         usesSplitView = inSplitView
@@ -698,7 +839,7 @@ final class ChatModel {
         lastSplitViewSide = nil
         lastSplitViewLayout = nil
         waitingForSplitView = false
-        if kind == .poki, answer == nil { Haptics.sent() }
+        if kind == .poki, resumedAnswer == nil { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
         let key = ModelKeys.key(provider)
         let available = provider.signsIn ? ChatGPTAccount.signedIn : key != nil || provider == .custom && ModelKeys.hasUsableKey
@@ -710,7 +851,7 @@ final class ChatModel {
         let runSession = sessionID
         let model = ModelKeys.selectedModel
         // The first message names the chat: a few words from the chat's own model, in the background.
-        if kind == .poki, !again, answer == nil, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
+        if kind == .poki, !again, resumedAnswer == nil, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
            let piModel = provider.piModel(model) {
             let id = sessionID
             let store = self.store
@@ -719,12 +860,12 @@ final class ChatModel {
         planID = nil; noteID = nil; cardID = nil; modelPlan = nil
         taskRequestID = you.id
         taskApp = nil
-        taskApps = TaskApps(); taskRequest = linkedTask ?? text; toolRoute = nil
+        taskApps = TaskApps(); taskRequest = linkedTask ?? preparedText; toolRoute = nil
         let taskAsks = asks && asking && !inSplitView
         self.taskAsks = taskAsks
         let images = lastImages
         let namedApps = chooseWorkspace && kind == .poki && app.canPlanSplitView
-            ? AppIconStore.bundleIDs(namedIn: text) : []
+            ? AppIconStore.bundleIDs(namedIn: preparedText) : []
         if !inSplitView, namedApps.count < 2, Self.direct, provider == .anthropic || provider == .openai, let key {
             let context = Harness.taskInstructions(for: taskRequest,
                                                    asking: taskAsks,
@@ -737,7 +878,7 @@ final class ChatModel {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
             }
             guard let client else { return nil }
-            return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
+            return PreparedSend(text: preparedText, you: you, message: message, runSession: runSession, provider: provider, model: model,
                                 continuation: continuation, countedScroll: countedScroll, isRetry: again,
                                 inSplitView: inSplitView, asking: taskAsks, images: images, namedApps: namedApps,
                                 engine: .direct(client, instructions, context.notes))
@@ -746,7 +887,7 @@ final class ChatModel {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("pi has no model \(model) for \(provider.name).")))))
             return nil
         }
-        return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
+        return PreparedSend(text: preparedText, you: you, message: message, runSession: runSession, provider: provider, model: model,
                             continuation: continuation, countedScroll: countedScroll, isRetry: again,
                             inSplitView: inSplitView, asking: taskAsks, images: images, namedApps: namedApps,
                             engine: .pi(piModel))
@@ -1047,6 +1188,7 @@ final class ChatModel {
         messageScreen = nil
         messagePane = nil
         taskCalls.removeAll()
+        taskFoundApps.removeAll()
         offeredMemories.removeAll()
         pendingMemoryWrites.removeAll()
         taskResultCardMode = .all
@@ -1518,7 +1660,11 @@ final class ChatModel {
             guard taskAsks, waitingQuestion == nil, let question = ChatQuestion(id: call.id, arguments: args) else {
                 return PokiCore.ToolAnswer(text: Harness.invalidQuestion, jpeg: nil, isError: true)
             }
-            return await ask(question)
+            if question.requestsSecretOrCredential {
+                AppLog.shared.add("chat", "refused ask_user requesting a secret or verification code")
+                return PokiCore.ToolAnswer(text: Harness.secretQuestionRefused, jpeg: nil, isError: true)
+            }
+            return await ask(question.sanitizingApps(allowedFromFindApp: taskFoundApps))
         case "count_messages":
             guard var scroll = messageScroll, args["target"] as? Int == scroll.target, let refs = args["refs"] as? [Int] else {
                 return PokiCore.ToolAnswer(text: "Use the owner's requested target and the current message refs.", jpeg: nil, isError: true)
@@ -1565,7 +1711,13 @@ final class ChatModel {
                 self.recordMemoryUse(ids)
             })
         case "find_app":
-            let found = await InstalledApps.shared.find(name: args["name"] as? String, purpose: args["purpose"] as? String)
+            let found = await InstalledApps.shared.findResult(name: args["name"] as? String, purpose: args["purpose"] as? String)
+            for id in found.bundleIDs {
+                taskFoundApps.insert(id.lowercased())
+                if let resolved = AppIconStore.bundleID(id) {
+                    taskFoundApps.insert(resolved.lowercased())
+                }
+            }
             return PokiCore.ToolAnswer(text: found.text, jpeg: nil, isError: found.isError)
         case "skills", "routines":
             // A page write waits for the task's end like a note does: a failed task keeps nothing.
@@ -1702,10 +1854,12 @@ final class ChatModel {
             questionAnswer?.resume(returning: (text, picked))
             questionAnswer = nil
         } else {
-            // The model's side of that task is gone with it: the request goes along with the question.
+            // The model's side of that task is gone with it: keep the owner's request and answer
+            // separate from the earlier assistant-authored question text.
             let request = entries[..<i].reversed().lazy.compactMap { entry -> String? in if case .you(let said, _) = entry.kind { said } else { nil } }.first
-            let asked = [request.map { "Your task: \($0)" }, "You asked: \(question.text)", "The owner's answer: \(text)"].compactMap { $0 }
-            send(asked.joined(separator: "\n"), again: false, answer: reply)
+            let ownerTask = [request, text].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            let resumed = ResumedAnswer(entry: reply, originalRequest: request, questionText: question.text, answerText: text, picked: picked)
+            send(ownerTask, again: false, resumedAnswer: resumed)
         }
     }
 
@@ -2048,7 +2202,8 @@ final class ChatModel {
         static var concertQuestion: ChatQuestion {
             ChatQuestion(id: "sample-question", text: AppLocalization.text(LocalizedStringResource("Damai isn’t installed. Search on the web, or install it first?")),
                          options: [.init(label: AppLocalization.text(LocalizedStringResource("Search on the web")), app: "com.apple.mobilesafari"),
-                                   .init(label: AppLocalization.text(LocalizedStringResource("Install it first")))], suggested: true)
+                                   .init(label: AppLocalization.text(LocalizedStringResource("Install it first")))], suggested: true,
+                         foundApps: ["com.apple.mobilesafari"])
         }
         static var concertSteps: [String] {
             [AppLocalization.text(LocalizedStringResource("Open Damai’s website in Safari")), AppLocalization.text(LocalizedStringResource("Find Saturday’s shows")), AppLocalization.text(LocalizedStringResource("Pick the seats"))]
@@ -2057,10 +2212,10 @@ final class ChatModel {
             switch scene {
             case "questionApps":
                 (AppLocalization.text(LocalizedStringResource("Order my usual beef noodles")),
-                 ChatQuestion(id: "sample-apps", text: AppLocalization.text(LocalizedStringResource("Meituan Waimai, Ele.me and JD can all deliver it. Which one?")),
+                 ChatQuestion(id: "sample-apps", text: AppLocalization.text(LocalizedStringResource("Meituan Waimai, Ele.me and JD Takeaway can all deliver it. Which one?")),
                               options: [.init(label: AppLocalization.text(LocalizedStringResource("Meituan Waimai")), app: "com.meituan.itakeaway"),
                                         .init(label: AppLocalization.text(LocalizedStringResource("Ele.me")), app: "me.ele.ios.eleme"),
-                                        .init(label: AppLocalization.text(LocalizedStringResource("JD")), app: "com.360buy.jdmobile")], suggested: true))
+                                        .init(label: AppLocalization.text(LocalizedStringResource("JD Takeaway")), app: "com.360buy.jdmobile")], suggested: true))
             case "questionMeaning":
                 (AppLocalization.text(LocalizedStringResource("Book a ticket to Shanghai for tomorrow")),
                  ChatQuestion(id: "sample-meaning", text: AppLocalization.text(LocalizedStringResource("A train ticket, or a flight?")),

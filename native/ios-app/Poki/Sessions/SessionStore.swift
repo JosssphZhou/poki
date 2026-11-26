@@ -36,7 +36,17 @@ struct SavedSession: Codable, Identifiable, Equatable {
     /// Its age for the limit: the later of its last change and its return from the archive.
     var keptSince: Date { max(updated, unarchived ?? .distantPast) }
 
+    /// Marks any unanswered `.asking` questions as stopped when a session is no longer running.
+    mutating func expirePendingQuestions() {
+        for i in entries.indices {
+            guard case .question(var question) = entries[i].kind, question.state == .asking else { continue }
+            question.state = .stopped
+            entries[i].kind = .question(question)
+        }
+    }
+
     mutating func markInterruptedTask() {
+        expirePendingQuestions()
         guard live else { return }
         live = false
         outcome = .interrupted
@@ -914,6 +924,7 @@ final class SessionStore {
         decoder.dateDecodingStrategy = .iso8601
         var session = try decoder.decode(SavedSession.self, from: data)
         session.live = false
+        session.expirePendingQuestions()
         if let mine = self.session(session.id), mine.updated >= session.updated { return }
         put(session)
     }

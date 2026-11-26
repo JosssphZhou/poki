@@ -200,9 +200,21 @@ final class InstalledApps {
         String(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
     }
 
+    struct FindResult: Equatable {
+        var text: String
+        var isError: Bool
+        var bundleIDs: [String]
+    }
+
     /// The answer to find_app: the installed apps by `name`, or for `purpose` the App Store's apps
     /// marked installed or not, with the store's link for the ones that are not.
     func find(name: String?, purpose: String?) async -> (text: String, isError: Bool) {
+        let result = await findResult(name: name, purpose: purpose)
+        return (result.text, result.isError)
+    }
+
+    /// Same lookup as `find(name:purpose:)`, plus the matched bundle IDs returned to the model.
+    func findResult(name: String?, purpose: String?) async -> FindResult {
         let inventory = await list()
         let source = describe(inventory)
         if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
@@ -212,20 +224,22 @@ final class InstalledApps {
                     // Every app that goes by the name, whether KnownApps or the phone says so: the
                     // system's Notes and another app called Notes are two.
                     let named = hits.filter { $0.score <= 1 }
-                    let lines = hits.prefix(5).map { Self.line(Match(id: $0.app.id, name: $0.app.name ?? $0.app.bundleName ?? $0.app.id, installed: true)) }
+                    let top = Array(hits.prefix(5))
+                    let lines = top.map { Self.line(Match(id: $0.app.id, name: $0.app.name ?? $0.app.bundleName ?? $0.app.id, installed: true)) }
+                    let ids = top.map(\.app.id)
                     // A name two apps share points at neither: launching one would be a guess.
                     if named.count > 1 {
-                        return ("more than one installed app is named \"\(name)\" (from \(source)). Do not pick one: ask the owner which they mean, naming each.\n" + lines.joined(separator: "\n"), false)
+                        return FindResult(text: "more than one installed app is named \"\(name)\" (from \(source)). Do not pick one: ask the owner which they mean, naming each.\n" + lines.joined(separator: "\n"), isError: false, bundleIDs: ids)
                     }
                     if best <= 1 {
-                        return ("the installed app named \"\(name)\" is the first below (from \(source)); launch it. The others only hold the name.\n" + lines.joined(separator: "\n"), false)
+                        return FindResult(text: "the installed app named \"\(name)\" is the first below (from \(source)); launch it. The others only hold the name.\n" + lines.joined(separator: "\n"), isError: false, bundleIDs: ids)
                     }
-                    return ("no installed app is named exactly \"\(name)\"; these hold the name (from \(source)). Launch one only when it is clearly the app the owner means; when more than one could be, ask the owner which.\n" + lines.joined(separator: "\n"), false)
+                    return FindResult(text: "no installed app is named exactly \"\(name)\"; these hold the name (from \(source)). Launch one only when it is clearly the app the owner means; when more than one could be, ask the owner which.\n" + lines.joined(separator: "\n"), isError: false, bundleIDs: ids)
                 }
             }
             if inventory?.fresh != true, let known = KnownApps.find(name),
                let id = known.ids.first(where: { hasIcon($0) == true }) {
-                return ("the installed app named \"\(name)\" is below (from its icon on this iPhone; \(source)); launch it.\n" + Self.line(Match(id: id, name: known.name(in: .current), installed: true)), false)
+                return FindResult(text: "the installed app named \"\(name)\" is below (from its icon on this iPhone; \(source)); launch it.\n" + Self.line(Match(id: id, name: known.name(in: .current), installed: true)), isError: false, bundleIDs: [id])
             }
             // The App Store's names, kept to the ones on this phone: its own list may name an app in
             // another language than the owner did.
@@ -235,22 +249,26 @@ final class InstalledApps {
             let present = Array(all.filter { $0.installed == true }.prefix(3))
             let marked = Array(all.prefix(3))
             if !present.isEmpty {
-                return ("installed apps the App Store calls \"\(name)\" (installed checked with \(source)). Launch one only when it is clearly the app the owner means; when more than one could be, ask the owner which.\n" + present.map(Self.line).joined(separator: "\n"), false)
+                return FindResult(text: "installed apps the App Store calls \"\(name)\" (installed checked with \(source)). Launch one only when it is clearly the app the owner means; when more than one could be, ask the owner which.\n" + present.map(Self.line).joined(separator: "\n"), isError: false, bundleIDs: present.map(\.id))
             }
             // Missing only on a fresh list: an old list, the icons and the store can only say yes.
-            guard inventory?.fresh == true else { return (Self.answer(unknown: name, offers: marked, storeFailed: store == nil, source: source), false) }
-            return (Self.answer(missing: name, offers: marked, storeFailed: store == nil, source: source), false)
+            guard inventory?.fresh == true else {
+                return FindResult(text: Self.answer(unknown: name, offers: marked, storeFailed: store == nil, source: source), isError: false, bundleIDs: marked.map(\.id))
+            }
+            return FindResult(text: Self.answer(missing: name, offers: marked, storeFailed: store == nil, source: source), isError: false, bundleIDs: marked.map(\.id))
         }
         if let purpose = purpose?.trimmingCharacters(in: .whitespacesAndNewlines), !purpose.isEmpty {
             guard let store = await search(purpose) else {
-                return ("could not search the App Store for \"\(purpose)\" (no answer): try again later, or do the task with installed apps or the built-in browser.", false)
+                return FindResult(text: "could not search the App Store for \"\(purpose)\" (no answer): try again later, or do the task with installed apps or the built-in browser.", isError: false, bundleIDs: [])
             }
-            guard !store.isEmpty else { return ("the App Store found no app for \"\(purpose)\".", false) }
+            guard !store.isEmpty else {
+                return FindResult(text: "the App Store found no app for \"\(purpose)\".", isError: false, bundleIDs: [])
+            }
             let marked = store.prefix(5).map { Match(id: $0.id, name: $0.name, installed: installed($0.id, in: inventory), url: $0.url) }
             let sorted = marked.filter { $0.installed == true } + marked.filter { $0.installed != true }
-            return ("App Store apps for \"\(purpose)\", installed ones first (installed checked with \(source)):\n" + sorted.map(Self.line).joined(separator: "\n"), false)
+            return FindResult(text: "App Store apps for \"\(purpose)\", installed ones first (installed checked with \(source)):\n" + sorted.map(Self.line).joined(separator: "\n"), isError: false, bundleIDs: sorted.map(\.id))
         }
-        return ("find_app takes name (an app's name) or purpose (what the app is for).", true)
+        return FindResult(text: "find_app takes name (an app's name) or purpose (what the app is for).", isError: true, bundleIDs: [])
     }
 
     private func describe(_ inventory: Inventory?) -> String {

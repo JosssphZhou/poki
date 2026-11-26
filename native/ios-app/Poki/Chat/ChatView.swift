@@ -229,7 +229,9 @@ struct ChatView: View {
                 }
                 ComposerInputView(input: draft, focused: $writing, adding: $adding,
                                   settingsPresented: $composerSettingsPresented, running: busy,
-                                  answering: chat.waitingQuestion?.other == true, progress: progress, restarts: restarts, conversationID: chat.sessionID,
+                                  answering: chat.waitingQuestion?.other == true,
+                                  waitingForAnswer: chat.waitingQuestion != nil,
+                                  progress: progress, restarts: restarts, conversationID: chat.sessionID,
                                   send: { text, attachments in
                                       let reply = scrollReplyQuestion == chat.countedScrollQuestion ? scrollReplyQuestion : nil
                                       scrollReplyQuestion = nil
@@ -851,9 +853,8 @@ struct ChatTranscript<Footer: View>: View {
                 .padding(.top, startsRun(i) ? 8 : 0)
                 .transition(PlanMotion.stepTransition)
         case .question(let question):
-            // The options can be tapped while the question waits: for the task under way, or for a task
-            // that has ended (Poki was closed) when no other task runs.
-            let open = question.state == .asking && (waitingQuestion == question.id || !live)
+            // The options can be tapped only while this question is the active waiting question.
+            let open = question.state == .asking && waitingQuestion == question.id
             QuestionCard(question: question, open: open, tail: isLast(i, poki: true), answer: answer, other: otherAnswer)
                 .padding(.top, startsRun(i) ? 10 : 0)
                 .transition(PlanMotion.stepTransition)
@@ -1395,6 +1396,9 @@ struct ComposerInputView: View {
     /// A question from Poki waits and takes the owner's own words: what is typed is the answer, sent
     /// with the arrow while the task keeps running.
     var answering = false
+    /// Any question from Poki is waiting (even when `allow_other` is false): attachments cannot go
+    /// with an answer and are not added or silently dropped.
+    var waitingForAnswer = false
     var isSettingsPreview = false
     @AppStorage(ComposerSettingsView.modelKey) private var showsModelShortcut = true
     @State private var previewTaps = 0
@@ -1962,9 +1966,17 @@ struct ComposerInputView: View {
         return (MentionRecents.ids + RecentAppsStore.shared.recentIDs).filter { seen.insert($0.lowercased()).inserted }
     }
 
+    private var attachmentRoom: Int {
+        waitingForAnswer ? 0 : max(0, Self.most - attachments.count)
+    }
+
+    private var canAddAttachments: Bool {
+        attachmentRoom > 0
+    }
+
     /// Plus's sheet, with the library, Files and the camera opening over it.
     private var addSheet: some View {
-        ComposerAddSheet(room: Self.most - attachments.count,
+        ComposerAddSheet(room: attachmentRoom,
                          choosePhotos: { pickerGeneration = attachmentDraft.generation; choosingPhotos = true },
                          takePhoto: { pickerGeneration = attachmentDraft.generation; takingPhoto = true },
                          chooseFiles: { pickerGeneration = attachmentDraft.generation; choosingFiles = true },
@@ -1977,7 +1989,7 @@ struct ComposerInputView: View {
                              adding = false
                          },
                          mentionedIDs: AppPickerCatalog.mentionedBundleIDs(in: input))
-            .photosPicker(isPresented: $choosingPhotos, selection: $picked, maxSelectionCount: max(1, Self.most - attachments.count), matching: .images)
+            .photosPicker(isPresented: $choosingPhotos, selection: $picked, maxSelectionCount: max(1, attachmentRoom), matching: .images)
             .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AttachmentReader.fileTypes, allowsMultipleSelection: true) { result in
                 guard pickerGeneration == attachmentDraft.generation, case .success(let urls) = result else { return }
                 for url in urls { add { try AttachmentReader.file(url) } }
@@ -2073,7 +2085,7 @@ struct ComposerInputView: View {
     /// One more photo or PDF, up to the limit; a file Poki can't read says so.
     @discardableResult
     private func add(_ read: () throws -> ChatAttachment) -> UUID? {
-        guard attachments.count < Self.most else { return nil }
+        guard canAddAttachments else { return nil }
         do {
             let item = try read()
             withAnimation(.snappy) { attachments.append(item) }
@@ -2138,7 +2150,12 @@ struct ComposerInputView: View {
     }
 
     private func submit() {
+        if waitingForAnswer && !attachments.isEmpty {
+            problem = ChatModel.attachmentsNotAllowedWithAnswerMessage
+            return
+        }
         guard !running || answering && hasText, canSend else { return }
+        problem = nil
         dictation.cancel(model)
         let text = input
         send(text, attachments)
