@@ -31,8 +31,9 @@ enum NativeTools {
         specs.compactMap { spec in
             guard let data = try? JSONSerialization.data(withJSONObject: spec.schema),
                   let schema = String(data: data, encoding: .utf8) else { return nil }
-            return HostTool(name: spec.name, description: spec.description, schemaJSON: schema) { arguments, _, _ in
-                await NativeTools.perform(spec.name, arguments: arguments)
+            let name = spec.name
+            return HostTool(name: name, description: spec.description, schemaJSON: schema) { arguments, _, _ in
+                await NativeTools.perform(name, arguments: arguments)
             }
         }
     }

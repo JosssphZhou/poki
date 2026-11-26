@@ -340,11 +340,13 @@ final class AppModel {
     func setHostTools(_ tools: [HostTool]) { core.setHostTools(tools) }
 
     /// The one composer for the app's MCP tools: every provider adds its tools here, so one refreshing
-    /// does not replace another's list.
-    func refreshHostTools() {
+    /// does not replace another's list. Returns the catalog it registered.
+    @discardableResult
+    func refreshHostTools() -> [HostTool] {
         var tools = NativeTools.hostTools()
         if let ask = AskPoki.hostTool { tools.append(ask) }
         setHostTools(tools)
+        return tools
     }
     /// The gym probe answers approvals itself: with no session on, `handle` keeps them off the screen.
     var onProbeApproval: ((PendingApproval) -> Void)?

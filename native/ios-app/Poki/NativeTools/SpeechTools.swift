@@ -1,6 +1,6 @@
 import AVFoundation
 import Foundation
-import UIKit
+import NaturalLanguage
 import PokiCore
 
 /// Reads an article aloud with AVSpeechSynthesizer. The text comes from Poki's own browser (the page's
@@ -8,12 +8,14 @@ import PokiCore
 /// page's URL and title are checked between chunks, so a page that changed is not read on as if it
 /// were the same article. Only one reading runs at a time, and `action: stop` stops it.
 enum SpeechTools {
+    private static let textLimit = 100_000
+
     static let specs: [ToolSpec] = [
         .make("read_aloud",
               "Read an article aloud. action start (default) reads the current page in Poki's browser, or the text passed in text. The page's URL and title are checked between chunks; if the page changes, reading stops. action stop stops the current reading.",
               [
                 "action": ["type": "string", "enum": ["start", "stop"]],
-                "text": ["type": "string", "description": "The article text; omit to read the current Poki browser page."],
+                "text": ["type": "string", "description": "The article text (up to 100,000 characters); omit to read the current Poki browser page."],
                 "rate": ["type": "number", "minimum": 0.1, "maximum": 1.0, "description": "Speech rate; 0.5 is the system default."],
               ], []),
     ]
@@ -36,28 +38,34 @@ enum SpeechTools {
         }
         let source: SpeechReader.Source
         if let text = args.string("text"), !text.isEmpty {
-            guard text.count <= 100_000 else {
-                return NativeToolAnswer.invalid("text is longer than 100,000 characters; nothing was read. Pass an article text or read a page.")
+            guard text.count <= textLimit else {
+                return NativeToolAnswer.invalid("text is longer than \(textLimit) characters; nothing was read. Pass an article text or read a page.")
             }
             source = .text(title: nil, url: nil, body: text)
         } else {
             let browser = PokiBrowser.shared
-            guard browser.isOpen, let url = browser.url else {
+            guard browser.isOpen else {
                 return NativeToolAnswer.empty("nothing is open in Poki's browser. Open the article with web_open, or pass its text; nothing was read.")
             }
-            let title = browser.title
             let body: String
             do {
                 body = try await browser.call("return (document.body && document.body.innerText) || ''") as? String ?? ""
             } catch {
                 return NativeToolAnswer.failed("the page's text could not be read: \(error.localizedDescription)")
             }
+            // Read the page identity after the call, so a navigation during it cannot pair old text
+            // with a new page's title.
+            guard browser.isOpen, let url = browser.url else {
+                return NativeToolAnswer.empty("the page closed while its text was being read; nothing was read.")
+            }
+            let title = browser.title
             let clean = body.replacingOccurrences(of: #"\n\s*\n\s*\n"#, with: "\n\n", options: .regularExpression)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard clean.count >= 20 else {
                 return NativeToolAnswer.empty("the page did not give enough visible text to read; nothing was read.")
             }
-            source = .browser(title: title, url: url, body: clean)
+            let capped = clean.count > textLimit ? String(clean.prefix(textLimit)) : clean
+            source = .browser(title: title, url: url, body: capped)
         }
         let rate = Float(min(1.0, max(0.1, args.double("rate") ?? 0.5)))
         let started = reader.start(source, rate: rate)
@@ -92,6 +100,9 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
     static let shared = SpeechReader()
     private let synthesizer = AVSpeechSynthesizer()
     private(set) var isReading = false
+    /// The utterance whose completion may advance this reading. A callback from an older reading
+    /// compares against this and is ignored, even after a new reading has started.
+    private(set) var activeUtterance: AVSpeechUtterance?
     private var chunks: [String] = []
     private var next = 0
     private var identity: (url: URL?, title: String?)?
@@ -107,9 +118,12 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
     func start(_ source: Source, rate: Float) -> Bool {
         let body = source.body
         guard !body.isEmpty else { return false }
-        chunks = Self.chunks(of: body)
+        let chunks = Self.chunks(of: body)
+        guard !chunks.isEmpty else { return false }
+        self.chunks = chunks
         next = 0
         stopped = false
+        activeUtterance = nil
         self.rate = rate
         sourceIdentity = source
         switch source {
@@ -125,6 +139,9 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
         stopped = true
         isReading = false
         chunks = []
+        activeUtterance = nil
+        sourceIdentity = nil
+        identity = nil
         synthesizer.stopSpeaking(at: .immediate)
     }
 
@@ -132,12 +149,14 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
         guard !stopped, isReading else { return }
         guard next < chunks.count else {
             isReading = false
+            activeUtterance = nil
             return
         }
         let utterance = AVSpeechUtterance(string: chunks[next])
         utterance.rate = rate
         utterance.voice = Self.voice(for: chunks[next])
         next += 1
+        activeUtterance = utterance
         synthesizer.speak(utterance)
     }
 
@@ -151,8 +170,10 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
     private var sourceIdentity: Source?
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let id = ObjectIdentifier(utterance)
         Task { @MainActor in
-            guard !self.stopped, self.isReading else { return }
+            guard !self.stopped, self.isReading,
+                  let active = self.activeUtterance, ObjectIdentifier(active) == id else { return }
             if self.pageChanged() {
                 self.stop()
                 AppLog.shared.add("speech", "the page changed while reading; stopped")
@@ -162,10 +183,41 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        let id = ObjectIdentifier(utterance)
+        Task { @MainActor in
+            guard let active = self.activeUtterance, ObjectIdentifier(active) == id else { return }
+            self.activeUtterance = nil
+            self.isReading = false
+            self.stopped = true
+            self.chunks = []
+            self.sourceIdentity = nil
+            self.identity = nil
+            AppLog.shared.add("speech", "speech was interrupted; reading stopped")
+        }
+    }
+
     private static func voice(for text: String) -> AVSpeechSynthesisVoice? {
-        let han = text.range(of: #"\p{Script=Han}"#, options: .regularExpression) != nil
-        let language = han ? "zh-CN" : (Locale.current.language.languageCode?.identifier ?? "en")
-        return AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: "en-US")
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let language = recognizer.dominantLanguage else {
+            return AVSpeechSynthesisVoice(language: "en-US")
+        }
+        let tag: String
+        if language == .simplifiedChinese {
+            tag = "zh-CN"
+        } else if language == .traditionalChinese {
+            tag = "zh-TW"
+        } else if language == .japanese {
+            tag = "ja-JP"
+        } else if language == .korean {
+            tag = "ko-KR"
+        } else if language == .english {
+            tag = "en-US"
+        } else {
+            tag = language.rawValue
+        }
+        return AVSpeechSynthesisVoice(language: tag) ?? AVSpeechSynthesisVoice(language: "en-US")
     }
 
     private static func chunks(of text: String, limit: Int = 1200) -> [String] {

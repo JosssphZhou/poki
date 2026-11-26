@@ -18,7 +18,7 @@ enum BatteryTools {
         defer { device.isBatteryMonitoringEnabled = wasEnabled }
         let level = device.batteryLevel
         guard level >= 0 else {
-            return NativeToolAnswer.unavailable("this iPhone did not report a battery level. Turn battery monitoring on in Settings if the device should report it.")
+            return NativeToolAnswer.unavailable("this iPhone did not report a battery level; nothing was read.")
         }
         let percent = Int((level * 100).rounded())
         let state: String
