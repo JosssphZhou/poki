@@ -429,6 +429,98 @@ final class ApprovalTests: XCTestCase {
         XCTAssertTrue(result.text.contains("Library"), result.text)
     }
 
+    /// A screen in `bundle` with the system back button (identifier BackButton) labelled `title`.
+    func screenWithBack(_ title: String, in bundle: String, name: String, identifier: String? = "BackButton") -> FakeWDA {
+        let wda = FakeWDA()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(bundle), "name": .string(name)]]) }
+        wda.tree([
+            Node("NavigationBar", "Details", [0, 50, 390, 44], [Node("Button", title, [8, 52, 170, 40], identifier: identifier)]),
+            Node("StaticText", "Card ending 1234", [16, 120, 358, 44]),
+        ], app: name)
+        wda.set("POST /wda/tap") { [wda] _ in
+            wda.tree([Node("NavigationBar", title, [0, 50, 390, 44])], app: name)
+            return (200, ["value": .null])
+        }
+        return wda
+    }
+
+    /// The back button carries the previous screen's title: going back to "Wallet & Apple Pay" in
+    /// Settings pays nothing.
+    func testBackToAPaymentSettingsPageDoesNotAskToPay() async {
+        let wda = screenWithBack("Wallet & Apple Pay", in: "com.apple.Preferences", name: "Settings")
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+
+        let result = await core.call("do", ["actions": [["back": true]], "full": true])
+
+        XCTAssertNil(core.pendingApproval, result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, result.text)
+    }
+
+    /// In Phone a tap can ring whoever it lands on, but the back button only returns to the list.
+    func testBackInPhoneDoesNotAskForACall() async {
+        let wda = screenWithBack("Favorites", in: "com.apple.mobilephone", name: "Phone")
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+
+        let result = await core.call("do", ["actions": [["back": true]], "full": true])
+
+        XCTAssertNil(core.pendingApproval, result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 1, result.text)
+    }
+
+    /// Only the system back button is let through: a top-left Pay button is judged by its words, and
+    /// every input in Wallet still asks, back included.
+    func testBackStillAsksForATopLeftPayButtonAndInWallet() async throws {
+        for (title, bundle, name, identifier, reason) in [
+            ("Pay", "com.example.shop", "Shop", nil, "a payment (\"pay\")"),
+            ("Wallet", "com.apple.Passbook", "Wallet", "BackButton", "input in"),
+        ] as [(String, String, String, String?, String)] {
+            let wda = screenWithBack(title, in: bundle, name: name, identifier: identifier)
+            let (core, _, _) = makeCore(wda) { $0.approvalWait = 0; $0.approvalMode = { .off } }
+            _ = await core.call("look", [:])
+
+            let result = await core.call("do", ["actions": [["back": true]]])
+
+            let approval = try XCTUnwrap(core.pendingApproval, "\(name): \(result.text)")
+            XCTAssertTrue(approval.reason.hasPrefix(reason), "\(name): \(approval.reason)")
+            XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, name)
+        }
+    }
+
+    /// Outside Photos too, an image's label is content: a swipe across a web banner that says "Pay"
+    /// scrolls the page.
+    func testSwipeOverAWebImageDoesNotAskToPay() async {
+        let wda = FakeWDA()
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.mobilesafari", "name": "Safari"]]) }
+        wda.tree([Node("Image", "Pay later with zero interest", [0, 140, 390, 600])], app: "Safari")
+        wda.set("POST /wda/pressAndDragWithVelocity") { [wda] _ in
+            wda.tree([Node("StaticText", "Further down the page", [16, 140, 358, 44])], app: "Safari")
+            return (200, ["value": .null])
+        }
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0 }
+        _ = await core.call("look", [:])
+
+        let result = await core.call("do", ["actions": [["swipe": "up"]], "full": true])
+
+        XCTAssertNil(core.pendingApproval, result.text)
+        XCTAssertTrue(result.text.contains("Further down the page"), result.text)
+    }
+
+    /// A stroke inside a Pay button lands on the button's own image: the button takes it as a press, so
+    /// it asks as the button would, whatever the image is called.
+    func testSwipeInsideAPayButtonThroughItsImageStillAsks() async throws {
+        let wda = FakeWDA()
+        wda.tree([Node("Button", "Pay", [16, 380, 358, 120], [Node("Image", "card art", [20, 384, 350, 112])])], app: "Shop")
+        let (core, _, _) = makeCore(wda) { $0.approvalWait = 0; $0.approvalMode = { .off } }
+        _ = await core.call("look", [:])
+
+        let result = await core.call("do", ["actions": [["swipe": "left"]]])
+
+        XCTAssertEqual(try XCTUnwrap(core.pendingApproval, result.text).reason, "a payment (\"pay\")")
+        XCTAssertTrue(wda.bodies("POST /wda/pressAndDragWithVelocity").isEmpty, result.text)
+    }
+
     func testTappingPayRequestsOwnerApprovalBeforeAnyTouch() async throws {
         let wda = FakeWDA()
         wda.tree([Node("Button", "Pay $12.00", [16, 380, 358, 120])], app: "Shop")

@@ -2754,6 +2754,9 @@ final class Computer: @unchecked Sendable {
     /// alone, since a swipe in Phone or Wallet scrolls rather than calls or pays.
     enum Press { case tap, button, stroke }
 
+    /// Controls that take a stroke inside them as a press (an image is pressed only through one).
+    static let strokeControlTypes: Set<String> = ["Button", "Link", "MenuItem"]
+
     /// Where an action puts a finger down and lifts it on one element, which a control takes as a press
     /// whatever the action is called. A swipe or scroll_to presses what holds both ends of its first
     /// stroke on a screen that was read (a stroke inside one tall button, or across a wide one). A
@@ -2775,11 +2778,18 @@ final class Computer: @unchecked Sendable {
             let e = unread ? nil : scan.elements == nil || atPoint ? target(spec, in: scan.elements) : under(try? point(spec))
             return (localDrag && isPhotoContent(e) ? nil : e, atPoint, .tap)
         }
+        // A finger moving across an image moves what is under it (a photo, a web image, a preview), and
+        // the image's label can hold any text ("Payment due" on a receipt). Only a control holding the
+        // image takes the stroke as a press, so the stroke is judged by that control, or not at all.
+        func pressedBy(stroke e: Element) -> Element? {
+            guard e.type == "Image" else { return e }
+            return (scan.allElements ?? lastAll).filter { Self.strokeControlTypes.contains($0.type) && $0.contains(e) }.max { $0.node < $1.node }
+        }
         func stroke(in spec: JSON?, _ direction: String, _ distance: String) -> [(element: Element?, atPoint: Bool, judged: Press)] {
             guard !unread, let screen = size, let path = try? swipePath(try area(spec, screen), direction, distance),
-                  let down = element(at: (path.0, path.1), in: scan.elements), !isPhotoContent(down),
-                  down == element(at: (path.2, path.3), in: scan.elements) else { return [] }
-            return [(down, false, .stroke)]
+                  let down = element(at: (path.0, path.1), in: scan.elements),
+                  down == element(at: (path.2, path.3), in: scan.elements), let pressed = pressedBy(stroke: down) else { return [] }
+            return [(pressed, false, .stroke)]
         }
         switch kind {
         case .tap, .longPress, .pinch: return [at(spec)].compactMap { $0 }

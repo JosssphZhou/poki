@@ -54,6 +54,12 @@ public struct SensitivityRules: Sendable, Equatable {
         "？", "?", "确认", "确定", "是否", "无法恢复", "永久", "confirm", "sure", "cannot be undone", "permanently", "irreversible",
     ]
 
+    /// The system back button: UIKit and SwiftUI navigation bars give it this identifier, whatever its
+    /// label (the previous screen's title). A top-left button without it is judged by its words.
+    static func isNavigationBack(_ element: Element) -> Bool {
+        element.type == "Button" && element.identifier == "BackButton"
+    }
+
     private static func containsCJK(_ text: String) -> Bool {
         text.unicodeScalars.contains { $0.value > 0x2E80 }
     }
@@ -207,6 +213,10 @@ public struct SensitivityRules: Sendable, Equatable {
             if let bundle = app?.bundleID, callingApps.contains(bundle) { return "a call (in \(app?.describe ?? bundle))" }
             return nil
         }
+        // The navigation bar's back button is labelled with the screen it returns to ("Wallet & Apple
+        // Pay", "Payment & Shipping", "Buy Again"), and in Phone it leaves a contact for the list: going
+        // back pays, deletes, calls and sends nothing. Wallet asked above.
+        if Self.isNavigationBack(element) { return nil }
         let texts = [element.text, element.identifier ?? ""]
         let allowCJK = !Self.isOversizedContainer(element)
         func match(_ words: [String], allowCompactCellCJK: Bool = false) -> String? {
