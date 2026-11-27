@@ -135,7 +135,7 @@ jobs:
           xcodebuild build \
             -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
-            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           if ! grep -q "BUILD SUCCEEDED" build/sim.log || [ ! -d build/sim/Build/Products/Debug-iphonesimulator/Poki.app ]; then
             grep -B2 -A6 "error:" build/sim.log | head -80
             exit 1
@@ -417,7 +417,7 @@ jobs:
           xcodebuild build \
             -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
-            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           APP=build/sim/Build/Products/Debug-iphonesimulator/Poki.app
           if ! grep -q "BUILD SUCCEEDED" build/sim.log || [ ! -d "$APP" ]; then
             grep -B2 -A6 "error:" build/sim.log | head -80
@@ -519,7 +519,7 @@ jobs:
           trap 'xcrun simctl shutdown "$UDID" || true; xcrun simctl delete "$UDID" || true' EXIT
           xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build/sim \
-            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/tests.log | grep -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* "
+            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/tests.log | grep --line-buffered -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* "
           grep -q "TEST SUCCEEDED" build/tests.log
 
       # Shut down the iPhone simulator before booting the iPad simulator so the 3-core runner never
