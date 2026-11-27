@@ -119,6 +119,12 @@ jobs:
             build/codex-voice/aarch64-apple-ios-sim/target/aarch64-apple-ios-sim/release/libpoki_codex_voice.a
             build/codex-voice/aarch64-apple-ios-sim/target/aarch64-apple-ios-sim/release/libpoki_codex_voice.a.sha256
           key: codex-voice-sim-v1-${{ hashFiles('native/codex-voice/build.sh', 'native/codex-voice/Cargo.toml', 'native/codex-voice/src/**', 'native/codex-voice/poki_codex_voice.h') }}
+      - id: sim-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/sim
+          key: sim-xcode27-${{ github.sha }}
+          restore-keys: sim-xcode27-
       - name: Build Poki (Debug) for the simulator
         run: |
           set -euo pipefail
@@ -134,6 +140,13 @@ jobs:
             grep -B2 -A6 "error:" build/sim.log | head -80
             exit 1
           fi
+      - name: Save simulator build cache
+        if: steps.sim-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: build/sim
+          key: sim-xcode27-${{ github.sha }}
       - name: Boot a simulator
         run: |
           set -euo pipefail
@@ -155,10 +168,6 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/Poki.app
-          # Warm Settings' one-time simulator provisioning before Poki's timed launch action runs.
-          xcrun simctl launch "$UDID" com.apple.Preferences >/dev/null || true
-          sleep 5
-          xcrun simctl terminate "$UDID" com.apple.Preferences >/dev/null 2>&1 || true
       - name: Chat with Poki's agent (scripted model)
         run: |
           set -o pipefail
@@ -393,6 +402,13 @@ jobs:
             build/codex-voice/aarch64-apple-ios-sim/target/aarch64-apple-ios-sim/release/libpoki_codex_voice.a.sha256
           key: codex-voice-sim-v1-${{ hashFiles('native/codex-voice/build.sh', 'native/codex-voice/Cargo.toml', 'native/codex-voice/src/**', 'native/codex-voice/poki_codex_voice.h') }}
 
+      - id: sim-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/sim
+          key: sim-xcode27-${{ github.sha }}
+          restore-keys: sim-xcode27-
+
       # The app on the iOS Simulator: it launches, stays up, and draws its first screen. The launcher
       # cannot reach a simulator's developer services, so this checks the shell, not automation.
       - name: Simulator smoke test
@@ -401,7 +417,6 @@ jobs:
           xcodebuild build \
             -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
-            -clonedSourcePackagesDirPath build/app-external/SourcePackages \
             CODE_SIGNING_ALLOWED=NO ARCHS=arm64 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           APP=build/sim/Build/Products/Debug-iphonesimulator/Poki.app
           if ! grep -q "BUILD SUCCEEDED" build/sim.log || [ ! -d "$APP" ]; then
@@ -424,7 +439,11 @@ jobs:
               sys.exit("no available iOS runtime supports both iPhone Pro and iPad Pro 11")
           ' "$(xcrun --sdk iphonesimulator --show-sdk-version)")
           UDID=$(xcrun simctl create poki-smoke "$TYPE" "$RUNTIME")
-          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          {
+            echo "UDID=$UDID"
+            echo "RUNTIME=$RUNTIME"
+            echo "PADTYPE=$PADTYPE"
+          } >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
           mkdir -p out/simulator
@@ -476,10 +495,44 @@ jobs:
               grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the $name screen ($look)"; crashed=1; }
             done
           done
-          # The same screens on an iPad (regular width), where Poki sits in a window beside the app it drives.
+          # No crash anywhere on the way: any Poki crash report fails the build.
+          if ls ~/Library/Logs/DiagnosticReports/Poki* > /dev/null 2>&1; then
+            for f in $(ls -t ~/Library/Logs/DiagnosticReports/Poki* | head -2); do echo "== $f"; head -80 "$f"; cp "$f" out/simulator/ || true; done
+            crashed=1
+          fi
+          [ "$crashed" = 0 ] || exit 1
+
+      - name: Save simulator build cache
+        if: steps.sim-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: build/sim
+          key: sim-xcode27-${{ github.sha }}
+
+      # The app's own logic against a fake launcher: tunnel loss named to the agent, pairing
+      # refusal and acceptance, the agent's view of the runner.
+      - name: App unit tests (simulator)
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          trap 'xcrun simctl shutdown "$UDID" || true; xcrun simctl delete "$UDID" || true' EXIT
+          xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
+            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build/sim \
+            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/tests.log | grep -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* "
+          grep -q "TEST SUCCEEDED" build/tests.log
+
+      # Shut down the iPhone simulator before booting the iPad simulator so the 3-core runner never
+      # runs two iOS 27 simulators at once.
+      - name: Simulator smoke test (iPad)
+        run: |
+          set -euo pipefail
+          APP=build/sim/Build/Products/Debug-iphonesimulator/Poki.app
           PAD=$(xcrun simctl create poki-pad "$PADTYPE" "$RUNTIME")
+          trap 'xcrun simctl shutdown "$PAD" || true; xcrun simctl delete "$PAD" || true' EXIT
           xcrun simctl boot "$PAD" && xcrun simctl bootstatus "$PAD" -b
           xcrun simctl install "$PAD" "$APP"
+          crashed=0
           for screen in home setup connect; do
             xcrun simctl terminate "$PAD" nz.zheha.poki 2>/dev/null || true
             xcrun simctl launch "$PAD" nz.zheha.poki -pokiScreen "$screen" > /dev/null
@@ -488,26 +541,12 @@ jobs:
             xcrun simctl spawn "$PAD" launchctl list > out/simulator/launchctl.txt 2>&1 || true
             grep -q 'nz.zheha.poki' out/simulator/launchctl.txt || { echo "::error::Poki died on the $screen screen (iPad)"; crashed=1; }
           done
-          xcrun simctl shutdown "$PAD" || true; xcrun simctl delete "$PAD" || true
           ls shots
-          # No crash anywhere on the way: any Poki crash report fails the build.
           if ls ~/Library/Logs/DiagnosticReports/Poki* > /dev/null 2>&1; then
             for f in $(ls -t ~/Library/Logs/DiagnosticReports/Poki* | head -2); do echo "== $f"; head -80 "$f"; cp "$f" out/simulator/ || true; done
             crashed=1
           fi
           [ "$crashed" = 0 ] || exit 1
-
-      # The app's own logic against a fake launcher: tunnel loss named to the agent, pairing
-      # refusal and acceptance, the agent's view of the runner.
-      - name: App unit tests (simulator)
-        timeout-minutes: 15
-        run: |
-          set -o pipefail
-          xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
-            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build/sim \
-            -clonedSourcePackagesDirPath build/app-external/SourcePackages \
-            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/tests.log | grep -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* " 
-          grep -q "TEST SUCCEEDED" build/tests.log
 
       - uses: actions/upload-artifact@v4
         with:
