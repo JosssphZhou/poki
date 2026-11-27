@@ -1,6 +1,6 @@
-// Draws the launch screen's word and bear at 3x (see Poki/LaunchArt/README.md) and writes two PNGs.
-//   swift make-launch-art.swift <Geist-SemiBold.ttf> <LaunchBear.png> <wordmark out.png> <bear out.png>
-// The launch screen is drawn by iOS before Poki runs, so it cannot set Geist or a shadow itself: both are
+// Draws the launch screen's word at 3x and its bear at 2x (see Poki/LaunchArt/README.md) and writes two PNGs.
+//   swift make-launch-art.swift <AlloRounded-Bold.ttf> <LaunchBear.png> <wordmark out.png> <bear out.png> <dark wordmark out.png>
+// The launch screen is drawn by iOS before Poki runs, so it cannot set Allo or a shadow itself: both are
 // drawn here, at build time, from the design's values.
 import CoreGraphics
 import CoreText
@@ -8,14 +8,25 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// "Poki" over the light: the design's colour and weight. The font file passed in must be this weight.
+/// "Poki" over the light, in Allo Rounded Bold and a near-black ink: Medium read too light for a launch
+/// screen's word, so it is bold again, a little looser for balance (the owner, Nov 21 2026). Black read
+/// too heavy before it (Nov 21), and ExtraBold in 0x3A3C41 read as a grey label (Nov 20). The font file
+/// passed in must be this weight.
 enum Word {
   static let text = "Poki"
-  static let colour: UInt32 = 0x3A3C41
-  static let weight = "SemiBold"
+  static let colour: UInt32 = 0x1C1D21
+  /// The same word for Dark Mode: the welcome's hello draws it over the dark home page (LaunchArt.on),
+  /// where the light appearance's ink all but disappears.
+  static let darkColour: UInt32 = 0xF2F4F7
+  static let weight = "Bold"
   static let size: CGFloat = 60
   static let lineHeight: CGFloat = 64
-  static let tracking: CGFloat = -0.045
+  /// Letter spacing in ems: -0.03 (1.8 points at 60), up from the design's -0.045 so the heavier
+  /// letters do not crowd.
+  static let tracking: CGFloat = -0.03
+  /// The picture's width, which LaunchScreen.storyboard holds the word to (132 by 64 points); the word
+  /// is centred in it.
+  static let width: CGFloat = 132
 }
 
 /// The bear along the bottom edge: 418 points wide on a 402-point screen, under a soft blue light
@@ -31,10 +42,11 @@ enum Bear {
   static let margin: CGFloat = 45
 }
 
-let scale: CGFloat = 3
+/// Pixels a point: the word at 3x, where its edges show; the bear at 2x (below).
+var scale: CGFloat = 3
 let args = CommandLine.arguments
-guard args.count == 5 else {
-  FileHandle.standardError.write("usage: make-launch-art.swift Geist-SemiBold.ttf LaunchBear.png wordmark.png bear.png\n".data(using: .utf8)!); exit(2)
+guard args.count == 6 else {
+  FileHandle.standardError.write("usage: make-launch-art.swift AlloRounded-Bold.ttf LaunchBear.png wordmark.png bear.png wordmark-dark.png\n".data(using: .utf8)!); exit(2)
 }
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
 
@@ -61,25 +73,31 @@ do {
   guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(URL(fileURLWithPath: args[1]) as CFURL) as? [CTFontDescriptor],
         let descriptor = descriptors.first else { FileHandle.standardError.write("cannot read \(args[1])\n".data(using: .utf8)!); exit(1) }
   let font = CTFontCreateWithFontDescriptor(descriptor, Word.size, nil)
-  let style = CTFontCopyName(font, kCTFontStyleNameKey) as String? ?? ""
-  guard style == Word.weight else { FileHandle.standardError.write("\(args[1]) is Geist \(style), not \(Word.weight)\n".data(using: .utf8)!); exit(1) }
+  let style = CTFontCopyPostScriptName(font) as String
+  guard style.hasSuffix("-\(Word.weight)") else { FileHandle.standardError.write("\(args[1]) is \(style), not \(Word.weight)\n".data(using: .utf8)!); exit(1) }
   let kern = Word.tracking * Word.size
-  let line = CTLineCreateWithAttributedString(NSAttributedString(string: Word.text, attributes: [
-    kCTFontAttributeName as NSAttributedString.Key: font,
-    kCTKernAttributeName as NSAttributedString.Key: kern,
-    kCTForegroundColorAttributeName as NSAttributedString.Key: colour(Word.colour),
-  ]))
-  let advance = CTLineGetTypographicBounds(line, nil, nil, nil)
-  let side: CGFloat = 8
-  let context = canvas(advance + 2 * side, Word.lineHeight)
-  context.scaleBy(x: scale, y: scale)
-  let ascent = CTFontGetAscent(font), descent = CTFontGetDescent(font)
-  context.textPosition = CGPoint(x: side, y: (Word.lineHeight - ascent - descent) / 2 + descent)
-  CTLineDraw(line, context)
-  write(context, args[3])
+  for (ink, path) in [(Word.colour, args[3]), (Word.darkColour, args[5])] {
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: Word.text, attributes: [
+      kCTFontAttributeName as NSAttributedString.Key: font,
+      kCTKernAttributeName as NSAttributedString.Key: kern,
+      kCTForegroundColorAttributeName as NSAttributedString.Key: colour(ink),
+    ]))
+    let advance = CTLineGetTypographicBounds(line, nil, nil, nil)
+    let side = max(8, (Word.width - advance) / 2)
+    let context = canvas(advance + 2 * side, Word.lineHeight)
+    context.scaleBy(x: scale, y: scale)
+    let ascent = CTFontGetAscent(font), descent = CTFontGetDescent(font)
+    context.textPosition = CGPoint(x: side, y: (Word.lineHeight - ascent - descent) / 2 + descent)
+    CTLineDraw(line, context)
+    write(context, path)
+  }
 }
 
-// The bear with its shadow baked in, the bear's bottom on the picture's bottom.
+// The bear with its shadow baked in, the bear's bottom on the picture's bottom, at 2x: its cut-out is
+// 1024 pixels wide, fewer than the 1254 a 418-point bear has at 3x, so 3x added pixels and no detail,
+// and made it the only launch picture over 4 MiB decoded (#530). iOS draws the launch screen before
+// Poki runs, with less room than an app.
+scale = 2
 do {
   guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: args[2]) as CFURL, nil),
         let bear = CGImageSourceCreateImageAtIndex(source, 0, nil) else { FileHandle.standardError.write("cannot read \(args[2])\n".data(using: .utf8)!); exit(1) }

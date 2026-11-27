@@ -3,7 +3,7 @@ import SwiftUI
 /// A home page pill's Edit popup (long press, Edit): a small card over the page with the pill's
 /// sentence and its app, Cancel and Save. It is two rows, so it is not a page (the owner). The card is
 /// the glass of the cards that ask for an answer (`ApprovalAskCard`), Save is Poki's blue, and the app
-/// row opens in place to the choices, as a row of Poki's card does (`PokiStatusCard`). Beginning the
+/// row opens in place to the choices, as a row of a settings card does. Beginning the
 /// sentence with an app's name picks that app; taking the app's name out of a sentence that began
 /// with it leaves no app, and the pill shows Poki's icon. Picking another app puts its name at the
 /// start of the sentence in place of the old one's.
@@ -103,7 +103,7 @@ struct ShortcutEditor: View {
 
     private var card: some View {
         VStack(spacing: 14) {
-            Text("Edit Shortcut").font(.headline).foregroundStyle(Color(.label))
+            Text("Edit Shortcut").font(.allo(.headline)).foregroundStyle(Color(.label))
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
                 TextField("What Poki should do", text: $sentence, axis: .vertical)
@@ -130,7 +130,7 @@ struct ShortcutEditor: View {
             let actions = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
             actions {
                 Button(action: close) {
-                    Text("Cancel").font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 50)
+                    Text("Cancel").font(.allo(.subheadline, .semibold)).frame(maxWidth: .infinity, minHeight: 50)
                 }
                 .buttonStyle(QuietCapsuleButtonStyle())
                 .accessibilityIdentifier("shortcut.edit.cancel")
@@ -163,7 +163,7 @@ struct ShortcutEditor: View {
             icon(app)
             Text(verbatim: appName).foregroundStyle(Color(.secondaryLabel)).fixedSize(horizontal: false, vertical: true)
             Image(systemName: choosing ? "chevron.up" : "chevron.down")
-                .font(.caption.weight(.bold)).foregroundStyle(Color(.tertiaryLabel))
+                .font(.allo(.caption, .bold)).foregroundStyle(Color(.tertiaryLabel))
         }
         .padding(.horizontal, 16).frame(minHeight: 50).contentShape(.rect)
     }
@@ -192,7 +192,7 @@ struct ShortcutEditor: View {
             HStack(spacing: 10) {
                 icon(id)
                 Text(verbatim: name).foregroundStyle(Color(.label)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Tint.blue)
+                Image(systemName: "checkmark").font(.allo(.body, .semibold)).foregroundStyle(Tint.blue)
                     .opacity(id == app ? 1 : 0).frame(width: 20)
             }
             .padding(.horizontal, 16).frame(minHeight: 44).contentShape(.rect)
@@ -224,7 +224,7 @@ struct ShortcutEditor: View {
 private struct SaveCapsuleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+            .font(.allo(.subheadline, .semibold)).foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(Tint.blue, in: .capsule)
             .opacity(configuration.isPressed ? 0.75 : 1)

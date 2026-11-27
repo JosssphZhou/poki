@@ -7,6 +7,7 @@ struct PokiApp: App {
     @State private var chat: ChatModel
     @State private var inDuoSplitView = false
     @Environment(\.scenePhase) private var scenePhase
+    private let startupLog: StartupLog?
 
     @discardableResult
     static func scheduleStartupWork(routines: RoutineStore = .shared) -> Task<String?, Never> {
@@ -14,11 +15,10 @@ struct PokiApp: App {
     }
 
     init() {
+        startupLog = StartupLog.begin()
         // PokiLauncher (Rust) and the relay write to sockets the other side may have closed. In an app,
         // unlike a Rust executable, nothing ignores SIGPIPE, and it would end the whole app.
         signal(SIGPIPE, SIG_IGN)
-        // iOS 26: the background task that keeps Poki up is registered before launch ends, as iOS asks.
-        if #available(iOS 26.0, *) { ContinuedRun.registerAtLaunch() }
         // Settings an update, a reinstall or a re-sign lost come back from the Keychain, before anything
         // reads them; from here on every change is mirrored there.
         SettingsVault.restore()
@@ -37,8 +37,13 @@ struct PokiApp: App {
         #endif
         // Whether this phone gets the first run: not when an earlier version was used here. Read before
         // anything this version writes, like the line above.
+        let priorFirstRun = UserDefaults.standard.string(forKey: FirstRun.key)
         FirstRun.decide()
-        // Page titles in Geist, the website's typeface (prominent text only).
+        // Record the installed version as seen only on a true fresh install so What's New shows after updates.
+        WhatsNew.decide(priorFirstRun: priorFirstRun)
+        // The one-time hint on Poki's picture (`PokiMenuTip`), held back while a welcome is up.
+        PokiMenuTip.configure(welcomeUp: FirstRun.due() != nil)
+        // Page titles in Allo Rounded, the face for prominent text (Shared/Typeface.swift).
         if let large = Prominent.uiFont(.largeTitle, .bold), let inline = Prominent.uiFont(.headline, .semibold) {
             UINavigationBar.appearance().largeTitleTextAttributes = [.font: large]
             UINavigationBar.appearance().titleTextAttributes = [.font: inline]
@@ -54,7 +59,10 @@ struct PokiApp: App {
         // The three-dimensional bear loads while the app starts, to be there when Poki's picture first shows.
         BearModel.shared.load()
         let model = AppModel()
+        // Started by iOS in the background (a change of place, a shortcut) with Screen History on:
+        // reading starts without waiting for Poki to be opened.
         HistoryCapture.shared.monitor(model: model)
+        BackgroundRefresh.register { model.background.woke("background refresh") }
         _model = State(initialValue: model)
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
@@ -64,6 +72,13 @@ struct PokiApp: App {
     var body: some Scene {
         WindowGroup {
             RootView().environment(model).environment(chat)
+                // Body text in Allo wherever a view does not choose a font of its own.
+                .font(.allo(.body))
+                #if DEBUG
+                .overlay { if UserDefaults.standard.string(forKey: "pokiScreen") == "fonts" { FontCompare().background(Color(.systemBackground)) } }
+                .overlay { if UserDefaults.standard.string(forKey: "pokiScreen") == "bear" { BearStage() } }
+                #endif
+                .environment(\.startupLog, startupLog)
                 .environment(\.inDuoSplitView, inDuoSplitView)
                 .environment(\.locale, AppLocalization.locale)
                 .environment(\.layoutDirection, AppLocalization.locale.language.characterDirection == .rightToLeft ? .rightToLeft : .leftToRight)
@@ -98,6 +113,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(ChatModel.self) private var chat
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.startupLog) private var startupLog
     var sessionStore: SessionStore = .shared
     var shortcutStore: HomeShortcutStore = .shared
     @State private var sidebarWidth: CGFloat?
@@ -115,23 +131,38 @@ struct RootView: View {
     @State private var wide: HomeRoute = .chat
     @State private var threadsOpen = false
     @State private var detailsOpen = false
-    /// Poki's card under its picture: the model, the way of asking, Pause or Resume.
-    @State private var statusOpen = false
-    /// Where the card opens: under Poki's picture on the home page (global points), or under the top bar.
-    @State private var cardUnder: CGFloat?
+    @State private var signingInForVoice = false
+    @State private var resumeVoiceAfterSignIn = false
     @State private var detailsPath = NavigationPath()
     @State private var searchNavigation = ConversationSearchNavigation()
     private var searchJump: ConversationSearchJump? { searchNavigation.pending }
-    /// The first run is up, over everything (`FirstRunGuide`).
-    @State private var welcoming = false
+    /// The welcome is up, over everything (`FirstRunGuide`): after a fresh install or a new version.
+    @State private var welcome = FirstRun.due()
+    private var welcoming: Bool { welcome != nil }
     /// A setup step a link opened while the first run is up: it opens there.
     @State private var welcomeLink: SetupStep?
+    /// The Apple Account sign-in for a free account's install, as a sheet after setup (`RenewSignIn`).
+    /// `-pokiScreen renewSignIn` opens it at launch for screenshots.
+    @State private var renewAsk = UserDefaults.standard.string(forKey: "pokiScreen") == "renewSignIn"
+    /// The welcome closed at this launch, or Poki Setup put Poki here just before it.
+    @State private var afterSetup = false
+    private var renewDue: Bool {
+        RenewSignIn.shouldAsk(freeSigning: model.signer.freeSigning, needsAccount: model.signer.needsAppleAccountForRenewal,
+                              statusKnown: model.signer.status != nil, afterSetup: afterSetup && !welcoming && !curtain && !whatsNewOpen,
+                              expiry: model.signer.expiry, askedFor: RenewSignIn.askedFor())
+    }
+    /// The post-update What's New card, presented after Home has appeared.
+    @State private var whatsNewOpen = false
+    @State private var whatsNewGate = WhatsNewLaunchGate()
     @Environment(\.dynamicTypeSize) private var typeSize
     @AppStorage(AppInterfaceSize.defaultsKey) private var interfaceSize = AppInterfaceSize.system
     @AppStorage(Appearance.key) private var appearance = Appearance.automatic.rawValue
     @Namespace private var profile
     /// The launch screen is still over the first frame, letting go (`LaunchCurtain`).
     @State private var curtain = true
+    @State private var firstFrameDisplayed = false
+    @State private var sceneHasBeenActive = false
+    private var glassDeferred: Bool { !firstFrameDisplayed || !sceneHasBeenActive }
 
     enum HomeRoute: Hashable { case chat, session(String), voice, setup }
 
@@ -184,11 +215,8 @@ struct RootView: View {
     private func chatPage(split: Bool) -> some View {
         ChatView(
             sharedDraft: $draft,
-            openDetails: { under in
-                cardUnder = under
-                statusOpen = true
-            },
             openVoice: openLiveVoice,
+            openChatGPTSignIn: { signingInForVoice = true },
             openSetup: { fix(.setup, split: split) },
             openSetupStep: { fix(.step($0), split: split) },
             openModel: { fix(.model, split: split) },
@@ -203,8 +231,8 @@ struct RootView: View {
             shortcutStore: shortcutStore
         )
         // The bear stops drawing where it is out of sight: behind the open drawer or the profile over the
-        // chat. Poki's card opens beside the picture and leaves it in sight.
-        .environment(\.bearCovered, threadsOpen || welcoming || (detailsOpen && !showsSidebar))
+        // chat.
+        .environment(\.bearCovered, threadsOpen || welcoming || whatsNewOpen || (detailsOpen && !showsSidebar))
     }
 
     @ViewBuilder private func destination(_ route: HomeRoute, split: Bool) -> some View {
@@ -215,10 +243,6 @@ struct RootView: View {
             // The voice page keeps its own header and blue ground (not redrawn in ESP-340's first batch).
             VoicePage(
                 back: split ? nil : { show(.chat) },
-                openDetails: {
-                    cardUnder = nil
-                    statusOpen = true
-                },
                 openModel: { openDetails([DetailsRoute.model]) },
                 select: { target in if target == .chat { show(.chat) } }
             )
@@ -267,7 +291,6 @@ struct RootView: View {
             // Settings opens from the bottom of the conversations.
             .environment(\.openPokiSettings, { openDetails() })
             .environment(\.pokiDetailsOpen, detailsOpen)
-            .pokiStatusCard(isPresented: $statusOpen, under: cardUnder, leading: sidebarWidth.map { $0 + 1 } ?? 0, openModel: { openDetails([DetailsRoute.model]) })
             // Settings covers the whole screen on iPhone (ESP-469: nothing of the chat shows around it), with
             // its Close button; beside the list on iPad it stays a sheet at a page's width (ESP-376).
             .fullScreenCover(isPresented: Binding(get: { detailsOpen && !showsSidebar }, set: { detailsOpen = $0 })) {
@@ -275,6 +298,14 @@ struct RootView: View {
             }
             .sheet(isPresented: Binding(get: { detailsOpen && showsSidebar }, set: { detailsOpen = $0 })) {
                 profilePage.presentationSizing(.page).presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $signingInForVoice, onDismiss: {
+                if resumeVoiceAfterSignIn {
+                    resumeVoiceAfterSignIn = false
+                    openLiveVoice()
+                }
+            }) {
+                ChatGPTSignIn { resumeVoiceAfterSignIn = true }
             }
             .onChange(of: PokiEntry.shared.pending, initial: true) { takeEntry() }
             .onChange(of: scenePhase) { takeEntry() }
@@ -315,11 +346,55 @@ struct RootView: View {
                 navigation
             }
         }
+        .fullScreenCover(
+            isPresented: Binding(get: { whatsNewOpen && !showsSidebar }, set: { whatsNewOpen = $0 }),
+            onDismiss: { WhatsNew.markSeen() }
+        ) {
+            WhatsNewView(release: WhatsNewCatalog.release() ?? WhatsNewCatalog.current) {
+                WhatsNew.markSeen()
+                whatsNewOpen = false
+            }
+        }
+        .sheet(
+            isPresented: Binding(get: { whatsNewOpen && showsSidebar }, set: { whatsNewOpen = $0 }),
+            onDismiss: { WhatsNew.markSeen() }
+        ) {
+            WhatsNewView(release: WhatsNewCatalog.release() ?? WhatsNewCatalog.current) {
+                WhatsNew.markSeen()
+                whatsNewOpen = false
+            }
+            .presentationSizing(.page)
+            .presentationDragIndicator(.visible)
+        }
+        .onChange(of: curtain) { _, stillUp in
+            if !stillUp { scheduleWhatsNewIfDue() }
+        }
+        .onChange(of: firstFrameDisplayed) { _, displayed in
+            if displayed { scheduleWhatsNewIfDue() }
+        }
+        .onChange(of: welcoming) { _, isWelcoming in
+            if !isWelcoming { scheduleWhatsNewIfDue() }
+        }
+        .onChange(of: detailsOpen) { _, isOpen in
+            if !isOpen { scheduleWhatsNewIfDue() }
+        }
+        .onChange(of: model.pairingUnderWay) { _, pairing in
+            if !pairing { scheduleWhatsNewIfDue() }
+        }
+        .onChange(of: model.signer.installMessage == nil) { _, cleared in
+            if cleared { scheduleWhatsNewIfDue() }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tint.page.ignoresSafeArea())
-        .overlay {
-            if curtain { LaunchCurtain(done: { curtain = false }).ignoresSafeArea().allowsHitTesting(false) }
-        }
+        .modifier(LaunchLayers(curtain: $curtain, welcome: $welcome, link: $welcomeLink, firstFrame: { timestamp in
+            startupLog?.frameDisplayed(at: timestamp, glassDeferred: glassDeferred)
+            firstFrameDisplayed = true
+        }, finished: {
+            startupLog?.finish()
+            scheduleWhatsNewIfDue()
+        }))
+        // The welcome is an overlay in this window, so one alert serves it and the app.
+        .modifier(LinkAskAlert())
         .onGeometryChange(for: CGFloat?.self) { geometry in
             let width = geometry.size.width
             guard width >= Self.regularSidebarWidth + 1 + Self.minimumChatWidth else { return nil }
@@ -327,8 +402,10 @@ struct RootView: View {
             let windowWidth = width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
             return min(Self.regularSidebarWidth, max(Self.minimumDuoSidebarWidth, windowWidth / 3))
         } action: { sidebarWidth = $0 }
-        .fullScreenCover(isPresented: $welcoming) { FirstRunGuide(link: $welcomeLink, done: { welcoming = false }) }
-        .task { InProcessProbe.shared.startFromLaunchArguments(model: model) }
+        .task {
+            LoopbackShortcut.shared.start(model: model)
+            InProcessProbe.shared.startFromLaunchArguments(model: model)
+        }
         .alert(model.connectionAsk.map { AppLocalization.text(LocalizedStringResource("Allow \($0.client) to connect?")) } ?? "",
                isPresented: Binding(get: { model.connectionAsk != nil }, set: { if !$0 { model.answerConnection(false) } }),
                presenting: model.connectionAsk) { _ in
@@ -343,20 +420,32 @@ struct RootView: View {
             Text("The update is almost in. Poki will close to finish it. Open Poki again afterwards.")
         }
         .modifier(AutomationNotices(enabled: !detailsOpen))
+        .modifier(LoopbackPrompt(enabled: !detailsOpen && !welcoming && !renewAsk && model.signer.installMessage == nil))
+        .sheet(isPresented: $renewAsk) { RenewSignInSheet() }
+        .onChange(of: welcoming) { was, now in if was, !now { afterSetup = true } }
+        .onChange(of: renewDue, initial: true) { _, due in if due { renewAsk = true } }
+        .onChange(of: renewAsk) { _, up in if !up { scheduleWhatsNewIfDue() } }
+        .task { if model.signer.handedAtLaunch { afterSetup = true } }
         .onChange(of: scenePhase, initial: true) { _, phase in
             if phase == .active {
+                sceneHasBeenActive = true
+                scheduleWhatsNewIfDue()
                 model.becameActive()
                 HistoryCapture.shared.appDidBecomeActive()
                 AskPoki.refresh()
+                // New models a provider adds show up without a Poki release (lists a day old are read again).
+                Task { await ModelCatalog.refreshStale() }
                 model.startSigner()
                 model.signer.maintain()
                 Task { await model.verifyPairing() }
             } else if phase == .background {
                 model.wentToBackground()
+                if model.background.isOn { BackgroundRefresh.schedule() } else { BackgroundRefresh.cancel() }
             }
         }
-        // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): the chat,
-        // the setup step, or the Activity Log for a problem; `poki://voice` brings the chat to the front.
+        // A tap on the Live Activity opens the screen its state is about (ActivityFace.link): `poki://activity`
+        // keeps an active task running and returns to its target app; other links open the chat, the setup
+        // step, or the Activity Log for a problem, and `poki://voice` brings the chat to the front.
         .onOpenURL { url in open(link: url) }
         // On the window, not the view: sheets and full-screen covers take it too, and Automatic hands back to iOS.
         .onChange(of: appearance, initial: true) { _, value in
@@ -389,6 +478,7 @@ struct RootView: View {
             MemorySourceUITestFixture.beginActualLiveTaskIfRequested(chat)
             #endif
         }
+        .environment(\.pokiGlassDeferred, glassDeferred)
         // A conversation archived or deleted (in the list or in Settings) is not left open on screen.
         .onChange(of: SessionStore.shared.removed) { _, removed in
             if let removed { leave(removed.id) }
@@ -408,19 +498,27 @@ struct RootView: View {
         AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
         // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
         guard !model.pairingUnderWay else { return }
+        let opening = model.open(link: url)
+        guard opening != .ignored else { return }
         // During the first run a pairing file or a setup link opens its step there; nothing else moves.
         if welcoming {
-            if let step = model.open(link: url) { welcomeLink = step }
+            if case .showSetup(let step) = opening { welcomeLink = step }
             return
         }
+        if whatsNewOpen { whatsNewOpen = false }
         // A pairing file or a setup link (from Poki Setup on a computer, AirDrop or Files) opens
         // setup at that step, where the result is shown.
-        if let step = model.open(link: url) {
+        // Settings covers the screen on iPhone and would hide the question a link raised.
+        if model.linkAsk != nil { detailsOpen = false }
+        if case .showSetup(let step) = opening {
             detailsOpen = false
             threadsOpen = false
             if showsSidebar { openDetails([DetailsRoute.connection, step]) } else { home = NavigationPath([step]) }
         } else if url.host() == "setup", !url.absoluteString.contains("relay=") {
             openDetails([DetailsRoute.connection])
+        } else if url.host() == "reconnect" {
+            // A shortcut's last resort when Poki was not running: it opens Poki, which reconnects.
+            Task { _ = await HistoryCollector.shared.reconnect(model, by: "a link") }
         } else if url.host() == "log" {
             openDetails([DetailsRoute.history])
         } else if url.host() == "approvals" {
@@ -444,6 +542,12 @@ struct RootView: View {
             // field's button starts a talk, and says what Talk with Poki is missing when it has no key.
             if !model.voice.isOn, !model.voice.canTalkLive { model.voice.keyAsked = true }
         } else {
+            // poki://chat?text=…: the Memory page's Tell Poki in Chat starts the message for the owner,
+            // who finishes and sends it. Nothing is sent by the link.
+            if url.host() == "chat", let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "text" })?.value,
+               !text.isEmpty {
+                draft = text
+            }
             detailsOpen = false
             show(.chat)
         }
@@ -465,11 +569,12 @@ struct RootView: View {
     /// The Action Button, Control Center, Shortcuts or Spotlight (PokiEntry), once Poki is in front. A task
     /// under way is shown, not interrupted: Talk starts only when Poki is free. Pairing stays on its step,
     /// and the first run stays up: its record is asked, not `welcoming`, because at a cold launch the
-    /// request can be here before the cover is.
+    /// request can be here before the cover is. An update's welcome does not hold an entry up: it closes.
     private func takeEntry() {
         guard scenePhase == .active, let request = PokiEntry.shared.take(), !model.pairingUnderWay, !FirstRun.isDue() else { return }
+        if welcoming { FirstRun.finish(); welcome = nil }
+        if whatsNewOpen { whatsNewOpen = false }
         detailsOpen = false
-        statusOpen = false
         if let handoff = AskPoki.liveSessionID { show(.session(handoff)); return }
         show(.chat)
         guard request == .talk, !chat.running, !model.voice.isOn else { return }
@@ -524,7 +629,6 @@ struct RootView: View {
         if let address = defaults.string(forKey: "pokiVoiceBridge") { _ = model.voice.setBridge(address) }
         // `-pokiHome sessions|paused` (the old home's samples): the conversations, open.
         if defaults.string(forKey: "pokiHome") != nil, defaults.string(forKey: "pokiChat") == nil { threadsOpen = true }
-        if FirstRun.isDue() { welcoming = true }
         switch defaults.string(forKey: "pokiScreen") {
         case "chat":
             show(.chat)
@@ -547,9 +651,6 @@ struct RootView: View {
         case "moreSettings", "details", "status":
             // More Settings is gone: its rows are on Poki's profile, by what they are about.
             openDetails()
-        case "statusCard":
-            cardUnder = nil
-            statusOpen = true
         case "hands", "connection":
             openDetails([DetailsRoute.connection])
         case "rules", "approvals":
@@ -574,6 +675,8 @@ struct RootView: View {
             openDetails([SettingsRoute.memory])
         case "memoryRecent":
             openDetails([SettingsRoute.memory, SettingsRoute.memoryPage(.recent())])
+        case "composer":
+            openDetails([DetailsRoute.composer])
         case "interfaceSize":
             openDetails([DetailsRoute.interfaceSize])
         case "appearance":
@@ -588,9 +691,40 @@ struct RootView: View {
             openDetails([DetailsRoute.screenHistory])
         case "updates":
             openDetails([DetailsRoute.updates])
+        case "about":
+            openDetails([DetailsRoute.about])
         case "steps":
             openDetails([DetailsRoute.history])
         default: break
+        }
+    }
+
+    private var whatsNewGateContext: WhatsNewLaunchGate.Context {
+        WhatsNewLaunchGate.Context(
+            firstFrameDisplayed: firstFrameDisplayed,
+            curtainUp: curtain,
+            sceneActive: sceneHasBeenActive && scenePhase == .active,
+            // The Apple Account sign-in after setup holds What's New back like the welcome does.
+            welcoming: welcoming || renewAsk,
+            detailsOpen: detailsOpen,
+            installMessageActive: model.signer.installMessage != nil,
+            pairingUnderWay: model.pairingUnderWay,
+            whatsNewOpen: whatsNewOpen
+        )
+    }
+
+    private func scheduleWhatsNewIfDue() {
+        guard whatsNewGate.beginSchedulingIfReady(
+            context: whatsNewGateContext,
+            isDue: { WhatsNew.isDueAtLaunch() }
+        ) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard whatsNewGate.commitIfStillReady(
+                context: whatsNewGateContext,
+                isDue: { WhatsNew.isDueAtLaunch() }
+            ) else { return }
+            whatsNewOpen = true
         }
     }
 }

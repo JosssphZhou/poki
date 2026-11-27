@@ -6,7 +6,7 @@ import SwiftUI
 /// (its own look and do calls), or a task an outside agent handed to Poki (`ask_poki`).
 struct SavedSession: Codable, Identifiable, Equatable {
     enum Kind: String, Codable { case poki, agent, handoff, voice }
-    enum Outcome: String, Codable { case done, failed, stopped }
+    enum Outcome: String, Codable { case done, failed, stopped, interrupted }
 
     var id: String
     var kind: Kind
@@ -24,6 +24,9 @@ struct SavedSession: Codable, Identifiable, Equatable {
     var autoName: String? = nil
     /// sha256 of the connector secret an outside agent's session came through (the relay says).
     var connector: String? = nil
+    /// The computer an outside agent's session came from (Poki MCP on a Mac, issue #609); nil for an
+    /// agent through the relay alone.
+    var computer: ClientComputer? = nil
     /// When it was archived: out of the conversations list, in Settings > Conversations, every line kept.
     var archived: Date? = nil
     /// When it was last brought back from the archive. The list keeps its own time and place; the limit
@@ -32,6 +35,30 @@ struct SavedSession: Codable, Identifiable, Equatable {
 
     /// Its age for the limit: the later of its last change and its return from the archive.
     var keptSince: Date { max(updated, unarchived ?? .distantPast) }
+
+    mutating func markInterruptedTask() {
+        guard live else { return }
+        live = false
+        outcome = .interrupted
+        guard kind == .poki || kind == .handoff,
+              let request = entries.lastIndex(where: {
+                  switch $0.kind { case .you, .request: return true; default: return false }
+              }) else { return }
+        let cards = entries[(request + 1)...].indices.filter {
+            if case .plan = entries[$0].kind { return true }
+            return false
+        }
+        if let card = cards.last(where: { entries[$0].ended == nil }) {
+            entries[card].ended = updated
+            entries[card].interrupted = true
+        } else if cards.isEmpty {
+            var card = ChatEntry(.plan([]))
+            card.at = entries[request].at
+            card.ended = updated
+            card.interrupted = true
+            entries.insert(card, at: request + 1)
+        }
+    }
 
     var continuationTask: String? {
         entries.reversed().compactMap { entry -> String? in
@@ -172,7 +199,7 @@ enum ChatContinuation {
             if named.count == 1 { return .resume(named[0]) }
         }
         guard isRequest(text) else { return .newTask }
-        let stopped = recent.filter { $0.outcome == .stopped || $0.live }
+        let stopped = recent.filter { $0.outcome == .stopped || $0.outcome == .interrupted || $0.live }
         let generic: Set<String> = [
             "继续", "繼續", "接着做", "接著做", "继续任务", "繼續任務", "继续刚才的任务", "繼續剛才的任務",
             "继续上次的任务",
@@ -279,6 +306,8 @@ final class SessionStore {
     var connectorAgent: ((String) -> String?)?
     /// The connector each outside agent session came through: id → sha256 of its secret.
     private var connectors: [String: String] = [:]
+    /// The computer each outside agent session came from, when it said (its hello).
+    private var computers: [String: ClientComputer] = [:]
     /// The conversation each outside MCP session's calls are kept in: session id → conversation id.
     private var conversations: [String: String] = [:]
     /// Multiple MCP sessions may overlap while sharing one saved conversation.
@@ -395,7 +424,7 @@ final class SessionStore {
                             batchComplete = false
                             continue
                         }
-                        if session.live { session.live = false; session.outcome = .stopped }
+                        session.markInterruptedTask()
                         loaded.append(session)
                     }
                     return (loaded, batchComplete)
@@ -519,7 +548,7 @@ final class SessionStore {
             loaded.append(session)
         }
         // Nothing is live after a relaunch.
-        for i in loaded.indices where loaded[i].live { loaded[i].live = false; loaded[i].outcome = .stopped }
+        for i in loaded.indices { loaded[i].markInterruptedTask() }
         sessions = loaded.sorted { $0.updated > $1.updated }
         trim()
         return complete
@@ -560,6 +589,13 @@ final class SessionStore {
     /// steps of several MCP sessions, and its id is then not the session's. nil for the chat's own
     /// session, which is no outside agent's.
     func outsideClient(ofMCPSession id: String) -> String? { clients[id] }
+
+    /// What an outside agent said in its session so far (its intents and notes), oldest first, for the
+    /// auto classifier.
+    func agentLines(ofMCPSession id: String) -> [String] {
+        guard let known = conversations[id], let session = session(known) else { return [] }
+        return session.entries.compactMap { if case .poki(let text) = $0.kind { return text } else { return nil } }
+    }
 
     /// The latest in-app chat, to come back to at launch.
     func latestPoki() -> SavedSession? { sessions.first { $0.kind == .poki && $0.archived == nil } }
@@ -732,7 +768,8 @@ final class SessionStore {
     /// Every PokiCore event, before the screen's own handling: outside agents' sessions and steps.
     func observe(_ event: ShellEvent, approvals: [PendingApproval]) {
         switch event {
-        case .session(.started(let id, let client, _, let connector)):
+        case .session(.started(let id, let client, _, let connector, let computer)):
+            if let computer { computers[id] = computer }
             // Only a genuine reopen clears orphaned receipts. A duplicate initialize while
             // still active must not erase an in-flight tool; a late finish after DELETE
             // can still complete the previous record up to the next session start.
@@ -743,8 +780,10 @@ final class SessionStore {
                 // else the last client that said its name.
                 if clients[id] == nil, let name = connector.flatMap({ connectorAgent?($0) }) ?? lastClient { clients[id] = AgentName.pretty(name) }
             } else {
-                clients[id] = AgentName.pretty(client)
-                lastClient = client
+                // From a computer, the agent there names it ("Claude Code"), not Poki MCP itself.
+                let name = computer?.agent.flatMap { $0.isEmpty ? nil : $0 } ?? client
+                clients[id] = AgentName.pretty(name)
+                lastClient = name
             }
             if let connector { connectors[id] = connector }
         case .session(.ended(let id)):
@@ -795,7 +834,16 @@ final class SessionStore {
         case .handoffRequested(_, _, let text, _):
             guard let id = currentSession, session(id)?.kind == .agent else { return }
             update(agent: id) { $0.entries.append(ChatEntry(.step(AppLocalization.text(LocalizedStringResource("Your turn, \(text ?? AppLocalization.text("finish this step"))")), ok: nil))) }
-        case .relay, .handoffEnded: break
+        case .stepIntent(let id?, let intent):
+            // The agent's own words on its next step, once per change, above the steps they explain.
+            update(agent: id) { session in
+                let last = session.entries.last { if case .poki = $0.kind { return true }; return false }
+                if case .poki(let said)? = last?.kind, said == intent { return }
+                session.entries.append(ChatEntry(.poki(intent)))
+            }
+        case .sessionNote(let id?, let text):
+            update(agent: id) { session in session.entries.append(ChatEntry(.poki(text))) }
+        case .stepIntent(nil, _), .sessionNote(nil, _), .relay, .handoffEnded: break
         }
     }
 
@@ -824,6 +872,7 @@ final class SessionStore {
         session.live = true
         session.archived = nil
         session.connector = session.connector ?? connectors[id]
+        session.computer = computers[id] ?? session.computer
         change(&session)
         session.updated = Date()
         put(session)
@@ -907,8 +956,16 @@ final class SessionStore {
         writeQueue.async { failures.write(snapshots) }
     }
 
-    /// Writes changed sessions now, including previously failed writes still in memory.
-    func flush() {
+    /// Writes changed sessions now, including previously failed writes still in memory, or only the requested conversation.
+    func flush(sessionID: String? = nil) {
+        if let sessionID {
+            guard pendingWrites.remove(sessionID) != nil else { return }
+            let snapshots = session(sessionID).map { [(file(sessionID), $0)] } ?? []
+            guard !snapshots.isEmpty else { return }
+            let failures = writeFailures
+            writeQueue.sync { failures.write(snapshots) }
+            return
+        }
         writeTask?.cancel()
         writeTask = nil
         let snapshots = pendingWrites.compactMap { id in session(id).map { (file(id), $0) } }

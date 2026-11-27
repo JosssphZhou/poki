@@ -42,6 +42,12 @@ final class PokiBrowser: NSObject {
     /// The page under way has replaced the last one (its document is the one scripts see).
     @ObservationIgnored private var committed = true
     @ObservationIgnored private var activeNavigation: WKNavigation?
+    @ObservationIgnored private var pendingOpen: (WKNavigation, () -> Void)?
+    @ObservationIgnored private var approvedNavigation: WKNavigation?
+    @ObservationIgnored private var hasStopped = false
+    #if DEBUG
+    @ObservationIgnored var didAllowMainFrameForTesting: (() -> Void)?
+    #endif
     @ObservationIgnored private let supersededNavigations = NSHashTable<WKNavigation>.weakObjects()
     @ObservationIgnored private var loadWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var ownerWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
@@ -85,10 +91,13 @@ final class PokiBrowser: NSObject {
 
     // MARK: Page
 
-    func open(_ url: URL) async {
+    func open(_ url: URL, onCommitted: (() -> Void)? = nil) async {
         isOpen = true
-        trackNavigation(webView.load(URLRequest(url: url)))
+        let navigation = webView.load(URLRequest(url: url))
+        trackNavigation(navigation)
+        if let navigation, let onCommitted { pendingOpen = (navigation, onCommitted) }
         await waitForLoad()
+        if pendingOpen?.0 === navigation { pendingOpen = nil }
         _ = await settle()
     }
 
@@ -103,6 +112,11 @@ final class PokiBrowser: NSObject {
 
     /// Until the page under way has loaded, at most `seconds`; at once when nothing is loading. A page
     /// whose document is parsed is readable before its last image or ad arrives, so that ends it too.
+    private var waitingForLegacyDocument: Bool {
+        if #available(iOS 27.0, *) { return false }
+        return hasStopped && !isLoading && webView.isLoading
+    }
+
     private func waitForLoad(seconds: Double = 12) async {
         let waiterID = UUID()
         await withTaskGroup(of: Void.self) { group in
@@ -110,7 +124,7 @@ final class PokiBrowser: NSObject {
                 await withCheckedContinuation { c in
                     // The timeout can win before this child gets a turn on the main actor.
                     // Do not register after the parent has already drained the waiters.
-                    if !Task.isCancelled, self.isLoading || !self.committed {
+                    if !Task.isCancelled, self.isLoading || !self.committed || self.waitingForLegacyDocument {
                         self.loadWaiters[waiterID] = c
                     } else {
                         c.resume()
@@ -122,7 +136,7 @@ final class PokiBrowser: NSObject {
                     do { try await Task.sleep(for: .milliseconds(300)) }
                     catch { return }
                     guard !Task.isCancelled else { return }
-                    if self.committed, let state = try? await self.webView.evaluateJavaScript("document.readyState") as? String, state != "loading" { return }
+                    if self.committed, !self.waitingForLegacyDocument, let state = try? await self.webView.evaluateJavaScript("document.readyState") as? String, state != "loading" { return }
                 }
             }
             group.addTask { try? await Task.sleep(for: .seconds(seconds)) }
@@ -138,9 +152,21 @@ final class PokiBrowser: NSObject {
         waiters.values.forEach { $0.resume() }
     }
 
+    func approveMainFrameNavigation(_ navigation: WKNavigation) {
+        guard navigation !== activeNavigation, !supersededNavigations.contains(navigation) else { return }
+        if let approvedNavigation, approvedNavigation !== navigation {
+            supersededNavigations.add(approvedNavigation)
+        }
+        approvedNavigation = navigation
+    }
+
     private func trackNavigation(_ navigation: WKNavigation?) {
         guard let navigation, navigation !== activeNavigation else { return }
         if let activeNavigation { supersededNavigations.add(activeNavigation) }
+        if let approvedNavigation, approvedNavigation !== navigation {
+            supersededNavigations.add(approvedNavigation)
+        }
+        approvedNavigation = nil
         activeNavigation = navigation
         committed = false
         isLoading = true
@@ -197,6 +223,14 @@ final class PokiBrowser: NSObject {
 
     /// The chat's Stop: whatever waits ends, loading stops, the page stays for the owner to see.
     func taskStopped() {
+        pendingOpen = nil
+        if let activeNavigation { supersededNavigations.add(activeNavigation) }
+        activeNavigation = nil
+        if let approvedNavigation { supersededNavigations.add(approvedNavigation) }
+        approvedNavigation = nil
+        hasStopped = true
+        isLoading = false
+        committed = true
         webView.stopLoading()
         finishLoads()
         let waiters = ownerWaiters
@@ -226,14 +260,29 @@ final class PokiBrowser: NSObject {
 extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard let navigation, !supersededNavigations.contains(navigation) else { return }
+        if #available(iOS 27.0, *) {
+            guard navigation === activeNavigation || navigation === approvedNavigation else { return }
+        } else if hasStopped {
+            // Older WebKit cannot associate policy approval with a navigation object.
+            // Wait on the web view while provisional, then track the document it commits.
+            guard navigation === activeNavigation else { return }
+        }
         trackNavigation(navigation)
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard let navigation, !supersededNavigations.contains(navigation) else { return }
+        if #unavailable(iOS 27.0), hasStopped, navigation !== activeNavigation {
+            trackNavigation(navigation)
+        }
         guard navigation === activeNavigation else { return }
         committed = true
         url = webView.url
         title = webView.title ?? ""
+        if let (opened, notify) = pendingOpen, opened === navigation {
+            pendingOpen = nil
+            notify()
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -247,6 +296,7 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         guard navigation === activeNavigation else { return }
         isLoading = false
+        committed = true
         finishLoads()
     }
 
@@ -260,9 +310,18 @@ extension PokiBrowser: WKNavigationDelegate, WKUIDelegate {
     /// A page cannot send the browser to this iPhone or its local network (a link, a redirect or a
     /// frame), whoever is driving. `web_open` refuses such an address itself, with words for the model.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard let target = navigationAction.request.url, BrowserAddress.refusal(target) != nil else { return .allow }
-        AppLog.shared.add("browser", "refused a navigation to a local address")
-        return .cancel
+        if let target = navigationAction.request.url, BrowserAddress.refusal(target) != nil {
+            AppLog.shared.add("browser", "refused a navigation to a local address")
+            return .cancel
+        }
+        if #available(iOS 27.0, *), navigationAction.targetFrame?.isMainFrame == true,
+           let navigation = navigationAction.mainFrameNavigation {
+            approveMainFrameNavigation(navigation)
+        }
+        #if DEBUG
+        if navigationAction.targetFrame?.isMainFrame == true { didAllowMainFrameForTesting?() }
+        #endif
+        return .allow
     }
 
     /// Links that open a new window open here instead: the panel has one page.

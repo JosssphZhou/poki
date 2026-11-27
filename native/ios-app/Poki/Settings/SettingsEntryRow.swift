@@ -2,7 +2,7 @@ import PokiCore
 import SwiftUI
 
 // Settings opens from the conversations: a round button in the trailing corner of their foot, beside
-// the new-conversation button (and from Poki's status card). Where it opens is the app's (PokiApp).
+// the new-conversation button. PokiApp supplies the settings destination.
 
 extension EnvironmentValues {
     /// Opens Settings (Poki's profile sheet). Nil where nothing has set it: then the entry is not shown.
@@ -28,7 +28,7 @@ struct SettingsEntryButton: View {
                 // The dot inside the label, so the glass draws it rather than covering it.
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "gearshape")
-                        .font(.body.weight(.semibold))
+                        .font(.allo(.body, .semibold))
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .foregroundStyle(Tint.sidebarInk)
                         .frame(width: controlSize.side, height: controlSize.side)

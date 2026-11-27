@@ -110,6 +110,33 @@ call at a time; 4 in flight is plenty), body size, and connections per label (on
 nothing: no KV, no D1, no Durable Object storage writes, and no logs of headers, bodies or IPs. The
 Durable Object keeps only the hello's `access` list and label in the WebSocket attachment.
 
+### Local frames, v1 (USB and Wi-Fi, issue #609)
+
+Poki Setup's `poki-mcp` reaches the phone without the relay when it can: over the USB cable first
+(usbmuxd forwards TCP port 47100 to the phone, as iproxy does), then over the same Wi-Fi (the app's
+Bonjour service `_poki._tcp`, port 47100), then the relay. The phone listens while Poki is on
+(`LocalListener` in the app; `LocalLink` in PokiCore). Messages are UTF-8 lines (one JSON object per
+line, or the bare words `ping` and `pong`), at most 16 MB each.
+
+The computer has its own Ed25519 key, made once by Poki Setup; `id` = base32 of its public key, as a
+phone's `label` is. The phone listens, so the handshake runs the other way round from the relay's:
+
+1. Phone → `{"t":"challenge","v":1,"nonce":"<base64 32 bytes>","phone":"<phone label>"}`.
+2. Computer → `{"t":"hello","v":1,"key":"<base64 computer public key>","sig":"<base64>","cnonce":"<base64 32 bytes>","client":{"kind":"computer","id":"<base32 of key>","name":"<computer name>","app":"poki-mcp","version":"<version>","transport":"usb"|"wifi","agent":"<MCP clientInfo.name>"}}`.
+   `sig` signs `poki-local-v1:<phone label>:<transport>:` followed by the raw nonce bytes, so a hello
+   made for Wi-Fi is refused over USB and the other way round.
+3. A computer the owner has not allowed yet gets `{"t":"waiting"}` and the owner is asked on the phone
+   (up to 120 s). Allowed once, its key is remembered; the owner can forget it.
+4. Phone → `{"t":"ready","v":1,"phone":"<label>","key":"<base64 phone public key>","sig":"<base64>","max_body":16777216}`,
+   `sig` signing `poki-local-v1-phone:<computer id>:` followed by the raw cnonce bytes. The computer
+   checks that base32(key) is the label it paired with (Poki Setup keeps it), so it never talks to
+   another phone. Any failure is `{"t":"close","reason":"..."}` and the connection ends.
+
+After `ready`, the frames are the relay's: `req`, `res` and `cancel` as above, with no `s` field. The
+phone sets the connector header to `local:<computer id>` and `x-poki-transport` to `usb` or `wifi`
+from the handshake, never from the computer's headers. The computer sends `ping` at least every 60 s;
+the phone closes a connection that is silent for 90 s.
+
 ## 2. PokiCore Swift API, v1
 
 A Swift package (`native/ios/PokiCore`) with no UIKit or SwiftUI dependency. It builds and tests on
@@ -370,20 +397,76 @@ on the phone; the next first `look` of a task in that app names the saved skills
   screen that holds still; the path's `dismiss: ["Not Now", "Later"]` names controls that are closed
   when they are in the way of a step (each such tap is still held by the approval rules);
   `read: ["label"]` answers values from the last screen. A run or path that ended on a check that
-  passed skips the pause before the final read.
+  passed skips the pause before the final read. A step that would send input while Poki is in front
+  stops the path, as a `do` sending it there is refused; a step not read for itself asks the runner
+  which app is in front first. A swipe in a path takes no `in: n`.
+- **Intent.** Any action may carry `intent: "why"`; it is kept with the recorded step and is what a
+  fix is decided from.
+- **Fixes on the way, and fast decisions.** Where a step would stop, a run first applies what the skill
+  remembers from an earlier fix (a control that closed what was in the way, another form of the
+  target), with no model. Past that, when the owner has picked a decision model (there is no other
+  switch, and `CoreConfig.decider` is nil until then), the model is asked. It is picked in one of
+  two places on Settings › Models: under a model account (the account › Decisions: any account the
+  chat runs on, asked through `PromptDecider`, and for an OpenAI API key also Luna on OpenAI's
+  Decisions API, `POST /v1/decisions`), or under Local Models (Apple Intelligence, through
+  `PromptDecider`, which asks in one prompt, reads the JSON in the answer strictly, and sends
+  nothing out; or a model the owner downloads to the iPhone, run with MLX, also through
+  `PromptDecider` with 15 s of its own time: it needs an iPhone with 6 GB of memory, its answer
+  belongs to the model revision picked when it was asked and is dropped after a switch or a
+  removal, and a decision that runs out of time stops the model so the next one does not wait
+  behind it). An account's request goes from the phone straight to its provider. PokiCore also
+  speaks the System One format of TypeSafe's Jev and Cloudflare's Clef (`DeciderSettings`), which
+  the app does not offer for now. The request holds the goal, the step
+  wanted, and the screen's elements as text, with no picture and nothing from a secure field. The
+  options are built from the screen (the target under another name, close what is in the way, scroll,
+  wait, stop), so the answer is always one of them. It is acted on only at `DeciderPolicy`'s
+  confidence 0.6 and margin 0.15, at most twice a step and five times a run; a tap it leads to that
+  would need approval stops the run instead. A step whose target is missing asks once the screen
+  has held still for 0.7 s, in place of waiting its whole time; a screen still changing keeps the
+  step's whole time. A fix that led to a finished run is saved in the skill, on the step it
+  belongs to (`also`: other forms the target took, `clears`: what was closed before it), and nowhere
+  else: nothing is written to the per-app memory. The answer names each fix, how long the decision
+  took and how sure it was. A decision that fails is reported by one of Poki's own sentences ("no
+  answer in time", "the provider answered 500", "the request did not go through"): what a provider
+  or the system said in its own words stays in `DeciderError.detail` and never reaches a run's
+  answer or the saved run log. Two more uses, only with a
+  decider: a path target given as `{find: "what it is"}` is chosen from the screen (refused before
+  anything is sent when there is no decider), and a step's `check: "what should be true"` is one
+  yes or no after the step, where a clear no stops the run and an unsure answer is reported.
 - **Apps by name, and the session's app** (`CoreConfig.appNames`, on by default; a switch in the
-  app's Testing Options). `{launch: "Clock"}` takes the name the iPhone shows as well as a bundle id,
-  resolved by `CoreConfig.resolveApp` (the app backs it with its list of known apps); a name nothing
-  resolves is refused before anything is sent. `do {app: "Clock", actions: […]}` names the app once
-  for the session: it is brought to the front first when it is not there already, and later calls in
+  app's Testing Options). `{launch: "Clock"}` first matches an installed bundle ID exactly, then
+  looks up an installed app by name through `CoreConfig.resolveInstalledApp`. This works for names
+  with dots, too. If a string does not match an installed app, the whole batch or path is refused
+  before it sends any action. `{launch: {name: "Clock"}}` uses `CoreConfig.resolveApp`, and
+  `{launch: {bundle: "com.apple.mobiletimer"}}` passes the ID to the runner as given.
+  `do {app: "Clock", actions: […]}` uses the same installed-app lookup and names the app once
+  for the session: it is brought to the front first when it is not there already (the latest read
+  says so, checked with the runner when that read is over 10 s old), and later calls in
   the same session need not name it. The handle outlives every change of screen; an answer says so
   when another app is in front, and nothing is switched on its own. `app: false`, `finish` or a new
-  task lets go of it, which closes nothing.
+  task lets go of it, which closes nothing. With Apps by Name off, a `do` that names an app is
+  refused with nothing sent rather than sent to whatever app is in front.
 - **Reading when the screen settles** (`CoreConfig.quickRead`, on by default; a switch in Testing
-  Options). After a launch, a button, a swipe or a pinch (pauses of 0.6 s and up) the read comes as
-  soon as the tree has changed from what it was before the action and two reads in a row agree,
-  bounded by the old fixed pause; the answer says "read after N ms". A tap keeps its fixed 0.45 s,
-  since two tree reads cost about as much.
+  Options). After a button, a swipe or a pinch (pauses of 0.6 s and up) the read comes as soon as
+  the tree has changed from what it was before the action, lists something, and two reads in a row
+  agree, bounded by the old fixed pause (each read gets only the time left, so a slow tree never
+  makes the pause longer); the answer says "read after N ms" and reuses the confirmed settled tree
+  with a screenshot captured after input completed rather than reading the tree a third time. After
+  `scroll_to` finds its target following one or more swipes, or after `launch`, reading starts
+  immediately without the fixed settle pause, prepares a post-input screenshot bound to the current
+  action generation and earliest allowed timestamp, and delivers only once the target app, visible
+  layout, and pixels settle (ignoring scroll-bar churn and waiting past coasting or launch
+  transition frames). If a capture channel without frame timestamps only returns a delayed
+  pre-action image after the screen moved or switched apps, Poki rejects it, clears the cached
+  pre-action screenshot, and omits the picture so subsequent coordinate taps require a fresh `look`.
+  After a single local number-key tap on an identified numeric display, reading starts immediately
+  and reuses a verified screenshot once a second tree confirms the app, layout, and value (retaking
+  the screenshot if the confirming tree arrives more than 0.6 s after the picture). If nothing
+  changes through the 0.8 s late-update window or the tap stays unconfirmed on the same display,
+  observation stops, reports `touch effect: unconfirmed`, and omits the screenshot rather than
+  returning an unconfirmed or cached pre-tap image, so the caller rechecks with `look` without
+  repeating the tap. Other taps keep the fixed 0.45 s pause, and turning `quickRead` off restores
+  the fixed pause for number-key taps, `scroll_to`, `launch`, and long-pause actions too.
 - **The owner's locks, apps and Recent Updates** (the app's Memory page). A note may name the app it
   is about (`app`) and the conversation of Poki's own chat it was heard in (`heard: {session, app}`).
   The owner locks a note or a skill: no agent forgets, edits, renames or saves over a locked one
@@ -586,9 +669,13 @@ on the phone; the next first `look` of a task in that app names the saved skills
   "; an alert is over the list ("Just a moment": Not now): answer it first".
 - **No picture at all: the read before's stands in, marked stale.** When neither the runner nor the
   host gives a picture (a restart under load), the answer carries the picture of the read before
-  with "the screenshot is the one of the read before, 14 s old (no newer one came)". The host's
-  own path gets up to 15 s of the call's remaining time, and starts beside the runner's screenshot
-  when the runner is already busy at the read's start, so the two are not in series.
+  with "the screenshot is the one of the read before, 14 s old (no newer one came)". Exception: with
+  `CoreConfig.quickRead` on, after an unconfirmed local number-key tap or after a `scroll_to`,
+  `launch`, or settled long-pause action where only a delayed pre-action image arrives, Poki clears
+  the cached screenshot and returns no image instead of substituting an unconfirmed or pre-action
+  picture, so the caller rechecks with `look` before tapping coordinates or repeating input. The host's own path gets up to 15 s of the
+  call's remaining time, and starts beside the runner's screenshot when the runner is already busy
+  at the read's start, so the two are not in series.
 - **A launch under a system alert names the alert.** When the read after a launch shows the Home
   screen with an alert (a permission prompt), the answer ends with "a system alert is in front
   (""Photos" Would Like to Send You Notifications": Don't Allow, Allow); the launched app is behind

@@ -11,6 +11,15 @@ typedef NS_ENUM(NSInteger, PKDelivery) {
     PKDeliveryUnknown = 2,
 };
 
+typedef NS_ENUM(NSInteger, PKUnlockResult) {
+    PKUnlockResultUnavailable,
+    PKUnlockResultUnlocked,
+    PKUnlockResultSubmissionUnconfirmed,
+    PKUnlockResultKeypadUnavailable,
+    PKUnlockResultTouchRejected,
+    PKUnlockResultSubmissionIncomplete,
+};
+
 /// One point of a finger's path: where it is `offset` seconds after the gesture starts.
 @interface PKTouchPoint : NSObject
 @property (nonatomic, readonly) CGPoint point;
@@ -138,6 +147,10 @@ FOUNDATION_EXPORT CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSAr
 /// launch, activate or terminate an app by its bundle id. Nil when done, else why not.
 - (nullable NSString *)app:(NSString *)bundle action:(NSString *)action;
 - (BOOL)screenLocked;
+/// Uses an already authorized session. The passcode stays in the app; the daemon receives touch events.
+- (BOOL)prepareForUnlock;
+- (PKUnlockResult)unlockPhoneWithPasscode:(NSString *)passcode timeout:(double)timeout allowed:(BOOL (^)(void))allowed
+    NS_SWIFT_NAME(unlockPhone(withPasscode:timeout:allowed:));
 /// The current session's generation: it goes up when the daemon session is replaced.
 - (uint64_t)generation;
 /// A trial for ending the session: opens a session of its own (not the shared one that XCUIAutomation
@@ -145,6 +158,12 @@ FOUNDATION_EXPORT CGPoint PKWorkspaceLauncherPoint(NSDictionary<NSString *, NSAr
 /// connection to testmanagerd and waits for the invalidation handler. Run it in a fresh Poki process
 /// before anything opens the shared session. The dictionary says what each step returned and when.
 - (NSDictionary<NSString *, id> *)separateSessionTrialAt:(CGPoint)point hold:(double)hold;
+/// Screen History's question (issue 484): what this process can read with Automation Mode off. Uses
+/// the session as it is, opening one without Automation Mode when none is open, and asks for the app
+/// in front and its element tree. Never turns Automation Mode on. Keys: code, automation_on,
+/// automation_on_after, accessibility_loaded, front_ok, front_bundle, tree_ok, tree_elements, and
+/// each part's seconds and error.
+- (NSDictionary<NSString *, id> *)quietReadTrial;
 @end
 
 NS_ASSUME_NONNULL_END

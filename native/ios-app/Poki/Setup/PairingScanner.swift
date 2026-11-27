@@ -48,7 +48,8 @@ struct PairingScannerSheet: View {
     var body: some View {
         NavigationStack {
             PairingScanner { url in
-                _ = model.open(link: url)
+                // Scanned here, by the owner, on the pairing page: no second question.
+                _ = model.open(link: url, scanned: true)
                 dismiss()
             }
             .ignoresSafeArea()
@@ -57,7 +58,7 @@ struct PairingScannerSheet: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .safeAreaInset(edge: .bottom) {
                 Text("Point the camera at the code Poki Setup shows on your computer.")
-                    .font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                    .font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel))
                     .multilineTextAlignment(.center).padding()
                     .frame(maxWidth: .infinity).background(.bar)
             }

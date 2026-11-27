@@ -15,13 +15,17 @@ struct ResultCard: Codable, Equatable {
     var recommended: String
     var primary: Action
     var next: Action?
+    /// Each item's picture (a product's photo), JPEG, cut from the phone's screenshot where the item's
+    /// `image` box points (`ResultCardPictures`). Only items whose picture was
+    /// whole on the screen have one.
+    var pictures: [String: Data]?
 
     /// One choice. Every kind of card needs only its id and title; the rest are the app's own fields,
     /// kept as the model sent them for that app's look to read.
     struct Item: Codable, Equatable, Identifiable {
         let id: String
         let title: String
-        let fields: [String: JSON]
+        fileprivate(set) var fields: [String: JSON]
 
         init(from decoder: Decoder) throws {
             fields = try [String: JSON](from: decoder)
@@ -38,6 +42,14 @@ struct ResultCard: Codable, Equatable {
             fields[key]?.text.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
         }
 
+        /// A box the model gave as [x, y, width, height] in the screenshot's points, such as `image`.
+        func box(_ key: String) -> Rect? {
+            guard case .array(let parts)? = fields[key], parts.count == 4 else { return nil }
+            let n = parts.compactMap { part -> Double? in if case .number(let v) = part, v.isFinite { return v } else { return nil } }
+            guard n.count == 4, n[2] > 0, n[3] > 0 else { return nil }
+            return Rect(x: n[0], y: n[1], width: n[2], height: n[3])
+        }
+
         /// A button's words for this item: each `{field}` becomes the item's value of it.
         func fill(_ template: String) -> String {
             template.replacing(ResultCard.field) { match in text(String(match.1)) ?? "" }
@@ -50,9 +62,21 @@ struct ResultCard: Codable, Equatable {
         var say: String
     }
 
+    var roomHotelName: String? {
+        guard kind == Ctrip.rooms else { return nil }
+        return items.lazy.compactMap { $0.text("hotel") }.first
+    }
+
     /// The selected item: the one you chose, or Poki's suggestion.
     func selected(_ chosen: String?) -> Item {
-        items.first { $0.id == chosen } ?? items.first { $0.id == recommended } ?? items[0]
+        var item = items.first { $0.id == chosen } ?? items.first { $0.id == recommended } ?? items[0]
+        if let roomHotelName {
+            item.fields["hotel"] = .string(roomHotelName)
+        } else if kind == RailwayTransfers.kind, let legs = ResultCardLeg.legs(of: item), let ends = RailwayTransfers.Ends(item, legs) {
+            item.fields["from"] = .string(ends.from)
+            item.fields["depart"] = .string(ends.depart)
+        }
+        return item
     }
 
     /// A `{field}` in a button's words.
@@ -66,19 +90,34 @@ struct ResultCard: Codable, Equatable {
         guard !items.isEmpty else { return "a card needs at least one item" }
         guard Set(items.map(\.id)).count == items.count else { return "item ids must be unique" }
         guard items.contains(where: { $0.id == recommended }) else { return "recommended must be one of the item ids" }
-        for action in [primary] + (next.map { [$0] } ?? []) {
-            if action.label.isBlank || action.say.isBlank { return "primary and next need a label and a say" }
-            // A sentence with no field would send the suggested item whichever one is selected.
-            if !action.say.contains(Self.field) { return "primary.say and next.say must name the selected item with {field}, such as {title}" }
+        return look.problem(items) ?? actionProblem(primary, named: "primary")
+    }
+
+    var nextProblem: String? {
+        next.flatMap { actionProblem($0, named: "next") }
+    }
+
+    private func actionProblem(_ action: Action, named name: String) -> String? {
+        if action.label.isBlank || action.say.isBlank { return "\(name) needs a label and a say" }
+        let sayFields = action.say.matches(of: Self.field)
+        guard !sayFields.isEmpty else {
+            return "\(name).say must name the selected item with {field}, such as {title}"
         }
-        return look.problem(items)
+        let fields = action.label.matches(of: Self.field) + sayFields
+        for item in items {
+            let selection = selected(item.id)
+            if let missing = fields.first(where: { selection.text(String($0.1)) == nil }) {
+                return "\(name) references missing field {\(missing.1)} on item \(item.id)"
+            }
+        }
+        return nil
     }
 
     /// The card's facts for the model when a conversation is opened again.
     func context(chosen: String?) -> String {
         let choice = selected(chosen)
         let rows = items.map { item in
-            ([item.title] + item.fields.keys.sorted().filter { $0 != "id" && $0 != "title" }.compactMap { key in
+            ([item.title] + item.fields.keys.sorted().filter { $0 != "id" && $0 != "title" && $0 != "image_screenshot" }.compactMap { key in
                 item.text(key).map { "\(key) \($0)" }
             }).joined(separator: ", ")
         }
@@ -103,6 +142,15 @@ enum ResultCardLooks {
         RailwayTrains.kind: ResultCardLook(problem: RailwayTrains.problem, tint: RailwayTrains.blue, buttonShape: .roundedRectangle(radius: 8)) {
             AnyView(RailwayTrainsList(card: $0, selected: $1, choose: $2))
         },
+        Ctrip.flights: Ctrip.look(Ctrip.flights),
+        Ctrip.hotels: Ctrip.look(Ctrip.hotels),
+        Ctrip.rooms: Ctrip.look(Ctrip.rooms),
+        Ctrip.fares: Ctrip.look(Ctrip.fares),
+        Taobao.kind: Taobao.look,
+        Dianping.kind: Dianping.look,
+        UberEats.kind: UberEats.look,
+        RailwayTransfers.kind: RailwayTransfers.look,
+        AnyAppList.kind: AnyAppList.look,
     ]
 }
 

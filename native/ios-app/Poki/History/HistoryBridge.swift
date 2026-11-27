@@ -3,10 +3,37 @@ import Foundation
 /// poki_history_* through the C ABI (native/launcher/src/history.rs): the screen read as text through
 /// the accessibility audit service, on a tunnel of its own and with no XCTest session.
 enum HistoryBridge {
+    /// Prepared on the launcher callback thread. The main actor checks the current capture
+    /// permissions before handing these bytes to the store.
+    /// `line` is the launcher's whole progress line, for the engine's events (tunnel, held runs,
+    /// counts); it is parsed once here, off the main thread, and only read after.
+    struct Read: @unchecked Sendable {
+        let line: [String: Any]
+        let ok: Bool
+        let app: String
+        let title: String
+        let text: String?
+        let tree: Data?
+
+        init(_ line: [String: Any]) {
+            self.line = line
+            ok = line["ok"] as? Bool == true
+            app = line["app"] as? String ?? ""
+            title = line["title"] as? String ?? ""
+            if ok, let lines = line["text"] as? [String], !lines.isEmpty {
+                text = lines.joined(separator: "\n")
+                tree = (line["tree"] as? [Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+            } else {
+                text = nil
+                tree = nil
+            }
+        }
+    }
+
     final class Box: @unchecked Sendable {
-        let progress: (@Sendable (Data) -> Void)?
+        let progress: (@Sendable (Read) -> Void)?
         var continuation: CheckedContinuation<Data, Error>?
-        init(progress: (@Sendable (Data) -> Void)?, continuation: CheckedContinuation<Data, Error>) {
+        init(progress: (@Sendable (Read) -> Void)?, continuation: CheckedContinuation<Data, Error>) {
             self.progress = progress
             self.continuation = continuation
         }
@@ -20,8 +47,8 @@ enum HistoryBridge {
     }
 
     /// Runs one request. The answer is the result's `value` as JSON; `progress` gets every read of a
-    /// run as JSON, on a launcher thread.
-    static func call(_ request: [String: Any], progress: (@Sendable (Data) -> Void)? = nil) async throws -> Data {
+    /// run on a launcher thread.
+    static func call(_ request: [String: Any], progress: (@Sendable (Read) -> Void)? = nil) async throws -> Data {
         let json = try JSONSerialization.data(withJSONObject: request)
         return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data, Error>) in
             let box = Unmanaged.passRetained(Box(progress: progress, continuation: c))
@@ -30,7 +57,8 @@ enum HistoryBridge {
                     guard let context, let event else { return }
                     let unmanaged = Unmanaged<Box>.fromOpaque(context)
                     let box = unmanaged.takeUnretainedValue()
-                    guard let object = (try? JSONSerialization.jsonObject(with: Data(String(cString: event).utf8))) as? [String: Any] else { return }
+                    let data = Data(bytes: event, count: strlen(event))
+                    guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
                     if object["event"] as? String == "result" {
                         if object["ok"] as? Bool == true {
                             let value = (try? JSONSerialization.data(withJSONObject: object["value"] as? [String: Any] ?? [:])) ?? Data("{}".utf8)
@@ -40,8 +68,8 @@ enum HistoryBridge {
                         }
                         box.continuation = nil
                         unmanaged.release()
-                    } else if let line = object["progress"] as? [String: Any], let data = try? JSONSerialization.data(withJSONObject: line) {
-                        box.progress?(data)
+                    } else if let line = object["progress"] as? [String: Any] {
+                        box.progress?(Read(line))
                     }
                 }, box.toOpaque())
             }
@@ -54,4 +82,27 @@ enum HistoryBridge {
     }
 
     static func cancel() { poki_history_cancel() }
+
+    /// Holds or lets go the reads of the run in progress. The run keeps its tunnel.
+    static func pause(_ on: Bool) { poki_history_pause(on) }
+
+    /// A run with no tunnel tries five times a second for the coming seconds: the moment around a
+    /// change of network is the one in which a new tunnel can be opened.
+    static func hurry(_ seconds: UInt32) { poki_history_hurry(seconds) }
+
+    /// Asks the run to look at its tunnel now. Its answer is a line of the run's that carries the
+    /// number returned here as "check", with "event" alive, dead or none. With `replace` a tunnel
+    /// that does not answer is given up and a new one tried at once.
+    static func check(replace: Bool) -> UInt64 { poki_history_check(replace) }
+
+    /// Tells the launcher which apps' screens it leaves unread: those in `skip` always, and with
+    /// `only` every app that is not in it. It holds for the run in progress and the runs to come.
+    /// A screen is read on the app's own main thread, so one that would be thrown away here is
+    /// better not read at all.
+    static func policy(skip: [String], only: [String]?) {
+        let lists: [String: Any] = ["skip": skip, "only": only.map { $0 as Any } ?? NSNull()]
+        guard let json = try? JSONSerialization.data(withJSONObject: lists) else { return }
+        _ = String(decoding: json, as: UTF8.self).withCString { poki_history_policy($0) }
+    }
 }
+

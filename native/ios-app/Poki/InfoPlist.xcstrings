@@ -25,6 +25,30 @@
         }
       }
     },
+    "NSPhotoLibraryUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki shows your recent photos when you add to a message, so you can send one with a tap."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到消息时，Poki 会显示你最近的照片，轻点即可发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入訊息時，Poki 會顯示你最近的照片，輕點即可傳送。"
+          }
+        }
+      }
+    },
     "NSCameraUsageDescription" : {
       "comment" : "Info.plist",
       "extractionState" : "manual",
@@ -141,6 +165,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Poki 開啟時會在背景保持執行，以便智慧體連線此 iPhone。Poki 不會記錄或傳送你的位置。"
+          }
+        }
+      }
+    },
+    "NSScreenCaptureUsageDescription" : {
+      "comment" : "Info.plist",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki listens to app audio you choose to share so it can answer questions about it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 会听你选择共享的 App 声音，用来回答相关问题。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 會聽你選擇共享的 App 聲音，用來回答相關問題。"
           }
         }
       }

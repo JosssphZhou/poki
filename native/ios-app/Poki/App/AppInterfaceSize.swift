@@ -88,7 +88,7 @@ struct InterfaceSizeSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         SettingsHeader("Preview")
-                            .font(.subheadline)
+                            .font(.allo(.subheadline))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 20)
                         GeometryReader { preview in
@@ -215,7 +215,8 @@ private struct InterfaceSizePreview: View {
                 .accessibilityLabel(Text(verbatim: "Poki"))
         }
         .bottomBar(softEdge: true) {
-            ComposerInputView(input: .constant(""), focused: .constant(false), adding: .constant(false), running: false,
+            ComposerInputView(input: .constant(""), focused: .constant(false), adding: .constant(false),
+                              settingsPresented: .constant(false), running: false,
                               send: { _, _ in }, stop: {}, openVoice: {})
                 .allowsHitTesting(false)
                 .accessibilityElement(children: .ignore)

@@ -8,7 +8,6 @@ import SwiftUI
 struct VoicePage: View {
     @Environment(AppModel.self) private var model
     var back: (() -> Void)? = nil
-    var openDetails: () -> Void
     /// Accounts and Models: voice needs a chat model to dictate, or an OpenAI key to talk live.
     var openModel: () -> Void
     var select: (RootPage) -> Void
@@ -22,7 +21,7 @@ struct VoicePage: View {
     var body: some View {
         let face = Self.sample ?? currentFace
         VStack(spacing: 0) {
-            MessageListHeader(dark: true, back: back, openDetails: openDetails)
+            MessageListHeader(dark: true, back: back, openModel: openModel)
             stage(face).frame(maxHeight: .infinity)
             HoldButton(listening: face == .listening, hint: hint(face))
                 .gesture(hold)
@@ -45,16 +44,16 @@ struct VoicePage: View {
         VStack(spacing: 14) {
             switch face {
             case .ready:
-                Text("Hold and say it.").font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
-                Text(readyLine).font(.system(size: 17)).foregroundStyle(.white.opacity(0.72)).multilineTextAlignment(.center)
+                Text("Hold and say it.").font(Prominent.font(size: 34, relativeTo: .largeTitle, .bold)).foregroundStyle(.white)
+                Text(readyLine).font(.allo(size: 17, relativeTo: .body)).foregroundStyle(.white.opacity(0.72)).multilineTextAlignment(.center)
                     .onTapGesture { if !voice.canTalk { openModel() } }
             case .listening:
                 heard.font(.system(size: 40, weight: .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                 VoiceWaveform().padding(.top, 24).frame(height: 48)
             case .working:
-                Text(workingTitle).font(.system(size: 34, weight: .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
-                Text(workingDetail).font(.system(size: 17)).foregroundStyle(.white.opacity(0.72))
+                Text(workingTitle).font(Prominent.font(size: 34, relativeTo: .largeTitle, .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
+                Text(workingDetail).font(.allo(size: 17, relativeTo: .body)).foregroundStyle(.white.opacity(0.72))
                 VStack(spacing: 8) {
                     HStack(spacing: 6) {
                         ForEach(0..<segments.total, id: \.self) { i in
@@ -64,7 +63,7 @@ struct VoicePage: View {
                     if Self.sample == .working || !model.approvals.isEmpty {
                         HStack(spacing: 6) {
                             Capsule().fill(Color(hex: 0x0A2F6B)).frame(width: 22, height: 8)
-                            Text("Waiting for you to approve in the Dynamic Island").font(.system(size: 13)).foregroundStyle(.white.opacity(0.72))
+                            Text("Waiting for you to approve in the Dynamic Island").font(.allo(size: 13, relativeTo: .footnote)).foregroundStyle(.white.opacity(0.72))
                         }
                         .padding(.top, 18)
                     }
@@ -171,7 +170,7 @@ private struct HoldButton: View {
             .accessibilityElement()
             .accessibilityLabel(Text("Hold to Talk"))
             .accessibilityAddTraits(.isButton)
-            Text(hint).font(.system(size: 13)).foregroundStyle(.white.opacity(0.84))
+            Text(hint).font(.allo(size: 13, relativeTo: .footnote)).foregroundStyle(.white.opacity(0.84))
         }
         .animation(.spring(duration: 0.35, bounce: 0.25), value: listening)
     }

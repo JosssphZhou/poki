@@ -107,8 +107,8 @@ Use this preparation whenever the simulator is new or its notification permissio
 This procedure was checked on iOS 27.0: with the alert present the Split View stop test failed
 while Poki was inactive, and the language test captured the permission alert; after denying
 notifications, the unchanged 20 chat tests and the language-preview test passed. The navigation
-font test is separate: English uses Geist scaled by `UIFontMetrics`, while Chinese uses the system
-font. Its expected sizes must follow the chosen font rather than assume both scaling curves match.
+font test is separate: every language uses Allo Rounded scaled by `UIFontMetrics`, with Chinese falling
+back from it. Its expected sizes must follow Allo rather than assume the system font's scaling curve.
 
 `-pokiScreen home|setup|connect|debug|activity|steps|status|connector|details|model|voice|session|hands|rules|health|memory|appearance|voiceSettings|conversations|updates|language` opens that screen at launch (the app opens on the chat; home is the chat with the conversations drawer open, details Settings, hands and setup its Connection page, rules and health the Approvals and Advanced pages, connect the Agents page, memory, appearance, voiceSettings (Dictation & Mute), conversations (Archived Conversations) updates (Signing & Updates) and language (Language) their pages, debug Diagnostics under Advanced, steps the Activity Log, session an outside agent's session); `-pokiChat empty|working|approval|handoff|approved|failed` shows the sample chat scenes (the greeting, a task under way, a step waiting for approval, a hand-over, a finished task, a failed one) and `-pokiVoice ready|listening|working` the voice faces; `-pokiSetupStep N` opens setup at step N, `-pokiSettingsEnd YES` opens Settings scrolled to its end, and `-pokiSample B|C` fills the status, history and Live Activity with sample steps and an approval, and `-pokiSample PIN` shows a sample pairing code, for screenshots only; on a simulator `-pokiLoopback cellular` forces the cellular-only loopback hint, `-pokiLoopback working` a loopback that answers, and `-pokiSigningDays 1` a signing that ends in a day, and `-pokiAppleID name@example.com` signs in that Apple Account on Signing & Updates without contacting Apple (`-pokiAppleName`, `-pokiAppleTeams 0|1|2` and `-pokiAppleState code|reauth|expired|error` shape it).
 
@@ -165,13 +165,13 @@ Poki ships English, Simplified Chinese and Traditional Chinese. Settings › Lan
 
 ## Voice
 
-Voice (the waveform button beside the gear on Home, a sheet) talks to OpenAI's Realtime API (`gpt-realtime-2.1`) over WebRTC: the microphone is the
-audio track, Poki's voice plays on the speaker, and events travel on the `oai-events` data channel.
-The phone never holds an OpenAI key. The voice bridge on the person's Mac (`bin/voice-bridge.mjs`)
-keeps the key and gives the phone a client secret that expires after 60 seconds:
+Voice (the waveform button beside the gear on Home) uses OpenAI's Live API (`gpt-live-1.1`) over WebRTC.
+The microphone and speaker use audio tracks. The `oai-events` data channel carries captions and delegated tool calls.
+Poki can connect with the OpenAI key in its Accounts settings. The Mac voice bridge
+(`bin/voice-bridge.mjs`) can also exchange the WebRTC offer on the phone's behalf and keep its OpenAI key on the Mac.
 
-1. Create an API key at platform.openai.com (API keys). Realtime audio is billed to that account per
-   token; each test turn reports the tokens it used.
+1. Create an API key at platform.openai.com (API keys). Live sessions are billed by duration.
+   Backend model usage is billed separately.
 2. Keep it in the keychain, and read it from there, so it never lands in your shell history:
 
    ```sh
@@ -192,17 +192,20 @@ sessions on your OpenAI key and move the phone through your Mac. Run it only on 
 and pass `--host <this Mac's LAN address>` to keep it off other interfaces (for example a VPN).
 
 Enter `http://<Mac>:47830/voice/<secret>` in Voice (the secret is in `voice-bridge.json` in the
-state directory). `get_ios_version` is answered on the phone;
-the bridge runs the tools that move the phone (`open_settings`, `read_screen`, `open_app`, `tap_text`,
-`go_home`) through the Mac's Poki MCP.
+state directory). By default, Poki runs phone tools on the phone. With `--mac-tools`, the bridge
+runs `open_settings`, `read_screen`, `open_app`, `tap_text`, and `go_home` through the Mac's Poki MCP.
+`get_ios_version` is answered on the phone in both modes.
+
+With the default HTTP bridge, Live voice reads visible text and numbered screen elements.
+Screenshot descriptions are available with a direct OpenAI connection or an HTTPS bridge URL
+with a trusted certificate. Screenshot requests to the bridge do not follow redirects.
 
 - Each function call runs once, keyed by its `call_id`, in the app and again in the bridge.
 - `tap_text` is held by Poki's approvals, like an agent's `do`: the bridge first says what it would tap
   and in which app, without tapping; the phone checks that with PokiCore's rules (payments, deleting,
   sending messages, calls) and, when they ask for it, waits up to two minutes for Allow (in the Dynamic Island, on the Live
   Activity or from the notification). Only then does the bridge tap that element, matched exactly, in that app.
-- A dropped connection sends nothing again. A call outlives the session that asked for it; the next
-  session is told how it ended instead of asking for it again.
+- A dropped connection never repeats a confirmed request or a phone step that already started. A call outlives the session that asked for it; the next session is told how it ended instead of asking for it again. When Poki Anytime captures opening speech and the connection fails or drops before the server confirms all of it, only unconfirmed or strictly unsent audio stays on this iPhone until you run Poki Anytime again to transcribe it on-device and submit it as text (End on the Live Activity cancels it). If a phone action or reply already started without a server audio position, Poki avoids resending the prefix and posts a note asking you to check whether the rest went through.
 - Stop talking (or speaking over Poki) cancels the reply, never the step running on the phone.
 - Once an answer has played and no step it asked for is running, the conversation waits 8 s for the
   person to go on in the same session. After 8 s of silence it ends and lets go of the microphone, so

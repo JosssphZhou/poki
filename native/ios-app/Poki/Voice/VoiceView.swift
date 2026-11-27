@@ -24,8 +24,13 @@ struct VoiceView: View {
                 // beside it for dictation). This page only says how it runs and keeps its options.
                 Section {
                     LabeledContent {
-                        Text(voice.canTalkLive ? (VoiceDirect.account == .openai ? AppLocalization.text(LocalizedStringResource("OpenAI key")) : VoiceDirect.account?.name ?? AppLocalization.text(LocalizedStringResource("Voice bridge"))) : AppLocalization.text(LocalizedStringResource("Not Available")))
-                            .foregroundStyle(voice.canTalkLive ? Color.secondary : Color.orange)
+                        if voice.usesChatGPTSubscription {
+                            Text(CodexAccount.accessToken == nil ? AppLocalization.text("Sign In Again") : "ChatGPT")
+                                .foregroundStyle(Color.secondary)
+                        } else {
+                            Text(voice.canTalkLive ? (VoiceDirect.account == .openai ? AppLocalization.text(LocalizedStringResource("OpenAI key")) : VoiceDirect.account?.name ?? AppLocalization.text(LocalizedStringResource("Voice bridge"))) : AppLocalization.text(LocalizedStringResource("Not Available")))
+                                .foregroundStyle(voice.canTalkLive ? Color.secondary : Color.orange)
+                        }
                     } label: {
                         SettingsLabel("Live Voice", systemImage: "waveform")
                     }
@@ -34,13 +39,21 @@ struct VoiceView: View {
                         .accessibilityIdentifier("voice.dictationButton")
                     Toggle(isOn: $voice.muted) { SettingsLabel("Mute Poki’s Voice", systemImage: "speaker.slash") }
                 } footer: {
-                    if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(.orange) }
-                    else if voice.canTalkLive {
-                        Text("In the chat, the waveform button starts a live conversation: Poki listens, acts and answers out loud, also while you are in another app. It ends by itself 8 seconds after an answer if nobody speaks. Tap End to stop sooner. The microphone in the message field only dictates.")
-                    } else {
-                        Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Settings › Models. Dictation in the message field works with every model.")
+                    Group {
+                        if micDenied { Text("Poki can't use the microphone. Allow it in Settings, Privacy, Microphone.").foregroundStyle(.orange) }
+                        else if voice.canTalkLive {
+                            Text("In the chat, the waveform button starts a live conversation: Poki listens, acts and answers out loud, also while you are in another app. It ends by itself 8 seconds after an answer if nobody speaks. Tap End to stop sooner. The microphone in the message field only dictates.")
+                        } else {
+                            Text("A live conversation uses OpenAI’s Realtime voice, which needs an OpenAI API key in Settings › Models. Dictation in the message field works with every model.")
+                        }
                     }
+                    .settingsFooter()
                 }
+                #if canImport(ScreenCaptureKit)
+                if #available(iOS 27, *) {
+                    AppAudioSettings(talkIsOn: voice.isOn)
+                }
+                #endif
                 ActionButtonSection()
             }
             .navigationTitle(AppLocalization.text("Dictation & Mute"))
@@ -69,6 +82,38 @@ struct VoiceView: View {
         }
     }
 }
+
+#if canImport(ScreenCaptureKit)
+@available(iOS 27, *)
+private struct AppAudioSettings: View {
+    private let capture = AppAudioCapture.shared
+    let talkIsOn: Bool
+
+    var body: some View {
+        Section {
+            if capture.buffer != nil {
+                Button(role: .destructive) { capture.stop() } label: {
+                    SettingsLabel("Stop Listening to App Audio", systemImage: "stop.circle")
+                }
+                .accessibilityIdentifier("voice.stopAppAudio")
+            } else {
+                Button { capture.choose() } label: {
+                    SettingsLabel("Listen to App Audio", systemImage: "waveform")
+                }
+                .disabled(capture.isTransitioning || talkIsOn)
+                .accessibilityIdentifier("voice.startAppAudio")
+            }
+        } footer: {
+            if capture.didFail {
+                Text("App audio capture is unavailable.")
+                    .foregroundStyle(.orange)
+            } else {
+                Text("Share your screen to let Poki hear app audio during your next voice conversation. Poki keeps the last minute on this iPhone and sends only the transcript to answer your question. Phone actions are off during that conversation.")
+            }
+        }
+    }
+}
+#endif
 
 /// Voice's rows on Settings › Advanced: how long the last answer took, and the voice bridge on a Mac
 /// (live voice without an OpenAI key on this iPhone). They were Voice's own Advanced.
@@ -114,7 +159,7 @@ struct VoiceAdvancedRows: View {
             Button(action: saveBridge) { SettingsRow(title: "Save Address", symbol: "checkmark") }
                 .disabled(bridgeText.trimmingCharacters(in: .whitespaces).isEmpty)
             Text(bridgeRejected ? "That is not a voice bridge address. It looks like http://192.168.1.10:47830/voice/ followed by a long code." : "Optional, for live voice without an OpenAI key on this iPhone. Run bin/voice-bridge.mjs on your Mac and enter the address it gives.")
-                .font(.footnote).foregroundStyle(bridgeRejected ? Color.orange : Color.secondary)
+                .font(.allo(.footnote)).foregroundStyle(bridgeRejected ? Color.orange : Color.secondary)
         }
     }
 
