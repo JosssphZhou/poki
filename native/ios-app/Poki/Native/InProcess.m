@@ -3017,7 +3017,11 @@ static NSString *PKDaemonReply(NSTimeInterval seconds, void (^send)(void (^)(NSE
         BOOL launch = [action isEqualToString:@"launch"], activate = [action isEqualToString:@"activate"];
         if (!launch && !activate && ![action isEqualToString:@"terminate"]) return @"unknown_action";
         if (!launch && !activate) {
-            return PKDaemonReply(15, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; });
+            NSString *code = PKDaemonReply(15, ^(void (^reply)(NSError *)) { [proxy _XCT_terminateApplicationWithBundleID:bundle completion:reply]; });
+            if (code) return code;
+            NSDate *by = [NSDate dateWithTimeIntervalSinceNow:5];
+            while ([by timeIntervalSinceNow] > 0 && [[self frontBundleID] isEqualToString:bundle]) [NSThread sleepForTimeInterval:0.25];
+            return nil;
         }
         BOOL (^inFront)(NSTimeInterval) = ^BOOL(NSTimeInterval seconds) {
             NSDate *by = [NSDate dateWithTimeIntervalSinceNow:seconds];

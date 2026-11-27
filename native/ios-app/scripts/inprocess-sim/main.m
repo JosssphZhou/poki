@@ -140,8 +140,15 @@ static NSDictionary *Apps(NSString *fixture) {
     void (^step)(NSString *, NSString *) = ^(NSString *action, NSString *bundle) {
         NSTimeInterval t = NSProcessInfo.processInfo.systemUptime;
         NSString *code = [PKInProcess.shared app:bundle action:action];
-        [NSThread sleepForTimeInterval:1];
-        NSDictionary *front = [PKInProcess.shared frontApp];
+        BOOL expectGone = [action isEqualToString:@"terminate"];
+        NSTimeInterval settle = NSProcessInfo.processInfo.systemUptime + 5;
+        NSDictionary *front = nil;
+        do {
+            [NSThread sleepForTimeInterval:0.5];
+            front = [PKInProcess.shared frontApp];
+            BOOL ok = expectGone ? ![front[@"bundleId"] isEqualToString:bundle] : [front[@"bundleId"] isEqualToString:bundle];
+            if (ok) break;
+        } while (NSProcessInfo.processInfo.systemUptime < settle);
         [steps addObject:@{@"action": action, @"bundle": bundle, @"code": code ?: @"", @"seconds": @(NSProcessInfo.processInfo.systemUptime - t),
                            @"front": front[@"bundleId"] ?: @"", @"front_pid": front[@"pid"] ?: @0}];
     };
