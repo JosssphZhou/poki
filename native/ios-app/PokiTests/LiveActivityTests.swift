@@ -316,6 +316,7 @@ final class LiveActivityTests: XCTestCase {
         try await withSessionApp { app, activities in
             let session = "capture-session"
             app.startSession()
+            await app.chatTaskBegan()
             let original = try XCTUnwrap(activities().first)
             let hidden = await app.hideLiveActivityForCapture(task: .external(session))
             XCTAssertFalse(hidden.isError)
@@ -351,6 +352,7 @@ final class LiveActivityTests: XCTestCase {
             let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
             app.startSession()
             app.inProcessReadyForProbe()
+            await app.chatTaskBegan()
             XCTAssertTrue(app.sessionOn, app.problem ?? "Session did not start")
             let original = try XCTUnwrap(activities().first, AppLog.shared.lines.suffix(12).joined(separator: "\n"))
             let looked = await core.handle(RelayRequest(id: "look", method: "POST",
@@ -454,7 +456,6 @@ final class LiveActivityTests: XCTestCase {
             for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
             setup.save()
         }
-        app.activity.hidesWhenIdle = { false }
         app.loopback.simulate(.working(ms: 9))
         app.setup.loopback = .proxy
         XCTAssertTrue(app.setRelay("https://relay.invalid"))
