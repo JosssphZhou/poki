@@ -188,7 +188,11 @@ static NSDictionary *Apps(NSString *fixture) {
     NSString *expectFront = [args stringForKey:@"expectFront"];
     double delay = [args doubleForKey:@"delay"];
     dispatch_async(dispatch_queue_create("check", DISPATCH_QUEUE_SERIAL), ^{
-        NSDictionary *prepare = [PKInProcess.shared prepare];
+        NSDictionary *prepare = nil;
+        for (int attempt = 0; attempt < 4; attempt++) {
+            prepare = [PKInProcess.shared prepare];
+            if ([prepare[@"ok"] boolValue] || ![prepare[@"code"] isEqualToString:@"session_timeout"]) break;
+        }
         if (delay > 0) [NSThread sleepForTimeInterval:delay];
         if (expectFront.length && [prepare[@"ok"] boolValue]) {
             NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 60;

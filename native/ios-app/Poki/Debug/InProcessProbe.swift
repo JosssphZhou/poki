@@ -843,8 +843,17 @@ final class InProcessProbe: ObservableObject {
 
     func prepare() async -> Bool {
         note("prepare: opening the daemon session and Automation Mode", ["step": "prepare_start"])
-        let result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
-            queue.async { c.resume(returning: PKInProcess.shared().prepare()) }
+        var result: [String: Any] = [:]
+        for attempt in 1...4 {
+            result = await withCheckedContinuation { (c: CheckedContinuation<[String: Any], Never>) in
+                queue.async { c.resume(returning: PKInProcess.shared().prepare()) }
+            }
+            if (result["ok"] as? Bool) == true || (result["code"] as? String) != "session_timeout" || attempt == 4 {
+                break
+            }
+            let waited = String(format: "%.3f", (result["seconds"] as? Double) ?? 0)
+            note("prepare: session_timeout after \(waited) s (attempt \(attempt)); waiting on the in-flight open",
+                 ["step": "prepare_retry", "attempt": attempt, "seconds": (result["seconds"] as? Double) ?? 0])
         }
         let ok = (result["ok"] as? Bool) == true
         let seconds = String(format: "%.3f", (result["seconds"] as? Double) ?? 0)

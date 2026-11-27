@@ -377,7 +377,7 @@ static NSArray<NSString *> *SRSelectorsWith(Class cls, NSString *part) {
     [_lifecycleLock unlock];
     id session = nil;
     BOOL late = NO;
-    if (!hadSession && !owned) {
+    if (!hadSession && !owned && !_opening) {
         id promise = [cls sharedSessionPromiseAndImplicitlyInitiateSession:YES];
         for (NSString *selector in @[@"promiseFulfilled", @"value", @"error"])
             if (![promise respondsToSelector:NSSelectorFromString(selector)]) {
@@ -398,7 +398,7 @@ static NSArray<NSString *> *SRSelectorsWith(Class cls, NSString *part) {
     // POKI_INPROCESS_OWNED_SESSION set, the shared session is never used at all.
     BOOL closed;
     if (_observed && !_invalidated && _token) { session = _observed; closed = NO; }
-    else closed = (_observed != nil && _invalidated) || owned || late || !session;
+    else closed = (_observed != nil && _invalidated) || owned || late || _opening != nil || !session;
     [_lifecycleLock unlock];
     if (closed) {
         // The shared promise still holds the session that was closed: open one of this process's
