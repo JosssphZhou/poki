@@ -50,14 +50,14 @@ final class TalkActivity {
 
     /// The talk's state as the Live Activity says it: nil while no talk is on.
     static func state(of voice: VoiceModel) -> PokiState.Voice? {
-        guard voice.isOn else { return nil }
-        if voice.waitsForOpeningDictation { return .finishingOpening }
+        if voice.isOn, voice.waitsForOpeningDictation { return .finishingOpening }
         switch voice.phase {
-        case .off, .lost: return nil
+        case .off: return nil
         case .connecting: return voice.isCapturingOpening ? .listening : .connecting
-        case .listening, .hearing: return .listening
-        case .thinking: return .thinking
-        case .speaking: return .speaking
+        case .listening, .hearing: return voice.isOn ? .listening : nil
+        case .thinking: return voice.isOn ? .thinking : nil
+        case .speaking: return voice.isOn ? .speaking : nil
+        case .lost: return voice.isOn ? nil : .failed
         }
     }
 
@@ -215,6 +215,10 @@ final class TalkActivity {
     }
 
     fileprivate func endFromLiveActivity() {
+        if case .lost = voice.phase {
+            voice.dismissProblem()
+            return
+        }
         guard voice.isOn else { return }
         AppLog.shared.add("voice", "the talk was ended from the Live Activity")
         if let endFromLiveActivityAction { endFromLiveActivityAction() } else { voice.stop() }

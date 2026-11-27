@@ -10,7 +10,7 @@ enum StatusWord: CaseIterable {
     case needsApproval, needsYourAction
     case done, stopped, error, paused, off
     case disconnected, starting, notStarted, notSetUp
-    case listening, speaking
+    case connecting, listening, speaking, connectionFailed
 
     static let table = "Status"
 
@@ -31,8 +31,10 @@ enum StatusWord: CaseIterable {
         case .starting: AppLocalization.text(LocalizedStringResource("Starting", table: "Status"))
         case .notStarted: AppLocalization.text(LocalizedStringResource("Not started", table: "Status"))
         case .notSetUp: AppLocalization.text(LocalizedStringResource("Not set up", table: "Status"))
+        case .connecting: AppLocalization.text(LocalizedStringResource("Connecting", table: "Status"))
         case .listening: AppLocalization.text(LocalizedStringResource("Listening", table: "Status"))
         case .speaking: AppLocalization.text(LocalizedStringResource("Speaking", table: "Status"))
+        case .connectionFailed: AppLocalization.text(LocalizedStringResource("Connection failed", table: "Status"))
         }
     }
 }
