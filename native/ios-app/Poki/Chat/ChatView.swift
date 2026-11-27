@@ -1,3 +1,5 @@
+import AVFoundation
+import Photos
 import PhotosUI
 import SwiftUI
 
@@ -57,7 +59,8 @@ struct ChatView: View {
 
     /// The message field has the keyboard.
     @State private var writing = false
-    /// Plus's ways to add a photo or a file stand over the message field.
+    @State private var composerSettingsPresented = false
+    /// Plus's sheet is up: apps, photos, files and connectors.
     @State private var adding = false
     @State private var scrollReplyQuestion: UUID?
     @State private var standaloneDraft = ""
@@ -155,10 +158,12 @@ struct ChatView: View {
         let homeEdges: Edge.Set = home && openThreads != nil && !coveredByDrawer && inDuoSplitView
             ? .leading : []
         ZStack {
+            // The empty home page mounts no transcript (main #679): its scroll view and tracking cost
+            // time on every launch and keystroke for nothing on screen.
             if !home {
                 ChatTranscript(entries: shown, jump: searchJump,
                                onSearchJumpApplied: onSearchJumpApplied, typing: chat.awaitingModel, canRetry: chat.canRetry, retry: chat.retry, session: chat.sessionID,
-                               live: live, waiting: !model.approvals.isEmpty || sampleScene == "approval" || chat.demoAsk != nil,
+                               live: live, waiting: !model.approvals.isEmpty || sampleScene == "approval" || chat.demoAsk != nil || chat.contextAsk != nil,
                                handedOver: model.handoffText != nil || sampleScene == "handoff",
                                plan: chat.planSteps, app: sampleScene == nil ? chat.taskApp : ChatModel.Sample.app(sampleScene),
                                shot: shot, rise: reduceMotion || !(sampleScene == nil || sampleScene == "demo") ? nil : rise,
@@ -171,7 +176,7 @@ struct ChatView: View {
             }
             // The home page stays in the tree while the conversation is in front, neither seen nor
             // touched, so a new conversation brings it back on the same animation.
-            HomePage(home: home, writing: writing, rise: flightRise, sessionStore: sessionStore, shortcutStore: shortcutStore,
+            HomePage(home: home, writing: writing || composerSettingsPresented, rise: flightRise, sessionStore: sessionStore, shortcutStore: shortcutStore,
                      pick: { model.prepareForTask(); chat.setDraftActivity(true); draft.wrappedValue = $0; writing = true }) {
                 if home, let update { UpdatePill(version: update, open: openUpdates) }
                 if home, let hint = homeHint {
@@ -200,7 +205,7 @@ struct ChatView: View {
                 asks
                 if chat.waitingForSplitView {
                     Label(ActivityWords.local("Waiting for Split View"), systemImage: "rectangle.split.2x1")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .font(.allo(.footnote)).foregroundStyle(.secondary)
                 }
                 if !busy, let question = chat.countedScrollQuestion {
                     if scrollReplyQuestion == question {
@@ -209,25 +214,26 @@ struct ChatView: View {
                             Spacer()
                             Button("New message") { scrollReplyQuestion = nil }
                         }
-                        .font(.footnote)
+                        .font(.allo(.footnote))
                     } else {
                         Button {
                             scrollReplyQuestion = question
                             writing = true
                         } label: {
                             Label("Reply to Poki", systemImage: "arrowshape.turn.up.left")
-                                .font(.footnote)
+                                .font(.allo(.footnote))
                         }
                         .accessibilityIdentifier("chat.counted-scroll.reply")
                     }
                 }
-                ComposerInputView(input: draft, focused: $writing, adding: $adding, running: busy, progress: progress, restarts: restarts, conversationID: chat.sessionID,
+                ComposerInputView(input: draft, focused: $writing, adding: $adding,
+                                  settingsPresented: $composerSettingsPresented, running: busy, progress: progress, restarts: restarts, conversationID: chat.sessionID,
                                   send: { text, attachments in
                                       let reply = scrollReplyQuestion == chat.countedScrollQuestion ? scrollReplyQuestion : nil
                                       scrollReplyQuestion = nil
                                       chat.send(text, attachments: attachments, replyingTo: reply)
                                   }, stop: chat.stop, openVoice: openVoice, openChatGPTSignIn: openChatGPTSignIn, openVoiceKey: openVoiceKey,
-                                  noticeHeight: max(120, pageHeight * 0.6))
+                                  openModel: openModel, noticeHeight: max(120, pageHeight * 0.6))
                     .logStartupAppearance(.composer)
             }
             .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
@@ -263,6 +269,7 @@ struct ChatView: View {
         .animation(.snappy, value: model.handoffText)
         .animation(.snappy, value: chat.demoAsk?.id)
         .ignoresSafeArea(.container, edges: homeEdges)
+        .animation(.snappy, value: chat.contextAsk?.id)
         .toolbar(.hidden, for: .navigationBar)
         .onChange(of: chat.running) { was, now in
             if was, !now, endedWell { DoneLinger.shared.celebrate() }
@@ -291,6 +298,10 @@ struct ChatView: View {
         } else if let ask = chat.demoAsk {
             ApprovalAskCard(title: ChatModel.Sample.demoApproval.question, expires: ask.expires, answer: chat.answerDemo)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if let ask = chat.contextAsk {
+            ApprovalAskCard(title: AppLocalization.text(LocalizedStringResource("Share This From Screen History?")), expires: ask.expires,
+                            answer: { approved in chat.answerContext(approved) })
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if let approval = model.approvals.first {
             ApprovalAskCard(title: approval.question, expires: approval.expires,
                             answer: { approved in model.resolve(approval, approved: approved) },
@@ -298,7 +309,7 @@ struct ChatView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if model.passcodeHint {
             Label(Self.local(AppModel.handoffWording(.automationPasscode)), systemImage: "lock")
-                .font(.callout).padding(12)
+                .font(.allo(.callout)).padding(12)
                 .frame(maxWidth: .infinity)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .accessibilityIdentifier("session.passcode")
@@ -307,7 +318,7 @@ struct ChatView: View {
                 ProgressView()
                 Text("Preparing")
             }
-            .font(.callout).padding(8)
+            .font(.allo(.callout)).padding(8)
             .accessibilityIdentifier("session.preparing")
         } else if let text = model.handoffText {
             TurnCard(text: Self.local(text), done: model.handoffDoneInApp)
@@ -377,8 +388,10 @@ extension View {
         if #available(iOS 26.0, *) {
             safeAreaBar(edge: .bottom, spacing: 0) { bar().glassGroup(spacing: 8) }
                 .scrollEdgeEffectStyle(softEdge ? .soft : .automatic, for: .bottom)
+                .overlayPreferenceValue(MentionFloatKey.self) { MentionFloatLayer(float: $0) }
         } else {
             safeAreaInset(edge: .bottom, spacing: 0) { bar() }
+                .overlayPreferenceValue(MentionFloatKey.self) { MentionFloatLayer(float: $0) }
         }
     }
 
@@ -578,7 +591,7 @@ extension SetupIssueHint {
         guard model.relayStatus.isOffline else { return nil }
         return SetupIssueHint(
             message: AppLocalization.text(LocalizedStringResource("MCP Relay is offline: agents can’t reach this iPhone.")),
-            link: AppLocalization.text(LocalizedStringResource("Agents ›")),
+            link: AppLocalization.text(LocalizedStringResource("External Connections ›")),
             target: .agents
         )
     }
@@ -598,7 +611,7 @@ struct SetupHintLine: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(verbatim: hint.message)
-                .font(.footnote)
+                .font(.allo(.footnote))
                 .foregroundStyle(Color(.secondaryLabel))
                 .multilineTextAlignment(.center)
             Button {
@@ -611,7 +624,7 @@ struct SetupHintLine: View {
                 }
             } label: {
                 Text(verbatim: hint.link)
-                    .font(.footnote.weight(.semibold))
+                    .font(.allo(.footnote, .semibold))
                     .foregroundStyle(Tint.blueText)
             }
             .buttonStyle(.plain)
@@ -785,7 +798,7 @@ struct ChatTranscript<Footer: View>: View {
         switch entry.kind {
         case .time(let date):
             Text(ChatTime.header(date))
-                .font(.caption).foregroundStyle(Color(.secondaryLabel))
+                .font(.allo(.caption)).foregroundStyle(Color(.secondaryLabel))
                 .padding(.bottom, 6).frame(maxWidth: .infinity)
         case .you(let text, let delivered):
             let last = isLast(i, poki: false)
@@ -804,12 +817,12 @@ struct ChatTranscript<Footer: View>: View {
                 }
                 if !text.isEmpty { MessageBubble(direction: .outgoing, text: text, tail: last) }
                 if last, delivered {
-                    Text("Delivered").font(.caption2.weight(.medium)).foregroundStyle(Color(.secondaryLabel))
-                        .padding(.horizontal, 4).padding(.bottom, 8)
+                    Text("Delivered").font(.allo(.caption2, .medium)).foregroundStyle(Color(.secondaryLabel))
+                        .padding(.horizontal, 4).padding(.bottom, 4)
                         .transition(.opacity)
                 }
             }
-            .padding(.top, startsRun(i) ? 10 : 0)
+            .padding(.top, startsRun(i) ? 8 : 0)
             // Your first words rise out of the message field on their own spring. Not as a transition:
             // the list's spring for new rows took a transition over and threw the bubble 40 points
             // past its place.
@@ -820,16 +833,16 @@ struct ChatTranscript<Footer: View>: View {
             // your grey one. Every request comes through ask_poki, an MCP tool.
             VStack(alignment: .trailing, spacing: 5) {
                 if startsRun(i) || i == 0 {
-                    Text("\(from) asked over MCP").font(.caption2.weight(.medium)).foregroundStyle(Color(.secondaryLabel)).padding(.trailing, 4)
+                    Text("\(from) asked over MCP").font(.allo(.caption2, .medium)).foregroundStyle(Color(.secondaryLabel)).padding(.trailing, 4)
                 }
                 MessageBubble(direction: .guest, text: text, tail: isLast(i, poki: false))
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.top, startsRun(i) ? 10 : 0)
+            .padding(.top, startsRun(i) ? 8 : 0)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         case .poki(let text):
             MessageBubble(direction: .incoming, text: text, tail: isLast(i, poki: true))
-                .padding(.top, startsRun(i) ? 10 : 0)
+                .padding(.top, startsRun(i) ? 8 : 0)
                 .transition(PlanMotion.stepTransition)
         case .plan(let steps):
             let ask = asking(at: i)
@@ -837,19 +850,25 @@ struct ChatTranscript<Footer: View>: View {
             TaskCard(title: entry.title ?? ask.title, steps: steps,
                      state: TaskCardState(steps: steps, live: current, waiting: waiting, handedOver: handedOver,
                                           stopped: entry.stopped == true, saveFailed: entry.saveFailed == true || entry.failed == true,
-                                          interrupted: entry.interrupted == true),
+                                          interrupted: entry.interrupted == true, succeeded: current ? nil : entry.succeeded),
                      upcoming: current ? Array((plan ?? []).dropFirst(steps.count)) : [],
                      planned: !current || plan != nil,
                      asker: ask.from, app: current ? app : entry.app, usedBrowser: ChatEntry.taskUsedBrowser(in: entries, at: i), started: entry.at, shot: current ? shot : nil,
                      ended: current ? nil : entry.ended, plannedTotal: entry.total, resultSummary: entry.resultSummary, memoryUse: entry.memoryUse)
-                .contentShape(.contextMenuPreview, .rect(cornerRadius: 26, style: .continuous))
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: .cornerRadius, style: .continuous))
 
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
                 .transition(PlanMotion.stepTransition)
         case .note(.approval(let approval)):
             HStack {
-                ApprovalNoteCard(note: approval)
-                    .contentShape(.contextMenuPreview, .rect(cornerRadius: 16, style: .continuous))
+                Group {
+                    if let share = approval.history {
+                        SensesShareCard(note: approval, share: share)
+                    } else {
+                        ApprovalNoteCard(note: approval)
+                    }
+                }
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: .cornerRadius, style: .continuous))
 
                 Spacer(minLength: .messageInsetPadding)
             }
@@ -870,7 +889,7 @@ struct ChatTranscript<Footer: View>: View {
                 .transition(PlanMotion.stepTransition)
         case .card(let card):
             ResultCardView(entry: entry.id, card: card, chosen: entry.chosen, actions: cardActions)
-                .padding(.vertical, 6)
+                .padding(.vertical, 4)
                 .transition(PlanMotion.stepTransition)
         }
     }
@@ -965,7 +984,7 @@ private struct NewestButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.down")
-                .font(.body.weight(.semibold))
+                .font(.allo(.body, .semibold))
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Color(.label))
                 .frame(width: controlSize.side, height: controlSize.side)
@@ -1048,10 +1067,10 @@ enum StatusGlyph: Equatable {
 
     @ViewBuilder var view: some View {
         switch self {
-        case .ok: Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(Tint.green)
-        case .failed: Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(Tint.red)
+        case .ok: Image(systemName: "checkmark").font(.allo(.caption2, .bold)).foregroundStyle(Tint.green)
+        case .failed: Image(systemName: "xmark").font(.allo(.caption2, .bold)).foregroundStyle(Tint.red)
         case .working: ProgressView().controlSize(.mini)
-        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.caption2).foregroundStyle(Tint.amber)
+        case .warning: Image(systemName: "exclamationmark.triangle.fill").font(.allo(.caption2)).foregroundStyle(Tint.amber)
         // The Dynamic Island, small.
         case .island: Capsule().fill(Color(hex: 0x1C1C1E)).frame(width: 22, height: 8)
         case .none: EmptyView()
@@ -1072,7 +1091,7 @@ struct StatusLine: View {
                 if glyph != .none { glyph.view.frame(minWidth: 14) }
                 Text(text).fixedSize(horizontal: false, vertical: true)
             }
-            .font(.footnote).foregroundStyle(Color(.secondaryLabel))
+            .font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel))
             .multilineTextAlignment(.leading)
             .padding(.vertical, card ? 8 : 2).padding(.horizontal, card ? 12 : 2)
             .background { if card { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemBackground)) } }
@@ -1128,7 +1147,7 @@ struct MessageListHeader: View {
                         .foregroundStyle(dark ? Color.white.opacity(0.7) : ChatColor.secondary)
                 }
                 if let subtitle, !subtitle.isEmpty {
-                    Text(verbatim: subtitle).font(.system(size: 11)).foregroundStyle(ChatColor.secondary).lineLimit(1)
+                    Text(verbatim: subtitle).font(.allo(size: 11, relativeTo: .caption2)).foregroundStyle(ChatColor.secondary).lineLimit(1)
                 }
             }
             .padding(.top, 2).padding(.bottom, 8)
@@ -1139,7 +1158,7 @@ struct MessageListHeader: View {
             if let back, UserDefaults.standard.string(forKey: "pokiChat") == nil, UserDefaults.standard.string(forKey: "pokiVoiceSample") == nil {
                 Button(action: back) {
                     Image(systemName: "chevron.backward")
-                        .font(.title3.weight(.semibold))
+                        .font(.alloRounded(.title3, .semibold))
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .foregroundStyle(dark ? .white : Site.blue)
                         .frame(width: backSize.side, height: backSize.side).contentShape(.rect)
@@ -1241,32 +1260,31 @@ struct ApprovalNoteCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
-                Text(verbatim: title).font(.footnote.weight(.semibold)).foregroundStyle(tint)
+                Image(systemName: symbol).font(.allo(.subheadline, .semibold)).foregroundStyle(tint)
+                Text(verbatim: title).font(.allo(.footnote, .semibold)).foregroundStyle(tint)
                 Spacer(minLength: 4)
                 if note.state == .asking, note.byModel {
                     ProgressView().controlSize(.mini)
                 } else if let at = note.answered {
-                    Text(at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLocalization.locale))).font(.caption2).foregroundStyle(Color(.secondaryLabel))
+                    Text(at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLocalization.locale))).font(.allo(.caption2)).foregroundStyle(Color(.secondaryLabel))
                 }
             }
-            Text(verbatim: ActivityWords.label(note.summary)).font(.subheadline).foregroundStyle(Color(.label))
+            Text(verbatim: ActivityWords.label(note.summary)).font(.allo(.subheadline)).foregroundStyle(Color(.label))
                 .fixedSize(horizontal: false, vertical: true)
             if !context.isEmpty {
-                Text(verbatim: context).font(.caption).foregroundStyle(Color(.secondaryLabel))
+                Text(verbatim: context).font(.allo(.caption)).foregroundStyle(Color(.secondaryLabel))
             }
             if !note.reason.isEmpty {
-                Text(verbatim: AppLocalization.bundle.localizedString(forKey: note.reason, value: note.reason, table: nil)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                Text(verbatim: AppLocalization.bundle.localizedString(forKey: note.reason, value: note.reason, table: nil)).font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if note.state == .refused, note.reply {
-                Text("Say yes in the chat to allow it.").font(.caption).foregroundStyle(Color(.secondaryLabel))
+                Text("Say yes in the chat to allow it.").font(.allo(.caption)).foregroundStyle(Color(.secondaryLabel))
             }
         }
-        .padding(.vertical, 10).padding(.horizontal, 12)
+        .padding(.vertical, 10).padding(.horizontal, 13)
         .frame(maxWidth: 300, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
+        .chatSurface(RoundedRectangle(cornerRadius: .cornerRadius, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -1296,7 +1314,7 @@ struct ModeLabels: View {
 
     private func label(_ title: LocalizedStringKey, _ target: RootPage) -> some View {
         Button { select?(target) } label: {
-            Text(title).font(.system(size: 13, weight: .semibold)).tracking(13 * 0.06)
+            Text(title).font(.allo(size: 13, relativeTo: .footnote, .semibold)).tracking(13 * 0.06)
                 .foregroundStyle(color(target))
         }
         .buttonStyle(.plain)
@@ -1347,9 +1365,13 @@ struct ComposerInputView: View {
     @Binding var input: String
     /// The message field has the keyboard; the home page's suggestions set it.
     @Binding var focused: Bool
-    /// Plus is open: its ways to add stand over the message field until one is picked or the page is tapped.
+    /// Plus is open: its sheet is up until it is closed or something it opened has added to the message.
     @Binding var adding: Bool
+    @Binding var settingsPresented: Bool
     var running: Bool
+    var isSettingsPreview = false
+    @AppStorage(ComposerSettingsView.modelKey) private var showsModelShortcut = true
+    @State private var previewTaps = 0
     /// How far the running task is, 0 to 1, for the ring around Stop; nil when unknown.
     var progress: Double? = nil
     /// Goes up with each tap on New Conversation on the home page: a message under way (words or
@@ -1366,6 +1388,11 @@ struct ComposerInputView: View {
     var openChatGPTSignIn: () -> Void = {}
     /// Settings, where the OpenAI key that Talk with Poki needs is added (or Live Voice turned on).
     var openVoiceKey: () -> Void = {}
+    var openModel: () -> Void = {}
+    @State private var taskSettings: ComposerTaskSettings.Kind?
+    @State private var modelPreviewSelection = ComposerTaskSettings.ModelSelection.simulatorPreview
+    @State private var resumeEditing: Bool = false
+    @State private var showModelSetupAfterDismiss = false
     /// Leave conversation context above a long voice notice; its content remains scrollable.
     var noticeHeight: CGFloat = 360
     @State private var voiceContentHeight: CGFloat = 0
@@ -1387,14 +1414,27 @@ struct ComposerInputView: View {
     @State private var picked: [PhotosPickerItem] = []
     @State private var takingPhoto = false
     @State private var choosingFiles = false
+    /// Recent photos tapped in plus's sheet, by their library id, so a second tap takes one out again.
+    @State private var photoAssets: [String: UUID] = [:]
+    /// What the field writes at its caret, for the list of apps and connectors that follows it.
+    @State private var mentions = MentionBridge()
+    /// The composer's glass in the window, where the list is placed over the caret.
+    @State private var barFrame: CGRect = .zero
+    /// The message field's frame in the composer's own coordinate space ("composer"), where the
+    /// mention list is placed.
+    @State private var fieldFrame: CGRect = .zero
     /// A file Poki can't read, said for a moment over the message field.
     @State private var problem: String?
+    /// The field's notices: one at a time, on glass just above it.
+    @State private var notices = NoticeQueue()
     @State private var fieldScroll = CapsuleScroll()
     @State private var editorBridge = CapsuleEditorBridge()
     @State private var mentionReady = false
     @State private var mentionCaretX: CGFloat?
     @State private var composerWidth: CGFloat = 340
     @State private var showingAllApps = false
+    /// More was tapped in Plus's sheet: the app browser opens when the sheet has gone down.
+    @State private var allAppsAfterAdding = false
     @State private var allAppsInitialSearch = ""
     @State private var pendingMentionReplaceLength = 0
     @State private var recentAppsVersion = 0
@@ -1403,12 +1443,16 @@ struct ComposerInputView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Bumped when the chosen model changes, so the model button shows the new name.
+    @State private var modelVersion = 0
     @ScaledMetric(relativeTo: .body) private var scaledButtonDiameter = 44.0
     @ScaledMetric(relativeTo: .body) private var scaledControlInset = 6.0
     @ScaledMetric(relativeTo: .body) private var scaledControlSpacing = 8.0
     @ScaledMetric(relativeTo: .body) private var fieldHeight = 112.0
 
     private var buttonDiameter: CGFloat { min(56, max(36, scaledButtonDiameter)) }
+    /// The approval icons in the model sheet, as large as the composer's glyphs.
+    private var shortcutGlyphSide: CGFloat { buttonHitSide / 2 }
     private var buttonHitSide: CGFloat { max(44, buttonDiameter) }
     private var controlInset: CGFloat { min(8, max(4, scaledControlInset)) }
     private var controlSpacing: CGFloat { min(12, max(6, scaledControlSpacing)) }
@@ -1416,60 +1460,73 @@ struct ComposerInputView: View {
         let radius = (buttonHitSide + 2 * controlInset) / 2
         return expanded ? min(24, radius) : radius
     }
-    private var expanded: Bool { typeSize >= .xxxLarge }
+    private var shortcutsVisible: Bool { focused || taskSettings != nil || resumeEditing }
+    private var expanded: Bool {
+        // The Input Field preview shows the expanded field only while the model button is on, as writing does.
+        ((isSettingsPreview || shortcutsVisible) && showsModelShortcut) || typeSize >= .xxxLarge
+    }
+    private var expansionAnimation: Animation? { reduceMotion ? nil : .smooth(duration: 0.28) }
+
+    private var controlIdentifierPrefix: String { isSettingsPreview ? "composer.preview" : "composer" }
 
     private var voice: VoiceModel { model.voice }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// A talk is under way, so its row stands where the field was (a talk that broke is a notice).
+    private var talking: Bool { voice.talkState.map { !$0.isFailed } ?? false }
+
+    private static let voiceKeyNotice = "voice.key"
+    private static let voiceFailedNotice = "voice.failed"
+    private static let fileNotice = "composer.file"
+    private static let dictationNotice = "composer.dictation"
+
+    /// Talk with Poki with no voice key (or Live Voice off): what it is missing, and where to add it.
+    private func postVoiceKeyNotice() {
+        let off = ModelKeys.hasKey(.openai) && VoiceDirect.account == nil
+        notices.post(Notice(id: Self.voiceKeyNotice, style: .warning,
+                            title: AppLocalization.text(off ? LocalizedStringResource("Live Voice Is Off") : LocalizedStringResource("No Voice Key Set Up")),
+                            message: AppLocalization.text(off ? LocalizedStringResource("Turn it on in Settings. Dictate works without it.")
+                                                              : LocalizedStringResource("Talk needs an OpenAI key. Dictate works without one.")),
+                            actionTitle: AppLocalization.text(off ? LocalizedStringResource("Open Settings") : LocalizedStringResource("Add Key"))),
+                     action: { needsKey = false; openVoiceKey() }, onDismiss: { needsKey = false })
+    }
+
+    /// A talk that broke: it ends at once (the field comes back), and why it broke, with Try Again,
+    /// waits in the notice slot.
+    private func showVoiceFailure(_ state: TalkState) {
+        notices.post(Notice(id: Self.voiceFailedNotice, style: .error, title: state.word, message: state.reason,
+                            actionTitle: AppLocalization.text(LocalizedStringResource("Try Again"))),
+                     action: { openVoice() })
+        voice.dismissProblem()
+        #if DEBUG && targetEnvironment(simulator)
+        voice.staged = nil
+        #endif
+    }
     /// Something to send: words, or pictures on their own.
     private var canSend: Bool { hasText || !attachments.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let problem = problem ?? (dictation.on ? nil : dictation.problem) {
-                Text(problem).font(.footnote).foregroundStyle(Tint.red)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
-                    .transition(.opacity)
-            }
             if !attachments.isEmpty {
                 AttachmentStrip(attachments: attachments) { item in
                     withAnimation(.snappy) { attachments.removeAll { $0.id == item.id } }
+                    photoAssets = photoAssets.filter { $0.value != item.id }
                 }
-            }
-            if adding, voice.talkState == nil, !needsKey {
-                ways
-                    .padding(.bottom, 2)
-            }
-            if focused, let mentionState = currentMention {
-                MentionPicker(
-                    state: mentionState,
-                    composerWidth: composerWidth,
-                    caretX: mentionCaretX.map { $0 + buttonHitSide + controlSpacing + controlInset },
-                    pick: { pickApp($0, replacing: mentionState.triggerLength, keepFocus: true) },
-                    browseAll: {
-                        pendingMentionReplaceLength = mentionState.triggerLength
-                        allAppsInitialSearch = ""
-                        adding = false
-                        showingAllApps = true
-                    }
-                )
             }
             // One row on one glass sheet (ESP-376): plus, the message, and the one button that talks,
             // sends or stops. The buttons inside are plain fills: no glass on glass.
             Group {
-                if voice.talkState != nil || needsKey {
+                // The talk's own row while a talk runs. What goes wrong with it (no key, a lost
+                // connection) is said in the notice slot above, never in this pill.
+                if !isSettingsPreview, talking, let talk = voice.talkState {
                     ScrollView {
                         Group {
-                            if let talk = voice.talkState {
-                                TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
-                                        interrupt: voice.stopTalking, end: voice.stop,
-                                        retry: {
-                                            let needsSignIn = voice.needsChatGPTSignIn
-                                            voice.dismissProblem()
-                                            if needsSignIn { openChatGPTSignIn() } else { openVoice() }
-                                        }, dismiss: voice.dismissProblem, signInAgain: voice.needsChatGPTSignIn)
-                            } else {
-                                VoiceKeyNotice(addKey: { needsKey = false; openVoiceKey() }, close: { needsKey = false })
-                            }
+                            TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
+                                    interrupt: voice.stopTalking, end: voice.stop,
+                                    retry: {
+                                        let needsSignIn = voice.needsChatGPTSignIn
+                                        voice.dismissProblem()
+                                        if needsSignIn { openChatGPTSignIn() } else { openVoice() }
+                                    }, dismiss: voice.dismissProblem, signInAgain: voice.needsChatGPTSignIn)
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { voiceContentHeight = $0 }
@@ -1486,21 +1543,39 @@ struct ComposerInputView: View {
                                      onSwipe: { up in if up { focused = true } else if focused { focused = false } },
                                      onMentionReady: { mentionReady = $0 },
                                      onMentionCaretX: { mentionCaretX = $0 },
-                                     onSubmit: submit)
+                                     onSubmit: submit,
+                                     mentions: mentions)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("composer")) } action: { fieldFrame = $0 }
                             .overlay(alignment: .topLeading) {
                                 if input.isEmpty {
                                     Text(dictation.on ? "Listening…" : attachments.isEmpty ? "Message Poki" : "Add a message")
                                         .foregroundStyle(Tint.homePlaceholder).lineLimit(1)
-                                        .padding(.top, 6).allowsHitTesting(false).accessibilityHidden(true)
+                                        .padding(.top, 6)
+                                        .overlay(alignment: .leading) {
+                                            if isSettingsPreview {
+                                                Capsule()
+                                                    .fill(Color.accentColor)
+                                                    .frame(width: 2)
+                                                    .padding(.top, 6)
+                                                    .phaseAnimator([true, false]) { caret, visible in
+                                                        caret.opacity(visible || reduceMotion ? 1 : 0)
+                                                    } animation: { _ in
+                                                        reduceMotion ? nil : .easeInOut(duration: 0.12).delay(0.42)
+                                                    }
+                                            }
+                                        }
+                                        .allowsHitTesting(false).accessibilityHidden(true)
                                 }
                             }
-                            .padding(.horizontal, expanded ? 8 : 0)
+                            .allowsHitTesting(!isSettingsPreview)
                             .accessibilitySortPriority(1)
                         HStack(spacing: 4) {
                             if dictation.on { dictating } else if dictationButton, !running { microphone }
                             mainButton
                         }
                         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        modelButton
+                            .disabled(running)
                     }
                     .simultaneousGesture(swipe)
                     .transition(.blurReplace)
@@ -1508,55 +1583,105 @@ struct ComposerInputView: View {
             }
             .padding(controlInset)
             .contentShape(.rect)
-            .onTapGesture { if voice.talkState == nil, !needsKey { focused = true } }
+            .onTapGesture { if !isSettingsPreview, !talking, taskSettings == nil { focused = true } }
             .glassSurface(in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous), fallback: .bar)
             .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { composerWidth = $0 }
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: expanded)
+            .animation(expansionAnimation, value: expanded)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { barFrame = $0 }
+            .coordinateSpace(.named("composer"))
+            .animation(.snappy(duration: 0.22), value: mentions.query == nil)
+            .sheet(item: $taskSettings, onDismiss: finishTaskSettings) { kind in
+                ComposerTaskSettings(kind: kind, approvalIconSize: shortcutGlyphSide,
+                                     previewSelection: $modelPreviewSelection) {
+                    showModelSetupAfterDismiss = true
+                    resumeEditing = false
+                    taskSettings = nil
+                }
+            }
         }
+        .preference(key: MentionFloatKey.self, value: mentionFloat)
         .animation(.snappy, value: dictation.on)
         .animation(reduceMotion ? nil : .snappy(duration: 0.26), value: adding)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: currentMention)
-        .animation(TalkMotion.enter, value: voice.talkState != nil)
+        .animation(TalkMotion.enter, value: talking)
         .animation(TalkMotion.enter, value: needsKey)
         .onChange(of: voice.isOn, initial: true) { _, on in talkStarted = on ? Date() : nil }
         // Talk with Poki with no voice key, from the field's button, a link or Poki's profile: what it is
         // missing. The keyboard goes down: the field it belongs to is not on screen.
         .onChange(of: voice.keyAsked, initial: true) { _, asked in
-            guard asked else { return }
+            guard !isSettingsPreview, asked else { return }
             voice.keyAsked = false
             focused = false
             needsKey = true
         }
         // The talk's bar stands where the field was: the keyboard goes down with the field.
-        .onChange(of: voice.talkState != nil) { _, talking in if talking { focused = false; needsKey = false } }
-        // A suggestion picked or a task starting puts the key's message away; typing dismisses the `+` menu.
-        .onChange(of: input) { old, text in
-            if !text.isEmpty, !dictation.on { needsKey = false }
-            if adding, text != old { adding = false }
-        }
+        .onChange(of: talking) { _, talking in if talking { focused = false; needsKey = false } }
+        // A suggestion picked or a task starting puts the key's message away.
+        .onChange(of: input) { _, text in if !text.isEmpty, !dictation.on { needsKey = false } }
         // The keyboard asked for (a suggestion, New Conversation) while the talk's bar stands in the
         // field's place has no field to go to; over the key's message it brings the field back.
         .onChange(of: focused) { _, now in
             guard now else { return }
-            if voice.talkState != nil { focused = false } else { needsKey = false }
+            if talking { focused = false } else { needsKey = false }
         }
         .onChange(of: running) { _, now in if now { needsKey = false } }
         .animation(.snappy, value: running)
         .animation(.snappy, value: attachments)
         .animation(.snappy, value: problem)
+        // Everything the field has to say goes to the one notice slot above it.
+        .onChange(of: needsKey) { _, needs in
+            if needs { postVoiceKeyNotice() } else { notices.clear(Self.voiceKeyNotice) }
+        }
+        .onChange(of: voice.talkState) { _, state in
+            guard case .failed = state, let state else { return }
+            showVoiceFailure(state)
+        }
+        .onChange(of: problem) { _, problem in
+            if let problem {
+                notices.post(Notice(id: Self.fileNotice, style: .error, title: problem), onDismiss: { self.problem = nil })
+            } else {
+                notices.clear(Self.fileNotice)
+            }
+        }
+        .onChange(of: dictation.problem) { _, problem in
+            if let problem {
+                notices.post(Notice(id: Self.dictationNotice, style: .warning, title: AppLocalization.text(LocalizedStringResource("Dictation Can’t Start")),
+                                    message: problem))
+            } else {
+                notices.clear(Self.dictationNotice)
+            }
+        }
         .onChange(of: dictation.text) { _, text in if dictation.on { input = dictation.base + text } }
         // A keyboard that was still composing (autocorrect, Pinyin) can commit its text after Send has
         // emptied the field, which put the sent message back: for a moment after Send, that is undone.
         .onChange(of: input) { _, text in
             if let sent, text == sent.text, Date().timeIntervalSince(sent.at) < 1 { input = "" }
         }
-        .onDisappear { dictation.stop(model) }
+        .onDisappear { if !isSettingsPreview { dictation.stop(model) } }
+        .sensoryFeedback(.selection, trigger: previewTaps)
         .sensoryFeedback(.impact(weight: .light), trigger: sends)
         .task(id: problem) {
             guard problem != nil else { return }
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled { problem = nil }
         }
+        .onChange(of: picked) { _, items in
+            guard !items.isEmpty else { return }
+            picked = []
+            adding = false
+            let generation = pickerGeneration
+            Task { await addPhotos(items, generation: generation) }
+        }
+        // Plus: a sheet that rises from the bottom (it was a menu that appeared at once). The library,
+        // Files and the camera open over it, and it goes down once they have added something.
+        // More in the sheet opens every app (AllAppsBrowserSheet) once the sheet is down: two sheets at
+        // once on one view do not present.
+        .sheet(isPresented: $adding, onDismiss: {
+            guard allAppsAfterAdding else { return }
+            allAppsAfterAdding = false
+            showingAllApps = true
+        }) { addSheet }
+        .onAppear { _ = MCPConnectors.shared }
+        .onChange(of: focused) { _, now in if !now { mentions.update(nil) } }
         .sheet(isPresented: $showingAllApps, onDismiss: {
             pendingMentionReplaceLength = 0
             allAppsInitialSearch = ""
@@ -1574,49 +1699,39 @@ struct ComposerInputView: View {
                 onClose: { showingAllApps = false }
             )
         }
-        .photosPicker(isPresented: $choosingPhotos, selection: $picked, maxSelectionCount: Self.most - attachments.count, matching: .images)
-        .onChange(of: picked) { _, items in
-            guard !items.isEmpty else { return }
-            picked = []
-            let generation = pickerGeneration
-            Task { await addPhotos(items, generation: generation) }
-        }
-        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AttachmentReader.fileTypes, allowsMultipleSelection: true) { result in
-            guard pickerGeneration == attachmentDraft.generation, case .success(let urls) = result else { return }
-            for url in urls { add { try AttachmentReader.file(url) } }
-        }
-        .fullScreenCover(isPresented: $takingPhoto) {
-            CameraPicker { image in
-                takingPhoto = false
-                if pickerGeneration == attachmentDraft.generation, let image { add { try AttachmentReader.photo(image) } }
-            }
-            .ignoresSafeArea()
-        }
         .onChange(of: conversationID) {
+            resumeEditing = false
+            taskSettings = nil
             withAnimation(.snappy) { attachmentDraft.reset() }
             problem = nil
         }
         .onChange(of: restarts) {
+            resumeEditing = false
+            taskSettings = nil
             let hadDraft = !input.isEmpty || !attachments.isEmpty
             withAnimation(.snappy) { attachmentDraft.reset() }
             adding = false
             if hadDraft {
                 input = ""
+                withAnimation(.snappy) { attachmentDraft.reset() }
+                photoAssets = [:]
                 focused = false
             } else {
                 focused = true
             }
         }
         #if DEBUG && targetEnvironment(simulator)
-        .onAppear { if let item = TestAttachment.take() { attachments.append(item) } }
+        .onAppear { if !isSettingsPreview, let item = TestAttachment.take() { attachments.append(item) } }
         // Screenshots of talking, from a simulator's development build: `-pokiTalk needs-key` (Talk with
         // Poki without a key), `add-key` (where its Add Key leads), `talk` (a talk under way; with
         // `-pokiTalkRehearsal 1` it runs TalkRehearsal's turn) and `ended` (that talk, ended by End).
         .task {
-            guard let shot = UserDefaults.standard.string(forKey: "pokiTalk") else { return }
+            guard !isSettingsPreview, let shot = UserDefaults.standard.string(forKey: "pokiTalk") else { return }
             try? await Task.sleep(for: .seconds(1))
             switch shot {
             case "needs-key": needsKey = true
+            case "failed": voice.staged = .failed(TalkState.connectionLost)
+            case "file-problem": problem = AppLocalization.text(LocalizedStringResource("Couldn’t read this file."))
             case "add-key": openVoiceKey()
             case "talk":
                 openVoice()
@@ -1634,7 +1749,7 @@ struct ComposerInputView: View {
             }
         }
         .task {
-            guard let scene = UserDefaults.standard.string(forKey: "pokiAppPicker") else { return }
+            guard !isSettingsPreview, let scene = UserDefaults.standard.string(forKey: "pokiAppPicker") else { return }
             try? await Task.sleep(for: .milliseconds(600))
             switch scene {
             case "plus":
@@ -1681,6 +1796,7 @@ struct ComposerInputView: View {
             .onEnded { drag in
                 let scrolled = swipeScrolls ?? false
                 swipeScrolls = nil
+                guard !isSettingsPreview else { return }
                 let (dx, dy) = (drag.translation.width, drag.predictedEndTranslation.height)
                 guard abs(drag.translation.height) > abs(dx) * 1.5 else { return }
                 if dy < -36, !focused { focused = true }
@@ -1693,8 +1809,8 @@ struct ComposerInputView: View {
     private var dictating: some View {
         Button { dictation.stop(model) } label: {
             Image(systemName: "mic.fill")
-                .font(.body.weight(.medium)).foregroundStyle(Tint.red)
-                .symbolEffect(.pulse, isActive: true)
+                .font(.allo(.body, .medium)).foregroundStyle(Tint.red)
+                .symbolEffect(.pulse, isActive: !reduceMotion)
                 .frame(width: buttonHitSide, height: buttonHitSide).contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -1707,18 +1823,81 @@ struct ComposerInputView: View {
     /// Settings › Voice turned it on: dictation into the field. The words appear in the field; nothing
     /// is sent until you tap Send.
     private var microphone: some View {
-        Button { dictation.start(model, after: input) } label: {
+        Button {
+            guard !isSettingsPreview else { previewTaps += 1; return }
+            dictation.start(model, after: input)
+        } label: {
             Image(systemName: "mic")
-                .font(.body.weight(.medium)).foregroundStyle(Color(.label))
+                .font(.allo(.body, .medium)).foregroundStyle(Color(.label))
                 .frame(width: buttonHitSide, height: buttonHitSide).contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .disabled(voice.isOn)
+        .disabled(!isSettingsPreview && voice.isOn)
         .accessibilityLabel(Text("Dictate"))
-        .accessibilityIdentifier("composer.dictate")
+        .accessibilityIdentifier("\(controlIdentifierPrefix).dictate")
         .accessibilityShowsLargeContentViewer {
             Label("Dictate", systemImage: "mic")
         }
+    }
+
+    /// Where the message's text starts inside the glass: after plus on one row, near the edge on two.
+    private var mentionFieldInset: CGFloat { expanded ? 8 : buttonHitSide + controlSpacing }
+
+    /// The model that answers, as a button under the message while you write (as in the ChatGPT and
+    /// Claude apps): it opens the models, with how Poki asks before it acts below them.
+    private var modelButton: some View {
+        let _ = modelVersion
+        let visible = showsModelShortcut && (isSettingsPreview || shortcutsVisible)
+        let hasModel = isSettingsPreview || ModelKeys.hasUsableKey(in: model.storage)
+        let name = isSettingsPreview || !hasModel ? nil : ModelKeys.selectedModelName(in: model.storage)
+        return Button {
+            guard !isSettingsPreview else { previewTaps += 1; return }
+            settingsPresented = true
+            resumeEditing = focused
+            taskSettings = .model
+            adding = false
+            focused = false
+        } label: {
+            HStack(spacing: 5) {
+                Group {
+                    if let name { Text(verbatim: name) } else if hasModel { Text("Model") } else { Text("Add Model") }
+                }
+                .foregroundStyle(Color(.label))
+                .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 14)
+            .frame(height: buttonDiameter)
+            .background(Color(.label).opacity(scheme == .dark ? 0.16 : 0.12), in: .capsule)
+            .frame(height: buttonHitSide)
+            .contentShape(.interaction, Rectangle())
+        }
+        .buttonStyle(.plain)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityLabel(hasModel ? Text("Model") : Text("Add Model"))
+        .accessibilityValue(name.map { Text(verbatim: $0) } ?? Text(verbatim: ""))
+        .accessibilityIdentifier("\(controlIdentifierPrefix).settings.model")
+        .accessibilityHidden(!visible)
+        .allowsHitTesting(visible && taskSettings == nil)
+        .modifier(ComposerShortcutReveal(progress: visible ? 1 : 0))
+        .animation(expansionAnimation, value: visible)
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in modelVersion += 1 }
+    }
+
+    private func finishTaskSettings() {
+        // Keep the home suggestions hidden until the editor has its focus back.
+        defer { settingsPresented = false }
+        if showModelSetupAfterDismiss {
+            showModelSetupAfterDismiss = false
+            openModel()
+        } else if resumeEditing, voice.talkState == nil, !needsKey {
+            focused = true
+        }
+        resumeEditing = false
     }
 
     // MARK: The plus menu
@@ -1730,20 +1909,20 @@ struct ComposerInputView: View {
     /// photo from the camera, or a picture or PDF from Files. Rotates 45° when expanded.
     private var plus: some View {
         Button {
+            guard !isSettingsPreview else { previewTaps += 1; return }
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.26)) { adding.toggle() }
         } label: {
             Image(systemName: "plus")
-                .font(.title3.weight(.medium)).dynamicTypeSize(...DynamicTypeSize.xxxLarge).foregroundStyle(Color(.label))
-                .rotationEffect(.degrees(adding ? 45 : 0))
+                .font(.alloRounded(.title3, .medium)).dynamicTypeSize(...DynamicTypeSize.xxxLarge).foregroundStyle(Color(.label))
                 .frame(width: buttonDiameter, height: buttonDiameter)
                 .background(Color(.label).opacity(scheme == .dark ? 0.16 : 0.12), in: .circle)
                 .frame(width: buttonHitSide, height: buttonHitSide)
                 .contentShape(.interaction, Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("Add Apps, Photos or Files"))
+        .accessibilityLabel(Text("Add Photos or Files"))
         .accessibilityAddTraits(adding ? .isSelected : [])
-        .accessibilityIdentifier("composer.plus")
+        .accessibilityIdentifier("\(controlIdentifierPrefix).plus")
         .accessibilityShowsLargeContentViewer {
             Label("Add Apps, Photos or Files", systemImage: "plus")
         }
@@ -1751,39 +1930,88 @@ struct ComposerInputView: View {
 
     private var recentAppIDs: [String] {
         _ = recentAppsVersion
-        return RecentAppsStore.shared.recentIDs
+        // One list for the sheet's row and the browser's Recently Used: names sent or picked in Poki
+        // (MentionRecents) first, then what the browser recorded.
+        var seen = Set<String>()
+        return (MentionRecents.ids + RecentAppsStore.shared.recentIDs).filter { seen.insert($0.lowercased()).inserted }
     }
 
-    /// Plus's A1 smoked Liquid Glass menu, anchored `bottomLeading` 10pt above the `+` button.
-    private var ways: some View {
-        ComposerPlusMenu(
-            quickApps: AppPickerCatalog.quickApps(limit: 3, recentIDs: recentAppIDs, language: AppLanguage.current),
-            maxAttachments: Self.most,
-            canAddAttachments: attachments.count < Self.most,
-            canTakePhoto: UIImagePickerController.isSourceTypeAvailable(.camera),
-            onPickApp: { pickApp($0, keepFocus: true) },
-            onMoreApps: {
+    /// Plus's sheet, with the library, Files and the camera opening over it.
+    private var addSheet: some View {
+        ComposerAddSheet(room: Self.most - attachments.count,
+                         choosePhotos: { pickerGeneration = attachmentDraft.generation; choosingPhotos = true },
+                         takePhoto: { pickerGeneration = attachmentDraft.generation; takingPhoto = true },
+                         chooseFiles: { pickerGeneration = attachmentDraft.generation; choosingFiles = true },
+                         mention: mention,
+                         moreApps: {
+                             // The full list of this iPhone's apps (AllAppsBrowserSheet), over the conversation.
+                             pendingMentionReplaceLength = 0
+                             allAppsInitialSearch = ""
+                             allAppsAfterAdding = true
+                             adding = false
+                         },
+                         mentionedIDs: AppPickerCatalog.mentionedBundleIDs(in: input))
+            .photosPicker(isPresented: $choosingPhotos, selection: $picked, maxSelectionCount: max(1, Self.most - attachments.count), matching: .images)
+            .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AttachmentReader.fileTypes, allowsMultipleSelection: true) { result in
+                guard pickerGeneration == attachmentDraft.generation, case .success(let urls) = result else { return }
+                for url in urls { add { try AttachmentReader.file(url) } }
                 adding = false
-                pendingMentionReplaceLength = 0
-                allAppsInitialSearch = ""
-                showingAllApps = true
-            },
-            onPhotos: { adding = false; pickerGeneration = attachmentDraft.generation; choosingPhotos = true },
-            onCamera: { adding = false; pickerGeneration = attachmentDraft.generation; takingPhoto = true },
-            onFiles: { adding = false; pickerGeneration = attachmentDraft.generation; choosingFiles = true },
-            onDismiss: { adding = false }
-        )
+            }
+            .fullScreenCover(isPresented: $takingPhoto) {
+                CameraPicker { image in
+                    takingPhoto = false
+                    if pickerGeneration == attachmentDraft.generation, let image {
+                        add { try AttachmentReader.photo(image) }
+                        adding = false
+                    }
+                }
+                .ignoresSafeArea()
+            }
     }
 
-    private var currentMention: AppMentionState? {
-        guard voice.talkState == nil, !needsKey else { return nil }
-        return AppPickerCatalog.mentionState(
-            input: input,
-            mentionReady: mentionReady,
-            adding: adding,
-            recentIDs: recentAppIDs,
-            language: AppLanguage.current
-        )
+    /// An app or connector picked in plus's sheet: its name goes at the end of the message, as its capsule.
+    private func mention(_ match: MentionMatch) {
+        if !match.isConnector { CapsuleText.confirm(match.insert); MentionRecents.used(match.capsule.id) }
+        let separator = input.isEmpty || input.hasSuffix(" ") || input.hasSuffix("\n") ? "" : " "
+        input += separator + match.insert + " "
+        focused = true
+    }
+
+    /// The apps and connectors to offer for the words at the caret, or nil when the list is closed.
+    private var mentionMatches: (matches: [MentionMatch], x: CGFloat)? {
+        guard focused, !adding, let query = mentions.query else { return nil }
+        let matches = MentionSearch.matches(query.text, pending: query.pending, explicit: query.explicit)
+        guard !matches.isEmpty, query.explicit || !query.pending || query.text.count >= 2 else { return nil }
+        // Starting under the caret's letter and staying clear of the bar's trailing edge.
+        let x = min(max(0, fieldFrame.minX + query.caret.minX - 14), max(0, barFrame.width - 260))
+        return (matches, x)
+    }
+
+    /// The apps and connectors that fit the words at the caret, just above the field. It is handed up
+    /// to the page (`bottomBar` draws it), so the bar never grows and the conversation never moves
+    /// when it opens, and its taps land: drawn outside the bar's own frame, they went through to the
+    /// conversation. It grows out of the caret's corner on a soft spring, and only fades with Reduce Motion.
+    private var mentionFloat: MentionFloat? {
+        guard let shown = mentionMatches else { return noticeFloat }
+        let picker = MentionPicker(matches: shown.matches, pick: { mentions.pick($0) }, dismiss: { mentions.dismiss() })
+            .padding(.bottom, 4)
+        return MentionFloat(ids: shown.matches.map(\.id), origin: CGPoint(x: barFrame.minX + shown.x, y: barFrame.minY),
+                            reduceMotion: reduceMotion, view: AnyView(picker))
+    }
+
+    /// The current notice, as wide as the bar, just above it (while no mention list is open).
+    private var noticeFloat: MentionFloat? {
+        guard let notice = notices.current, !adding, barFrame.width > 0 else { return nil }
+        let view = NoticeView(notice: notice, act: { notices.act(notice.id) }, dismiss: { notices.dismiss(notice.id) })
+            .frame(width: barFrame.width)
+            .padding(.bottom, 8)
+            .task(id: notice.id) {
+                guard let lasts = notice.lasts else { return }
+                try? await Task.sleep(for: lasts)
+                if !Task.isCancelled { notices.clear(notice.id) }
+            }
+        return MentionFloat(ids: ["notice." + notice.id, notice.title, notice.message ?? ""], origin: CGPoint(x: barFrame.minX, y: barFrame.minY),
+                            reduceMotion: reduceMotion, view: AnyView(view))
     }
 
     private func pickApp(_ app: AppPickerEntry, replacing length: Int = 0, keepFocus: Bool = false) {
@@ -1796,6 +2024,7 @@ struct ComposerInputView: View {
         editorBridge.scheduleCursor(result.cursorUTF16)
         input = result.text
         RecentAppsStore.shared.record(app.id)
+        MentionRecents.used(app.id)
         recentAppsVersion += 1
         adding = false
         if keepFocus {
@@ -1816,11 +2045,13 @@ struct ComposerInputView: View {
     }
 
     /// One more photo or PDF, up to the limit; a file Poki can't read says so.
-    private func add(_ read: () throws -> ChatAttachment) {
-        guard attachments.count < Self.most else { return }
+    @discardableResult
+    private func add(_ read: () throws -> ChatAttachment) -> UUID? {
+        guard attachments.count < Self.most else { return nil }
         do {
             let item = try read()
             withAnimation(.snappy) { attachments.append(item) }
+            return item.id
         } catch AttachmentReader.Failure.tooLarge {
             problem = AppLocalization.text(LocalizedStringResource("Text files must be 100 KB or smaller."))
         } catch AttachmentReader.Failure.invalidUTF8 {
@@ -1830,6 +2061,7 @@ struct ComposerInputView: View {
         } catch {
             problem = AppLocalization.text(LocalizedStringResource("Couldn’t read this file."))
         }
+        return nil
     }
 
     /// One button: talk when the field is empty, send when it has words, stop while a task runs. Poki's
@@ -1837,12 +2069,13 @@ struct ComposerInputView: View {
     /// as a ring around it.
     private var mainButton: some View {
         Button {
+            guard !isSettingsPreview else { previewTaps += 1; return }
             // On an empty field: Talk with Poki at once. Dictation has its own
             // button beside this one. Without a voice key `openVoice` has the field say so.
             if running { stop() } else if canSend { submit() } else { dictation.stop(model); openVoice() }
         } label: {
             Image(systemName: running ? "stop.fill" : canSend ? "arrow.up" : "waveform")
-                .font(.body.weight(.semibold))
+                .font(.allo(.body, .semibold))
                 .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(running ? Tint.onSolid : .white)
                 .frame(width: buttonDiameter, height: buttonDiameter)
@@ -1861,7 +2094,7 @@ struct ComposerInputView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(running ? "Stop" : canSend ? "Send" : "Talk with Poki"))
-        .accessibilityIdentifier("composer.main")
+        .accessibilityIdentifier("\(controlIdentifierPrefix).main")
         .accessibilityShowsLargeContentViewer {
             Label(running ? "Stop" : canSend ? "Send" : "Talk with Poki",
                   systemImage: running ? "stop.fill" : canSend ? "arrow.up" : "waveform")
@@ -1881,8 +2114,11 @@ struct ComposerInputView: View {
         dictation.cancel(model)
         let text = input
         send(text, attachments)
+        MentionRecents.sent(text)
+        mentions.update(nil)
         adding = false
         withAnimation(.snappy) { attachmentDraft.reset() }
+        photoAssets = [:]
         sends += 1
         sent = (text, Date())
         input = ""
@@ -2001,7 +2237,7 @@ struct LiveVoiceTranscript: View {
             let lines = voice.lines
             VStack(spacing: 4) {
                 Label(voice.isOn ? LocalizedStringKey("Talk with Poki") : LocalizedStringKey("Voice conversation"), systemImage: "waveform")
-                    .font(.caption.weight(.medium)).foregroundStyle(ChatColor.secondary)
+                    .font(.allo(.caption, .medium)).foregroundStyle(ChatColor.secondary)
                     .padding(.top, 12).padding(.bottom, 4).frame(maxWidth: .infinity)
                 ForEach(Array(lines.enumerated()), id: \.element.id) { i, line in
                     let pending = i == lines.count - 1 && line.role == .you && voice.phase == .hearing
@@ -2020,5 +2256,46 @@ struct LiveVoiceTranscript: View {
             }
             .animation(PlanMotion.enter, value: voice.lines)
         }
+    }
+}
+
+/// The mention list the message field hands up, with where its bottom-leading corner goes (global).
+struct MentionFloat: Equatable {
+    var ids: [String]
+    var origin: CGPoint
+    var reduceMotion: Bool
+    var view: AnyView
+    static func == (a: MentionFloat, b: MentionFloat) -> Bool { a.ids == b.ids && a.origin == b.origin && a.reduceMotion == b.reduceMotion }
+}
+
+struct MentionFloatKey: PreferenceKey {
+    static let defaultValue: MentionFloat? = nil
+    static func reduce(value: inout MentionFloat?, nextValue: () -> MentionFloat?) { value = value ?? nextValue() }
+}
+
+/// Draws the mention list over the page, just above the message field, so opening it moves nothing.
+struct MentionFloatLayer: View {
+    let float: MentionFloat?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let frame = proxy.frame(in: .global)
+            ZStack(alignment: .bottomLeading) {
+                Color.clear.allowsHitTesting(false)
+                if let float {
+                    float.view
+                        .fixedSize()
+                        .padding(.leading, max(0, float.origin.x - frame.minX))
+                        .padding(.bottom, max(0, frame.maxY - float.origin.y))
+                        .transition(float.reduceMotion ? .opacity : .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)).combined(with: .offset(y: 10)),
+                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .bottomLeading))))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .animation(float?.reduceMotion == true ? .easeOut(duration: 0.15) : .spring(duration: 0.34, bounce: 0.2), value: float == nil)
+            .animation(.snappy(duration: 0.2), value: float?.ids)
+        }
+        .ignoresSafeArea()
     }
 }

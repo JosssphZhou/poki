@@ -180,6 +180,27 @@ final class PokiMenuTests: XCTestCase {
         XCTAssertTrue(modelActions.contains { $0.title == "poki-test-model" && $0.state == .on })
     }
 
+    func testModelChoiceKeepsIdenticallyNamedCustomModelsOnTheirOwnAccounts() throws {
+        let storage = storage.storage
+        let first = CustomProviders.upsert(CustomProvider(
+            endpoints: [CustomEndpoint(url: "http://127.0.0.1:8765/v1")], model: "shared-model"
+        ), storage: storage)
+        let second = CustomProviders.upsert(CustomProvider(
+            endpoints: [CustomEndpoint(url: "http://127.0.0.1:8766/v1")], model: "shared-model"
+        ), storage: storage)
+
+        let firstChoice = CustomProviders.choiceID(first.id, first.model)
+        let secondChoice = CustomProviders.choiceID(second.id, second.model)
+        ModelKeys.choose(.custom, model: secondChoice, in: storage)
+        XCTAssertEqual(ModelKeys.selectedProvider(in: storage), .custom)
+        XCTAssertEqual(ModelKeys.selectedModel(in: storage), secondChoice)
+        XCTAssertEqual(CustomProviders.current(in: storage)?.id, second.id)
+
+        ModelKeys.choose(.custom, model: firstChoice, in: storage)
+        XCTAssertEqual(ModelKeys.selectedModel(in: storage), firstChoice)
+        XCTAssertEqual(CustomProviders.current(in: storage)?.id, first.id)
+    }
+
     func testVoiceHeaderMenuAnchorsBelowAvatar() throws {
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage.storage)
         let window = try show(
@@ -223,6 +244,34 @@ final class PokiMenuTests: XCTestCase {
 
         settle { self.hasAccessibilityIdentifier("chat.header.details", in: window) }
         XCTAssertTrue(hasAccessibilityIdentifier("chat.header.details", in: window))
+    }
+
+    /// The name pill in a conversation opens Poki's menu through the native button, whose opening is
+    /// seen, so opening it there retires the hint on the home page as the picture does (a SwiftUI
+    /// `Menu`'s tap gesture never fired on iOS 27.3).
+    func testChatNamePillOpeningRunsTheMenusOpenAction() throws {
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage.storage)
+        var opened = 0
+        let window = try show(
+            PokiHead(
+                status: PokiStatus(.ready),
+                home: false,
+                openModel: {},
+                openDetails: { opened += 1 },
+                openCustomization: {}
+            )
+            .environment(app)
+        )
+
+        settle { self.menuButton(in: window, identifier: "chat.header.details") != nil }
+        let button = try XCTUnwrap(
+            menuButton(in: window, identifier: "chat.header.details"),
+            "The name pill must host the native menu button, whose opening calls onOpen."
+        )
+        XCTAssertNotNil(button.menu)
+        let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: nil, actionProvider: nil)
+        button.contextMenuInteraction(UIContextMenuInteraction(delegate: button), willDisplayMenuFor: configuration, animator: nil)
+        XCTAssertEqual(opened, 1)
     }
 
     private func show(_ view: some View) throws -> UIWindow {

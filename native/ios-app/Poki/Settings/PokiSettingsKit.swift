@@ -38,7 +38,17 @@ struct SettingsIcon: View {
         _glyph = ScaledMetric(wrappedValue: size * 0.5, relativeTo: .body)
     }
 
+    @Environment(\.startDesign) private var startDesign
+
     var body: some View {
+        if let startDesign {
+            StartIcon(design: startDesign, warns: warns) { Image(systemName: symbol) }
+        } else {
+            settingsIcon
+        }
+    }
+
+    private var settingsIcon: some View {
         Image(systemName: symbol)
             .font(.system(size: glyph * min(1, maximumSize / size), weight: .semibold))
             .foregroundStyle(warns ? Tint.amberInk : neutral ? Color(.label) : Tint.blueText)
@@ -66,6 +76,7 @@ struct SettingsRow: View {
     /// that leaves Poki (the system's own chevron ends the rows that open a page).
     var accessory: Accessory? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.startDesign) private var startDesign
     @ScaledMetric(relativeTo: .body) private var iconSpacing = SettingsRowMetrics.iconSpacing
 
     enum Accessory { case done, leaves }
@@ -74,40 +85,64 @@ struct SettingsRow: View {
         HStack(spacing: min(18, iconSpacing)) {
             SettingsIcon(symbol: symbol)
                 .padding(.vertical, SettingsRowMetrics.iconLineInset)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body).foregroundStyle(Color(.label))
-                if let caption { Text(caption).font(.footnote).foregroundStyle(Color(.secondaryLabel)) }
-                if let dataCaption {
-                    Text(verbatim: dataCaption).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1).truncationMode(.middle)
+            TitleValueLayout(inline: !typeSize.isAccessibilitySize, truncatesValue: !warns && !valueIsAction) {
+                VStack(alignment: .leading, spacing: 2) {
+                    titleText
+                    // The start flow says it in the section's footer, and a row holds its title alone.
+                    if let caption, startDesign == nil { Text(caption).font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel)) }
+                    if let dataCaption {
+                        Text(verbatim: dataCaption).font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel))
+                            .lineLimit(typeSize.isAccessibilitySize ? nil : 1).truncationMode(.middle)
+                    }
                 }
-                // At the accessibility sizes the value goes under the caption, as in Settings.
-                if typeSize.isAccessibilitySize, let value { valueView(value) }
+                if let value {
+                    valueView(value)
+                        .lineLimit(wrapsValueWhenStacked ? nil : 1)
+                        .truncationMode(.tail)
+                } else {
+                    Color.clear.frame(width: 0, height: 0)
+                }
+                // Measured, never drawn: the title's width on one line.
+                titleText.fixedSize().hidden().accessibilityHidden(true)
             }
-            Spacer(minLength: 8)
-            // The value keeps its width (a model's name, the way of asking); the caption wraps instead.
-            if !typeSize.isAccessibilitySize, let value { valueView(value).lineLimit(1).layoutPriority(1) }
             switch accessory {
             case .done:
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(Tint.green).accessibilityLabel(Text("Done"))
             case .leaves:
-                Image(systemName: "arrow.up.forward").font(.footnote.weight(.semibold)).foregroundStyle(Color(.tertiaryLabel))
+                Image(systemName: "arrow.up.forward").font(.allo(.footnote, .semibold)).foregroundStyle(Color(.tertiaryLabel))
                     .accessibilityHidden(true)
             case nil: EmptyView()
             }
         }
     }
 
+    private var titleText: some View {
+        Text(title).font(.allo(.body)).foregroundStyle(Color(.label)).lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+    }
+
+    private var wrapsValueWhenStacked: Bool {
+        typeSize.isAccessibilitySize && (warns || valueIsAction)
+    }
+
     @ViewBuilder private func valueView(_ value: String) -> some View {
-        if warns {
-            Text(verbatim: value).font(.footnote.weight(.semibold)).foregroundStyle(Tint.amberInk)
+        if warns, startDesign != nil {
+            Text(verbatim: value).font(.allo(.body)).foregroundStyle(Color(.systemOrange))
+                .multilineTextAlignment(.leading)
+        } else if warns {
+            let pill = Text(verbatim: value).font(.allo(.footnote, .semibold)).foregroundStyle(Tint.amberInk)
+                .multilineTextAlignment(.leading)
                 .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(Tint.amberSoft, in: .capsule)
+            if wrapsValueWhenStacked {
+                pill.background(Tint.amberSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                pill.background(Tint.amberSoft, in: .capsule)
+            }
         } else {
             HStack(spacing: 6) {
                 if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-                Text(verbatim: value).font(.subheadline)
+                Text(verbatim: value).font(.allo(startDesign == nil ? .subheadline : .body))
                     .foregroundStyle(valueIsAction ? Tint.blueText : Color(.secondaryLabel))
+                    .multilineTextAlignment(.leading)
             }
         }
     }
@@ -155,10 +190,19 @@ extension SettingsLabel where Title == Text, Icon == Image {
 
 private struct SettingsLabelIcon<Icon: View>: View {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.startDesign) private var startDesign
     @ScaledMetric(relativeTo: .body) private var size = SettingsRowMetrics.iconSize
     @ScaledMetric(relativeTo: .body) private var glyph = SettingsRowMetrics.iconSize / 2
     @ViewBuilder var icon: Icon
     var body: some View {
+        if let startDesign {
+            StartIcon(design: startDesign) { icon }.opacity(isEnabled ? 1 : 0.4)
+        } else {
+            settingsIcon
+        }
+    }
+
+    private var settingsIcon: some View {
         icon
             .font(.system(size: glyph * min(1, SettingsRowMetrics.maximumIconSize / size), weight: .semibold))
             .foregroundStyle(Tint.blueText)
@@ -172,27 +216,58 @@ private struct SettingsLabelIcon<Icon: View>: View {
 
 private struct SettingsPageStyle: ViewModifier {
     @Environment(\.startDesign) private var startDesign
+
     func body(content: Content) -> some View {
         content
             .labelStyle(SettingsLabelStyle())
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background {
-                if let startDesign { StartGround(design: startDesign) }
-                else { HomeBackdrop(home: true, working: false, frozen: true) }
+                if let startDesign { StartGround(design: startDesign) } else { HomeBackdrop(home: true, working: false, frozen: true) }
             }
+            // The soft edge under the title on every settings page, the welcome's setup list included:
+            // left to the system there, the large title collapsed into a nearly opaque band with a
+            // straight line through the first card (the owner, Nov 20 2026).
+            .softTopEdge()
     }
 }
 
 extension View {
     func settingsPage() -> some View { modifier(SettingsPageStyle()) }
+
+    /// A section footer as the system draws it: footnote, secondary. The app sets Allo body text at
+    /// its root (PokiApp), and an explicit environment font wins over List's own footer style, so
+    /// without this every footer showed at body size (the owner, Nov 20 2026: far too big). A font or
+    /// colour set inside a footer still wins over this one.
+    func settingsFooter() -> some View {
+        modifier(SettingsSectionWords(header: false))
+    }
+
+    /// A section header as iOS 26 draws it: body size, bold, secondary. Under the app's root Allo
+    /// body font every header was Regular (the owner, Nov 20 2026: headers had no weight); set here,
+    /// in Allo, a weight a header sets inside still wins.
+    func settingsHeader() -> some View {
+        modifier(SettingsSectionWords(header: true))
+    }
+}
+
+/// A header's or footer's words: secondary on the settings pages, white on the start flow's blue.
+private struct SettingsSectionWords: ViewModifier {
+    var header: Bool
+    @Environment(\.startDesign) private var startDesign
+
+    func body(content: Content) -> some View {
+        content
+            .font(header ? .allo(.headline, .bold) : .allo(.footnote))
+            .foregroundStyle(startDesign == nil ? Color(.secondaryLabel) : header ? StartGround.ink : StartGround.quietInk)
+    }
 }
 
 /// A section's heading as the settings pages write it: in the words' own case.
 struct SettingsHeader: View {
     var title: LocalizedStringKey
     init(_ title: LocalizedStringKey) { self.title = title }
-    var body: some View { Text(title).textCase(nil) }
+    var body: some View { Text(title).textCase(nil).settingsHeader() }
 }
 
 /// A capsule button: black for the action you reach for most (Pause), outlined for the rest.
@@ -209,13 +284,13 @@ struct SettingsPill: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let symbol {
-                    Image(systemName: symbol).font(.footnote.weight(.bold))
+                    Image(systemName: symbol).font(.allo(.footnote, .bold))
                         .foregroundStyle(prominent ? Tint.onSolid : Tint.blueText)
                 }
-                Text(title).font(.subheadline.weight(.semibold))
+                Text(title).font(.allo(.subheadline, .semibold))
                     .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
                 if chevron {
-                    Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color(.tertiaryLabel))
+                    Image(systemName: "chevron.right").font(.allo(.caption, .bold)).foregroundStyle(Color(.tertiaryLabel))
                 }
             }
             .foregroundStyle(prominent ? Tint.onSolid : Color(.label))
@@ -241,15 +316,15 @@ struct SettingsChoiceCard: View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: title).font(.body.weight(.semibold)).foregroundStyle(Color(.label))
+                    Text(verbatim: title).font(.allo(.body, .semibold)).foregroundStyle(Color(.label))
                     if let detail {
-                        Text(verbatim: detail).font(.footnote).foregroundStyle(Color(.secondaryLabel))
+                        Text(verbatim: detail).font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(.alloRounded(.title3))
                     .foregroundStyle(selected ? Tint.blue : Color(.tertiaryLabel))
                     .accessibilityHidden(true)
             }
@@ -264,19 +339,74 @@ struct SettingsChoiceCard: View {
     }
 }
 
+/// A row's words and its value: the title (subview 2, measured on one line and never drawn) stays
+/// intact while the words (0) take the room the value (1) leaves. Standard values stay beside the
+/// title on one line and truncate at the tail; warnings, actions, and accessibility sizes stack
+/// under the words within the row width.
+struct TitleValueLayout: Layout {
+    var inline = true
+    var truncatesValue = true
+    var gap: CGFloat = 8
 
-extension View {
-    func settingsHeader() -> some View { modifier(SettingsSectionWords(header: true)) }
-    func settingsFooter() -> some View { modifier(SettingsSectionWords(header: false)) }
-}
+    private struct Plan {
+        var inline: Bool
+        var value: CGSize
+        var valueProposalWidth: CGFloat?
+        var words: CGSize
+    }
 
-private struct SettingsSectionWords: ViewModifier {
-    var header: Bool
-    @Environment(\.startDesign) private var startDesign
+    private func plan(_ width: CGFloat?, _ subviews: Subviews) -> Plan {
+        let idealValue = subviews[1].sizeThatFits(.unspecified)
+        let title = subviews[2].sizeThatFits(.unspecified)
+        let room = width ?? .infinity
 
-    func body(content: Content) -> some View {
-        content
-            .font(header ? .headline : .footnote)
-            .foregroundStyle(startDesign == nil ? Color(.secondaryLabel) : header ? StartGround.ink : StartGround.quietInk)
+        guard idealValue.width > 0 else {
+            let words = subviews[0].sizeThatFits(ProposedViewSize(width: room.isFinite ? room : nil, height: nil))
+            return Plan(inline: inline, value: idealValue, valueProposalWidth: nil, words: words)
+        }
+
+        if inline {
+            if title.width + gap + idealValue.width <= room {
+                let wordsWidth = max(0, room - idealValue.width - gap)
+                let words = subviews[0].sizeThatFits(ProposedViewSize(width: wordsWidth.isFinite ? wordsWidth : nil, height: nil))
+                return Plan(inline: true, value: idealValue, valueProposalWidth: nil, words: words)
+            }
+            let available = room - title.width - gap
+            if truncatesValue, room.isFinite, available > 0 {
+                let fittedValue = subviews[1].sizeThatFits(ProposedViewSize(width: available, height: nil))
+                if fittedValue.width <= available + 0.5 {
+                    let wordsWidth = max(0, room - fittedValue.width - gap)
+                    let words = subviews[0].sizeThatFits(ProposedViewSize(width: wordsWidth, height: nil))
+                    return Plan(inline: true, value: fittedValue, valueProposalWidth: available, words: words)
+                }
+            }
+        }
+
+        let stackedWidth = room.isFinite ? room : nil
+        let words = subviews[0].sizeThatFits(ProposedViewSize(width: stackedWidth, height: nil))
+        let value = subviews[1].sizeThatFits(ProposedViewSize(width: stackedWidth, height: nil))
+        return Plan(inline: false, value: value, valueProposalWidth: stackedWidth, words: words)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let p = plan(proposal.width, subviews)
+        let height = p.inline ? max(p.words.height, p.value.height) : p.words.height + (p.value.height > 0 ? 2 + p.value.height : 0)
+        let width = proposal.width ?? (p.inline ? p.words.width + (p.value.width > 0 ? gap + p.value.width : 0) : max(p.words.width, p.value.width))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let p = plan(bounds.width, subviews)
+        subviews[2].place(at: bounds.origin, proposal: .zero)
+        if p.inline {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                              proposal: ProposedViewSize(width: p.words.width, height: nil))
+            let valueProposal = p.valueProposalWidth.map { ProposedViewSize(width: $0, height: nil) } ?? .unspecified
+            subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: valueProposal)
+        } else {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: nil))
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + p.words.height + 2),
+                              proposal: ProposedViewSize(width: bounds.width, height: nil))
+        }
     }
 }

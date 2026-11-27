@@ -15,9 +15,12 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 pub const DEFAULT_REMOTE: &str = "https://new.ani.sidestore.io";
-/// Servers tried in turn when Apple refuses one (ec -80045) or one does not answer. Checked Nov 7 2026: these hand out
-/// data that matches their client info; the old ani.sidestore.io does not (Mac info, Android data).
-pub const FALLBACK_REMOTES: &[&str] = &["https://new.ani.sidestore.io", "https://mac-ani.jkcoxson.com", "https://ani2.stikstore.app"];
+/// Servers tried in turn when Apple refuses one (ec -80045, or -22411 at the password step) or one
+/// does not answer. All of them hand out Mac data. The list follows iloader 2.4.2 (Nov 2026), which
+/// added ani.iloader.app and moved StikStore to ani3: ani2.stikstore.app and ani.jkcoxson.com serve
+/// Windows data that Apple accepts only about half the time and never with SMS codes.
+pub const FALLBACK_REMOTES: &[&str] =
+    &["https://new.ani.sidestore.io", "https://mac-ani.jkcoxson.com", "https://ani.iloader.app", "https://ani3.stikstore.app"];
 /// Retired: Apple has refused it since October 2026.
 const RETIRED_REMOTES: &[&str] = &["https://ani.sidestore.io"];
 pub const ROUTING_INFO: &str = "17106176";
@@ -608,11 +611,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_server_that_does_not_answer_is_skipped_for_the_next_fallback() {
-        // Three local ports nothing listens on: each connection is refused at once.
+        // Three local ports held bound but never listening, so each connection is refused at once and
+        // no other test's server can take the port while this one runs.
+        let mut held = Vec::new();
         let mut urls = Vec::new();
         for _ in 0..3 {
-            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            urls.push(format!("http://127.0.0.1:{}", l.local_addr().unwrap().port()));
+            let s = tokio::net::TcpSocket::new_v4().unwrap();
+            s.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+            urls.push(format!("http://127.0.0.1:{}", s.local_addr().unwrap().port()));
+            held.push(s);
         }
         let mut p = Provider::new(Source::Remote { url: urls[0].clone() });
         p.fallbacks = urls.clone();

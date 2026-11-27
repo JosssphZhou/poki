@@ -38,7 +38,7 @@ Compatibility depends on the build, not just the 0.2.2 version label: revision `
 661, already recognizes both schemes. This is a source check, not a check of the shipped binary. Pre-alpha and Alpha continue to publish those compatibility
 copies. New Betas use `app-*`; the independently numbered `ios-beta-*` compatibility records below remain available to installed clients.
 
-N is the number of commits reachable from the source commit, on `main` or the hotfix branch. New Beta IPA filenames retain the numeric build, which must match `CFBundleVersion` inside the app. Stable filenames still omit it.
+N is the number of commits reachable from the source commit, on `main` or the hotfix branch. New Beta IPA filenames retain the numeric build, which must match `CFBundleVersion` inside the app. Stable filenames carry the promoted Beta's build too (`Poki-external-X.Y.Z-N.ipa`), because installed Poki 0.4.0 and earlier read the build from the name and never install an update that has none.
 
 ## One build, promoted
 
@@ -64,19 +64,21 @@ testers on Alpha run the file that was tried on Pre-alpha, and Beta runs the fil
 3. **Beta, by PR.** Actions > Propose promotion > beta (`propose-promotion.yml`), with an alpha tag or
    empty for the current Alpha. The Poki Release Bot opens a PR that adds the promotion to
    `.github/channels.json` and moves `native/ios-app/VERSION` to the next patch version. The PR's
-   `promotion gate` check (`promotion-gate.yml`) runs the Gym on that commit and passes when neither
-   scorecard has more failures than the last beta's. Merging waits for approval in `beta`, then publishes `app-X.Y.Z-beta.K`
-   (`publish-promotion.yml`) with the scorecards attached, and creates `release/X.Y` on a version's
-   first beta.
+   `promotion gate` check (`promotion-gate.yml`) verifies that `CHANGELOG.md` has a dated entry for
+   this version, runs the Gym on that commit and passes when neither scorecard has more failures
+   than the last beta's. Merging waits for approval in `beta`, re-checks `CHANGELOG.md`, then
+   publishes `app-X.Y.Z-beta.K` (`publish-promotion.yml`) with that changelog section in its release
+   notes and the scorecards attached, and creates `release/X.Y` on a version's first beta.
 
    Promotions only move the patch version. To start a new minor version (0.3.x to 0.4.0), the
    repository owner merges a PR that sets `native/ios-app/VERSION` to it; the pre-alpha built from
    that merge is the first build of the new version, and later promotions bump its patch as above.
 4. **Stable, by PR.** Propose promotion > stable, with a beta tag or empty for the newest beta. The
-   gate passes once that beta has been out for `soak_days` (3, in `.github/channels.json`) and no
-   issue labelled `blocker` is open. To ship sooner, add the `soak-override` label to the PR, or give
-   a reason in the proposal's skip field (it is kept in `channels.json`). Merging publishes
-   `app-X.Y.Z` after approval in the `stable` environment.
+   gate verifies `CHANGELOG.md` has a dated entry for `X.Y.Z` and passes once that beta has been out
+   for `soak_days` (3, in `.github/channels.json`) and no issue labelled `blocker` is open. To ship
+   sooner, add the `soak-override` label to the PR, or give a reason in the proposal's skip field
+   (it is kept in `channels.json`). Merging publishes `app-X.Y.Z` with that changelog section after
+   approval in the `stable` environment.
 
 Every publish creates a draft first, checks its file count, then publishes. Releases carry
 `Poki-external-<name>.ipa`, `Poki-signing.zip`, `poki-relay-worker.js` (the relay Worker Poki Setup
@@ -124,9 +126,9 @@ Both carry `Poki-external-X.Y.Z-N.ipa`, `Poki-signing.zip`, `poki-relay-worker.j
 
 `draft` and `public` are not behind an environment approval. Only the repository owner runs them, or
 someone the owner has told to for that build; agents do not, and a draft that exists is not that
-permission. Releases of a later version sort above both. A Stable's `Poki-external-X.Y.Z.ipa` is
-offered with an empty build and will need the same second release; the script does not make that
-one yet.
+permission. Releases of a later version sort above both. A Stable's `Poki-external-X.Y.Z-N.ipa`
+carries the promoted Beta's build, so older clients read the same version and build from its name as
+the signed copy reports, and the Stable needs no second release.
 
 To take a Beta back, return `app-X.Y.Z-beta.K` to a draft first and `ios-beta-X.Y.Z-N` second. In
 the other order Stable and Beta users are offered the beta-named file alone and stay on an update

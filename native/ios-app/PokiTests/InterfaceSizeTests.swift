@@ -169,7 +169,7 @@ final class InterfaceSizeTests: XCTestCase {
             AppInterfaceSize.updateNavigationFonts(in: window)
             window.isHidden = true
         }
-        let geist = try XCTUnwrap(UIFont(name: "Geist-SemiBold", size: 17))
+        let allo = try XCTUnwrap(UIFont(name: "AlloRounded-SemiBold", size: 17))
         for language in ["en", "zh-Hans"] {
             AppLocalization.shared.preference = language
             var sizes: [CGFloat] = []
@@ -178,11 +178,10 @@ final class InterfaceSizeTests: XCTestCase {
                 AppInterfaceSize.updateNavigationFonts(in: window)
                 let font = try XCTUnwrap(navigation.navigationBar.titleTextAttributes?[.font] as? UIFont)
                 let traits = UITraitCollection(preferredContentSizeCategory: category)
-                // Custom-font metrics need not equal the system font's sizes; Geist's two smallest
-                // headline sizes can also be equal. The expected traits come from the test case.
-                let expected = language == "en"
-                    ? UIFontMetrics(forTextStyle: .headline).scaledFont(for: geist, compatibleWith: traits)
-                    : UIFont.preferredFont(forTextStyle: .headline, compatibleWith: traits)
+                // Allo Rounded in every language (Chinese falls back from it); custom-font sizes
+                // need not equal the system font's, and its two smallest headline sizes can be
+                // equal. The expected traits come from the test case.
+                let expected = UIFontMetrics(forTextStyle: .headline).scaledFont(for: allo, compatibleWith: traits)
                 XCTAssertEqual(font.fontName, expected.fontName, "\(language), \(category.rawValue)")
                 XCTAssertEqual(font.pointSize, expected.pointSize, accuracy: 0.1, "\(language), \(category.rawValue)")
                 if let previous = sizes.last { XCTAssertGreaterThanOrEqual(font.pointSize, previous) }
@@ -209,6 +208,24 @@ final class InterfaceSizeTests: XCTestCase {
         SettingsVault.restore()
         XCTAssertEqual(defaults.string(forKey: AppInterfaceSize.defaultsKey), value)
         XCTAssertEqual(defaults.string(forKey: Appearance.key), appearance)
+    }
+
+    func testHiddenComposerShortcutsSurviveSettingsVaultRestoration() throws {
+        let defaults = UserDefaults.standard
+        let keys = [ComposerSettingsView.modelKey]
+        let originals = keys.map { defaults.object(forKey: $0) }
+        let backup = try Keychain.read("settings.v1")
+        defer {
+            for (key, original) in zip(keys, originals) { defaults.set(original, forKey: key) }
+            if let backup { try? Keychain.write(backup, account: "settings.v1") }
+            else { Keychain.delete("settings.v1") }
+        }
+
+        for key in keys { defaults.set(false, forKey: key) }
+        SettingsVault.save()
+        for key in keys { defaults.removeObject(forKey: key) }
+        SettingsVault.restore()
+        for key in keys { XCTAssertEqual(defaults.object(forKey: key) as? Bool, false) }
     }
 
     func testMarkedTextDefersResizingAndKeepsDraftAndSelection() {
