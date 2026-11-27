@@ -439,6 +439,20 @@ struct ModelTickList: View {
 
     var body: some View {
         Form {
+            if use == .voice {
+                Section {
+                    NavigationLink {
+                        LiveVoicePickerView(route: .realtimeAPI)
+                    } label: {
+                        LabeledContent {
+                            Text(verbatim: VoiceCatalog.voice(for: .realtimeAPI).displayName)
+                        } label: {
+                            Text("Speaking Voice")
+                        }
+                    }
+                    .accessibilityIdentifier("liveVoice.voicePicker")
+                }
+            }
             Section {
                 let rows = self.rows
                 if rows.isEmpty {
