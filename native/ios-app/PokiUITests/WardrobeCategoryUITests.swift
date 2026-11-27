@@ -3,7 +3,7 @@ import XCTest
 final class WardrobeCategoryUITests: XCTestCase {
     func testNativeCategoryControlTracksTapsAndPageSwipes() {
         let app = XCUIApplication()
-        app.launchArguments += ["-pokiChat", "working", "-AppleLanguages", "(en)",
+        app.launchArguments += ["-pokiScreen", "chat", "-pokiChat", "working", "-AppleLanguages", "(en)",
                                 "-AppleLocale", "en_US", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
         app.launch()
 
