@@ -526,7 +526,7 @@ struct MemoryPageEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var locked = false
-    @State private var original: PokiCore.MemoryPage?
+    @State private var original: StoredMemoryPage?
     @State private var loaded = false
     @State private var conflict = false
     @FocusState private var focused: Bool
