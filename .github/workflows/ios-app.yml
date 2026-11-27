@@ -155,6 +155,10 @@ jobs:
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/Poki.app
+          # Warm Settings' one-time simulator provisioning before Poki's timed launch action runs.
+          xcrun simctl launch "$UDID" com.apple.Preferences >/dev/null || true
+          sleep 5
+          xcrun simctl terminate "$UDID" com.apple.Preferences >/dev/null 2>&1 || true
       - name: Chat with Poki's agent (scripted model)
         run: |
           set -o pipefail
