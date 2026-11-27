@@ -2788,12 +2788,12 @@ final class ChatHarnessTests: XCTestCase {
         }
     }
 
-    /// Resuming an unanswered question must never promote the model's question text into the owner's
-    /// message, `taskRequest`, or app targeting (`bundleIDs` / `TaskApps`).
-    func testResumedQuestionAnswerDoesNotPromoteQuestionTextOrUnselectedAppsIntoTaskRequest() async throws {
-        let questionText = "Meituan Waimai, Ele.me and JD can all deliver it. Which one?"
+    /// Answering an inactive question (when `waitingQuestion` is nil) must be ignored instead of
+    /// mutating the saved transcript or starting a new task from a stale question.
+    func testAnswerIgnoresInactiveRestoredQuestionWithoutStartingATask() async throws {
+        let questionText = "Meituan Waimai, Ele.me and JD Takeaway can all deliver it. Which one?"
         let question = ChatQuestion(
-            id: "q-resumed-apps",
+            id: "q-inactive-restored",
             text: questionText,
             options: [
                 .init(label: "Meituan Waimai", app: "com.meituan.itakeaway"),
@@ -2804,87 +2804,51 @@ final class ChatHarnessTests: XCTestCase {
             other: true,
             state: .asking
         )
-
-        for picked in [true, false] {
-            let session = FakeAutomation()
-            _ = session.prepare()
-            final class FrontAppBox: @unchecked Sendable {
-                private let lock = NSLock()
-                private var current = ("com.apple.Preferences", "Settings")
-                func set(_ bundle: String) {
-                    let name = bundle == "me.ele.ios.eleme" ? "Ele.me" : bundle == "com.360buy.jdmobile" ? "JD" : bundle
-                    lock.withLock { current = (bundle, name) }
-                }
-                func get() -> (String, String) { lock.withLock { current } }
-            }
-            let frontApp = FrontAppBox()
-            let transport = SessionScreenTransport(
-                session: session,
-                beforeActivation: { bundle in frontApp.set(bundle) },
-                activeApp: { frontApp.get() }
-            )
-            let server = try FakeCompletions(replies: [
-                FakeCompletions.tool("do", ["actions": [["launch": ["bundle": "me.ele.ios.eleme"]]]]),
-                FakeCompletions.tool("do", ["actions": [["launch": ["bundle": "com.360buy.jdmobile"]]]]),
-                FakeCompletions.tool("finish_task", ["success": true, "summary": "Ordered on Ele.me.", "details": [], "answer": ["kind": "action"]]),
-                FakeCompletions.text("Ordered on Ele.me."),
-            ])
-            let chat = chat(on: server, transport: transport, automation: session, kind: .poki)
-            defer {
-                if chat.running { chat.stop() }
-                QuestionNotice.cancel()
-                SessionStore.shared.delete(chat.sessionID)
-            }
-
-            let saved = SavedSession(
-                id: UUID().uuidString.lowercased(),
-                kind: .poki,
-                client: nil,
-                title: "Order my usual beef noodles",
-                started: Date(),
-                updated: Date(),
-                live: false,
-                outcome: .interrupted,
-                entries: [
-                    ChatEntry(.you("Order my usual beef noodles", delivered: true)),
-                    ChatEntry(.question(question)),
-                ],
-                calls: []
-            )
-            chat.restore(saved)
-
-            var recordedTask: String?
-            ChatModel.afterTask = { recordedTask = $0.task }
-
-            let ownerAnswer = picked ? "Ele.me" : "Use Ele.me"
-            chat.answer(ownerAnswer, picked: picked)
-            try await until(10) { !chat.running }
-            ChatModel.afterTask = nil
-
-            let taskText = try XCTUnwrap(recordedTask, "resumed answer should finish a task")
-            XCTAssertFalse(taskText.contains(questionText), "model question text must not become taskRequest: \(taskText)")
-            XCTAssertFalse(taskText.contains("You asked:"), "taskRequest must not include model question header: \(taskText)")
-            let namedApps = AppIconStore.bundleIDs(namedIn: taskText)
-            XCTAssertEqual(namedApps, ["me.ele.ios.eleme"], "unselected apps from question text must not pollute bundleIDs(namedIn:)")
-            XCTAssertEqual(chat.taskApp, "me.ele.ios.eleme", "unselected JD in question text must not hijack TaskApps targeting")
-
-            let firstRequest = try XCTUnwrap(server.requests.first)
-            let userTexts = Self.userMessages(firstRequest).joined(separator: "\n")
-            XCTAssertFalse(userTexts.contains("You asked:"), "user-role message must not promote model question text: \(userTexts)")
-            XCTAssertFalse(userTexts.contains(questionText), "user-role message must not contain model question text: \(userTexts)")
-            XCTAssertTrue(userTexts.contains("Order my usual beef noodles"), userTexts)
-            XCTAssertTrue(userTexts.contains(ownerAnswer), userTexts)
-            XCTAssertTrue(userTexts.contains("not an approval"), userTexts)
-
-            let system = FakeCompletions.system(firstRequest)
-            XCTAssertTrue(system.contains(questionText), "earlier question should remain available as attributed system context")
-            XCTAssertTrue(system.lowercased().contains("assistant"), "earlier question must be attributed to the assistant, not the owner")
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.text("Unexpected task start."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+        defer {
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
         }
+
+        let saved = SavedSession(
+            id: UUID().uuidString.lowercased(),
+            kind: .poki,
+            client: nil,
+            title: "Order my usual beef noodles",
+            started: Date(),
+            updated: Date(),
+            live: false,
+            outcome: .interrupted,
+            entries: [
+                ChatEntry(.you("Order my usual beef noodles", delivered: true)),
+                ChatEntry(.question(question)),
+            ],
+            calls: []
+        )
+        chat.restore(saved)
+        XCTAssertNil(chat.waitingQuestion)
+
+        chat.answer("Ele.me", picked: true)
+        chat.answer("Use Ele.me", picked: false)
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertFalse(chat.running, "answering an inactive question must not start a new task")
+        XCTAssertTrue(server.requests.isEmpty, "answering an inactive question must not call the model")
+        XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } },
+                       "answering an inactive question must not append an answer entry")
+        XCTAssertFalse(chat.entries.contains {
+            if case .question(let q) = $0.kind { return q.id == question.id && q.state == .answered }
+            return false
+        }, "answering an inactive question must not mark it answered")
     }
 
     /// `ask_user` must forbid passwords, passcodes, verification codes, card numbers, and account
     /// credentials both in its tool contract and at the client execution boundary, while allowing
-    /// ordinary non-sensitive choices.
+    /// ordinary non-sensitive choices (with "Other answer" enabled) after a single refusal.
     func testAskUserRefusesPasswordAndVerificationCodePromptsInEnglishAndChinese() async throws {
         let sensitiveQuestions = [
             "Type the 6-digit code you just got",
@@ -2896,22 +2860,35 @@ final class ChatHarnessTests: XCTestCase {
             "请填写银行卡号",
             "請輸入簡訊驗證碼",
         ]
-        var replies = sensitiveQuestions.map { prompt in
-            FakeCompletions.tool("ask_user", [
+        for prompt in sensitiveQuestions {
+            let parsed = try XCTUnwrap(ChatQuestion(id: "check", arguments: [
                 "question": prompt,
                 "options": [["label": "Skip"], ["label": "Cancel"]],
                 "allow_other": true,
-            ])
+            ]))
+            XCTAssertTrue(parsed.requestsSecretOrCredential, "expected credential guard to match: \(prompt)")
         }
-        replies.append(FakeCompletions.tool("ask_user", [
+        let benign = try XCTUnwrap(ChatQuestion(id: "benign", arguments: [
             "question": "Apply the promo code or skip it?",
             "options": [["label": "Apply promo code"], ["label": "Skip"]],
             "allow_other": true,
         ]))
-        replies.append(FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]]))
-        replies.append(FakeCompletions.text("Done."))
+        XCTAssertFalse(benign.requestsSecretOrCredential, "benign promo-code choice should not trigger credential guard")
 
-        let server = try FakeCompletions(replies: replies)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("ask_user", [
+                "question": "Type the 6-digit code you just got",
+                "options": [["label": "Skip"], ["label": "Cancel"]],
+                "allow_other": true,
+            ]),
+            FakeCompletions.tool("ask_user", [
+                "question": "Apply the promo code or skip it?",
+                "options": [["label": "Apply promo code"], ["label": "Skip"]],
+                "allow_other": true,
+            ]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Done."),
+        ])
         let chat = chat(on: server, kind: .poki)
         chat.newConversation()
         defer {
@@ -2929,23 +2906,112 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(description.lowercased().contains("verification code"), description)
         XCTAssertTrue(description.lowercased().contains("handoff"), description)
 
-        let waiting = try XCTUnwrap(chat.waitingQuestion, "benign promo-code question should still be allowed after sensitive calls are refused")
+        let waiting = try XCTUnwrap(chat.waitingQuestion, "benign promo-code question should still be allowed after one refusal")
         XCTAssertEqual(waiting.text, "Apply the promo code or skip it?", "sensitive prompt should have been refused instead of waiting: \(waiting.text)")
+        XCTAssertTrue(waiting.other, "Other answer should remain available on allowed questions")
 
         let refusedCalls = chat.savedCalls.filter { $0.name == "ask_user" }
-        XCTAssertEqual(refusedCalls.count, sensitiveQuestions.count, "every sensitive ask_user call must be refused before reaching the UI")
-        for call in refusedCalls {
-            XCTAssertFalse(call.ok, "sensitive ask_user must return an error: \(call.arguments)")
-            XCTAssertTrue(call.answer.lowercased().contains("handoff"), "refusal should direct the model to handoff: \(call.answer)")
-        }
-        for prompt in sensitiveQuestions {
-            XCTAssertFalse(chat.entries.contains {
-                if case .question(let q) = $0.kind { return q.text == prompt }
-                return false
-            }, "refused secret prompt must never appear in chat history: \(prompt)")
-        }
+        XCTAssertEqual(refusedCalls.count, 1, "the sensitive ask_user call must be refused before reaching the UI")
+        XCTAssertFalse(refusedCalls[0].ok, "sensitive ask_user must return an error: \(refusedCalls[0].arguments)")
+        XCTAssertTrue(refusedCalls[0].answer.lowercased().contains("handoff"), "refusal should direct the model to handoff: \(refusedCalls[0].answer)")
+        XCTAssertFalse(chat.entries.contains {
+            if case .question(let q) = $0.kind { return q.text == "Type the 6-digit code you just got" }
+            return false
+        }, "refused secret prompt must never appear in chat history")
 
         chat.answer("Skip", picked: true)
+        try await until(10) { !chat.running }
+    }
+
+    /// After two credential refusals within the same task (even across a benign question in between),
+    /// `ask_user` is withdrawn from subsequent model turns and rejected if called again for the rest
+    /// of that task, while the next typed task in the same conversation regains `ask_user`.
+    func testAskUserDisablesForTaskAfterTwoCredentialRefusals() async throws {
+        let server = try FakeCompletions(replies: [
+            // Task 1, turn 0: 1st credential refusal (count = 1; ask_user stays offered)
+            FakeCompletions.tool("ask_user", [
+                "question": "Type the 6-digit code you just got",
+                "options": [["label": "Skip"], ["label": "Cancel"]],
+                "allow_other": true,
+            ]),
+            // Task 1, turn 1: benign question between refusals still works and keeps Other answer
+            FakeCompletions.tool("ask_user", [
+                "question": "Search on the web, or install it first?",
+                "options": [["label": "Search on the web"], ["label": "Install it first"]],
+                "allow_other": true,
+            ]),
+            // Task 1, turn 2: 2nd credential refusal (count = 2 -> disables ask_user for this task)
+            FakeCompletions.tool("ask_user", [
+                "question": "请输入支付密码",
+                "options": [["label": "取消"], ["label": "跳过"]],
+                "allow_other": true,
+            ]),
+            // Task 1, turn 3: even if the model still attempts ask_user after withdrawal, client rejects it
+            FakeCompletions.tool("ask_user", [
+                "question": "Apply the promo code or skip it?",
+                "options": [["label": "Apply promo code"], ["label": "Skip"]],
+                "allow_other": true,
+            ]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Finished without asking again.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Finished without asking again."),
+            // Task 2: a fresh typed task regains ask_user
+            FakeCompletions.tool("ask_user", [
+                "question": "A train ticket, or a flight?",
+                "options": [["label": "Train ticket"], ["label": "Flight"]],
+                "allow_other": true,
+            ]),
+            FakeCompletions.tool("finish_task", ["success": true, "summary": "Booked train.", "details": [], "answer": ["kind": "action"]]),
+            FakeCompletions.text("Booked train."),
+        ])
+        let chat = chat(on: server, kind: .poki)
+        chat.newConversation()
+        defer {
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
+
+        chat.send("Sign in and finish checkout")
+        try await until(10) { chat.waitingQuestion != nil || !chat.running }
+        let benign = try XCTUnwrap(chat.waitingQuestion, "benign question after first refusal should wait for the owner")
+        XCTAssertEqual(benign.text, "Search on the web, or install it first?")
+        XCTAssertTrue(benign.other)
+
+        chat.answer("Search on the web", picked: true)
+        try await until(10) { !chat.running }
+
+        XCTAssertNil(chat.waitingQuestion, "third ask_user after two refusals must never open a waiting card")
+        let task1Requests = server.requests
+        XCTAssertEqual(task1Requests.count, 6, "unexpected request count in task 1: \(task1Requests.count)")
+        XCTAssertTrue(Self.toolNames(task1Requests[0]).contains("ask_user"))
+        XCTAssertTrue(Self.toolNames(task1Requests[1]).contains("ask_user"), "first refusal keeps ask_user available")
+        XCTAssertTrue(Self.toolNames(task1Requests[2]).contains("ask_user"))
+        XCTAssertFalse(Self.toolNames(task1Requests[3]).contains("ask_user"),
+                       "second credential refusal must remove ask_user from subsequent turns of the same task")
+        XCTAssertTrue(Self.toolNames(task1Requests[3]).contains("finish_task"), "other tools must remain available")
+        XCTAssertFalse(Self.toolNames(task1Requests[4]).contains("ask_user"))
+
+        let askCalls = chat.savedCalls.filter { $0.name == "ask_user" }
+        XCTAssertEqual(askCalls.count, 4)
+        XCTAssertFalse(askCalls[0].ok)
+        XCTAssertTrue(askCalls[1].ok)
+        XCTAssertFalse(askCalls[2].ok)
+        XCTAssertTrue(askCalls[2].answer.lowercased().contains("handoff"), askCalls[2].answer)
+        XCTAssertFalse(askCalls[3].ok, "forced ask_user call after disable must still be rejected")
+        XCTAssertFalse(chat.entries.contains {
+            if case .question(let q) = $0.kind { return q.text == "Apply the promo code or skip it?" }
+            return false
+        }, "blocked post-disable ask_user must not enter chat history")
+
+        // Task 2 in the same conversation regains ask_user.
+        let beforeTask2 = server.requests.count
+        chat.send("Book a ticket to Shanghai")
+        try await until(10) { chat.waitingQuestion != nil || !chat.running }
+        XCTAssertTrue(Self.toolNames(server.requests[beforeTask2]).contains("ask_user"),
+                      "a new typed task in the same conversation must regain ask_user")
+        let task2Question = try XCTUnwrap(chat.waitingQuestion)
+        XCTAssertEqual(task2Question.text, "A train ticket, or a flight?")
+        chat.answer("Train ticket", picked: true)
         try await until(10) { !chat.running }
     }
 
@@ -3051,6 +3117,10 @@ final class ChatHarnessTests: XCTestCase {
     /// pending question, update `SavedSession`, and `ChatTranscript` must not keep buttons open without
     /// a live `waitingQuestion`.
     func testSendingANewRequestExpiresAnyStaleAskingQuestion() async throws {
+        let savedLanguage = AppLocalization.shared.preference
+        AppLocalization.shared.preference = "en"
+        defer { AppLocalization.shared.preference = savedLanguage }
+
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("poki-newreq-\(UUID().uuidString)", isDirectory: true)
         let suiteName = "poki-newreq-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -3075,7 +3145,7 @@ final class ChatHarnessTests: XCTestCase {
         let staleQuestion = ChatQuestion(
             id: "q-stale-newreq",
             text: "Damai isn’t installed. Search on the web, or install it first?",
-            options: [.init(label: "Search on the web"), .init(label: "Install it first")],
+            options: [.init(label: "Open in Safari"), .init(label: "Install it first")],
             suggested: true,
             other: true,
             state: .asking
@@ -3093,23 +3163,32 @@ final class ChatHarnessTests: XCTestCase {
             calls: []
         )
 
-        // Even before a new message is sent, ChatTranscript without waitingQuestion must not expose orphan option buttons.
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
-        covered.forEach { $0.accessibilityElementsHidden = true }
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: ChatTranscript(entries: saved.entries, live: false, waitingQuestion: nil) { EmptyView() })
-        window.makeKeyAndVisible()
-        window.layoutIfNeeded()
-        CATransaction.flush()
-        let staleSource = await Task.detached {
-            var code: NSString?
-            return PKInProcess.shared().sourceXML(nil, code: &code) ?? ""
-        }.value
-        window.isHidden = true
-        covered.forEach { $0.accessibilityElementsHidden = false }
-        XCTAssertFalse(staleSource.contains("Install it first"), "ChatTranscript must not leave orphan tappable buttons open when waitingQuestion is nil")
-        XCTAssertFalse(staleSource.contains("Other answer"), "ChatTranscript must not leave orphan Other answer open when waitingQuestion is nil")
+        // Even before a new message is sent, ChatTranscript without waitingQuestion must render the
+        // stale question bubble text while hiding every option button and Other answer.
+        do {
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
+            covered.forEach { $0.accessibilityElementsHidden = true }
+            let window = UIWindow(windowScene: scene)
+            defer {
+                window.isHidden = true
+                covered.forEach { $0.accessibilityElementsHidden = false }
+            }
+            window.rootViewController = UIHostingController(rootView: ChatTranscript(entries: saved.entries, live: false, waitingQuestion: nil) { EmptyView() })
+            window.makeKeyAndVisible()
+            window.layoutIfNeeded()
+            CATransaction.flush()
+            let captured: (xml: String?, code: String?) = await Task.detached {
+                var code: NSString?
+                return (PKInProcess.shared().sourceXML(nil, code: &code), code as String?)
+            }.value
+            let staleSource = try XCTUnwrap(captured.xml, "failed to capture ChatTranscript accessibility tree (code: \(captured.code ?? "nil"))")
+            XCTAssertTrue(staleSource.contains(staleQuestion.text),
+                          "ChatTranscript must render the stale question card text before verifying buttons are hidden: \(staleSource)")
+            XCTAssertFalse(staleSource.contains("Open in Safari"), "ChatTranscript must not leave orphan tappable buttons open when waitingQuestion is nil")
+            XCTAssertFalse(staleSource.contains("Install it first"), "ChatTranscript must not leave orphan tappable buttons open when waitingQuestion is nil")
+            XCTAssertFalse(staleSource.contains("Other answer"), "ChatTranscript must not leave orphan Other answer open when waitingQuestion is nil")
+        }
 
         chat.restore(saved)
         chat.send("Check tomorrow’s weather")
@@ -3270,14 +3349,34 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(value, "在 Poki 裡回答")
     }
 
-    /// The `questionApps` sample aligns its English JD Takeaway label with Simplified and Traditional Chinese.
+    /// The `questionApps` sample aligns its English, Simplified Chinese, and Traditional Chinese
+    /// JD Takeaway labels and question text.
     func testQuestionAppsSampleAlignsEnglishAndChineseJDLabel() {
         let saved = AppLocalization.shared.preference
         defer { AppLocalization.shared.preference = saved }
-        AppLocalization.shared.preference = "en"
-        let sample = ChatModel.Sample.question("questionApps")
-        XCTAssertEqual(sample.question.options.map(\.label), ["Meituan Waimai", "Ele.me", "JD Takeaway"])
-        XCTAssertEqual(sample.question.text, "Meituan Waimai, Ele.me and JD Takeaway can all deliver it. Which one?")
+        let cases: [(locale: String, options: [String], text: String)] = [
+            (
+                "en",
+                ["Meituan Waimai", "Ele.me", "JD Takeaway"],
+                "Meituan Waimai, Ele.me and JD Takeaway can all deliver it. Which one?"
+            ),
+            (
+                "zh-Hans",
+                ["美团外卖", "饿了么", "京东外卖"],
+                "美团外卖、饿了么和京东外卖都能点。用哪个？"
+            ),
+            (
+                "zh-Hant",
+                ["美團外賣", "餓了麼", "京東外賣"],
+                "美團外賣、餓了麼和京東外賣都能點。用哪個？"
+            ),
+        ]
+        for expected in cases {
+            AppLocalization.shared.preference = expected.locale
+            let sample = ChatModel.Sample.question("questionApps")
+            XCTAssertEqual(sample.question.options.map(\.label), expected.options, "locale \(expected.locale) options")
+            XCTAssertEqual(sample.question.text, expected.text, "locale \(expected.locale) question text")
+        }
     }
 
     /// `ChatQuestion(id:arguments:)` validates option count, non-empty labels, single recommendation,
@@ -3334,36 +3433,47 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(chat.entries.contains { if case .answer("Train ticket") = $0.kind { true } else { false } })
     }
 
-    /// A task from Voice dictation offers no ask_user: Voice waits for the task's end to speak the reply
-    /// and nobody looks at the chat to answer. The same conversation's typed tasks before and after it
-    /// still may ask, on the same model loop.
+    /// Tasks from Voice dictation (`send(spoken:)`) and Voice Anytime fallback
+    /// (`OpeningSpeech.system.sendText`) offer no `ask_user`: Voice waits for the task's end and
+    /// nobody looks at the chat to answer. Typed tasks before and after still may ask on the same loop.
     func testATaskFromVoiceCannotAsk() async throws {
         let finish = FakeCompletions.tool("finish_task", ["success": true, "summary": "Done.", "details": [], "answer": ["kind": "action"]])
         let server = try FakeCompletions(replies: [
             finish, FakeCompletions.text("Done."),
             finish, FakeCompletions.text("Done."),
             finish, FakeCompletions.text("Done."),
+            finish, FakeCompletions.text("Done."),
         ])
         let chat = chat(on: server, kind: .poki)
         chat.newConversation()
+        let originalChat = AskPoki.chat
+        AskPoki.chat = chat
+        defer {
+            AskPoki.chat = originalChat
+            if chat.running { chat.stop() }
+            QuestionNotice.cancel()
+            SessionStore.shared.delete(chat.sessionID)
+        }
 
         chat.send("Write a note: call the dentist")
         try await until(10) { !chat.running }
         chat.send(spoken: "Book a ticket to Shanghai for tomorrow")
         try await until(10) { !chat.running }
+        XCTAssertTrue(OpeningSpeech.system.sendText("Check tomorrow’s weather"), "Voice Anytime fallback should send to the idle chat")
+        try await until(10) { !chat.running }
         chat.send("Write a note: buy milk")
         try await until(10) { !chat.running }
 
         let requests = server.requests
-        XCTAssertEqual(requests.count, 6)
+        XCTAssertEqual(requests.count, 8)
         XCTAssertTrue(Self.toolNames(requests[0]).contains("ask_user"), "a typed task may ask")
         XCTAssertTrue(FakeCompletions.system(requests[0]).contains("Ask with ask_user"))
-        for spoken in requests[2...3] {
+        for spoken in requests[2...5] {
             XCTAssertFalse(Self.toolNames(spoken).contains("ask_user"), "a task from Voice has nobody to answer a question")
             XCTAssertFalse(FakeCompletions.system(spoken).contains("Ask with ask_user"), "nor is it told to ask")
             XCTAssertTrue(Self.toolNames(spoken).contains("finish_task"), "its other tools stay")
         }
-        XCTAssertTrue(Self.toolNames(requests[4]).contains("ask_user"), "the next typed task may ask again")
+        XCTAssertTrue(Self.toolNames(requests[6]).contains("ask_user"), "the next typed task may ask again")
         XCTAssertNil(chat.waitingQuestion)
     }
 
