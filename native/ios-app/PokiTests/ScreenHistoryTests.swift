@@ -1,3 +1,5 @@
+import PiSwiftAgent
+import PiSwiftAI
 import PokiCore
 import UIKit
 import XCTest
@@ -350,6 +352,17 @@ final class ScreenHistoryTests: XCTestCase {
             XCTAssertFalse(Harness.toolSpecs(inSplitView: split, includeScreenHistory: false, includePersonalContext: SensesContext.offeredNow)
                 .map(\.name).contains(SensesContext.name))
         }
+    }
+
+    func testPiRequestBoundaryDropsPersonalContextWhenAskingTurnedOffAfterPreparation() {
+        let declared = [PiSwiftAI.Message.system(SystemMessage(content: .text("Instructions"),
+                                                              toolsAdded: [AITool(name: SensesContext.name, description: "", parameters: [:]), AITool(name: "look", description: "", parameters: [:])]))]
+        let names = { (messages: [PiSwiftAI.Message]) in getCurrentTools(messages).map(\.name) }
+        XCTAssertTrue(names(declared).contains(SensesContext.name))
+        XCTAssertTrue(names(PiLoop.withoutRevokedPersonalContext(declared, offered: true)).contains(SensesContext.name))
+        let sent = names(PiLoop.withoutRevokedPersonalContext(declared, offered: false))
+        XCTAssertFalse(sent.contains(SensesContext.name))
+        XCTAssertTrue(sent.contains("look"))
     }
 
     func testScreenHistoryToolQueriesStoredReadsByTimeSpanAppAndKeyword() async throws {

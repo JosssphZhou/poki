@@ -189,7 +189,9 @@ final class ChatModel {
     private var taskText = ""
     private var taskRequestID: UUID?
     private var client: ModelClient?
-    private var restoredContext: String?
+    private var restoredSession: SavedSession?
+    /// Read against the switches as they stand when a prompt is built, so a toggle in an open session applies.
+    private var restoredContext: String? { restoredSession?.modelContext }
     /// The plan the model published with report_plan; the bubble shows its steps up to the current one.
     private var modelPlan: [String]?
 
@@ -326,7 +328,7 @@ final class ChatModel {
         if isDemo { entries = [ChatEntry(.time(Date()))] + greeting.dropFirst(); return }
         loop = nil
         client = nil
-        restoredContext = nil
+        restoredSession = nil
         pendingCountedScroll = nil
         calls = []
         planID = nil; noteID = nil; cardID = nil; modelPlan = nil
@@ -355,7 +357,7 @@ final class ChatModel {
         planID = nil; noteID = nil; cardID = nil; modelPlan = nil
         sessionID = session.id
         calls = session.calls
-        restoredContext = session.modelContext
+        restoredSession = session
         entries = session.entries.isEmpty ? greeting : session.entries
     }
 

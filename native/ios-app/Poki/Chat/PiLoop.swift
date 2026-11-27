@@ -251,6 +251,7 @@ final class PiLoop {
                 if !allowed, getCurrentTools(messages).contains(where: { $0.name == "screen_history" }) {
                     messages.append(.system(SystemMessage(content: .text(""), toolsRemoved: [ToolReference(name: "screen_history")])))
                 }
+                messages = Self.withoutRevokedPersonalContext(messages, offered: SensesContext.offeredNow)
                 var options = options
                 if let endpoint { options.httpClient = endpoint }
                 if provider == .custom {
@@ -425,6 +426,13 @@ final class PiLoop {
             messages.insert(.system(system), at: 0)
         }
         agent.messages = messages
+    }
+
+    /// The last request boundary: credentials may refresh after prepareRequest, so a switch turned off
+    /// meanwhile still takes personal_context out of what the model is told.
+    nonisolated static func withoutRevokedPersonalContext(_ messages: [PiSwiftAI.Message], offered: Bool) -> [PiSwiftAI.Message] {
+        guard !offered, getCurrentTools(messages).contains(where: { $0.name == SensesContext.name }) else { return messages }
+        return messages + [.system(SystemMessage(content: .text(""), toolsRemoved: [ToolReference(name: SensesContext.name)]))]
     }
 
     private nonisolated static func availableTools(_ variants: [ToolVariant], allowed: Bool,
