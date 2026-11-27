@@ -72,7 +72,6 @@
 "Copy" = "Copy";
 "Could not reach Poki Setup's helper: %@" = "Could not reach Poki Setup's helper: %@";
 "Could not read your saved Apple Account" = "Could not read your saved Apple Account";
-"Create a token…" = "Create a token…";
 "Data" = "Data";
 "Delete downloaded test builds?" = "Delete downloaded test builds?";
 "Delete" = "Delete";
@@ -278,7 +277,6 @@
 "The helper has not logged anything yet." = "The helper has not logged anything yet.";
 "This Mac (macOS 26 and earlier)" = "This Mac (macOS 26 and earlier)";
 "This build is not ready yet." = "This build is not ready yet.";
-"This token can't see any Cloudflare account." = "This token can't see any Cloudflare account.";
 "Token" = "Token";
 "Tools" = "Tools";
 "Trusts This Mac" = "Trusts This Mac";
@@ -291,7 +289,6 @@
 "Use GitHub CLI" = "Use GitHub CLI";
 "Use Token" = "Use Token";
 "Use a cable, unlock the device and tap Trust when it asks." = "Use a cable, unlock the device and tap Trust when it asks.";
-"Use the “Edit Cloudflare Workers” template. Poki Setup keeps the token in your Keychain, so you can update the relay later without pasting it again." = "Use the “Edit Cloudflare Workers” template. Poki Setup keeps the token in your Keychain, so you can update the relay later without pasting it again.";
 "Uses the account gh is signed in to on this Mac" = "Uses the account gh is signed in to on this Mac";
 "Verify" = "Verify";
 "Version" = "Version";
@@ -302,6 +299,30 @@
 "With a free account, apps stop opening after 7 days. Poki Setup renews Poki before then while this Mac is on, using the password kept in your keychain." = "With a free account, apps stop opening after 7 days. Poki Setup renews Poki before then while this Mac is on, using the password kept in your keychain.";
 "Yes" = "Yes";
 "Your Relay" = "Your Relay";
+
+// Cloudflare relay onboarding
+"Choose an account" = "Choose an account";
+"Cloudflare couldn't complete the request. Try again or check your Workers & Pages dashboard." = "Cloudflare couldn't complete the request. Try again or check your Workers & Pages dashboard.";
+"Cloudflare couldn't register an available workers.dev address. Try again or register one under Workers & Pages in Cloudflare." = "Cloudflare couldn't register an available workers.dev address. Try again or register one under Workers & Pages in Cloudflare.";
+"Cloudflare couldn't use this token. Copy the API token again or create a new one." = "Cloudflare couldn't use this token. Copy the API token again or create a new one.";
+"Cloudflare setup canceled in Poki Setup." = "Cloudflare setup canceled in Poki Setup.";
+"Connect Cloudflare" = "Connect Cloudflare";
+"Continue with Saved Token" = "Continue with Saved Token";
+"Could not open Cloudflare. Try again or enter a token manually." = "Could not open Cloudflare. Try again or enter a token manually.";
+"Could not reach Cloudflare. Check your connection and try again." = "Could not reach Cloudflare. Check your connection and try again.";
+"Could not remove the saved token from Keychain. Try again." = "Could not remove the saved token from Keychain. Try again.";
+"Create the API token in Cloudflare and restrict it to the account you want to use. Copy the token, then return here to import it." = "Create the API token in Cloudflare and restrict it to the account you want to use. Copy the token, then return here to import it.";
+"Enter Token Manually…" = "Enter Token Manually…";
+"If your account doesn't have a workers.dev address yet, Poki Setup can register one when you deploy." = "If your account doesn't have a workers.dev address yet, Poki Setup can register one when you deploy.";
+"Import Copied Token" = "Import Copied Token";
+"No token could be read from the clipboard. Copy the token in Cloudflare and try again, or enter it manually." = "No token could be read from the clipboard. Copy the token in Cloudflare and try again, or enter it manually.";
+"Poki Setup couldn't complete the Cloudflare request. Try again." = "Poki Setup couldn't complete the Cloudflare request. Try again.";
+"The relay isn't answering yet. Wait a minute and try again." = "The relay isn't answering yet. Wait a minute and try again.";
+"The relay was deployed, but no token was saved in Keychain. You'll need a token to update it." = "The relay was deployed, but no token was saved in Keychain. You'll need a token to update it.";
+"The relay was deployed, but Poki Setup couldn't verify whether a token is saved in Keychain." = "The relay was deployed, but Poki Setup couldn't verify whether a token is saved in Keychain.";
+"This account reached a Workers limit or its plan doesn't allow this deployment. Check your Workers usage and plan, or choose a different account." = "This account reached a Workers limit or its plan doesn't allow this deployment. Check your Workers usage and plan, or choose a different account.";
+"This token can't see any Cloudflare account. Make sure it includes the account you want to use." = "This token can't see any Cloudflare account. Make sure it includes the account you want to use.";
+"Check that the token is active and grants Workers Scripts Edit and Account Settings Read for your account." = "Check that the token is active and grants Workers Scripts Edit and Account Settings Read for your account.";
 "iPhones and iPads you set up with Poki Setup appear here, with how long Poki stays signed." = "iPhones and iPads you set up with Poki Setup appear here, with how long Poki stays signed.";
 "the device" = "the device";
 "this Apple Account" = "this Apple Account";

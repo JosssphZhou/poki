@@ -261,6 +261,9 @@ pub fn relay_state() -> R<Option<relay::Deployed>> { Ok(relay::remembered()?) }
 pub async fn relay_worker() -> R<relay::WorkerStatus> { Ok(relay::worker_status().await?) }
 
 #[tauri::command]
+pub fn relay_token_setup_url() -> String { relay::token_setup_url() }
+
+#[tauri::command]
 pub async fn relay_accounts(token: Option<String>) -> R<Vec<relay::Account>> {
     let token = relay::token_or_saved(token)?;
     Ok(relay::Cloudflare::new(&token)?.accounts().await?)
@@ -276,7 +279,7 @@ pub fn relay_forget_token() -> R<()> { Ok(relay::forget_token()?) }
 pub async fn relay_deploy(app: AppHandle, token: Option<String>, account_id: String) -> R<relay::Deployed> {
     let token = relay::token_or_saved(token)?;
     let cf = relay::Cloudflare::new(&token)?;
-    let acct = cf.accounts().await?.into_iter().find(|a| a.id == account_id).ok_or_else(|| poki_setup_core::Error::msg("That account is not visible to this token."))?;
+    let acct = cf.account(&account_id).await?;
     let d = cf.deploy(&acct, &reporter(&app, "relay")).await?;
     relay::remember(&d)?;
     let _ = relay::save_token(&token);

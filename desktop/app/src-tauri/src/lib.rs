@@ -80,6 +80,7 @@ pub fn run() {
             commands::relay_token_saved,
             commands::relay_forget_token,
             commands::relay_accounts,
+            commands::relay_token_setup_url,
             commands::relay_deploy,
             commands::relay_check,
             commands::connectors,

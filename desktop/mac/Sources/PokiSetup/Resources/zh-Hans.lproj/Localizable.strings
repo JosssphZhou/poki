@@ -72,7 +72,6 @@
 "Copy" = "复制";
 "Could not reach Poki Setup's helper: %@" = "无法连接 Poki Setup 的辅助程序：%@";
 "Could not read your saved Apple Account" = "无法读取已保存的 Apple 账户";
-"Create a token…" = "创建令牌…";
 "Data" = "数据";
 "Delete downloaded test builds?" = "要删除已下载的测试构建吗？";
 "Delete" = "删除";
@@ -278,7 +277,6 @@
 "The helper has not logged anything yet." = "辅助程序尚未生成日志。";
 "This Mac (macOS 26 and earlier)" = "这台 Mac（macOS 26 及更早版本）";
 "This build is not ready yet." = "此构建尚未就绪。";
-"This token can't see any Cloudflare account." = "此令牌无法访问任何 Cloudflare 账户。";
 "Token" = "令牌";
 "Tools" = "工具";
 "Trusts This Mac" = "信任这台 Mac";
@@ -291,7 +289,6 @@
 "Use GitHub CLI" = "使用 GitHub CLI";
 "Use Token" = "使用令牌";
 "Use a cable, unlock the device and tap Trust when it asks." = "用数据线连接并解锁设备，在提示出现时轻点“信任”。";
-"Use the “Edit Cloudflare Workers” template. Poki Setup keeps the token in your Keychain, so you can update the relay later without pasting it again." = "请使用“Edit Cloudflare Workers”模板。Poki Setup 会将令牌存入钥匙串，之后更新远程连接服务时无需再次粘贴。";
 "Uses the account gh is signed in to on this Mac" = "使用这台 Mac 上 gh 已登录的账户";
 "Verify" = "验证";
 "Version" = "版本";
@@ -302,6 +299,30 @@
 "With a free account, apps stop opening after 7 days. Poki Setup renews Poki before then while this Mac is on, using the password kept in your keychain." = "使用免费账户签名的 App 会在 7 天后到期。这台 Mac 开机时，Poki Setup 会使用钥匙串中保存的密码，在到期前为 Poki 续期。";
 "Yes" = "是";
 "Your Relay" = "你的远程连接服务";
+
+// Cloudflare relay onboarding
+"Choose an account" = "选择账户";
+"Cloudflare couldn't complete the request. Try again or check your Workers & Pages dashboard." = "Cloudflare 无法完成请求。请重试，或查看 Cloudflare 控制台中的 Workers & Pages。";
+"Cloudflare couldn't register an available workers.dev address. Try again or register one under Workers & Pages in Cloudflare." = "Cloudflare 未能注册可用的 workers.dev 地址。请重试，或在 Cloudflare 的 Workers & Pages 中注册。";
+"Cloudflare couldn't use this token. Copy the API token again or create a new one." = "此令牌无效。请重新复制 API 令牌，或创建新令牌。";
+"Cloudflare setup canceled in Poki Setup." = "已在 Poki Setup 中取消 Cloudflare 设置。";
+"Connect Cloudflare" = "连接 Cloudflare";
+"Continue with Saved Token" = "使用已保存的令牌继续";
+"Could not open Cloudflare. Try again or enter a token manually." = "无法打开 Cloudflare。请重试，或手动输入令牌。";
+"Could not reach Cloudflare. Check your connection and try again." = "无法连接 Cloudflare。请检查网络连接后重试。";
+"Could not remove the saved token from Keychain. Try again." = "无法从钥匙串中移除已保存的令牌。请重试。";
+"Create the API token in Cloudflare and restrict it to the account you want to use. Copy the token, then return here to import it." = "请在 Cloudflare 中创建 API 令牌，并将权限限制在要使用的账户内。复制令牌后，返回此处导入。";
+"Enter Token Manually…" = "手动输入令牌…";
+"If your account doesn't have a workers.dev address yet, Poki Setup can register one when you deploy." = "如果你的账户还没有 workers.dev 地址，Poki Setup 可以在部署时注册一个。";
+"Import Copied Token" = "导入已复制的令牌";
+"No token could be read from the clipboard. Copy the token in Cloudflare and try again, or enter it manually." = "未能从剪贴板读取令牌。请在 Cloudflare 中复制令牌后重试，或手动输入。";
+"Poki Setup couldn't complete the Cloudflare request. Try again." = "Poki Setup 无法完成 Cloudflare 请求。请重试。";
+"The relay isn't answering yet. Wait a minute and try again." = "远程连接服务尚未响应。请稍等片刻再试。";
+"The relay was deployed, but no token was saved in Keychain. You'll need a token to update it." = "远程连接服务已部署，但钥匙串中没有保存令牌。更新服务时需要令牌。";
+"The relay was deployed, but Poki Setup couldn't verify whether a token is saved in Keychain." = "远程连接服务已部署，但 Poki Setup 无法确认钥匙串中是否保存了令牌。";
+"This account reached a Workers limit or its plan doesn't allow this deployment. Check your Workers usage and plan, or choose a different account." = "此账户已达到 Workers 使用上限，或当前套餐不支持此次部署。请查看 Workers 用量和套餐，或选择其他账户。";
+"This token can't see any Cloudflare account. Make sure it includes the account you want to use." = "此令牌无法访问任何 Cloudflare 账户。请确认令牌包含要使用的账户。";
+"Check that the token is active and grants Workers Scripts Edit and Account Settings Read for your account." = "请确认令牌有效，并具有该账户的 Workers Scripts Edit 和 Account Settings Read 权限。";
 "iPhones and iPads you set up with Poki Setup appear here, with how long Poki stays signed." = "通过 Poki Setup 设置过的 iPhone 和 iPad 会显示在这里，同时显示 Poki 签名的剩余有效期。";
 "the device" = "此设备";
 "this Apple Account" = "此 Apple 账户";

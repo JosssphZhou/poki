@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
     /// A short message at the bottom of the window.
     @Published var banner: SetupMessage?
 
-    let bridge = Bridge.shared
+    let bridge: Bridge
     private var started = false
     private var pollTask: Task<Void, Never>?
     private var keeperTask: Task<Void, Never>?
@@ -86,7 +86,8 @@ final class AppModel: ObservableObject {
     /// The one model, for the CI snapshot walk.
     static weak var current: AppModel?
 
-    init() {
+    init(bridge injectedBridge: Bridge? = nil) {
+        bridge = injectedBridge ?? .shared
         AppModel.current = self
         bridge.onProgress = { [weak self] e in self?.apply(e) }
         bridge.onLogLines = { [weak self] lines in
@@ -117,12 +118,12 @@ final class AppModel: ObservableObject {
             return
         }
         Task {
+            relay = try? await bridge.call("relay_state", as: Deployed?.self) ?? nil
             info = try? await bridge.call("app_info")
             await refreshAccount()
             await refreshRecords()
             await refreshLatest()
             await refreshChannels()
-            relay = try? await bridge.call("relay_state", as: Deployed?.self) ?? nil
             await refreshDev()
         }
         // Test builds: with the automatic sync on, look for a new one every two minutes.

@@ -628,7 +628,10 @@ async fn run() -> Result<()> {
             RelayCmd::Deploy { account } => {
                 let token = match std::env::var("CLOUDFLARE_API_TOKEN") {
                     Ok(t) if !t.is_empty() => t,
-                    _ => rpassword::prompt_password("Cloudflare API token (Edit Cloudflare Workers template): ")?,
+                    _ => {
+                        eprintln!("Create a token for the Cloudflare account you want to use: {}", relay::token_setup_url());
+                        rpassword::prompt_password("Cloudflare API token: ")?
+                    }
                 };
                 let cf = relay::Cloudflare::new(&token)?;
                 let accounts = cf.accounts().await?;

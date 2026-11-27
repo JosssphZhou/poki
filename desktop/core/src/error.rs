@@ -44,6 +44,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("network: {0}")]
     Http(#[from] reqwest::Error),
+    #[error(transparent)]
+    Cloudflare(#[from] crate::relay::CloudflareError),
     #[error("property list: {0}")]
     Plist(#[from] plist::Error),
     #[error("JSON: {0}")]
@@ -79,6 +81,7 @@ impl Error {
             Error::PokiRunning(_) => "poki_running",
             Error::Io(_) => "io",
             Error::Http(_) => "http",
+            Error::Cloudflare(e) => e.kind(),
             Error::Plist(_) => "plist",
             Error::Json(_) => "json",
         }
