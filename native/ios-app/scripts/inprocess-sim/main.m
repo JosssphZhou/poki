@@ -1,4 +1,6 @@
 #import <UIKit/UIKit.h>
+#include <stdio.h>
+#include <stdlib.h>
 #import "InProcess.h"
 
 static void Write(NSString *name, id object) {
@@ -12,27 +14,39 @@ static void Write(NSString *name, id object) {
 /// text field in it, taps it, types, and reads the tree and the keyboard focus again. "cycle" is "field"
 /// after the session was closed (as Poki does when idle) and opened again: a touch in between must be
 /// refused, and the new session must have a new generation.
-static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text) {
+static NSDictionary *Run(NSString *mode, NSString *tag, NSString *text, NSString *targetBundle) {
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
     BOOL coverCompat = [mode isEqualToString:@"cover-compat"];
     if (coverCompat) {
-        NSString *failure = [PKInProcess.shared app:@"local.pokimcp.fixture" action:@"launch"];
+        NSString *failure = [PKInProcess.shared app:targetBundle action:@"launch"];
         out[@"launch_code"] = failure ?: @"";
         if (failure) return out;
     }
-    // check.sh launches the fixture 3 s after this app, and the read is meant for the fixture. On a
-    // slow simulator (an iPad on CI) it was not in front yet when the read came, so this app read
-    // itself. Up to 60 s for another app to come to the front; the wait is in the result.
-    NSString *me = NSBundle.mainBundle.bundleIdentifier;
+    // Wait up to 60 s for targetBundle to reach the front instead of reading SpringBoard, this
+    // check app, or another app on a slow simulator.
     NSTimeInterval waitStarted = NSProcessInfo.processInfo.systemUptime;
-    NSDictionary *front = [PKInProcess.shared frontApp];
-    while (([front[@"bundleId"] length] == 0 || [front[@"bundleId"] isEqualToString:me]) &&
+    NSDictionary *front = [PKInProcess.shared frontApp] ?: @{};
+    NSString *frontBundle = [front[@"bundleId"] isKindOfClass:NSString.class] ? front[@"bundleId"] : @"";
+    while (![frontBundle isEqualToString:targetBundle] &&
            NSProcessInfo.processInfo.systemUptime - waitStarted < 60) {
         [NSThread sleepForTimeInterval:0.5];
-        front = [PKInProcess.shared frontApp];
+        front = [PKInProcess.shared frontApp] ?: @{};
+        frontBundle = [front[@"bundleId"] isKindOfClass:NSString.class] ? front[@"bundleId"] : @"";
     }
-    out[@"front_wait_seconds"] = @(NSProcessInfo.processInfo.systemUptime - waitStarted);
+    NSTimeInterval waited = NSProcessInfo.processInfo.systemUptime - waitStarted;
+    out[@"front_wait_seconds"] = @(waited);
     out[@"front"] = front;
+    if (![frontBundle isEqualToString:targetBundle]) {
+        out[@"expected_front"] = targetBundle;
+        out[@"last_front_bundle"] = frontBundle;
+        out[@"front_error"] = @"front_app_timeout";
+        fprintf(stderr, "front app timeout after %.2fs: expected %s, last front bundleId=%s\n",
+                waited, targetBundle.UTF8String, frontBundle.UTF8String);
+        fflush(stderr);
+        NSLog(@"InProcessCheck front app timeout after %.2fs: expected %@, last front bundleId=%@",
+              waited, targetBundle, frontBundle);
+        return out;
+    }
     NSString *code = nil;
     NSString *before = [PKInProcess.shared sourceXML:NULL code:&code];
     if (coverCompat && !before && [code hasSuffix:@"kAXErrorServerNotFound"]) {
@@ -172,6 +186,8 @@ static NSDictionary *Apps(NSString *fixture) {
     NSUserDefaults *args = NSUserDefaults.standardUserDefaults;
     NSString *mode = [args stringForKey:@"mode"] ?: @"read", *tag = [args stringForKey:@"tag"] ?: mode;
     NSString *text = [args stringForKey:@"text"] ?: @"ESP173 读屏";
+    NSString *fixture = [args stringForKey:@"fixture"];
+    if (fixture.length == 0) fixture = @"local.pokimcp.fixture";
     double delay = [args doubleForKey:@"delay"];
     dispatch_async(dispatch_queue_create("check", DISPATCH_QUEUE_SERIAL), ^{
         // A prepare that gives up waiting (session_timeout, 10.8 s on a slow CI simulator) leaves the
@@ -185,9 +201,10 @@ static NSDictionary *Apps(NSString *fixture) {
         }
         if (retries) { prepare = [prepare mutableCopy]; ((NSMutableDictionary *)prepare)[@"timeouts_before"] = @(retries); }
         if (delay > 0) [NSThread sleepForTimeInterval:delay];
-        NSMutableDictionary *out = [([mode isEqualToString:@"apps"] ? Apps([args stringForKey:@"fixture"] ?: @"local.pokimcp.fixture") : Run(mode, tag, text)) mutableCopy];
+        NSMutableDictionary *out = [([mode isEqualToString:@"apps"] ? Apps(fixture) : Run(mode, tag, text, fixture)) mutableCopy];
         out[@"prepare"] = prepare;
         Write([tag stringByAppendingString:@".json"], out);
+        if (out[@"front_error"]) exit(1);
     });
     return YES;
 }

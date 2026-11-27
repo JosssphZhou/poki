@@ -92,6 +92,9 @@ xcrun simctl bootstatus "$UDID" -b >/dev/null
 if [ "${POKI_CHECK_DUO:-}" = "1" ] && [ "$EXPECT" = "full" ]; then
   DEVELOPER_DIR="$BUILD_DEV" "$HERE/duo-panel-shot.sh" "$UDID" "$NATIVE"
 fi
+if [ "$MODE" = field ] && [ -z "${POKI_CHECK_IPAD:-}" ]; then
+  DEVELOPER_DIR="$BUILD_DEV" "$HERE/front-wait-test.sh" "$UDID" "$NATIVE"
+fi
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl install "$UDID" "$FIXTURE"
 
@@ -127,22 +130,24 @@ if [ "$MODE" = shot ]; then
   xcrun simctl launch "$UDID" local.poki.inprocess-check -mode read -tag shot -delay 8 >/dev/null
   sleep 3
   xcrun simctl launch "$UDID" local.pokimcp.fixture >/dev/null
-  for _ in $(seq 90); do [ -s "$DOCS/shot.json" ] && break; sleep 1; done
+  # 180 s: same prepare retries, 8 s delay, and up to 60 s front-app wait as field.json (main.m).
+  for _ in $(seq 180); do [ -s "$DOCS/shot.json" ] && break; sleep 1; done
   OUT="${POKI_CHECK_OUT:-}"
   if [ -n "$OUT" ]; then mkdir -p "$OUT"; cp "$DOCS"/shot* "$OUT/" 2>/dev/null || true; xcrun simctl io "$UDID" screenshot "$OUT/screen.png" >/dev/null 2>&1 || true; fi
-  [ -s "$DOCS/shot.json" ] || { echo "::error::the check app wrote no result in 90 s"; exit 1; }
+  [ -s "$DOCS/shot.json" ] || { echo "::error::the check app wrote no result in 180 s"; exit 1; }
   python3 - "$DOCS/shot.json" "$EXPECT" <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1]))
-print(json.dumps({k: r.get(k) for k in ("prepare", "front", "display", "screenshot", "source_code")}, indent=1, ensure_ascii=False))
+print(json.dumps({k: r.get(k) for k in ("prepare", "front", "front_wait_seconds", "front_error", "last_front_bundle", "display", "screenshot", "source_code")}, indent=1, ensure_ascii=False))
 assert r["prepare"].get("ok"), f"no session: {r['prepare']}"
+assert not r.get("front_error"), f"{r['front_error']} (expected={r.get('expected_front')!r}, last={r.get('last_front_bundle', '')!r}, wait={r.get('front_wait_seconds')}s); front app: {r.get('front')}"
+assert r.get("front", {}).get("bundleId") == "local.pokimcp.fixture", f"front app: {r.get('front')}"
 shot = r["screenshot"]
 if sys.argv[2] == "letterboxed":
     assert shot["bytes"] == 0 and shot["code"] == "duo_needs_ios_27_1_sdk_build", f"expected the letterbox refusal, got {shot}"
     print("reproduced: a build with an SDK before iOS 27.1 gets no picture on the iPhone Duo")
 else:
     assert shot["bytes"] > 0 and not shot["code"], f"no picture: {shot}"
-    assert r["front"].get("bundleId") == "local.pokimcp.fixture", f"front app: {r['front']}"
     print(f"picture {shot['width']:.0f}x{shot['height']:.0f} of display {r['display']}")
 PY
   exit 0
@@ -183,6 +188,10 @@ import json, sys
 import xml.etree.ElementTree as ET
 r = json.load(open(sys.argv[1]))
 assert r["prepare"].get("ok"), f"no session: {r['prepare']}"
+if sys.argv[3] == "cover-compat":
+    assert r.get("launch_code") == "", f"launch: {r.get('launch_code')}"
+assert not r.get("front_error"), f"{r['front_error']} (expected={r.get('expected_front')!r}, last={r.get('last_front_bundle', '')!r}, wait={r.get('front_wait_seconds')}s); front app: {r.get('front')}"
+assert r.get("front", {}).get("bundleId") == "local.pokimcp.fixture", f"front app: {r.get('front')}"
 if sys.argv[3] == "cycle":
     assert r["close"].get("closed"), f"close found no session: {r['close']}"
     t = r["closed_touch"]
@@ -192,9 +201,7 @@ if sys.argv[3] == "cycle":
     assert "source_code2" not in r, f"no element tree after reopening: {r['source_code2']}"
     assert r["front2"].get("bundleId") == "local.pokimcp.fixture", f"front app after reopening: {r['front2']}"
 assert "source_code" not in r, f"no element tree: {r['source_code']}"
-assert r["front"].get("bundleId") == "local.pokimcp.fixture", f"front app: {r['front']}"
 if sys.argv[3] == "cover-compat":
-    assert r["launch_code"] == "", f"launch: {r['launch_code']}"
     window = ET.parse(sys.argv[4]).find(".//XCUIElementTypeWindow")
     assert window is not None and (window.get("width"), window.get("height")) == ("386", "678"), "fixture is not in the cover compatibility layout"
     shot = r["screenshot"]
