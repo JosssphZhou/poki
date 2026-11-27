@@ -1,7 +1,5 @@
 import PokiCore
-import struct PokiCore.MemoryPage
 
-typealias StoredMemoryPage = MemoryPage
 import SwiftUI
 
 // What the Memory page shows, in one shape for the three kinds the memory system plan names: memories,

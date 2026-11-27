@@ -216,3 +216,6 @@ extension SkillStore {
         return out.joined(separator: "\n")
     }
 }
+
+/// A stored page snapshot, distinct from UI types named MemoryPage.
+public typealias StoredMemoryPage = MemoryPage
