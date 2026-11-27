@@ -186,6 +186,32 @@ final class SessionArchiveTests: XCTestCase {
         XCTAssertTrue(context.contains("an omitted result is unknown, not success"))
     }
 
+    func testRestoredModelContextWithholdsScreenHistoryResults() {
+        let prior = SensesUse.shared.agentAsks
+        defer { SensesUse.shared.agentAsks = prior }
+        let calls = [
+            CallRecord(name: "screen_history", arguments: "{}", answer: "RAW_HISTORY_CANARY", ms: 1, ok: true),
+            CallRecord(name: SensesContext.name, arguments: "{}", answer: "SUMMARY_CANARY", ms: 1, ok: true),
+            CallRecord(name: "look", arguments: "{}", answer: "Current app: Safari", ms: 1, ok: true),
+        ]
+        let saved = SavedSession(id: "history", kind: .poki, client: nil, title: "History",
+                                 started: Date(), updated: Date(), live: false, outcome: .stopped,
+                                 entries: [ChatEntry(.you("Hi", delivered: true))], calls: calls)
+        SensesUse.shared.agentAsks = true
+        let wasEnabled = HistoryCapture.shared.enabled
+        defer { HistoryCapture.shared.enabled = wasEnabled }
+        HistoryCapture.shared.enabled = true
+        let on = saved.modelContext
+        XCTAssertFalse(on.contains("RAW_HISTORY_CANARY"), "raw Screen History never re-enters a prompt")
+        XCTAssertTrue(on.contains("SUMMARY_CANARY"))
+        XCTAssertTrue(on.contains("Current app: Safari"))
+        SensesUse.shared.agentAsks = false
+        let off = saved.modelContext
+        XCTAssertFalse(off.contains("RAW_HISTORY_CANARY"))
+        XCTAssertFalse(off.contains("SUMMARY_CANARY"), "a summary is withheld once the owner stops Poki asking")
+        XCTAssertTrue(off.contains("Current app: Safari"))
+    }
+
     func testRestoredModelContextDoesNotDropOrdinaryShortHistory() {
         let entries = [
             ChatEntry(.you("Open Safari", delivered: true)),

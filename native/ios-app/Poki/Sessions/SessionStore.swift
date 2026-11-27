@@ -98,6 +98,12 @@ struct SavedSession: Codable, Identifiable, Equatable {
         }.map { String($0.prefix(4000)) }
         let transcript = Self.recentContext(transcriptParts, characters: 16_000)
         let resultParts = calls.suffix(12).map { call in
+            // Raw Screen History never re-enters a prompt, and the summaries from personal_context
+            // return only while the owner still lets Poki ask.
+            let withheld = call.name == "screen_history" || (call.name == SensesContext.name && !SensesContext.offeredNow)
+            if withheld {
+                return "\(call.name) \(String(call.arguments.prefix(1000)))\nResult (\(call.ok ? "ok" : "error")): [Screen History result withheld]"
+            }
             // Persisted imports may predate ChatModel's 2,000-character per-call cap.
             let answer = call.answer.count > 1600
                 ? String(call.answer.prefix(1000)) + "\n[older tool output abbreviated]\n" + String(call.answer.suffix(500))

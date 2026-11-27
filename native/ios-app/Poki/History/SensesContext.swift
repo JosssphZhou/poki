@@ -32,6 +32,11 @@ enum SensesContext {
     /// Whether the agent is told about the tool: Screen History is on and the owner lets Poki ask it.
     @MainActor static var offered: Bool { SensesUse.shared.asking }
 
+    /// The same answer read from the stored switches, for request preparation off the main actor.
+    nonisolated static var offeredNow: Bool {
+        HistoryCapture.isEnabled && (UserDefaults.standard.object(forKey: "senses.agentAsks") as? Bool ?? true)
+    }
+
     static let brief = "The owner lets you ask about them from this iPhone's Screen History: personal_context {question, hours}. It knows what they recently did or saw on the iPhone and the habits learned from it (their usual apps, what they do at what time of day, their interests). Use it when the request points at something they did or saw, or when knowing their habit would change what you do (which app to use, what they usually mean), and you cannot go on without it. Do not guess these from memory instead. The answer is private to this task: use it for the task and do not repeat more of it than the reply needs."
 
     enum Draft {

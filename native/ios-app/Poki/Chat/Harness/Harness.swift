@@ -345,8 +345,9 @@ enum Harness {
         return "Use these iPhone bundle ids for apps named in this request:\n" + lines.joined(separator: "\n")
     }
 
-    /// Poki's sandbox browser tools sit beside the phone tools. personal_context is always listed (a
-    /// loop keeps its tools for its whole life) and answers that it is off until the owner turns it on.
+    /// Poki's sandbox browser tools sit beside the phone tools. personal_context is in this full catalog
+    /// (a loop keeps its tools for its whole life); each request declares it only while the owner lets
+    /// Poki ask Screen History.
     /// Screen History reaches Poki's chat only through personal_context (SensesContext).
     static var tools: [ToolSpec] {
         toolSpecs(inSplitView: false, includeScreenHistory: false)
@@ -368,7 +369,9 @@ enum Harness {
                           includeMemoryAttribution: Bool = true,
                           includeCountedScroll: Bool = true,
                           includeCountedScrollReply: Bool = true,
+                          includePersonalContext: Bool = true,
                           resultCardMode: ResultCardMode = .all) -> [ToolSpec] {
+        let senses = includePersonalContext ? [SensesContext.spec] : []
         let taskTools = Self.taskTools(includeCountedScroll: includeCountedScroll,
                                        includeCountedScrollReply: includeCountedScrollReply,
                                        resultCardMode: resultCardMode)
@@ -376,14 +379,14 @@ enum Harness {
             let webTools = includeMemoryAttribution ? WebTools.specs.map(withActionMemoryIDs) : WebTools.specs
             let extra = resultCardMode == .none ? [findApp] : [findApp, getScreenshot]
             // Screen History reaches Poki's chat through personal_context only (SensesContext).
-            return catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution) + extra + webTools + [SensesContext.spec] + taskTools
+            return catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution) + extra + webTools + senses + taskTools
         }
         return [
             ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
                      schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
             ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
                      schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
-        ] + catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" } + [SensesContext.spec] + taskTools
+        ] + catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" } + senses + taskTools
     }
 
     /// Keep the cached task prompt consistent with the current tool catalog.

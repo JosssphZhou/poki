@@ -1241,14 +1241,16 @@ final class ChatModel {
         var stopped: Bool { runToken != token || Task.isCancelled }
         for _ in 0..<Self.maxTurns {
             let turn: ModelTurn
+            let declared = Harness.toolSpecs(inSplitView: false,
+                                             includeScreenHistory: HistoryCapture.agentQueryAllowed,
+                                             includeMemoryAttribution: !SkillStore.shared.notes.isEmpty,
+                                             includeCountedScroll: messageScroll != nil,
+                                             includeCountedScrollReply: kind == .poki && messageScroll != nil,
+                                             includePersonalContext: SensesContext.offered,
+                                             resultCardMode: taskResultCardMode)
             do {
                 turn = try await client.next(instructions: Harness.historyInstructions(instructions, allowed: HistoryCapture.agentQueryAllowed),
-                                             tools: Harness.toolSpecs(inSplitView: false,
-                                                                      includeScreenHistory: HistoryCapture.agentQueryAllowed,
-                                                                      includeMemoryAttribution: !SkillStore.shared.notes.isEmpty,
-                                                                      includeCountedScroll: messageScroll != nil,
-                                                                      includeCountedScrollReply: kind == .poki && messageScroll != nil,
-                                                                      resultCardMode: taskResultCardMode))
+                                             tools: declared)
             } catch {
                 client.forgetUnansweredQuestion()
                 if stopped { return false }
@@ -1268,6 +1270,10 @@ final class ChatModel {
                 for call in turn.calls {
                     if stopped || authorizationDeclined {
                         client.answer(call, PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true))
+                        continue
+                    }
+                    guard declared.contains(where: { $0.name == call.name }) else {
+                        client.answer(call, PokiCore.ToolAnswer(text: "This tool is not available. Use only the tools you were given.", jpeg: nil, isError: true))
                         continue
                     }
                     let revision = call.name == "screen_history" ? HistoryCapture.agentQueryRevision : nil
@@ -1539,6 +1545,8 @@ final class ChatModel {
                 recordSplitViewRead(read)
             }
             return response
+        case "screen_history":
+            return PokiCore.ToolAnswer(text: "This tool is not available. Ask through personal_context when the owner lets you.", jpeg: nil, isError: true)
         default:
             // A routine made while the usual app came from a habit learned from Screen History would
             // keep the guess after the owner forgot it. A note is the owner's own words and is saved.

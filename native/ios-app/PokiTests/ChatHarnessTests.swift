@@ -3001,6 +3001,70 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(Self.cards(in: chat).count, 1, "Direct engine widened task must render the 12306 result card")
     }
 
+    func testDirectEngineRefusesUndeclaredToolCalls() async throws {
+        let openAIKeyAccount = "model-key.openai"
+        let priorKey = try Keychain.read(openAIKeyAccount)
+        let priorEngine = UserDefaults.standard.object(forKey: "chatEngine")
+        let priorOpenAIModel = UserDefaults.standard.object(forKey: "chat.model.openai")
+        let priorAsks = SensesUse.shared.agentAsks
+        defer {
+            URLProtocol.unregisterClass(OpenAIResponsesStub.self)
+            OpenAIResponsesStub.clear()
+            if let priorKey { try? Keychain.write(priorKey, account: openAIKeyAccount) }
+            else { Keychain.delete(openAIKeyAccount) }
+            UserDefaults.standard.set(priorEngine, forKey: "chatEngine")
+            UserDefaults.standard.set(priorOpenAIModel, forKey: "chat.model.openai")
+            SensesUse.shared.agentAsks = priorAsks
+        }
+        try Keychain.write(Data("sk-test-direct-engine".utf8), account: openAIKeyAccount)
+        UserDefaults.standard.set("direct", forKey: "chatEngine")
+        SensesUse.shared.agentAsks = false
+        ModelKeys.selectedProvider = .openai
+        ModelKeys.selectedModel = "gpt-6.1-terra"
+
+        func call(_ id: String, _ name: String) -> String {
+            Self.json(["id": "resp_\(id)", "status": "completed",
+                       "output": [["type": "function_call", "call_id": id, "name": name, "arguments": "{\"question\":\"What was I reading?\"}"]]])
+        }
+        let done = Self.json(["id": "resp_done", "status": "completed",
+                              "output": [["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "Done."]]]]])
+        OpenAIResponsesStub.clear()
+        OpenAIResponsesStub.replies = [
+            (200, "application/json", call("raw", "screen_history")),
+            (200, "application/json", call("context", SensesContext.name)),
+            (200, "application/json", done),
+        ]
+        URLProtocol.registerClass(OpenAIResponsesStub.self)
+
+        let automation = FakeAutomation()
+        _ = automation.prepare()
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation,
+                           transport: SessionScreenTransport(session: automation))
+        app.inProcessReadyForProbe()
+        self.app = app
+        let chat = ChatModel(app: app, kind: .poki)
+        chat.newConversation()
+        defer { SessionStore.shared.delete(chat.sessionID) }
+
+        try await Self.ask(chat, "What was I reading earlier?")
+
+        let requests = OpenAIResponsesStub.requests.filter { $0.json["tools"] != nil }
+        XCTAssertEqual(requests.count, 3)
+        func declared(_ request: [String: Any]) -> Set<String> {
+            Set((request["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String })
+        }
+        func outputs(_ request: [String: Any]) -> String {
+            let items = (request["input"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "function_call_output" }
+            return Self.json(["items": items])
+        }
+        XCTAssertFalse(declared(requests[0].json).contains("screen_history"))
+        XCTAssertFalse(declared(requests[0].json).contains(SensesContext.name), "personal_context is hidden while asking is off")
+        XCTAssertTrue(outputs(requests[1].json).contains("This tool is not available"), "an undeclared screen_history call is refused")
+        XCTAssertFalse(outputs(requests[1].json).contains("Screen History is not turned on"), "screen_history must not reach Core")
+        XCTAssertTrue(outputs(requests[2].json).contains("This tool is not available"), "an undeclared personal_context call is refused")
+        XCTAssertFalse(outputs(requests[2].json).contains("has not turned this on"), "personal_context must not run while it is hidden")
+    }
+
     func testZeroNoteTasksOmitMemoryAttributionAndObsoleteFinishField() async throws {
         let priorNotes = SkillStore.shared.notes
         let backup = priorNotes.isEmpty ? nil : try SkillStore.shared.exportData()
