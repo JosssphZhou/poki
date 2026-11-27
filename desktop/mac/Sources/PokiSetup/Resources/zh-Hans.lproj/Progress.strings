@@ -1,6 +1,7 @@
 "Apple account" = "Apple 账户";
 "Checking the Apple Account" = "正在检查 Apple 账户";
 "Copying the disk image into Poki" = "正在将磁盘映像复制到 Poki";
+"Could Not Finish Setup" = "未能完成安装";
 "Developer Mode" = "开发者模式";
 "Downloading test build %@" = "正在下载测试构建 %@";
 "Downloading the developer disk image" = "正在下载开发者磁盘映像";
@@ -16,3 +17,19 @@
 "Signing Poki for %@" = "正在为 %@ 签名 Poki";
 "Turning on Developer Mode" = "正在开启开发者模式";
 "Updating Poki on the iPhone" = "正在更新 iPhone 上的 Poki";
+"Developer Mode is already on." = "开发者模式已开启。";
+"Developer Mode is on." = "开发者模式已开启。";
+"The iPhone or iPad restarts. When it is back, tap Turn On and enter the passcode." = "iPhone 或 iPad 将重新启动。重启后轻点“开启”并输入设备密码。";
+"Developer Mode is now available on your iPhone or iPad. Open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter your passcode. Poki Setup carries on by itself once it is on." = "iPhone 或 iPad 上已显示开发者模式选项。前往“设置 › 隐私与安全性 › 开发者模式”，开启后轻点“重新启动”。重启后轻点“开启”并输入设备密码。开启后 Poki Setup 会自动继续。";
+"Developer Mode is still off. On the iPhone or iPad, open Settings > Privacy & Security > Developer Mode and turn it on." = "开发者模式仍未开启。请在 iPhone 或 iPad 上前往“设置 › 隐私与安全性 › 开发者模式”并开启。";
+"On the iPhone: tap Trust, then enter the passcode." = "请在 iPhone 上轻点“信任”，然后输入设备密码。";
+"On the iPhone: stay on the Home Screen, unlocked. If it asks, tap Trust and enter the passcode." = "请解锁 iPhone 并停留在主屏幕。如果出现提示，请轻点“信任”并输入设备密码。";
+"The iPhone did not answer the Trust dialog in time. Unlock it, plug it in again and tap Trust." = "未能在规定时间内确认信任。请解锁 iPhone，重新连接，并轻点“信任”。";
+"This iPhone already trusts this computer." = "这部 iPhone 已信任这台电脑。";
+"Paired." = "已配对。";
+"Poki pairs on the iPhone itself" = "Poki 会在 iPhone 上完成配对";
+"Poki already has its own pairing; kept it" = "已保留 Poki 现有的配对";
+"placed in Poki's container" = "已将配对文件放入 Poki";
+"Poki is not running" = "Poki 未在运行";
+"Closing Poki on the device" = "正在关闭设备上的 Poki";
+"Closed Poki" = "已关闭 Poki";

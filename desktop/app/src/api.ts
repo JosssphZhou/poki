@@ -132,15 +132,15 @@ export async function okToReplacePoki(udid: string, name: string): Promise<boole
   return running === true ? askToClosePoki(name) : true;
 }
 
-/** An install that may replace a running Poki: asks first, and again if Poki was opened meanwhile. */
+/** Ask only if the device reports that this install would replace a running Poki. */
 export async function installClosingPoki(udid: string, name: string, handOff: boolean, ipa: string | null = null, testBuild: BuildRef | null = null): Promise<InstallResult> {
   const dev = await api.devState().catch(() => null);
-  if (!(await okToReplacePoki(udid, name))) throw { kind: "cancelled", message: "Nothing was installed. Poki is still open on the device." } as Failure;
+  const closeWithoutAsking = dev?.prefs.close_without_asking ?? false;
   try {
-    return await api.install(udid, handOff, ipa, testBuild, true);
+    return await api.install(udid, handOff, ipa, testBuild, closeWithoutAsking);
   } catch (e) {
-    if (failureKind(e) !== "poki_running" || dev?.prefs.close_without_asking) throw e;
-    if (!(await askToClosePoki(name))) throw e;
+    if (failureKind(e) !== "poki_running" || closeWithoutAsking) throw e;
+    if (!(await askToClosePoki(name))) throw { kind: "cancelled", message: "Install canceled" } satisfies Failure;
     return await api.install(udid, handOff, ipa, testBuild, true);
   }
 }

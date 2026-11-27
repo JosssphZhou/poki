@@ -238,7 +238,6 @@ struct StepItem: Identifiable, Equatable {
     var detail: String?
     var notes: [String] = []
 
-    // Only step headings have translations. Details and notes are the original diagnostic output.
     var displayTitle: String {
         let localization = SetupLocalization.shared
         if id == "sign", title.hasPrefix("Signing Poki for ") {
@@ -249,7 +248,7 @@ struct StepItem: Identifiable, Equatable {
             let build = String(title.dropFirst("Downloading test build ".count))
             return localization.text("Downloading test build \(build)", table: "Progress")
         }
-        return localization.text(String.LocalizationValue(stringLiteral: title), table: "Progress")
+        return progressLine(title)
     }
 }
 

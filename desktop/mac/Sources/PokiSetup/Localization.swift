@@ -46,6 +46,10 @@ func localized(_ key: String.LocalizationValue) -> String {
     SetupLocalization.shared.text(key)
 }
 
+func progressLine(_ line: String) -> String {
+    SetupLocalization.shared.text(String.LocalizationValue(stringLiteral: line), table: "Progress")
+}
+
 // Resolve stored UI messages when a view renders, so an open banner also follows the picker.
 enum SetupMessage {
     case copy(String.LocalizationValue)

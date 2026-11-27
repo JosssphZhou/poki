@@ -77,7 +77,7 @@ final class AppModel: ObservableObject {
     /// A short message at the bottom of the window.
     @Published var banner: SetupMessage?
 
-    let bridge = Bridge.shared
+    let bridge: Bridge
     private var started = false
     private var pollTask: Task<Void, Never>?
     private var keeperTask: Task<Void, Never>?
@@ -86,18 +86,19 @@ final class AppModel: ObservableObject {
     /// The one model, for the CI snapshot walk.
     static weak var current: AppModel?
 
-    init() {
+    init(bridge: Bridge? = nil) {
+        self.bridge = bridge ?? .shared
         AppModel.current = self
-        bridge.onProgress = { [weak self] e in self?.apply(e) }
-        bridge.onLogLines = { [weak self] lines in
+        self.bridge.onProgress = { [weak self] e in self?.apply(e) }
+        self.bridge.onLogLines = { [weak self] lines in
             guard let self else { return }
             self.logLines.append(contentsOf: lines)
             if self.logLines.count > 5000 { self.logLines.removeFirst(self.logLines.count - 5000) }
         }
-        bridge.onNeedsCode = { [weak self] in
+        self.bridge.onNeedsCode = { [weak self] in
             Task { @MainActor in await self?.promptForCode() }
         }
-        bridge.onAccountChanged = { [weak self] in
+        self.bridge.onAccountChanged = { [weak self] in
             Task { @MainActor in await self?.accountChanged() }
         }
     }
@@ -232,14 +233,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func promptForCode() async {
-        guard !demo else { return }
-        if let state: AccountState = try? await bridge.call("account") {
-            account = state
-            accountError = nil
-            codeVia = state.pendingFactor
-        }
-        needsCode = true
+    @discardableResult func promptForCode() async -> Bool {
+        guard !demo, let state: AccountState = try? await bridge.call("account") else { return false }
+        account = state
+        accountError = nil
+        codeVia = state.pendingFactor
+        needsCode = state.pendingFactor != nil
+        return needsCode
     }
 
     func refreshPhones() async {
@@ -523,10 +523,20 @@ final class AppModel: ObservableObject {
             }
             return value
         } catch {
+            if name == "install", let error = error as? CoreError {
+                var interrupted = error.kind == "cancelled"
+                if error.kind == "needs_code" { interrupted = await promptForCode() }
+                if interrupted {
+                    steps[name] = []
+                    throw error
+                }
+            }
             if var list = steps[name], let i = list.lastIndex(where: { $0.state != .done }) {
                 list[i].state = .failed
                 list[i].detail = error.localizedDescription
                 steps[name] = list
+            } else if name == "install" {
+                steps[name, default: []].append(StepItem(id: "failure", title: "Could Not Finish Setup", state: .failed, detail: error.localizedDescription))
             }
             throw error
         }
@@ -582,19 +592,22 @@ final class AppModel: ObservableObject {
         return await askToClosePoki(udid: udid)
     }
 
-    /// Runs an install that may replace a running Poki: asks first, and asks again if Poki was
-    /// opened while Poki Setup signed it.
+    /// Ask only if the device reports that this install would replace a running Poki.
     func installClosingPoki(udid: String, _ args: [String: Any?]) async throws -> InstallAnswer {
-        guard await okToReplacePoki(udid: udid) else {
-            throw CoreError(kind: "cancelled", message: localized("Nothing was installed. Poki is still open on \(deviceName(udid))."))
-        }
-        var withClose = args
-        withClose["close_poki"] = true
-        do {
-            return try await job("install") { try await bridge.call("install", withClose) }
-        } catch let e as CoreError where e.kind == "poki_running" {
-            guard await askToClosePoki(udid: udid) else { throw e }
-            return try await job("install") { try await bridge.call("install", withClose) }
+        try await job("install") {
+            var options = args
+            let closeWithoutAsking = dev.prefs.closeWithoutAsking
+            options["close_poki"] = closeWithoutAsking
+            do {
+                return try await bridge.call("install", options)
+            } catch let e as CoreError where e.kind == "poki_running" && !closeWithoutAsking {
+                guard await askToClosePoki(udid: udid) else {
+                    throw CoreError(kind: "cancelled", message: localized("Install Canceled"))
+                }
+                steps["install"] = []
+                options["close_poki"] = true
+                return try await bridge.call("install", options)
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 "Apple account" = "Apple account";
 "Checking the Apple Account" = "Checking the Apple Account";
 "Copying the disk image into Poki" = "Copying the disk image into Poki";
+"Could Not Finish Setup" = "Could Not Finish Setup";
 "Developer Mode" = "Developer Mode";
 "Downloading test build %@" = "Downloading test build %@";
 "Downloading the developer disk image" = "Downloading the developer disk image";
@@ -16,3 +17,19 @@
 "Signing Poki for %@" = "Signing Poki for %@";
 "Turning on Developer Mode" = "Turning on Developer Mode";
 "Updating Poki on the iPhone" = "Updating Poki on the iPhone";
+"Developer Mode is already on." = "Developer Mode is already on.";
+"Developer Mode is on." = "Developer Mode is on.";
+"The iPhone or iPad restarts. When it is back, tap Turn On and enter the passcode." = "The iPhone or iPad restarts. When it is back, tap Turn On and enter the passcode.";
+"Developer Mode is now available on your iPhone or iPad. Open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter your passcode. Poki Setup carries on by itself once it is on." = "Developer Mode is now available on your iPhone or iPad. Open Settings > Privacy & Security > Developer Mode, turn it on and tap Restart. After the restart, tap Turn On and enter your passcode. Poki Setup carries on by itself once it is on.";
+"Developer Mode is still off. On the iPhone or iPad, open Settings > Privacy & Security > Developer Mode and turn it on." = "Developer Mode is still off. On the iPhone or iPad, open Settings > Privacy & Security > Developer Mode and turn it on.";
+"On the iPhone: tap Trust, then enter the passcode." = "On the iPhone: tap Trust, then enter the passcode.";
+"On the iPhone: stay on the Home Screen, unlocked. If it asks, tap Trust and enter the passcode." = "On the iPhone: stay on the Home Screen, unlocked. If it asks, tap Trust and enter the passcode.";
+"The iPhone did not answer the Trust dialog in time. Unlock it, plug it in again and tap Trust." = "The iPhone did not answer the Trust dialog in time. Unlock it, plug it in again and tap Trust.";
+"This iPhone already trusts this computer." = "This iPhone already trusts this computer.";
+"Paired." = "Paired.";
+"Poki pairs on the iPhone itself" = "Poki pairs on the iPhone itself";
+"Poki already has its own pairing; kept it" = "Poki already has its own pairing; kept it";
+"placed in Poki's container" = "placed in Poki's container";
+"Poki is not running" = "Poki is not running";
+"Closing Poki on the device" = "Closing Poki on the device";
+"Closed Poki" = "Closed Poki";

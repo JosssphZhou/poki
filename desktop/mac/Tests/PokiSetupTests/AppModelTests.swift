@@ -5,6 +5,95 @@ import XCTest
 
 @MainActor
 final class AppModelTests: XCTestCase {
+    func testInstallErrorAfterLastStepIsNotDisplayedAsSuccess() async {
+        let model = AppModel(bridge: Bridge())
+        do {
+            try await model.job("install") {
+                model.steps["install"] = [StepItem(id: "install", title: "Installing", state: .done)]
+                throw CoreError(kind: "io", message: "Could not save the setup record.")
+            }
+            XCTFail("Expected a terminal error")
+        } catch {
+            XCTAssertEqual(model.steps["install"]?.map(\.state), [.done, .failed])
+            XCTAssertEqual(model.steps["install"]?.last?.detail, error.localizedDescription)
+        }
+    }
+
+    func testInstallOnlyRetriesWithConsentToClosePoki() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("poki-close-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let helper = dir.appendingPathComponent("bridge.py")
+        try """
+        #!/usr/bin/env python3
+        import json, sys
+        for _ in range(3):
+            req = json.loads(sys.stdin.readline())
+            close = req["args"]["close_poki"]
+            print(json.dumps({"id": req["id"], "err": {
+                "kind": "test_retry" if close else "poki_running",
+                "message": "Retried with permission" if close else "Poki is running",
+            }}), flush=True)
+        """.write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+        setenv("POKI_SETUP_BRIDGE", helper.path, 1)
+        defer { unsetenv("POKI_SETUP_BRIDGE") }
+        let model = AppModel(bridge: Bridge())
+
+        for approve in [false, true] {
+            let request = Task { try await model.installClosingPoki(udid: "fixture", ["udid": "fixture"]) }
+            let deadline = Date().addingTimeInterval(5)
+            while model.closeAsk == nil, Date() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertNotNil(model.closeAsk, "The first request must not authorize closing the app")
+            XCTAssertFalse(model.steps["install"]?.contains { $0.state == .failed } ?? false)
+            model.answerClose(approve)
+            do {
+                _ = try await request.value
+                XCTFail("Expected the fixture's terminal result")
+            } catch let error as CoreError {
+                XCTAssertEqual(error.kind, approve ? "test_retry" : "cancelled")
+                XCTAssertEqual(model.steps["install"]?.last?.state, approve ? .failed : nil)
+            }
+        }
+    }
+
+    func testInstallOnlyShowsVerificationSheetForAnAvailableCode() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("poki-verify-\(UUID())")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let helper = dir.appendingPathComponent("bridge.py")
+        try """
+        #!/usr/bin/env python3
+        import json, sys
+        factors = iter(["sms", None])
+        for _ in range(4):
+            req = json.loads(sys.stdin.readline())
+            reply = {"err": {"kind": "needs_code", "message": "Verification is needed"}}
+            if req["cmd"] == "account":
+                reply = {"ok": {"signed_in": True, "pending_factor": next(factors),
+                    "password_kept": True, "anisette": {"kind": "system"}}}
+            print(json.dumps({"id": req["id"], **reply}), flush=True)
+        """.write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+        setenv("POKI_SETUP_BRIDGE", helper.path, 1)
+        defer { unsetenv("POKI_SETUP_BRIDGE") }
+        let model = AppModel(bridge: Bridge())
+
+        for actionable in [true, false] {
+            do {
+                _ = try await model.installClosingPoki(udid: "fixture", [:])
+                XCTFail("Expected an interrupted install")
+            } catch let error as CoreError {
+                XCTAssertEqual(error.kind, "needs_code")
+                XCTAssertEqual(model.needsCode, actionable)
+                XCTAssertEqual(model.codeVia, actionable ? "sms" : nil)
+                XCTAssertEqual(model.steps["install"]?.last?.state, actionable ? nil : .failed)
+            }
+        }
+    }
+
     /// Runs first (XCTest goes in name order): its helper exits when done, so the next test starts
     /// its own instead of reusing this one through Bridge.shared.
     func testAccountPageShowsSignInAgainWhenAnotherClientStoresIt() async throws {

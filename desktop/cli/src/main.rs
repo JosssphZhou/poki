@@ -542,7 +542,7 @@ async fn run() -> Result<()> {
             }
             println!("{line}");
             if let Some(server) = done.handoff {
-                println!("\nOpen Poki on the iPhone and scan this to give it the pairing file:\n{}\n{}", server.handoff.link, qr_text(&server.handoff.link));
+                println!("\nScan this code with the iPhone's Camera on the same Wi-Fi, or open this link on the iPhone:\n{}\n{}", server.handoff.link, qr_text(&server.handoff.link));
                 server.wait_fetched(Duration::from_secs(600)).await;
             }
             Ok(())

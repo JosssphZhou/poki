@@ -279,7 +279,9 @@ struct TestBuildsView: View {
             let r = try await model.installTestBuild(b, udid: target.id)
             model.banner = .copy("Test build \(b.runNumber) is on \(r.record.phoneName). Open Poki to try it.")
         } catch {
-            failed = .verbatim(error.localizedDescription)
+            if !["cancelled", "needs_code"].contains((error as? CoreError)?.kind ?? ""), !failedStep(model.steps["install"] ?? []) {
+                failed = .verbatim(error.localizedDescription)
+            }
         }
     }
 
@@ -300,7 +302,9 @@ struct TestBuildsView: View {
             let r = try await model.install(udid: target.id, ipa: url, handOff: false)
             model.banner = .copy("\(url.lastPathComponent) is on \(r.record.phoneName).")
         } catch {
-            failed = .verbatim(error.localizedDescription)
+            if !["cancelled", "needs_code"].contains((error as? CoreError)?.kind ?? ""), !failedStep(model.steps["install"] ?? []) {
+                failed = .verbatim(error.localizedDescription)
+            }
         }
     }
 }
