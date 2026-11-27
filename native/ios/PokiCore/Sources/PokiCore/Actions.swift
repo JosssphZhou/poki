@@ -460,11 +460,11 @@ extension Computer {
                 do { _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(bundle)], timeout: 6, countsAsMiss: false) }
                 catch let e as RunnerError where e.delivery == .notSent {}
                 catch let e as RunnerError { note = "; ending the app first did not answer in time (\(e.message)); the launch was sent anyway" }
-                // In-process a launch answers once the app is in front, 9 s for a cold Photos (gym finding 39).
-                do { _ = try await runner.input("/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
+                // In-process launch/activate retries once (5 s + 10 s foreground poll), so allow up to `launchCap`.
+                do { _ = try await runner.input("/wda/apps/launch", ["bundleId": .string(bundle)], timeout: max(3, min(Self.launchCap, until - now() - 0.3))) }
                 catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             } else {
-                do { _ = try await runner.input("/wda/apps/activate", ["bundleId": .string(bundle)], timeout: max(3, min(10, until - now() - 0.3))) }
+                do { _ = try await runner.input("/wda/apps/activate", ["bundleId": .string(bundle)], timeout: max(3, min(Self.launchCap, until - now() - 0.3))) }
                 catch let e as RunnerError where e.delivery == .notSent { throw Self.launchRefused(bundle, e) }
             }
             skillStepApp = nil

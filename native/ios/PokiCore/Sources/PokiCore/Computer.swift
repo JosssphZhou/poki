@@ -1075,15 +1075,23 @@ final class Computer: @unchecked Sendable {
         return max(0, min(config.approvalWait, answerBy - now() - config.readTimeout - Self.relayMargin))
     }
     static let relayMargin = 2.0
+    /// In-process launch/activate polls 5 s on its first attempt and retries once with up to 10 s
+    /// (15 s foreground wait total in InProcess.m), plus up to ~3 s of daemon round-trip overhead.
+    /// `launchCap` covers the full retried activate inside the default 25 s call deadline less
+    /// `readTimeout` (4 s); `freshLaunchCap` adds headroom for the preceding terminate.
+    static let launchCap: Double = 18
+    static let freshLaunchCap: Double = 20
 
-    /// What one action may take (`run` holds each to it). A launch gets 9 s; a fresh one (the app
-    /// ended first, up to 6 s on its own) 14 s. A type is a tap, a wait for the focus and the keys (and
-    /// a wait for a busy runner): 9 s. A wait_until gets the time it asks for (up to 10 s) plus a read:
-    /// 8000 ms asked became 6000 under the action cap (gym, an app relaunch under the wait).
+    /// What one action may take (`run` holds each to it). A launch gets `launchCap` (18 s) so a
+    /// retried in-process activate (5 s + 10 s + daemon overhead) is not cut short; a fresh one
+    /// (the app ended first, up to 6 s on its own) gets `freshLaunchCap` (20 s). A type is a tap,
+    /// a wait for the focus and the keys (and a wait for a busy runner): 9 s. A wait_until gets the
+    /// time it asks for (up to 10 s) plus a read: 8000 ms asked became 6000 under the action cap
+    /// (gym, an app relaunch under the wait).
     func actionCap(_ action: JSON) -> Double {
         // A routine's steps each have their own time inside it; the run as a whole has the call's.
         if action["run"] != nil || action["path"] != nil { return max(config.actionCap, config.toolDeadline - config.readTimeout - 1) }
-        if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? 14 : 9) }
+        if action["launch"] != nil { return max(config.actionCap, action["launch"]?["fresh"]?.bool == true ? Self.freshLaunchCap : Self.launchCap) }
         if action["scroll_to"] != nil { return max(config.actionCap, Self.scrollCap) }
         if action["type"] != nil { return max(config.actionCap, 9) }
         if action["wait_until"] != nil { return max(config.actionCap, min(10, max(0.2, (action["wait_until"]?["ms"]?.double ?? 3000) / 1000)) + 1.5) }
@@ -1526,7 +1534,7 @@ final class Computer: @unchecked Sendable {
             var how = "it was opened again from a fresh start"
             do {
                 _ = try await runner.call("POST", "/wda/apps/terminate", ["bundleId": .string(app)], timeout: 6, countsAsMiss: false)
-                _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(app)], timeout: max(3, min(10, until - now() - config.readTimeout - 0.5)))
+                _ = try await runner.call("POST", "/wda/apps/launch", ["bundleId": .string(app)], timeout: max(3, min(Self.launchCap, until - now() - config.readTimeout - 0.5)))
             } catch {
                 how = "opening it again from a fresh start did not answer (\(error))"
             }
@@ -1756,7 +1764,7 @@ final class Computer: @unchecked Sendable {
     }
 
     /// The actions, in order, each within its own action time (`actionCap` from when it starts; a
-    /// launch gets 9 s, the time XCTest's launch handshake takes on the phone) and the call's
+    /// launch gets `launchCap` so a retried launch/activate handshake finishes) and the call's
     /// deadline. Stops at the first that fails.
     /// `moved`: an action sent before these may have changed the screen (`ActionKind.changesScreen`). `approved`: why the owner
     /// approved an action, by its number in the do.
