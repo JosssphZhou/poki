@@ -345,8 +345,11 @@ enum AppPickerCatalog {
         guard let trigger else { return nil }
         let lower = trigger.query.lowercased()
         let entries = allEntries(language: language, dynamicApps: dynamicApps)
+        // Imported or older preferences can contain the same app more than once.
+        // The first occurrence is the most recent; duplicate IDs must not trap while typing.
         let recentRank = Dictionary(
-            uniqueKeysWithValues: recentIDs.enumerated().map { ($0.element.lowercased(), $0.offset) }
+            recentIDs.enumerated().map { ($0.element.lowercased(), $0.offset) },
+            uniquingKeysWith: min
         )
 
         if trigger.explicit, lower.isEmpty {
