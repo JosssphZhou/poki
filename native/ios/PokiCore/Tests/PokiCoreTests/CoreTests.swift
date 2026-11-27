@@ -2342,7 +2342,10 @@ final class UnreadableTreeTests: XCTestCase {
 /// nothing, never ends an app.
 final class AccessibilityServerMissingTests: XCTestCase {
     func testAnAppOpenedWithoutAnAccessibilityServerIsOpenedAgainFreshAndRead() async {
-        let (core, wda, _) = makeCore()
+        // Fresh-start recovery requires `until - now() > config.readTimeout + 4` (5 s with the
+        // fixture's 1 s read timeout). Under `makeCore()`'s default 6 s deadline, the 0.9 s launch
+        // settle pause leaves only ~100 ms of scheduling slack on loaded CI runners.
+        let (core, wda, _) = makeCore { $0.toolDeadline = 12 }
         let front = LockedBox("nz.zheha.poki")
         let restarted = LockedBox(false)
         wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(front.value), "name": ""]]) }
