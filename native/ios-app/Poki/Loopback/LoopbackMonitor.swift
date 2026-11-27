@@ -67,6 +67,9 @@ final class LoopbackMonitor {
             let summary = "\(path.status): " + path.availableInterfaces.map { "\($0.name) (\($0.type))" }.joined(separator: ", ")
             Task { @MainActor in
                 guard let self else { return }
+                #if DEBUG
+                if self.simulated { return }
+                #endif
                 let pathChanged = !self.pathSummary.isEmpty && self.pathSummary != summary
                 self.pathSummary = summary
                 let wifiChanged = self.onWiFi != wifi
@@ -89,6 +92,9 @@ final class LoopbackMonitor {
     }
 
     private func interfaceChanged(_ update: (LoopbackMonitor) -> Void) {
+        #if DEBUG
+        if simulated { return }
+        #endif
         let before = (wifiUp, cellularUp, cellularOnly)
         update(self)
         cellularOnly = Self.forcedCellular || (cellularUp && !wifiUp)
@@ -208,6 +214,9 @@ final class LoopbackMonitor {
     }
 
     func check() {
+        #if DEBUG
+        if simulated { return }
+        #endif
         if running {
             checkQueued = true
             return
@@ -305,11 +314,16 @@ final class LoopbackMonitor {
     }
 
     #if DEBUG
+    @ObservationIgnored private var simulated = false
     func simulateNetworkChange(physical: Bool = true) { networkChanged(physical: physical) }
     func simulateSearchBudget(_ looks: Int) { portLooks = looks; portSearchedAt = .distantPast }
 
     /// Tests: set the state as a probe result would, running the change hook.
+    /// Stops live probes so views that call `resume()` on appear cannot overwrite the simulated state.
     func simulate(_ next: State) {
+        simulated = true
+        probeEpoch &+= 1
+        pause()
         publish(next, log: false)
     }
     #endif

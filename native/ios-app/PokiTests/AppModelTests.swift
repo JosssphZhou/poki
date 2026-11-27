@@ -2418,6 +2418,7 @@ final class FrontendSubtractionTests: XCTestCase {
         defer { restore() }
 
         XCTAssertEqual(model.loopback.state, .checking)
+        model.loopback.simulate(.checking)
         model.setup.uiAutomation = false
         XCTAssertEqual(SetupIssueHint.homeLine(model: model)?.target, .step(.automation), "Home chat must not treat an unfinished loopback check as off")
         XCTAssertEqual(SetupIssueHint.first(model: model)?.target, .step(.automation), "Conversation chat must not treat an unfinished loopback check as off")

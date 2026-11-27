@@ -211,6 +211,7 @@ final class ChatScrollTests: XCTestCase {
         let (scroll, _) = try transcript()
         let bottomAtNewest = scroll.adjustedContentInset.bottom
         readBack(scroll)
+        settle { scroll.adjustedContentInset.bottom - bottomAtNewest >= 44 }
         XCTAssertGreaterThanOrEqual(
             scroll.adjustedContentInset.bottom - bottomAtNewest, 44,
             "Showing the scroll-to-bottom button must reserve its height at the bottom of the transcript"

@@ -836,7 +836,7 @@ final class ChatModel {
     }
 
     private func activateForSplitView(_ bundle: String, session: String) async -> PokiCore.ToolAnswer {
-        let request: JSON = ["actions": [["launch": .string(bundle)]]]
+        let request: JSON = ["actions": [["launch": ["bundle": .string(bundle)]]]]
         return await app.runTool("do", arguments: request.serialized(), localSession: session)
     }
 
