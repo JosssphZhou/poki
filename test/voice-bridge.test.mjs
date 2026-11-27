@@ -323,9 +323,9 @@ test('voice bridge emits all stable sections, reports template header, and stays
   const expectedAll = ['Executor', 'Language', 'Brevity', 'Capabilities', 'Evidence', 'Interruption', 'Recovery'];
   const expectedLiveVoice = ['Executor', 'Language', 'Brevity', 'Evidence', 'Interruption', 'Recovery'];
   const budgets = {
-    'zh-Hans': { languageName: 'Chinese, Simplified', realtime: 2984, liveVoice: 1481, liveExecutor: 3056 },
-    en: { languageName: 'English', realtime: 2973, liveVoice: 1470, liveExecutor: 3045 },
-    'zh-Hant': { languageName: 'Chinese, Traditional', realtime: 2985, liveVoice: 1482, liveExecutor: 3057 },
+    'zh-Hans': { languageName: 'Chinese, Simplified', realtime: 2944, liveVoice: 1451, liveExecutor: 2882 },
+    en: { languageName: 'English', realtime: 2932, liveVoice: 1439, liveExecutor: 2870 },
+    'zh-Hant': { languageName: 'Chinese, Traditional', realtime: 2945, liveVoice: 1452, liveExecutor: 2883 },
   };
 
   const liveToken = await fetch(`${base}/token?transport=live`);
@@ -632,5 +632,29 @@ FileHandle.standardOutput.write(encoded)
   for (let i = 0; i < cases.length; i += 1) {
     assert.equal(swiftResults[i].templateVersion, VOICE_SPEC_VERSION);
     assert.equal(swiftResults[i].text, cases[i].bridgeText, `mismatch for case ${i} (${cases[i].role}/${cases[i].language})`);
+  }
+});
+
+test('bridge Realtime and Live prompts cover source distinction, quiet/pause/resume, progress and noise rules', async t => {
+  const { base, request } = await sessionBridge(t);
+  for (const language of ['zh-Hans', 'en']) {
+    assert.equal((await fetch(`${base}/token?language=${language}&turns=committed`)).status, 200);
+    const realtime = (await request()).body.session.instructions;
+    assert.equal((await fetch(`${base}/session?language=${language}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+    })).status, 200);
+    const liveBody = (await request()).body.session;
+    for (const prompt of [realtime, liveBody.instructions, liveBody.delegation.responses.instructions]) {
+      assert.match(prompt, /Quoted media transcript/);
+      assert.match(prompt, /bystander/i);
+      assert.match(prompt, /screen reader/i);
+      assert.match(prompt, /quoted screen/i);
+      assert.match(prompt, /别说话/);
+      assert.match(prompt, /pause/i);
+      assert.match(prompt, /continue/i);
+      assert.match(prompt, /progress/i);
+      assert.match(prompt, /stay quiet if asked/i);
+      assert.match(prompt, /noise/i);
+    }
   }
 });

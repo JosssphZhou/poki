@@ -10,11 +10,14 @@ import Foundation
 /// sent anywhere and no step runs on the phone.
 ///
 /// `-pokiTalkRehearsal lost` drops the connection at the end, for the talk's error state.
+/// `-pokiTalkRehearsal behaviors` exercises quiet, pause, and continue transitions in order.
 /// `-pokiTalkHold <state>` stops the script where the talk first reaches that state (`TalkState.named`),
 /// for a screenshot of it.
 final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     static var asked: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") != nil }
-    private static var loses: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") == "lost" }
+    private static var mode: String { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") ?? "" }
+    private static var loses: Bool { mode == "lost" }
+    private static var behaviors: Bool { mode == "behaviors" }
     static var hold: TalkState? { UserDefaults.standard.string(forKey: "pokiTalkHold").flatMap(TalkState.named) }
 
     /// The stand-in for the key exchange, which a rehearsal skips. `do` is on the phone's list, so the
@@ -24,7 +27,8 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     /// The step on the phone: it waits as long as a short one takes and says it went well. Held for a
     /// screenshot, it does not come back.
     static func step() async -> PhoneAnswer {
-        try? await Task.sleep(for: .seconds(hold == .acting ? 3600 : 3.2))
+        let delay: Double = hold == .acting ? 3600 : (behaviors ? 1.2 : 3.2)
+        try? await Task.sleep(for: .seconds(delay))
         return ("done", false, nil)
     }
 
@@ -46,7 +50,7 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
         let closing = zh ? "好的。" : "Okay."
         let step: [String: Any] = ["type": "function_call", "call_id": "rehearsal-step", "name": "do", "arguments": "{}"]
         // Seconds from the connection, what OpenAI would send then, and the state the talk is in after it.
-        let turn: [(Double, [String: Any], TalkState?)] = [
+        let turn: [(Double, [String: Any], TalkState?)] = Self.behaviors ? Self.behaviorTurn() : [
             (0.3, ["type": "session.created"], .listening),
             (1.9, ["type": "input_audio_buffer.speech_started"], .hearing),
             (4.3, ["type": "input_audio_buffer.speech_stopped"], .thinking),
@@ -89,14 +93,61 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
         }
     }
 
-    func send(_ event: [String: Any]) -> Bool { true }
+    private static func logOnMain(_ message: String) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { AppLog.shared.add("voice", message) }
+        } else {
+            Task { @MainActor in AppLog.shared.add("voice", message) }
+        }
+    }
+
+    func send(_ event: [String: Any]) -> Bool {
+        if Self.behaviors, let type = event["type"] as? String {
+            Self.logOnMain("rehearsal sent: \(type)")
+        }
+        return true
+    }
+
     func connectLive(microphone: Bool, direct: Bool, exchange: (String) async throws -> String) async throws {
         throw VoiceError.noBridge
     }
+
     func hasRemoteSpeech() async -> Bool { false }
-    func setRemoteVolume(_ value: Double) {}
+
+    func setRemoteVolume(_ value: Double) {
+        if Self.behaviors {
+            Self.logOnMain("rehearsal remoteVolume=\(value)")
+        }
+    }
+
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
     func close() { script?.cancel() }
+
+    private static func behaviorTurn() -> [(Double, [String: Any], TalkState?)] {
+        let step1: [String: Any] = ["type": "function_call", "call_id": "beh-step-1", "name": "do", "arguments": #"{"step":"open-settings"}"#]
+        let step2: [String: Any] = ["type": "function_call", "call_id": "beh-step-2", "name": "do", "arguments": #"{"step":"scroll-while-quiet"}"#]
+        let step3: [String: Any] = ["type": "function_call", "call_id": "beh-step-3", "name": "do", "arguments": #"{"step":"blocked-while-paused"}"#]
+        let step4: [String: Any] = ["type": "function_call", "call_id": "beh-step-4", "name": "do", "arguments": #"{"step":"resumed-finish"}"#]
+        return [
+            (0.3, ["type": "session.created"], .listening),
+            (1.2, ["type": "input_audio_buffer.speech_started"], .hearing),
+            (2.2, ["type": "input_audio_buffer.speech_stopped"], .thinking),
+            (2.4, ["type": "conversation.item.input_audio_transcription.completed", "transcript": "打开设置查电池健康"], nil),
+            (2.8, ["type": "response.created", "response": ["id": "beh-r1"]], nil),
+            (3.0, ["type": "output_audio_buffer.started"], .speaking),
+            (3.1, ["type": "response.output_audio_transcript.done", "transcript": "好，我来打开设置帮你看电池健康。"], nil),
+            (3.3, ["type": "response.output_item.done", "item": step1], .acting),
+            (5.0, ["type": "output_audio_buffer.started"], .speaking),
+            (5.5, ["type": "conversation.item.input_audio_transcription.completed", "transcript": "别说话"], nil),
+            (6.0, ["type": "response.output_item.done", "item": step2], .acting),
+            (8.2, ["type": "conversation.item.input_audio_transcription.completed", "transcript": "暂停操作"], nil),
+            (8.6, ["type": "response.output_item.done", "item": step3], nil),
+            (10.5, ["type": "conversation.item.input_audio_transcription.completed", "transcript": "继续"], nil),
+            (11.0, ["type": "response.output_item.done", "item": step4], .acting),
+            (12.8, ["type": "response.done", "response": ["id": "beh-r1"]], nil),
+            (13.0, ["type": "output_audio_buffer.stopped"], nil),
+        ]
+    }
 }
 
 extension TalkState {
