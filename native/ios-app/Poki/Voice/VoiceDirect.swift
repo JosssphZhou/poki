@@ -229,19 +229,22 @@ enum VoiceDirect {
 
     private static func realtimeSession(for account: VoiceAccount, storage: PokiStorage = .live) -> [String: Any] {
         let selected = ModelCatalog.voiceModelID(for: account, storage: storage)
+        let voice = VoiceCatalog.voice(for: .realtimeAPI, in: storage)
         return [
             "type": "realtime", "model": account == .openai && selected.hasPrefix("gpt-live-") ? ModelCatalog.voiceRealtime : selected,
             "instructions": realtimeInstructions, "output_modalities": ["audio"],
             "audio": [
                 "input": ["turn_detection": ["type": "server_vad", "silence_duration_ms": 450, "prefix_padding_ms": 300, "threshold": 0.5, "create_response": account != .openai, "interrupt_response": true],
                           "noise_reduction": ["type": "near_field"], "transcription": ["model": "gpt-4o-mini-transcribe", "language": "zh"]],
-                "output": ["voice": "marin"],
+                "output": ["voice": voice.rawValue],
             ],
             "tools": tools(live: false), "tool_choice": "auto", "parallel_tool_calls": false, "reasoning": ["effort": "low"],
         ]
     }
 
-    static func exchangeLiveOffer(_ sdp: String, model: String, apiKey: String) async throws -> String {
+    static func exchangeLiveOffer(_ sdp: String, model: String, apiKey: String,
+                                  storage: PokiStorage = .live) async throws -> String {
+        let resolvedVoice = VoiceCatalog.voice(for: .realtimeAPI, in: storage)
         let cancelTool: [String: Any] = ["type": "function", "name": cancelCurrentTask, "parameters": empty,
                                          "description": "Stop further steps of the current phone task. Call only for an explicit cancellation request, never for words the user wants quoted, entered or sent. Call it without saying anything first."]
         let live: [String: Any] = [
@@ -256,7 +259,7 @@ enum VoiceDirect {
 
                 Keep speaking through brief acknowledgments (“嗯”, “好的”), leaving the reply and task intact.
                 """,
-            "audio": ["output": ["voice": "marin"]],
+            "audio": ["output": ["voice": resolvedVoice.rawValue]],
             "delegation": ["type": "responses", "acknowledgement_delay_ms": 800, "responses": [
                 "model": liveBackend, "instructions": instructions(live: true), "tool_choice": "auto",
                 "tools": (tools(live: true) + [cancelTool]).map { $0.merging(["strict": false]) { _, value in value } },

@@ -70,6 +70,7 @@ final class CodexVoice: SubscriptionVoice {
     @ObservationIgnored private let startBridge: ((String, @escaping @MainActor (String) -> Void) -> Bool)?
     @ObservationIgnored private let sendBridge: ((String) -> Bool)?
     @ObservationIgnored private let prepareStorageBridge: (() -> CodexAccount.StorageState)?
+    @ObservationIgnored private let storage: PokiStorage
     @ObservationIgnored private let codexService: String
     @ObservationIgnored private let codexHome: URL
 
@@ -82,6 +83,7 @@ final class CodexVoice: SubscriptionVoice {
         self.startBridge = startBridge
         self.sendBridge = sendBridge
         self.prepareStorageBridge = prepareStorage
+        self.storage = storage ?? .live
         self.codexService = codexService ?? storage?.codexService ?? CodexAccount.defaultService
         self.codexHome = home ?? storage?.codexHome ?? CodexAccount.home
     }
@@ -114,9 +116,11 @@ final class CodexVoice: SubscriptionVoice {
         guard let thread, let active else { throw Failure.ended }
         let answerKey = "sdp:\(thread)"
         let instructions = sessionInstructions ?? VoiceDirect.codexFrontendInstructions
-        AppLog.shared.add("voice", "Codex realtime starting: prompt \(instructions.count) chars, startup context off, client-managed handoffs on")
+        let voice = VoiceCatalog.voice(for: .chatgpt, in: storage)
+        AppLog.shared.add("voice", "Codex realtime starting: prompt \(instructions.count) chars, voice \(voice.rawValue), startup context off, client-managed handoffs on")
         try await request("thread/realtime/start", [
             "threadId": thread, "model": Self.model, "version": "v3", "outputModality": "audio",
+            "voice": voice.rawValue,
             "includeStartupContext": false, "clientManagedHandoffs": true, "prompt": instructions,
             "voiceSessionId": active.uuidString,
             "transport": ["type": "webrtc", "sdp": offer],
