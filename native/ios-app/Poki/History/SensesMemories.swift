@@ -94,13 +94,28 @@ final class SensesMemories: ObservableObject {
     private var saved = Saved()
     private var countedAt = Date.distantPast
     private var learningTopics = false
+    private var epoch = UUID()
     private static let countEvery: TimeInterval = 15 * 60
     private static let topicsEvery: TimeInterval = 12 * 3600
     private static let forgetFor: TimeInterval = 30 * 86_400
-    private let file: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("History", isDirectory: true).appendingPathComponent("senses-memories.json")
+    private let file: URL
+    private let learning: @MainActor () -> Bool
+    private let readTopics: (Date, Date) async -> [(start: Double, note: BacktapeNote)]
+    private let ask: (String, String) async -> String?
 
-    private init() { load() }
+    init(
+        file: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("History", isDirectory: true).appendingPathComponent("senses-memories.json"),
+        learning: @escaping @MainActor () -> Bool = { SensesUse.shared.learning },
+        readTopics: @escaping (Date, Date) async -> [(start: Double, note: BacktapeNote)] = { await HistoryStore.shared.notes(from: $0, to: $1) },
+        ask: @escaping (String, String) async -> String? = { await SensesModel.ask($0, instructions: $1) }
+    ) {
+        self.file = file
+        self.learning = learning
+        self.readTopics = readTopics
+        self.ask = ask
+        load()
+    }
 
     // MARK: Keeping
 
@@ -126,7 +141,7 @@ final class SensesMemories: ObservableObject {
     /// Counts habits again when it has been a while (or `force`), and asks the model about interests
     /// when it is due. Learning off or Screen History off: everything is forgotten.
     func refresh(force: Bool = false) async {
-        guard SensesUse.shared.learning else {
+        guard learning() else {
             if !habits.isEmpty || !topics.isEmpty { forgetAll() }
             return
         }
@@ -142,6 +157,7 @@ final class SensesMemories: ObservableObject {
     }
 
     private func count(now: Date) async {
+        let requested = epoch
         let capture = HistoryCapture.shared
         let since = max(now.addingTimeInterval(-SensesHabits.twoWeeks), saved.floor ?? .distantPast)
         let sightings = await HistoryStore.shared.sightings(since: since)
@@ -156,16 +172,19 @@ final class SensesMemories: ObservableObject {
         let uses = SensesHabits.uses(sightings, agentSpans: spans, floor: saved.floor ?? .distantPast, now: now) { app in
             capture.keeps(app) && !HistoryCapture.isPoki(app) && !HistoryAppNames.isProcess(app) && !HistoryCapture.isWeb(app)
         }
-        guard SensesUse.shared.learning else { return }
+        guard epoch == requested, learning(), !Task.isCancelled else { return }
         habits = SensesHabits.habits(from: uses, now: now).filter { !isForgotten($0.id, now: now) }
     }
 
     /// Interests and ongoing things, from the summaries of the past three days, by the model on this
     /// iPhone. Anything private by the pills' own rule is dropped.
-    private func learnTopics(now: Date) async {
+    func learnTopics(now: Date) async {
+        let requested = epoch
         learningTopics = true
         defer { learningTopics = false }
-        let notes = await HistoryStore.shared.notes(from: now.addingTimeInterval(-3 * 86_400), to: now)
+        let since = max(now.addingTimeInterval(-3 * 86_400), saved.floor ?? .distantPast)
+        let notes = await readTopics(since, now)
+        guard epoch == requested, learning(), !Task.isCancelled else { return }
         saved.topicsAt = now
         guard notes.count >= 4 else {
             store()
@@ -188,12 +207,14 @@ final class SensesMemories: ObservableObject {
         addressing the person as "you" | what you saw, at most 12 words. If nothing clearly recurs, \
         reply with the single word NONE.
         """
-        guard let answer = await SensesModel.ask(text, instructions: instructions) else {
+        let answer = await ask(text, instructions)
+        // Clearing history or learning while the model answered invalidates this result,
+        // even if learning has since been switched on again.
+        guard epoch == requested, learning(), !Task.isCancelled else { return }
+        guard let answer else {
             store()
             return
         }
-        // Switched off while the model answered: nothing is kept.
-        guard SensesUse.shared.learning else { return }
         var found: [SensesTopic] = []
         for raw in answer.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: CharacterSet(charactersIn: "-*•0123456789. ").union(.whitespaces))
@@ -233,6 +254,7 @@ final class SensesMemories: ObservableObject {
 
     /// Everything learned so far is forgotten, and what is kept now never counts again.
     func forgetAll() {
+        epoch = UUID()
         habits = []
         topics = []
         saved = Saved(floor: Date())
@@ -244,6 +266,7 @@ final class SensesMemories: ObservableObject {
     /// what is left. Everything deleted: as forgetAll.
     func historyCleared(everything: Bool) {
         if everything { forgetAll(); return }
+        epoch = UUID()
         topics = []
         saved.topics = []
         saved.topicsAt = Date()
@@ -304,7 +327,7 @@ final class SensesMemories: ObservableObject {
     /// own words come first: an app of that kind named in the request, or a note that chooses one.
     /// Only the app's name goes, and only for a task that needs it (as the usual music app did).
     func usualAppLine(for task: String) -> String? {
-        guard SensesUse.shared.learning else { return nil }
+        guard learning() else { return nil }
         let notes = RoutineStore.shared.notes.map(\.text)
         guard let habit = SensesHabits.usualApp(for: task, habits: habits, names: { Self.names($0, $1) }, notes: notes),
               case .usual(let category) = habit.kind else { return nil }
