@@ -3199,29 +3199,6 @@
         }
       }
     },
-    "Downloaded, not available" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Downloaded, not available"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下载，尚不可用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已下載，尚不可用"
-          }
-        }
-      }
-    },
     "The disk image is downloaded, but its developer tools are not available on this iPhone. Try turning Automation on. If it still fails, connect to a computer and prepare this iPhone again in Poki Setup." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7586,19 +7563,24 @@
         }
       }
     },
-    "Enter the code shown here and on the Lock Screen." : {
-      "extractionState" : "manual",
+    "Enter the code from Poki. If you don’t see it in Settings, return here to read it." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the code from Poki. If you don’t see it in Settings, return here to read it."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入此处或锁定屏幕上显示的配对码。"
+            "value" : "输入 Poki 显示的配对码。如果在“设置”中没看到配对码，返回这里查看。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輸入此處或鎖定畫面上顯示的配對碼。"
+            "value" : "輸入 Poki 顯示的配對碼。如果在「設定」中沒看到配對碼，回到這裡查看。"
           }
         }
       }
@@ -7619,18 +7601,24 @@
         }
       }
     },
-    "Enter this code in Settings. It also appears on the Lock Screen." : {
+    "Enter this code in Settings." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter this code in Settings."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在“设置”中输入此配对码。配对码也会显示在锁定屏幕上。"
+            "value" : "在“设置”中输入此配对码。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在「設定」中輸入此配對碼。配對碼也會顯示在鎖定畫面上。"
+            "value" : "在「設定」中輸入此配對碼。"
           }
         }
       }
@@ -12117,6 +12105,28 @@
         }
       }
     },
+    "Could not start pairing. Try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not start pairing. Try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法开始配对，请重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法開始配對，請再試一次。"
+          }
+        }
+      }
+    },
     "Pair in Settings" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12188,18 +12198,24 @@
         }
       }
     },
-    "Paired. Checked the next time the runner starts." : {
+    "Pairing saved. Poki checks it when automation starts." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pairing saved. Poki checks it when automation starts."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已配对，下次启动自动化服务时将自动验证。"
+            "value" : "配对已保存。Poki 会在启动自动化时检查配对。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已配對，下次啟動自動化服務時將自動驗證。"
+            "value" : "配對已儲存。Poki 會在啟動自動化時檢查配對。"
           }
         }
       }
@@ -15938,19 +15954,24 @@
         }
       }
     },
-    "Tap **Pair with Poki** and enter the code shown here and on the Lock Screen." : {
-      "extractionState" : "manual",
+    "Tap **Pair with Poki** and enter the code from Poki." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap **Pair with Poki** and enter the code from Poki."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "轻点“**与 Poki 配对**”，并输入此处或锁定屏幕上显示的配对码。"
+            "value" : "轻点**与 Poki 配对**，并输入 Poki 显示的配对码。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點一下「**與 Poki 配對**」，並輸入此處或鎖定畫面上顯示的配對碼。"
+            "value" : "點一下**與 Poki 配對**，並輸入 Poki 顯示的配對碼。"
           }
         }
       }
@@ -25131,22 +25152,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未及回答已超時"
-          }
-        }
-      }
-    },
-    "Pairing file received." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已收到配对文件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已收到配對檔案。"
           }
         }
       }
@@ -41625,34 +41630,24 @@
         }
       }
     },
-    "Choose Always" : {
+    "Set Location to Always in Settings to finish this step. Poki never records your location." : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Location to Always in Settings to finish this step. Poki never records your location."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择“始终”"
+            "value" : "在“设置”中将位置权限设为“始终”，即可完成此步骤。Poki 从不记录你的位置。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇「永遠」"
-          }
-        }
-      }
-    },
-    "Poki counts this as set up only with Always, and never records your location." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅在选择“始终”后此步骤才算完成。Poki 从不记录你的位置。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅在選擇「永遠」後此步驟才算完成。Poki 從不記錄你的位置。"
+            "value" : "在「設定」中將位置權限設為「永遠」，即可完成此步驟。Poki 從不記錄你的位置。"
           }
         }
       }
@@ -48150,22 +48145,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Claude、Codex 或任意 MCP 用戶端中，將每個智慧體新增為遠端 MCP 伺服器。"
-          }
-        }
-      }
-    },
-    "The disk image is downloaded, but its developer tools are not available on this iPhone. Try reopening Poki. If it still fails, connect to a computer and prepare this iPhone again in Poki Setup." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "磁盘映像已下载，但这台 iPhone 的开发者工具尚不可用。请尝试重新打开 Poki。如果仍然失败，请连接电脑，在 Poki Setup 中重新准备这台 iPhone。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "磁碟映像已下載，但這台 iPhone 的開發者工具尚不可用。請嘗試重新開啟 Poki。如果仍然失敗，請連接電腦，在 Poki Setup 中重新準備這台 iPhone。"
           }
         }
       }

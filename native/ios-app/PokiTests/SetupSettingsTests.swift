@@ -19,6 +19,34 @@ final class SetupSettingsTests: XCTestCase {
         XCTAssertEqual(settingsURL(for: nil)?.absoluteString, UIApplication.openSettingsURLString)
     }
 
+    @MainActor
+    func testPairingDoesNotHandOffToSettingsWithoutAWorkingConnection() async {
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
+        model.loopback.simulate(.noAnswer)
+
+        let started = await model.startPairing()
+
+        XCTAssertFalse(started)
+        XCTAssertFalse(model.pairingUnderWay)
+        XCTAssertNil(model.guiding)
+        guard case .failed(let advice)? = model.pairing else { return XCTFail("Expected inline pairing guidance") }
+        XCTAssertEqual(advice, AppLocalization.text(LocalizedStringResource("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")))
+    }
+
+    @MainActor
+    func testPairingCodeIsShownOnceWhenNoLiveActivityCanStart() {
+        let activity = ActivityController()
+        activity.canStart = { false }
+        activity.start(deviceName: "Test iPhone")
+        var notices: [String] = []
+
+        activity.showPairingCode("123456") { notices.append($0) }
+        activity.showPairingCode("123456") { notices.append($0) }
+
+        XCTAssertEqual(activity.state.pin, "123456")
+        XCTAssertEqual(notices, ["123456"])
+    }
+
     /// Settings › Setup is the whole setup list on purpose (build 72 parity, the owner's choice on
     /// Nov 24 2026): the required steps and Guide Me, then the features with their state, even where
     /// the Settings home has a row for the same page.

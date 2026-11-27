@@ -44,6 +44,7 @@ final class AppModel {
     private(set) var lastAction: String?
     private(set) var approvals: [PendingApproval] = []
     private(set) var pairing: PairingEvent?
+    private var pairingAttempt: UUID?
     private(set) var problem: String?
     /// The text the local connection last put in `problem` (another VPN is on), so only that is cleared.
     private var tunnelAttention: String?
@@ -2592,7 +2593,7 @@ final class AppModel {
         SetupVault.storePairing(data, storage: storage)
         setup.pairingFile = storage.pairingFileURL.path
         pairingTrouble = nil; pairingVerifiedAt = nil
-        pairingNote = AppLocalization.text(LocalizedStringResource("Pairing file received."))
+        pairingNote = nil
         log.add("pairing", "pairing file \(how)")
     }
 
@@ -2763,14 +2764,30 @@ final class AppModel {
         }
     }
 
-    func startPairing() {
+    func startPairing() async -> Bool {
+        guard !pairingUnderWay else { return false }
         guard loopback.isWorking else {
-            pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
-            return
+            pairing = .failed(AppLocalization.text(LocalizedStringResource("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")))
+            return false
         }
+        let attempt = UUID()
+        do {
+            try pairer.start(hostName: "Poki", saveTo: storage.pairingFileURL) { [weak self] event in
+                Task { @MainActor in
+                    guard let self, self.pairingAttempt == attempt else { return }
+                    self.pairingChanged(event)
+                }
+            }
+        } catch {
+            pairing = .failed(AppLocalization.text(LocalizedStringResource("Could not start pairing. Try again.")))
+            log.add("pairing", "could not start: \(error)")
+            return false
+        }
+        pairingAttempt = attempt
         pairing = .advertising
-        // The code also comes as a banner (PairingNotice): ask for notifications now, while in front.
-        ApprovalNotice.requestPermission()
+        pairingNote = nil
+        PairingNotice.clear()
+        stopGuide()
         // Started now, while Poki is in front: the PIN arrives while the person is in Settings, when
         // iOS no longer lets Poki start a Live Activity.
         activity.start(deviceName: deviceName)
@@ -2783,15 +2800,19 @@ final class AppModel {
         log.add("pairing", "staying on with location (\(background.allowed ? "allowed" : "not allowed yet")) and silent audio")
         do { try pairingKeepAlive.start() }
         catch { log.add("pairing", "keep-alive did not start (\(error.localizedDescription)); iOS may stop the pairing while Settings is open") }
-        do {
-            try pairer.start(hostName: "Poki", saveTo: storage.pairingFileURL) { [weak self] event in
-                Task { @MainActor in self?.pairingChanged(event) }
+        if !activity.isRunning {
+            let center = UNUserNotificationCenter.current()
+            if await center.notificationSettings().authorizationStatus == .notDetermined, pairingAttempt == attempt {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
             }
-        } catch { pairingChanged(.failed("\(error)")) }
+        }
+        return pairingAttempt == attempt && pairingUnderWay
     }
 
     func cancelPairing() {
         if pairingUnderWay { log.add("pairing", "stopped") }
+        pairingAttempt = nil
+        PairingNotice.clear()
         pairer.cancel()
         pairingKeepAlive.stop()
         background.releasePairing()
@@ -2823,17 +2844,16 @@ final class AppModel {
     }
 
     private func pairingChanged(_ event: PairingEvent) {
+        guard pairing != event else { return }
         pairing = event
         switch event {
         case .pin(let pin):
             // The PIN goes in the Live Activity, so it is visible while the user is in Settings.
             activity.start(deviceName: deviceName)
-            activity.update { $0.phase = .pairing; $0.pin = pin; $0.headline = "Pairing code" }
-            // A banner with the code as well: it drops down over Settings by itself, also when the Live
-            // Activity is off, was dismissed, or iOS holds back its alert.
-            PairingNotice.post(pin: pin)
+            activity.showPairingCode(pin)
             log.add("pairing", "code ready\(activity.isRunning ? "" : " (no Live Activity: \(activity.lastError ?? "unknown reason"))")")
         case .paired(let url):
+            pairingAttempt = nil
             PairingNotice.clear()
             pairingKeepAlive.stop()
             background.releasePairing()
@@ -2846,13 +2866,24 @@ final class AppModel {
             pairingTrouble = nil; pairingVerifiedAt = nil
             log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
-            if !sessionOn { Task { try? await Task.sleep(for: .seconds(4)); if !self.sessionOn { self.activity.end() } } }
+            if !sessionOn {
+                Task {
+                    try? await Task.sleep(for: .seconds(4))
+                    if !self.sessionOn, self.pairing == event, self.activity.state.phase == .idle { self.activity.end() }
+                }
+            }
         case .failed(let why):
+            pairingAttempt = nil
             PairingNotice.clear()
             pairingKeepAlive.stop()
             background.releasePairing()
             activity.update { $0.phase = .problem; $0.pin = nil; $0.label = "Pairing Failed"; $0.headline = Self.firstPart(why) }
-            if !sessionOn { Task { try? await Task.sleep(for: .seconds(8)); if !self.sessionOn { self.activity.end() } } }
+            if !sessionOn {
+                Task {
+                    try? await Task.sleep(for: .seconds(8))
+                    if !self.sessionOn, self.pairing == event, self.activity.state.label == "Pairing Failed" { self.activity.end() }
+                }
+            }
         case .advertising: break
         }
     }

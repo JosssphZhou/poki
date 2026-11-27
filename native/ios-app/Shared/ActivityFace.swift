@@ -359,7 +359,7 @@ extension PokiState {
                 bear: .checking, size: .working,
                 meta: .text(String(activity: "Settings")),
                 content: String(activity: "Pair in Settings"),
-                subtitle: String(activity: "Open Pair with Poki there. The code shows up here."), subtitleLines: 2,
+                subtitle: String(activity: "Open Privacy & Security, then Developer Mode and Pair with Poki."), subtitleLines: 3,
                 bottom: .none,
                 compact: .symbol("link", .accent),
                 link: ActivityLink.setup("pairing"))
