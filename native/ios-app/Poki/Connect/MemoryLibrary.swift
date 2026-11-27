@@ -183,9 +183,9 @@ final class MemoryLibrary {
     func pageSummary(_ app: String?) -> String? { store?.page(app)?.summary }
     func pageLocked(_ app: String?) -> Bool { store?.page(app)?.isLocked == true }
 
-    func pageForEditing(_ app: String?) -> MemoryPage? { store?.page(app) }
+    func pageForEditing(_ app: String?) -> PokiCore.MemoryPage? { store?.page(app) }
 
-    func savePageEdit(_ app: String?, original: MemoryPage?, text: String, locked: Bool) -> Bool {
+    func savePageEdit(_ app: String?, original: PokiCore.MemoryPage?, text: String, locked: Bool) -> Bool {
         guard let store else {
             writePage(app, text: text, locked: locked)
             return true
