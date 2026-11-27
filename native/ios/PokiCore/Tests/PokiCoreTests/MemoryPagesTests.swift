@@ -56,6 +56,22 @@ final class MemoryPagesTests: XCTestCase {
         XCTAssertEqual(store.changes, before)
     }
 
+    func testPageEditPersistsAndRejectedDraftLeavesDiskUnchanged() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("memory.json")
+        let store = SkillStore(url: url)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Owner edit", locked: true))
+        let saved = try Data(contentsOf: url)
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: original, text: "Stale edit", locked: false))
+        XCTAssertEqual(try Data(contentsOf: url), saved)
+        let reopened = SkillStore(url: url)
+        XCTAssertEqual(reopened.page(wechat)?.text, "Owner edit")
+        XCTAssertTrue(reopened.page(wechat)?.isLocked ?? false)
+    }
+
     func testNotesFromBeforePagesBecomeTheLinesOfTheirAppsPages() throws {
         let old = """
         {"schema":"poki.agent-backup/2","skills":[],"runs":[],"notes":[
