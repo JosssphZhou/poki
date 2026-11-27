@@ -5,6 +5,85 @@ import XCTest
 final class MemoryPagesTests: XCTestCase {
     let wechat = "com.tencent.xin"
 
+    func testPageUndoStillWorksAfterReloadAndUnrelatedUpdates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("memory.json")
+        let store = SkillStore(url: url)
+        store.writePage(app: wechat, text: "Original", by: SkillStore.owner)
+        store.writePage(app: wechat, text: "Edited", by: SkillStore.owner)
+        let change = try XCTUnwrap(store.changes.first)
+        store.remember("Unrelated memory", by: SkillStore.owner)
+        let reopened = SkillStore(url: url)
+
+        XCTAssertTrue(reopened.undo(change.id))
+        XCTAssertEqual(reopened.page(wechat)?.text, "Original")
+        XCTAssertEqual(reopened.page(nil)?.text, "Unrelated memory")
+    }
+
+    func testUndoEmptyPageAndThenEarlierEditInOrder() throws {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: SkillStore.owner)
+        store.writePage(app: wechat, text: "Edited", by: SkillStore.owner)
+        let edit = try XCTUnwrap(store.changes.first)
+        store.writePage(app: wechat, text: "", by: SkillStore.owner)
+        let empty = try XCTUnwrap(store.changes.first)
+        XCTAssertNil(store.page(wechat))
+
+        XCTAssertTrue(store.undo(empty.id))
+        XCTAssertEqual(store.page(wechat)?.text, "Edited")
+        XCTAssertTrue(store.undo(edit.id))
+        XCTAssertEqual(store.page(wechat)?.text, "Original")
+    }
+
+    func testUndoPageWriteKeepsLaterLock() throws {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let change = try XCTUnwrap(store.changes.first)
+        store.setPageLocked(wechat, true)
+
+        XCTAssertFalse(store.undo(change.id))
+        XCTAssertEqual(store.page(wechat)?.text, "Original")
+        XCTAssertTrue(store.page(wechat)?.isLocked ?? false)
+    }
+
+    func testUndoPageEditDoesNotReplaceANewerWrite() throws {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        store.writePage(app: wechat, text: "Earlier edit", by: "Poki")
+        let change = try XCTUnwrap(store.changes.first)
+        store.writePage(app: wechat, text: "Latest edit", by: SkillStore.owner)
+        let latest = store.page(wechat)
+
+        XCTAssertFalse(store.undo(change.id))
+        XCTAssertEqual(store.page(wechat), latest)
+        XCTAssertNotEqual(store.changes.first { $0.id == change.id }?.undone, true)
+    }
+
+    func testUndoPageAdditionDoesNotRemoveLaterMemories() throws {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "First memory", by: "Poki")
+        let change = try XCTUnwrap(store.changes.first)
+        store.writePage(app: wechat, text: "Later memories", by: SkillStore.owner)
+        let latest = store.page(wechat)
+
+        XCTAssertFalse(store.undo(change.id))
+        XCTAssertEqual(store.page(wechat), latest)
+    }
+
+    func testUndoEmptiedPageDoesNotReplaceRecreatedPage() throws {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        store.writePage(app: wechat, text: "", by: "Poki")
+        let change = try XCTUnwrap(store.changes.first)
+        XCTAssertNil(store.page(wechat))
+        store.writePage(app: wechat, text: "Recreated", by: SkillStore.owner)
+        let latest = store.page(wechat)
+
+        XCTAssertFalse(store.undo(change.id))
+        XCTAssertEqual(store.page(wechat), latest)
+    }
+
     func testNotesFromBeforePagesBecomeTheLinesOfTheirAppsPages() throws {
         let old = """
         {"schema":"poki.agent-backup/2","skills":[],"runs":[],"notes":[
