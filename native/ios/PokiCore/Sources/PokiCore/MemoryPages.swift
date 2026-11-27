@@ -117,9 +117,8 @@ extension SkillStore {
                 if editsText, current?.lines != original?.lines { throw PageEditConflict.changed }
                 if editsLock, (current?.isLocked ?? false) != (original?.isLocked ?? false) { throw PageEditConflict.changed }
                 if editsText {
-                    _ = Self.replacePage(in: &f, app: app, text: text, summary: nil, by: Self.owner, heard: nil)
-                }
-                if editsLock, let i = f.pages.firstIndex(where: { MemoryPage.sameArea($0.app, app) }) {
+                    _ = Self.replacePage(in: &f, app: app, text: text, summary: nil, by: Self.owner, heard: nil, locked: editsLock ? locked : nil)
+                } else if editsLock, let i = f.pages.firstIndex(where: { MemoryPage.sameArea($0.app, app) }) {
                     f.pages[i].locked = locked ? true : nil
                 }
             }
@@ -131,7 +130,7 @@ extension SkillStore {
 
     private enum PageEditConflict: Error { case changed }
 
-    private static func replacePage(in f: inout MemoryFile, app: String?, text: String, summary: String?, by: String, heard: NoteOrigin?) -> PageWrite {
+    private static func replacePage(in f: inout MemoryFile, app: String?, text: String, summary: String?, by: String, heard: NoteOrigin?, locked: Bool? = nil) -> PageWrite {
         let owner = by == Self.owner
         let index = f.pages.firstIndex { MemoryPage.sameArea($0.app, app) }
         let before = index.map { f.pages[$0] }
@@ -159,6 +158,7 @@ extension SkillStore {
         for i in lines.indices where elsewhere.contains(lines[i].id) { lines[i].id = String(UUID().uuidString.prefix(8)).lowercased() }
         var page = before ?? MemoryPage(app: app, lines: [])
         page.lines = lines
+        if let locked { page.locked = locked ? true : nil }
         if let summary { page.summary = summary.isEmpty ? nil : String(summary.prefix(160)) }
         page.updated = now
         if let index { f.pages[index] = page } else if app == nil { f.pages.insert(page, at: 0) } else { f.pages.append(page) }
