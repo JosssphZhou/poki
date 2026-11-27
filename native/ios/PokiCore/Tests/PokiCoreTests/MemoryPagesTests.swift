@@ -72,6 +72,22 @@ final class MemoryPagesTests: XCTestCase {
         XCTAssertTrue(reopened.page(wechat)?.isLocked ?? false)
     }
 
+    func testTwoEditorsCannotBothReplaceTheSameSnapshot() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        let resultLock = NSLock()
+        var accepted = 0
+        DispatchQueue.concurrentPerform(iterations: 2) { index in
+            let saved = store.savePageEdit(app: wechat, original: original, text: "Draft \(index)", locked: false)
+            resultLock.lock()
+            if saved { accepted += 1 }
+            resultLock.unlock()
+        }
+        XCTAssertEqual(accepted, 1)
+        XCTAssertTrue(["Draft 0", "Draft 1"].contains(store.page(wechat)?.text ?? ""))
+    }
+
     func testTextEditKeepsConcurrentPageLock() {
         let store = SkillStore(url: nil)
         store.writePage(app: wechat, text: "Original", by: "Poki")
