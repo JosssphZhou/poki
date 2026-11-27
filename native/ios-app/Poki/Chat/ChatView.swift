@@ -1700,12 +1700,14 @@ struct ComposerInputView: View {
             )
         }
         .onChange(of: conversationID) {
+            sent = nil
             resumeEditing = false
             taskSettings = nil
             withAnimation(.snappy) { attachmentDraft.reset() }
             problem = nil
         }
         .onChange(of: restarts) {
+            sent = nil
             resumeEditing = false
             taskSettings = nil
             let hadDraft = !input.isEmpty || !attachments.isEmpty
@@ -2123,8 +2125,11 @@ struct ComposerInputView: View {
         sent = (text, Date())
         input = ""
         // Once more after the keyboard has settled, for a commit that arrives in pieces.
+        // A new conversation or another send owns a different draft by then.
+        let generation = attachmentDraft.generation
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled, attachmentDraft.generation == generation else { return }
             if input == text { input = "" }
         }
     }

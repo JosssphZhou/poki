@@ -14,6 +14,32 @@ final class ComposerReturnTests: XCTestCase {
         draft = nil
     }
 
+    func testSameConversationKeyboardEchoIsStillCleared() async throws {
+        let (field, draft) = try composer()
+        type("Open Settings", into: field)
+        settle { draft.text == "Open Settings" }
+        XCTAssertFalse(try pressReturn(field))
+        settle { field.plainText.isEmpty }
+        draft.text = "Open Settings"
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(draft.text, "")
+        XCTAssertEqual(draft.sent, ["Open Settings"])
+    }
+
+    func testSentTextInANewConversationIsNotClearedAsKeyboardEcho() async throws {
+        let (field, draft) = try composer()
+        type("Open Settings", into: field)
+        settle { draft.text == "Open Settings" }
+        XCTAssertFalse(try pressReturn(field))
+        settle { field.plainText.isEmpty }
+        draft.conversationID = "next-conversation"
+        try await Task.sleep(for: .milliseconds(30))
+        draft.text = "Open Settings"
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(draft.text, "Open Settings")
+        XCTAssertEqual(draft.sent, ["Open Settings"])
+    }
+
     func testReturnSendsTheMessageAndAnEmptyFieldSendsNothing() throws {
         let (field, draft) = try composer()
         XCTAssertFalse(try pressReturn(field))
@@ -145,6 +171,7 @@ final class ComposerReturnTests: XCTestCase {
         @Published var text = ""
         @Published var focused = true
         @Published var typeSize: DynamicTypeSize = .large
+        @Published var conversationID = "first-conversation"
         var sent: [String] = []
     }
 
@@ -152,7 +179,7 @@ final class ComposerReturnTests: XCTestCase {
         @ObservedObject var draft: Draft
         var body: some View {
             ComposerInputView(input: $draft.text, focused: $draft.focused, adding: .constant(false),
-                              settingsPresented: .constant(false), running: false,
+                              settingsPresented: .constant(false), running: false, conversationID: draft.conversationID,
                               send: { text, _ in draft.sent.append(text) }, stop: {}, openVoice: {})
                 .dynamicTypeSize(draft.typeSize)
         }
