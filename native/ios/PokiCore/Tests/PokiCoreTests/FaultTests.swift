@@ -755,6 +755,46 @@ final class FaultTests: XCTestCase {
         XCTAssertFalse(look.text.hasPrefix("error:"), look.text)
     }
 
+    /// The soak on CI (call 100): after a read timed out, the next call's post-action read tried
+    /// to push smaller snapshot limits via POST /appium/settings with a hardcoded 2 s timeout,
+    /// blowing past the call's deadline into the outer backstop ("do did not finish within ...").
+    /// Snapshot-limit updates must stay within the read's remaining budget and skip when a queued
+    /// request is still unwinding.
+    func testReadDoesNotBlowPastDeadlineWhenSnapshotLimitsUpdateHangs() async {
+        let (core, wda, _) = makeCore { $0.readTimeout = 1; $0.toolDeadline = 4; $0.actionCap = 2.4; $0.approvalWait = 0.3; $0.runnerWait = 1 }
+        wda.source([("Button", "General"), ("Button", "Privacy")])
+        _ = await core.call("look", [:])
+        wda.delay("GET /source", 2.5)
+        let timedOut = await core.call("look", [:])
+        XCTAssertTrue(timedOut.text.contains("no element tree"), timedOut.text)
+
+        // Keep the open session, let pre-action checks clear the earlier read stall, let tap
+        // finish near actionsUntil, and make settings + post-action activeAppInfo hang.
+        let tapStarted = LockedBox(false)
+        wda.delay("POST /appium/settings", 10)
+        wda.set("POST /wda/tap") { _ in
+            tapStarted.value = true
+            try await Task.sleep(nanoseconds: 2_200_000_000)
+            return (200, ["value": .null])
+        }
+        wda.set("GET /wda/activeAppInfo") { _ in
+            if tapStarted.value {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+            return (200, ["value": ["bundleId": "com.apple.Preferences", "name": "Settings"]])
+        }
+        wda.set("GET /source") { _ in
+            try await Task.sleep(nanoseconds: 500_000_000)
+            return (200, ["value": ["type": "XCUIElementTypeApplication", "label": "Settings", "rect": ["x": 0, "y": 0, "width": 390, "height": 844], "children": [["type": "XCUIElementTypeButton", "label": "General", "rect": ["x": 16, "y": 100, "width": 358, "height": 44]]]]])
+        }
+        let started = Date()
+        let result = await core.call("do", ["actions": [["tap": [100, 100]]]])
+        let took = Date().timeIntervalSince(started)
+        XCTAssertLessThan(took, 5.2, "took \(took) s: \(result.text)")
+        XCTAssertFalse(result.text.hasPrefix("error: do did not finish within"), "hit outer backstop after \(took) s: \(result.text)")
+        XCTAssertTrue(result.text.contains("did: "), result.text)
+    }
+
     /// The gym's 1,507-element grid: the button after the grid was element 1506, past the 1,000
     /// lines full=true lists, so the agent could not tap it by number. A cut listing says what was
     /// left out by type, and scroll_to's answer gives the found element's number.
