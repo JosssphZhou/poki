@@ -317,16 +317,20 @@ extension Runner {
         // After a read that timed out, the next asks for half the tree's depth (a huge tree is what
         // takes long); a read that came fast restores the full depth for the one after it.
         let wanted = nextLimits.value
-        if wanted != limits.value { await useLimits(wanted) }
+        if wanted != limits.value {
+            let deadline = callEnds.map { min(started + timeout, $0) } ?? (started + timeout)
+            await useLimits(wanted, timeout: max(0, deadline - now() - 0.5))
+        }
         let readLimits = limits.value
+        let remaining = max(0.3, started + timeout - now())
         async let treePart: Result<(elements: [Element], foreground: Foreground), Error> = {
             do {
-                return .success(try await self.tree(timeout: timeout, format: format, workspace: workspace, appAfterSource: appAfterSource))
+                return .success(try await self.tree(timeout: remaining, format: format, workspace: workspace, appAfterSource: appAfterSource))
             } catch { return .failure(error) }
         }()
         async let picturePart: Result<ScreenCapture, Error>? = wantPicture ? {
             defer { pictureAt.value = now() }
-            do { return .success(try await self.captureScreen(timeout: timeout)) } catch { return .failure(error) }
+            do { return .success(try await self.captureScreen(timeout: remaining)) } catch { return .failure(error) }
         }() : nil
         // A runner already busy when the read starts is likely to give no picture in time: the
         // host's own path starts now, beside the runner's, so the two are not in series (gym: a
@@ -364,7 +368,7 @@ extension Runner {
                 let retryUntil = now() + extra
                 reading.notes.append("no element tree (\(readLimits.isFull ? "full" : readLimits.described)): \(e)")
                 if await waitUntilFree(timeout: min(3, retryUntil - now() - 1.5)) {
-                    await useLimits(smaller)
+                    await useLimits(smaller, timeout: max(0, retryUntil - now() - 0.5))
                     if limits.value == smaller, let again = try? await self.tree(timeout: max(0.5, min(2, retryUntil - now() - 0.2)), format: format, workspace: workspace) {
                         reading.elements = again.elements; reading.foreground = again.foreground; treeCame = true
                         reading.notes.removeLast()

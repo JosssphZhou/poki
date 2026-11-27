@@ -306,14 +306,20 @@ public final class Runner: @unchecked Sendable {
     let settingsApplied = LockedBox(false)
 
     /// The snapshot limits for the next read, applied through the session's settings when they differ
-    /// from what the runner has (a queued request, bounded at 2 s). Without a session they are noted
-    /// for the open to apply (every open sends the settings): a read never waits on a session open
-    /// for them (the soak: an open that hung held a look 3 s past its read, up to the backstop).
-    func useLimits(_ wanted: SnapshotLimits) async {
+    /// from what the runner has (a queued request, bounded by `timeout` and at most 2 s). Without a
+    /// session they are noted for the open to apply (every open sends the settings): a read never
+    /// waits on a session open for them (the soak: an open that hung held a look 3 s past its read,
+    /// up to the backstop), nor while a cancelled or in-flight queued request still owns the runner.
+    func useLimits(_ wanted: SnapshotLimits, timeout: Double = 2) async {
         guard wanted != limits.value else { return }
+        guard waitingOn.value == 0 else { return }
         guard hasSession else { limits.value = wanted; return }  // the open sends them
-        guard busyWith == nil, let id = try? await session(timeout: 2) else { return }  // a busy runner keeps what it has
-        if (try? await raw("POST", "/session/\(id)/appium/settings", ["settings": ["snapshotMaxDepth": .number(Double(wanted.depth)), "snapshotMaxChildren": .number(Double(wanted.children))]], timeout: 2, countsAsMiss: false)) != nil {
+        // `raw` wraps the request in `withDeadline(timeout + 0.5)`, so subtract that margin here
+        // so `useLimits` itself stays within `timeout`.
+        let budget = min(2, timeout)
+        let requestTimeout = budget - 0.5
+        guard requestTimeout >= 0.2, busyWith == nil, let id = try? await session(timeout: budget) else { return }  // a busy runner keeps what it has
+        if (try? await raw("POST", "/session/\(id)/appium/settings", ["settings": ["snapshotMaxDepth": .number(Double(wanted.depth)), "snapshotMaxChildren": .number(Double(wanted.children))]], timeout: requestTimeout, countsAsMiss: false)) != nil {
             limits.value = wanted
         }
     }
