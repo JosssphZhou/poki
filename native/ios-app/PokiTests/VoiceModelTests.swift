@@ -3316,6 +3316,40 @@ final class VoiceLanguageTests: XCTestCase {
             XCTAssertFalse(reason.contains("tok_abc12345"), reason)
         }
     }
+
+    func testDirectVoiceInstructionsCoverSourceControlProgressAndNoise() async throws {
+        let saved = AppLocalization.shared.preference
+        URLProtocol.registerClass(OpenAIStub.self)
+        defer {
+            AppLocalization.shared.preference = saved
+            URLProtocol.unregisterClass(OpenAIStub.self)
+        }
+        for language in ["zh-Hans", "en", "zh-Hant"] {
+            AppLocalization.shared.preference = language
+            _ = try await VoiceDirect.token(apiKey: "sk-test")
+            let realtimeSession = try XCTUnwrap(OpenAIStub.session)
+            _ = try await VoiceDirect.exchangeLiveOffer("sdp-offer", model: "gpt-live-1.1", apiKey: "sk-test")
+            let liveSession = try XCTUnwrap(OpenAIStub.session)
+
+            let realtimePrompt = try XCTUnwrap(realtimeSession["instructions"] as? String)
+            let livePrompt = try XCTUnwrap(liveSession["instructions"] as? String)
+            let backendPrompt = try XCTUnwrap(((liveSession["delegation"] as? [String: Any])?["responses"] as? [String: Any])?["instructions"] as? String)
+            let codexFrontend = VoiceDirect.codexFrontendInstructions
+            let codexBackend = VoiceDirect.codexBackendInstructions
+            for prompt in [realtimePrompt, livePrompt, backendPrompt, codexFrontend, codexBackend] {
+                XCTAssertTrue(prompt.contains("Quoted media transcript"), "\(language): missing app playback media label rule")
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("bystander"), "\(language): missing bystander source rule")
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("screen reader"), "\(language): missing screen reader source rule")
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("quoted screen"), "\(language): missing quoted screen source rule")
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("pause"), "\(language): missing pause/resume rule")
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("continue"), "\(language): missing continue rule")
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("noise"), "\(language): missing noise turn rule")
+            }
+            for prompt in [realtimePrompt, livePrompt, backendPrompt, codexBackend] {
+                XCTAssertTrue(prompt.localizedCaseInsensitiveContains("stay quiet if asked"), "\(language): missing quiet-on-request progress rule")
+            }
+        }
+    }
 }
 
 /// The Live Activity during a talk: it says what the talk is doing in the state's own `voice` field,
@@ -5190,11 +5224,11 @@ extension VoiceModelTests {
         }
         let expectedAll = ["Executor", "Language", "Brevity", "Capabilities", "Evidence", "Interruption", "Recovery"]
         let expectedLiveVoice = ["Executor", "Language", "Brevity", "Evidence", "Interruption", "Recovery"]
-        let expectedCodexVoice = ["Executor", "Language", "Brevity", "Evidence"]
+        let expectedCodexVoice = ["Executor", "Language", "Brevity", "Evidence", "Interruption"]
         let budgets: [(language: String, name: String, realtime: Int, liveVoice: Int, liveExecutor: Int, codexVoice: Int, codexExecutor: Int)] = [
-            ("zh-Hans", "Chinese, Simplified", 2985, 1482, 3057, 873, 2796),
-            ("en", "English", 2973, 1470, 3045, 861, 2784),
-            ("zh-Hant", "Chinese, Traditional", 2986, 1483, 3058, 874, 2797),
+            ("zh-Hans", "Chinese, Simplified", 2944, 1451, 2882, 870, 2755),
+            ("en", "English", 2932, 1439, 2870, 858, 2743),
+            ("zh-Hant", "Chinese, Traditional", 2945, 1452, 2883, 871, 2756),
         ]
 
         for entry in budgets {
