@@ -5177,4 +5177,135 @@ extension VoiceModelTests {
 
         XCTAssertTrue(session.allowHapticsAndSystemSoundsDuringRecording, "the cue plays while the microphone is on")
     }
+
+    func testLiveInputTranscriptRecordsTheFirstLaunchUtteranceWithoutACommitEvent() async {
+        let h = Harness()
+        defer { h.voice.stop() }
+        XCTAssertTrue(h.voice.setBridge(BridgeStub.liveAddress))
+        let request = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                        source: .appShortcut, epoch: PokiEntry.shared.epoch)
+        await h.voice.start(admitEntry: { request })
+        h.link.play(["type": "session.started"],
+                    ["type": "session.output_transcript.delta", "delta": "Hello"])
+        XCTAssertEqual(h.voice.phase, .listening)
+        let launch = "launch request=\(request.id.uuidString)"
+        let firstUtterance = "\(launch) stage=firstUtterance "
+        XCTAssertTrue(AppLog.shared.lines.contains { $0.contains("\(launch) stage=transportConnected ") })
+        XCTAssertFalse(AppLog.shared.lines.contains { $0.contains(firstUtterance) })
+
+        h.link.play(["type": "session.input_transcript.delta", "delta": "Open", "start_ms": 100, "end_ms": 220],
+                    ["type": "session.input_transcript.delta", "delta": " Settings", "start_ms": 220, "end_ms": 400])
+
+        let milestones = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
+        XCTAssertEqual(milestones.count, 1, "Live transcript deltas must record the first utterance once without an audio buffer commit")
+        XCTAssertFalse(milestones.contains { $0.contains("Open") || $0.contains("Settings") })
+    }
+
+    func testCodexSubscriptionUserTranscriptRecordsFirstLaunchUtteranceOnce() async throws {
+        try await withChatGPTSelected { chatGPTStorage in
+            let codex = FakeSubscriptionVoice()
+            let h = Harness(codex: codex, storage: chatGPTStorage)
+            defer { h.voice.stop() }
+            let request = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                            source: .appShortcut, epoch: PokiEntry.shared.epoch)
+            await h.voice.start(admitEntry: { request })
+            XCTAssertEqual(h.voice.phase, .listening)
+            let launch = "launch request=\(request.id.uuidString)"
+            let firstUtterance = "\(launch) stage=firstUtterance "
+            XCTAssertTrue(AppLog.shared.lines.contains { $0.contains("\(launch) stage=transportConnected ") })
+
+            codex.notify("thread/realtime/transcript/done", ["role": "assistant", "text": "Ready"])
+            XCTAssertFalse(AppLog.shared.lines.contains { $0.contains(firstUtterance) })
+
+            codex.notify("thread/realtime/transcript/delta", ["role": "user", "text": "Open"])
+            let afterDelta = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
+            XCTAssertEqual(afterDelta.count, 1, "First non-empty user transcript delta must record firstUtterance immediately")
+            XCTAssertFalse(afterDelta.contains { $0.contains("Open") })
+
+            codex.notify("thread/realtime/transcript/done", ["role": "user", "text": "Open Calendar"])
+            let afterDone = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
+            XCTAssertEqual(afterDone.count, 1, "Subsequent transcript done must not duplicate firstUtterance")
+            XCTAssertFalse(afterDone.contains { $0.contains("Open") || $0.contains("Calendar") })
+        }
+    }
+
+    func testAdmitEntryWaitsForGracefulLiveClose() async {
+        let live = Harness()
+        await live.liveTalk()
+        let firstLink = live.link
+        live.voice.stop()
+        XCTAssertFalse(live.voice.isOn)
+        XCTAssertFalse(firstLink.closed, "Live close should wait for server acknowledgement")
+
+        var admittedAfterClose = false
+        let queued = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                       source: .appShortcut, epoch: PokiEntry.shared.epoch)
+        let pendingStart = Task {
+            await live.voice.start(admitEntry: {
+                admittedAfterClose = firstLink.closed
+                return queued
+            })
+        }
+        await live.time.settle()
+        XCTAssertFalse(admittedAfterClose, "admitEntry must wait until graceful Live close finishes")
+        firstLink.play(["type": "session.closed"])
+        XCTAssertTrue(firstLink.closed)
+        _ = await pendingStart.value
+        XCTAssertTrue(admittedAfterClose, "admitEntry must run after graceful Live close completes")
+        XCTAssertTrue(live.voice.isOn)
+        live.voice.stop()
+        live.link.play(["type": "session.closed"])
+    }
+
+    func testConnectFailureInvalidatesStaleIntentWithoutStartingMicrophone() async throws {
+        #if targetEnvironment(simulator)
+        let hostVoice = try XCTUnwrap(AskPoki.app?.voice)
+        let defaults = UserDefaults.standard
+        let savedRehearsal = defaults.object(forKey: "pokiTalkRehearsal")
+        let savedHold = defaults.object(forKey: "pokiTalkHold")
+        defaults.removeObject(forKey: "pokiTalkRehearsal")
+        hostVoice.stop()
+        URLProtocol.registerClass(BridgeTroubleStub.self)
+        var staleIntent: TalkToPokiIntent?
+        let failing = Harness(recentAppAudio: {
+            staleIntent = TalkToPokiIntent()
+            return nil
+        })
+        defer {
+            URLProtocol.unregisterClass(BridgeTroubleStub.self)
+            failing.voice.stop()
+            hostVoice.stop()
+            defaults.set(savedRehearsal, forKey: "pokiTalkRehearsal")
+            defaults.set(savedHold, forKey: "pokiTalkHold")
+        }
+        XCTAssertTrue(failing.voice.setBridge(BridgeTroubleStub.slow))
+        await failing.voice.start()
+        XCTAssertFalse(failing.voice.isOn)
+        let intent = try XCTUnwrap(staleIntent)
+
+        defaults.set("1", forKey: "pokiTalkRehearsal")
+        defaults.set("listening", forKey: "pokiTalkHold")
+        let marker = "connect-failure-\(UUID().uuidString)"
+        AppLog.shared.add("test", marker)
+        func addedLines() -> [String] {
+            let lines = AppLog.shared.lines
+            guard let index = lines.lastIndex(where: { $0.contains(marker) }) else { return [] }
+            return Array(lines.dropFirst(index + 1))
+        }
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            addedLines().contains {
+                $0.contains("result=invalidated reason=voiceEpochChanged") || $0.contains("result=started")
+            }
+        }, object: nil)
+        _ = try await intent.perform()
+        await fulfillment(of: [settled], timeout: 5)
+
+        let added = addedLines()
+        XCTAssertTrue(added.contains { $0.contains("source=appShortcut result=invalidated reason=voiceEpochChanged") },
+                      "Connect failure must invalidate a launch intent issued during the failed attempt: \(added)")
+        XCTAssertFalse(added.contains { $0.contains("result=started") },
+                       "An invalidated intent after connect failure must not start a new talk: \(added)")
+        XCTAssertFalse(hostVoice.isOn)
+        #endif
+    }
 }
