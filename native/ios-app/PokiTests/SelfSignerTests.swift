@@ -122,6 +122,46 @@ final class SelfSignerTests: XCTestCase {
         for _ in 0..<40 { await Task.yield() }
     }
 
+    func testDueUpdatePreflightsAndResumesWithTheRestoredPhoneConnection() async {
+        let fake = FakeSignerTransport(latestVersion: "99.0.0", latestBuild: "999")
+        let signer = SelfSigner(transport: { req, prog in try await fake.send(req, prog) })
+        var connected = false
+        signer.phone = { connected ? ["host": "10.7.0.1"] : nil }
+        signer.ensurePhoneConnection = { automatic in
+            XCTAssertTrue(automatic)
+            XCTAssertFalse(fake.ops.contains("prepare"), "Signing cannot start while loopback is down")
+            await Task.yield()
+            connected = true
+            return true
+        }
+        await signer.reload()
+        _ = await signer.checkLatest()
+
+        XCTAssertEqual(fake.ops.filter { $0 == "prepare" }.count, 1)
+        XCTAssertEqual(signer.ready["update"]?.version, "99.0.0")
+        XCTAssertFalse(fake.ops.contains("install"), "Automatic preparation must not install")
+    }
+
+    func testRenewalInstallStopsWhenFreshPreflightCannotRestoreLoopback() async {
+        let fake = FakeSignerTransport(latestVersion: "99.0.0", latestBuild: "999")
+        let signer = SelfSigner(transport: { req, prog in try await fake.send(req, prog) })
+        signer.phone = { ["host": "10.7.0.1"] }
+        signer.isIdle = { true }
+        await signer.prepare(kind: "refresh")
+        XCTAssertEqual(signer.next?.kind, "refresh")
+        var attempts = 0
+        signer.ensurePhoneConnection = { automatic in
+            XCTAssertFalse(automatic)
+            attempts += 1
+            return false
+        }
+        await signer.install()
+
+        XCTAssertEqual(attempts, 1)
+        XCTAssertFalse(fake.ops.contains("install"), "A previously reachable phone is not enough to install")
+        XCTAssertEqual(signer.installFinish, .idle)
+    }
+
     func testMaintainThrottlesChannelChecksEvenWhenSignedInWithLoopback() async {
         let fake = FakeSignerTransport(signedIn: true, needsCode: false, latestVersion: "0.0.1", latestBuild: "1")
         let signer = SelfSigner(transport: { req, prog in try await fake.send(req, prog) })

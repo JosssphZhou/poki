@@ -99,6 +99,7 @@ final class LoopbackMonitor {
     /// interface came or went: the path summary also changes when a proxy's tunnel rebinds.
     private func networkChanged(physical: Bool) {
         probeEpoch &+= 1
+        checkedAt = nil
         onNetworkChange?()
         if physical { resetPortSearch(); proxyFound = false }
         if !isWorking { publish(.checking, log: false) }

@@ -495,6 +495,10 @@ struct RootView: View {
     }
 
     private func open(link url: URL) {
+        if url.scheme == LoopbackShortcut.recoveryReturn.scheme, url.host() == LoopbackShortcut.recoveryReturn.host() {
+            model.loopbackRecovery.returnedFromShortcut()
+            return
+        }
         AppLog.shared.add("app", "opened by link poki://\(url.host() ?? "")")
         // Pairing is not interrupted: it stays on the pairing step, where the PIN is.
         guard !model.pairingUnderWay else { return }

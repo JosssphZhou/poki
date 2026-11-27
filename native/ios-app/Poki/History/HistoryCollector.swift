@@ -300,6 +300,7 @@ final class HistoryCollector {
         // shortcut's action), and the silent audio mixes with other sound, so it may start there.
         hold(model, capture.enabled)
         model.background.ensure(reason)
+        if !ownerStopped { capture.recoverLoopbackIfNeeded(model) }
         guard !capture.isRunning else { idle = ""; return }
         let why: String? =
             !capture.enabled ? "Screen History is off"

@@ -73,6 +73,7 @@ struct LoopbackPrompt: ViewModifier {
     /// is down. Never during a task, a first run, or while the owner snoozed it.
     private func decide() {
         guard enabled, scenePhase == .active, !shown, capture.enabled,
+              !model.canAutoRecoverLoopback,
               let checked = model.loopback.checkedAt, checked > openedAt,
               !model.loopback.isWorking, model.loopback.state != .checking,
               !model.hasOpenInProcessSession, !FirstRun.isDue() else { return }

@@ -31,6 +31,20 @@ final class AppModel {
         if on, let relayAddress { core.start(relay: relayAddress) } else { core.stop() }
     }
     let loopback = LoopbackMonitor()
+    @ObservationIgnored lazy var loopbackRecovery = LoopbackRecovery(
+        active: { UIApplication.shared.applicationState == .active },
+        canRun: { [weak self] in self?.canAutoRecoverLoopback == true },
+        canInterrupt: { [weak self] in self?.canInterruptForLoopback($0) == true },
+        stillNeeded: { [weak self] in self?.needsLoopbackRecovery($0) == true },
+        status: { [weak self] in (self?.loopback.isWorking == true, self?.loopback.checkedAt) },
+        check: { [weak self] in self?.loopback.check() },
+        launch: { [weak self] in
+            guard let self else { return }
+            LoopbackShortcut.shared.listen(true, model: self)
+            UIApplication.shared.open(LoopbackShortcut.recoveryRun)
+        },
+        onFailure: { [weak self] in self?.presentLoopbackFailure() }
+    )
     let tunnel = LoopbackTunnel()
     let background = BackgroundKeeper()
     let diskImage = DiskImageStore()
@@ -285,6 +299,12 @@ final class AppModel {
             guard let self, let path = self.pairingPath, self.loopback.isWorking else { return nil }
             return ["device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"]
         }
+        signer.ensurePhoneConnection = { [weak self] automatic in
+            guard let self, self.pairingPath != nil else { return false }
+            if Self.onSimulator { return self.loopback.isWorking }
+            return await self.loopbackRecovery.restore(for: automatic ? .automaticSigning : .signing)
+        }
+        signer.handlesLoopbackFailure = { [weak self] in self?.loopbackRecovery.attemptedDuringOutage == true }
         InstalledApps.shared.phone = signer.phone
         signer.isIdle = { [weak self] in self?.signingIdle ?? false }
         signer.whyUnreachable = { [weak self] in self?.signerUnreachable ?? .loopback }
@@ -302,6 +322,43 @@ final class AppModel {
         if setup.loopback != .none { return setup.loopback }
         // The external app is the way (ESP-168); the built-in connection is only ever chosen.
         return .proxy
+    }
+
+    var canAutoRecoverLoopback: Bool {
+        !Self.onSimulator && setup.loopback == .proxy && LoopbackShortcut.shared.canRun && LoopbackShortcut.shared.isSetUp
+    }
+
+    private func canInterruptForLoopback(_ demand: LoopbackRecovery.Demand) -> Bool {
+        guard inFront, signer.installFinish == .idle, !pairingUnderWay,
+              !passcodeConfirmationPending, !inProcessPasscode, approvals.isEmpty, handoffText == nil else { return false }
+        if demand == .automation || demand == .signing || demand == .pairing { return true }
+        return !chatTaskActive && stepUnderWay == nil && outsideAgentsAtWork.isEmpty && endingTasks == 0 && !voice.isOn
+    }
+
+    private func needsLoopbackRecovery(_ demand: LoopbackRecovery.Demand) -> Bool {
+        switch demand {
+        case .screenHistory: return HistoryCapture.shared.needsLoopbackRecovery
+        case .automation: return automationNeedsLoopbackRecovery
+        case .pairing: return pairingRecovery != nil
+        case .automaticSigning, .signing: return pairingPath != nil && signer.installFinish == .idle
+        }
+    }
+
+    private func presentLoopbackFailure() {
+        guard loopbackRecovery.failurePending, UIApplication.shared.applicationState == .active else { return }
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive && $0.keyWindow != nil }?.keyWindow
+        guard var presenter = window?.rootViewController else { return }
+        while let next = presenter.presentedViewController { presenter = next }
+        guard !(presenter is UIAlertController), !presenter.isBeingDismissed else { return }
+        let alert = UIAlertController(
+            title: AppLocalization.text(LocalizedStringResource("Local Connection Not Restored")),
+            message: AppLocalization.text(LocalizedStringResource("Run the Poki Loopback shortcut or reconnect your VPN, then try again.")),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: AppLocalization.text(LocalizedStringResource("OK")), style: .default))
+        presenter.present(alert, animated: true)
+        loopbackRecovery.dismissFailure()
     }
 
     /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
@@ -710,7 +767,7 @@ final class AppModel {
     func cellularPreparation(imageMounted: Bool) -> CellularPreparation {
         if imageMounted { return .mounted }
         guard sessionOn, !ownerPaused else { return .automationOff }
-        guard setup.loopback != .none, loopback.isWorking else { return .needsLocalConnection }
+        guard setup.loopback != .none, loopback.isWorking || canAutoRecoverLoopback else { return .needsLocalConnection }
         guard automationPath == .inProcess, !probeDriven, inProcessSession == .idle,
               !chatTaskActive, stepUnderWay == nil, approvals.isEmpty, handoffText == nil,
               outsideAgentsAtWork.isEmpty, endingTasks == 0 else { return .busy }
@@ -834,6 +891,7 @@ final class AppModel {
                     self.log.add("runner", "the passcode for automation was not entered: Poki will not ask again until it is turned on again")
                 }
                 self.inProcessSession = ok ? .open : passcodeMissed ? .passcodeMissed : .failed(code: "\(result["code"] ?? "unknown")", detail: detail)
+                if !ok { self.recoverAutomationLoopback() }
             }
         }
     }
@@ -909,6 +967,8 @@ final class AppModel {
             }
         }
         loopback.resume()
+        recoverAutomationLoopback()
+        presentLoopbackFailure()
         // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
         // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
         if sessionOn, !activity.isRunning {
@@ -1426,6 +1486,7 @@ final class AppModel {
         return
         #else
         guard let launcherConfig else { return }
+        recoverAutomationLoopback()
         do {
             try launcher.start(config: launcherConfig) { [weak self] status in Task { @MainActor in self?.runnerChanged(status) } }
         } catch { runnerChanged(RunnerStatus(state: "failed", detail: "\(error)")) }
@@ -1816,6 +1877,22 @@ final class AppModel {
         return runner.state == "failed" && ["loopback", "handshake", "unreachable"].contains(runner.code)
     }
 
+    private var automationNeedsLoopbackRecovery: Bool {
+        guard sessionOn, !runnerPaused, !hasOpenInProcessSession, !InProcessWDA.automationDeclined else { return false }
+        if automationPath == .runner || !imageMounted() { return true }
+        if runner.code == "local_ddi" {
+            guard case .failed(let code, _) = inProcessSession else { return false }
+            return !["open_poki_first", "open_under_way", "passcode_declined"].contains(code)
+        }
+        return !hasPhonePairing
+    }
+
+    private func recoverAutomationLoopback() {
+        guard !loopback.isWorking, automationNeedsLoopbackRecovery,
+              canInterruptForLoopback(.automation) else { return }
+        Task { await loopbackRecovery.restore(for: .automation) }
+    }
+
     /// The loopback came or went. Going: logged with the time, and the agent's status says so instead
     /// of "Checking pairing". Back: the launcher tries at once instead of waiting out its backoff
     /// (the runner dies with the tunnel, so every drop costs a restart).
@@ -1826,6 +1903,7 @@ final class AppModel {
         // Setup's loopback step is done and Turn on does not ask to choose one (0.2.8 build 91: the step
         // never let the owner continue although the loopback was on).
         if loopback.isWorking {
+            loopbackRecovery.connectionRestored()
             if setup.loopback == .none || builtInShouldYieldToExternal {
                 setup.loopback = .proxy
                 log.add("loopback", "10.7.0.1 answers already: the external connection is the recorded choice")
@@ -1834,6 +1912,7 @@ final class AppModel {
         }
         if !loopback.isWorking, new != .checking {
             loopbackDropped = true
+            HistoryCapture.shared.recoverLoopbackIfNeeded(self)
         }
         if wasWorking, !loopback.isWorking {
             retriedLocalDDIOnLoopback = false
@@ -1952,6 +2031,9 @@ final class AppModel {
             diskImage.redownload()
         }
         runner = status
+        if ["loopback", "unreachable", "handshake", "pairing_port"].contains(status.code) {
+            recoverAutomationLoopback()
+        }
         host.update(runner: coreState(of: status))
         // Readiness can satisfy an outstanding phone step; preparation alone leaves it idle.
         if status.state == "running" {
@@ -2763,10 +2845,27 @@ final class AppModel {
         }
     }
 
-    func startPairing() {
-        guard loopback.isWorking else {
-            pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
-            return
+    private var pairingRecovery: UUID?
+
+    @discardableResult
+    func startPairing() async -> Bool {
+        guard !pairingUnderWay, pairingRecovery == nil else { return false }
+        if !loopback.isWorking {
+            guard canAutoRecoverLoopback else {
+                pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
+                return false
+            }
+            let pending = UUID()
+            pairingRecovery = pending
+            let connected = await loopbackRecovery.restore(for: .pairing)
+            guard pairingRecovery == pending else { return false }
+            pairingRecovery = nil
+            guard connected else {
+                if !loopbackRecovery.attemptedDuringOutage {
+                    pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
+                }
+                return false
+            }
         }
         pairing = .advertising
         // The code also comes as a banner (PairingNotice): ask for notifications now, while in front.
@@ -2788,10 +2887,12 @@ final class AppModel {
                 Task { @MainActor in self?.pairingChanged(event) }
             }
         } catch { pairingChanged(.failed("\(error)")) }
+        return pairingUnderWay
     }
 
     func cancelPairing() {
         if pairingUnderWay { log.add("pairing", "stopped") }
+        pairingRecovery = nil
         pairer.cancel()
         pairingKeepAlive.stop()
         background.releasePairing()
@@ -2811,7 +2912,7 @@ final class AppModel {
     /// The person left the pairing step in Poki (another tab, or another step): the pairing stops at
     /// once, and with it the background keep-alive. Going to Settings is not leaving.
     func leftPairing() {
-        guard pairingUnderWay else { return }
+        guard pairingUnderWay || pairingRecovery != nil else { return }
         // Only a move inside Poki counts. iOS can take pages down while Poki is in the background
         // (the person is in Settings typing the code) or while it comes back; that is not leaving.
         guard inFront, UIApplication.shared.applicationState == .active, Date().timeIntervalSince(cameToFront) > 2 else {

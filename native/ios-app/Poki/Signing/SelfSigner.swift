@@ -98,6 +98,9 @@ final class SelfSigner {
 
     /// The phone's own services (10.7.0.1 and the pairing file), when the loopback answers.
     var phone: () -> [String: Any]? = { nil }
+    var ensurePhoneConnection: ((Bool) async -> Bool)?
+    var handlesLoopbackFailure: () -> Bool = { false }
+    private var checkingPhoneConnection = false
     /// Why `phone()` has nothing (ESP-448).
     var whyUnreachable: () -> Unreachable = { .loopback }
     enum Unreachable { case unpaired, loopback, cellular }
@@ -501,7 +504,7 @@ final class SelfSigner {
         return await task.value
     }
 
-    private var canPrepare: Bool { installFinish == .idle && signedIn && phone() != nil }
+    private var canPrepare: Bool { installFinish == .idle && signedIn && !checkingPhoneConnection }
 
     /// Prepares what is due, by itself: an update when there is a newer Poki, a refresh when
     /// the installed profile is close to expiring. Never installs.
@@ -538,10 +541,13 @@ final class SelfSigner {
     }
 
     func prepare(kind: String, automatic: Bool = false) async {
-        guard var request = phone() else {
-            lastError = unreachable
+        guard installFinish == .idle, working == nil, !checkingPhoneConnection else { return }
+        let account = status?.apple_id
+        guard var request = await connectedPhone(automatic: automatic) else {
+            if !automatic, !handlesLoopbackFailure() || whyUnreachable() == .unpaired { lastError = unreachable }
             return
         }
+        guard installFinish == .idle, working == nil, status?.apple_id == account, !needsCode, !rateLimited else { return }
         request["op"] = "prepare"
         request["kind"] = kind
         request["automatic"] = automatic
@@ -573,20 +579,16 @@ final class SelfSigner {
 
     /// Installs the prepared build. iOS ends Poki when it lands; a notification brings it back.
     func install() async {
-        guard installFinish == .idle else { return }
+        guard installFinish == .idle, working == nil, !checkingPhoneConnection else { return }
         guard let p = next else { log.add("signing", "install tapped, but no build is ready"); return }
         log.add("signing", "install tapped: \(p.kind) \(p.version) (\(p.build))")
-        guard isIdle() else {
-            let why = busyReason() ?? ""
-            lastError = AppLocalization.text(LocalizedStringResource("Poki is running a task. Install when it has finished.")) + (why.isEmpty ? "" : " " + why)
-            log.add("signing", "install waits: \(why)")
-            return
-        }
-        guard var request = phone() else {
-            lastError = unreachable
+        guard canInstallNow() else { return }
+        guard var request = await connectedPhone(automatic: false) else {
+            if !handlesLoopbackFailure() || whyUnreachable() == .unpaired { lastError = unreachable }
             log.add("signing", "install: no loopback or pairing file")
             return
         }
+        guard installFinish == .idle, working == nil, next == p, canInstallNow() else { return }
         request["op"] = "install"
         request["manifest"] = Self.home.appendingPathComponent("ready/\(p.kind)/manifest.json").path
         let reopen = "nz.zheha.poki.signing.reopen"
@@ -637,6 +639,22 @@ final class SelfSigner {
     }
 
     // MARK: Helpers
+
+    private func canInstallNow() -> Bool {
+        if isIdle() { return true }
+        let why = busyReason() ?? ""
+        lastError = AppLocalization.text(LocalizedStringResource("Poki is running a task. Install when it has finished.")) + (why.isEmpty ? "" : " " + why)
+        log.add("signing", "install waits: \(why)")
+        return false
+    }
+
+    private func connectedPhone(automatic: Bool) async -> [String: Any]? {
+        guard !Task.isCancelled else { return nil }
+        checkingPhoneConnection = true
+        defer { checkingPhoneConnection = false }
+        if let ensurePhoneConnection, !(await ensurePhoneConnection(automatic)) { return nil }
+        return Task.isCancelled ? nil : phone()
+    }
 
     private var unreachable: String {
         switch whyUnreachable() {
