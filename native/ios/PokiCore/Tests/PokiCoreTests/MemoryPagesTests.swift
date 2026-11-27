@@ -44,6 +44,18 @@ final class MemoryPagesTests: XCTestCase {
         XCTAssertEqual(store.page(wechat), original)
     }
 
+    func testConflictingPageEditDoesNotPersistOrNotify() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        store.writePage(app: wechat, text: "Updated", by: "Poki")
+        let before = store.changes
+        store.onChange = { XCTFail("A rejected edit must not notify a change") }
+
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: original, text: "My edit", locked: false))
+        XCTAssertEqual(store.changes, before)
+    }
+
     func testNotesFromBeforePagesBecomeTheLinesOfTheirAppsPages() throws {
         let old = """
         {"schema":"poki.agent-backup/2","skills":[],"runs":[],"notes":[
