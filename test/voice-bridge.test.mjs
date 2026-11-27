@@ -501,6 +501,47 @@ test('voice bridge startup logs record version, mode, and controlled error codes
   assert.ok(!allFailLogs.includes('UPSTREAM_SENTINEL_SECRET_9911'));
   assert.ok(!allFailLogs.includes('QUERY_SENTINEL_FAIL'));
   assert.ok(!allFailLogs.includes('QUERY_SENTINEL_LIVE_FAIL'));
+
+  const validationBridge = await sessionBridge(t);
+  assert.equal((await fetch(`${validationBridge.base}/token?transport=live`)).status, 200);
+  await validationBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'queued');
+
+  const missingSdpRes = await fetch(`${validationBridge.base}/session?language=zh-Hans&voice=QUERY_SENTINEL_MISSING_SDP`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}),
+  });
+  assert.equal(missingSdpRes.status, 400);
+  const missingSdpBody = await missingSdpRes.json();
+  assert.equal(missingSdpBody.error, 'invalid_sdp');
+  const missingSdpEvent = await validationBridge.waitForEvent(
+    e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'failed' && e.error_code === 'invalid_sdp',
+  );
+  assert.equal(missingSdpEvent.template_version, VOICE_SPEC_VERSION);
+  assert.equal(missingSdpEvent.status, 400);
+  assert.equal(missingSdpEvent.message, undefined);
+  const missingSdpError = await validationBridge.waitForEvent(e => e.event === 'error' && e.action === 'session' && e.error_code === 'invalid_sdp');
+  assert.equal(missingSdpError.status, 400);
+  assert.equal(missingSdpError.message, undefined);
+
+  const badJsonRes = await fetch(`${validationBridge.base}/session?language=zh-Hans&voice=QUERY_SENTINEL_BAD_JSON`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{bad-json-BODY_SENTINEL_8822',
+  });
+  assert.equal(badJsonRes.status, 400);
+  const badJsonBody = await badJsonRes.json();
+  assert.equal(badJsonBody.error, 'bad_request');
+  const badJsonEvent = await validationBridge.waitForEvent(
+    e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'failed' && e.error_code === 'bad_request',
+  );
+  assert.equal(badJsonEvent.template_version, VOICE_SPEC_VERSION);
+  assert.equal(badJsonEvent.status, 400);
+  assert.equal(badJsonEvent.message, undefined);
+  const badJsonError = await validationBridge.waitForEvent(e => e.event === 'error' && e.action === 'session' && e.error_code === 'bad_request');
+  assert.equal(badJsonError.status, 400);
+  assert.equal(badJsonError.message, undefined);
+
+  const allValidationLogs = JSON.stringify(validationBridge.events);
+  assert.ok(!allValidationLogs.includes('QUERY_SENTINEL_MISSING_SDP'));
+  assert.ok(!allValidationLogs.includes('QUERY_SENTINEL_BAD_JSON'));
+  assert.ok(!allValidationLogs.includes('BODY_SENTINEL_8822'));
 });
 
 test('phone direct Swift renderer and live Node voice bridge produce identical prompts', async t => {
@@ -591,6 +632,5 @@ FileHandle.standardOutput.write(encoded)
   for (let i = 0; i < cases.length; i += 1) {
     assert.equal(swiftResults[i].templateVersion, VOICE_SPEC_VERSION);
     assert.equal(swiftResults[i].text, cases[i].bridgeText, `mismatch for case ${i} (${cases[i].role}/${cases[i].language})`);
-    assert.deepEqual(extractHeadings(swiftResults[i].text), extractHeadings(cases[i].bridgeText));
   }
 });

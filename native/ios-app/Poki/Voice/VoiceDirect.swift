@@ -170,16 +170,11 @@ enum VoiceDirect {
         realtimeSession(for: settingsAccount(in: storage), storage: storage)
     }
 
-    static func realtimeSession(for account: VoiceAccount, storage: PokiStorage = .live,
-                                language: String = AppLocalization.language,
-                                hiddenTools: Set<String> = []) -> [String: Any] {
+    private static func realtimeSession(for account: VoiceAccount, storage: PokiStorage = .live) -> [String: Any] {
         let selected = ModelCatalog.voiceModelID(for: account, storage: storage)
-        let activeTools = tools(live: false).filter { tool in
-            guard let name = tool["name"] as? String else { return false }
-            return !hiddenTools.contains(name)
-        }
+        let activeTools = tools(live: false)
         let exposedNames = activeTools.compactMap { $0["name"] as? String }
-        let prompt = VoiceBehaviorSpec.shared.build(role: .realtime, language: language, tools: exposedNames, host: .phone)
+        let prompt = VoiceBehaviorSpec.shared.build(role: .realtime, language: AppLocalization.language, tools: exposedNames, host: .phone)
         return [
             "type": "realtime", "model": account == .openai && selected.hasPrefix("gpt-live-") ? ModelCatalog.voiceRealtime : selected,
             "instructions": prompt.text, "output_modalities": ["audio"],
@@ -192,18 +187,14 @@ enum VoiceDirect {
         ]
     }
 
-    static func liveSession(model: String, language: String = AppLocalization.language,
-                            hiddenTools: Set<String> = []) -> [String: Any] {
+    static func exchangeLiveOffer(_ sdp: String, model: String, apiKey: String) async throws -> String {
         let cancelTool: [String: Any] = ["type": "function", "name": cancelCurrentTask, "parameters": empty,
                                          "description": "Stop further steps of the current phone task. Call only for an explicit cancellation request, never for words the user wants quoted, entered or sent. Call it without saying anything first."]
-        let activeTools = (tools(live: true) + [cancelTool]).filter { tool in
-            guard let name = tool["name"] as? String else { return false }
-            return !hiddenTools.contains(name)
-        }
+        let activeTools = tools(live: true) + [cancelTool]
         let exposedNames = activeTools.compactMap { $0["name"] as? String }
-        let voicePrompt = VoiceBehaviorSpec.shared.build(role: .liveVoice, language: language, tools: exposedNames, host: .phone)
-        let executorPrompt = VoiceBehaviorSpec.shared.build(role: .liveExecutor, language: language, tools: exposedNames, host: .phone)
-        return [
+        let voicePrompt = VoiceBehaviorSpec.shared.build(role: .liveVoice, language: AppLocalization.language, tools: exposedNames, host: .phone)
+        let executorPrompt = VoiceBehaviorSpec.shared.build(role: .liveExecutor, language: AppLocalization.language, tools: exposedNames, host: .phone)
+        let live: [String: Any] = [
             "model": model,
             "instructions": voicePrompt.text,
             "audio": ["output": ["voice": "marin"]],
@@ -213,10 +204,6 @@ enum VoiceDirect {
                 "parallel_tool_calls": false, "reasoning": ["effort": "low"],
             ]],
         ]
-    }
-
-    static func exchangeLiveOffer(_ sdp: String, model: String, apiKey: String) async throws -> String {
-        let live = liveSession(model: model)
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/live/sessions")!, timeoutInterval: 20)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

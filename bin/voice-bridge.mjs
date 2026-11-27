@@ -338,6 +338,7 @@ const mcp = new Mcp();
 if (macTools) await mcp.connect();
 
 function startupErrorCode(error) {
+  if (typeof error?.errorCode === 'string' && error.errorCode) return error.errorCode;
   if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return 'timeout';
   const status = Number(error?.upstreamStatus ?? error?.status);
   if (error?.source !== 'upstream' && status === 400) return 'bad_request';
@@ -373,21 +374,24 @@ const server = http.createServer(async (req, res) => {
         console.log(JSON.stringify({ event: 'voice_startup', template_version: prompt.templateVersion, mode: 'realtime', commit_state: 'confirmed', host: voiceHost, sections: prompt.sectionIds, ms: Date.now() - started }));
         return reply(200, token, templateHeaders);
       } catch (error) {
-        console.log(JSON.stringify({ event: 'voice_startup', template_version: VOICE_SPEC_VERSION, mode: 'realtime', commit_state: 'failed', host: voiceHost, ms: Date.now() - started, error_code: startupErrorCode(error), status: Number(error?.status) || 0 }));
+        console.log(JSON.stringify({ event: 'voice_startup', template_version: VOICE_SPEC_VERSION, mode: 'realtime', commit_state: 'failed', host: voiceHost, ms: Date.now() - started, error_code: startupErrorCode(error), status: Number(error?.status) || 500 }));
         throw error;
       }
     }
     if (req.method === 'POST' && action === 'session' && usesLive) {
-      const { sdp } = await readJSON(req) ?? {};
-      if (typeof sdp !== 'string' || !sdp.trim()) return reply(400, { error: 'SDP offer is required' });
-      const options = Object.fromEntries(['effort', 'voice', 'language'].map(key => [key, url.searchParams.get(key) || undefined]));
       const started = Date.now();
       try {
+        const body = await readJSON(req);
+        const sdp = body && typeof body === 'object' ? body.sdp : undefined;
+        if (typeof sdp !== 'string' || !sdp.trim()) {
+          throw Object.assign(new Error('SDP offer is required'), { status: 400, errorCode: 'invalid_sdp' });
+        }
+        const options = Object.fromEntries(['effort', 'voice', 'language'].map(key => [key, url.searchParams.get(key) || undefined]));
         const { sdp: answer, prompts } = await exchangeOffer(sdp, options);
         console.log(JSON.stringify({ event: 'voice_startup', template_version: VOICE_SPEC_VERSION, mode: 'live', commit_state: 'confirmed', host: voiceHost, sections: { voice: prompts.voice.sectionIds, executor: prompts.executor.sectionIds }, ms: Date.now() - started }));
         return reply(200, { sdp: answer }, templateHeaders);
       } catch (error) {
-        console.log(JSON.stringify({ event: 'voice_startup', template_version: VOICE_SPEC_VERSION, mode: 'live', commit_state: 'failed', host: voiceHost, ms: Date.now() - started, error_code: startupErrorCode(error), status: Number(error?.status) || 0 }));
+        console.log(JSON.stringify({ event: 'voice_startup', template_version: VOICE_SPEC_VERSION, mode: 'live', commit_state: 'failed', host: voiceHost, ms: Date.now() - started, error_code: startupErrorCode(error), status: Number(error?.status) || 500 }));
         throw error;
       }
     }
