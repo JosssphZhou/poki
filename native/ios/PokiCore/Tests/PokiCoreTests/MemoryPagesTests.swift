@@ -72,6 +72,17 @@ final class MemoryPagesTests: XCTestCase {
         XCTAssertTrue(reopened.page(wechat)?.isLocked ?? false)
     }
 
+    func testTextEditKeepsConcurrentPageLock() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        store.setPageLocked(wechat, true)
+
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Owner edit", locked: false))
+        XCTAssertEqual(store.page(wechat)?.text, "Owner edit")
+        XCTAssertTrue(store.page(wechat)?.isLocked ?? false)
+    }
+
     func testNotesFromBeforePagesBecomeTheLinesOfTheirAppsPages() throws {
         let old = """
         {"schema":"poki.agent-backup/2","skills":[],"runs":[],"notes":[
