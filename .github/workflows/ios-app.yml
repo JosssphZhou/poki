@@ -123,8 +123,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/sim
-          key: sim-xcode27-${{ github.sha }}
-          restore-keys: sim-xcode27-
+          key: sim-test-xcode27-${{ github.sha }}
+          restore-keys: sim-test-xcode27-
       - name: Build Poki (Debug) for the simulator
         run: |
           set -euo pipefail
@@ -132,10 +132,11 @@ jobs:
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate --spec native/ios-app/project.yml
           mkdir -p build
-          xcodebuild build \
+          xcodebuild build-for-testing \
             -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
-            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           if ! grep -q "BUILD SUCCEEDED" build/sim.log || [ ! -d build/sim/Build/Products/Debug-iphonesimulator/Poki.app ]; then
             grep -B2 -A6 "error:" build/sim.log | head -80
             exit 1
@@ -146,7 +147,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build/sim
-          key: sim-xcode27-${{ github.sha }}
+          key: sim-test-xcode27-${{ github.sha }}
       - name: Boot a simulator
         run: |
           set -euo pipefail
@@ -406,22 +407,27 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/sim
-          key: sim-xcode27-${{ github.sha }}
-          restore-keys: sim-xcode27-
+          key: sim-test-xcode27-${{ github.sha }}
+          restore-keys: sim-test-xcode27-
 
       # The app on the iOS Simulator: it launches, stays up, and draws its first screen. The launcher
       # cannot reach a simulator's developer services, so this checks the shell, not automation.
       - name: Simulator smoke test
+        env:
+          SIM_CACHE_HIT: ${{ steps.sim-cache.outputs.cache-hit }}
         run: |
           set -euo pipefail
-          xcodebuild build \
-            -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
-            CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
           APP=build/sim/Build/Products/Debug-iphonesimulator/Poki.app
-          if ! grep -q "BUILD SUCCEEDED" build/sim.log || [ ! -d "$APP" ]; then
-            grep -B2 -A6 "error:" build/sim.log | head -80
-            exit 1
+          if [ "$SIM_CACHE_HIT" != "true" ] || [ ! -d "$APP" ] || ! ls build/sim/Build/Products/*.xctestrun >/dev/null 2>&1; then
+            xcodebuild build-for-testing \
+              -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
+              -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
+              -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+              2>&1 | tee build/sim.log | grep --line-buffered -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+            if ! grep -q "BUILD SUCCEEDED" build/sim.log || [ ! -d "$APP" ]; then
+              grep -B2 -A6 "error:" build/sim.log | head -80
+              exit 1
+            fi
           fi
           read -r RUNTIME TYPE PADTYPE < <(xcrun simctl list runtimes -j | python3 -c '
           import json, sys
@@ -508,7 +514,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build/sim
-          key: sim-xcode27-${{ github.sha }}
+          key: sim-test-xcode27-${{ github.sha }}
 
       # The app's own logic against a fake launcher: tunnel loss named to the agent, pairing
       # refusal and acceptance, the agent's view of the runner.
@@ -517,9 +523,14 @@ jobs:
         run: |
           set -o pipefail
           trap 'xcrun simctl shutdown "$UDID" || true; xcrun simctl delete "$UDID" || true' EXIT
-          xcodebuild test -project native/ios-app/Poki.xcodeproj -scheme Poki -configuration Debug \
-            -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build/sim \
-            -only-testing:PokiTests CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tee build/tests.log | grep --line-buffered -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* "
+          xcrun simctl terminate "$UDID" nz.zheha.poki >/dev/null 2>&1 || true
+          # Setup's last item needs location; PokiTests check a simulator with every item done (app-tests.sh).
+          xcrun simctl privacy "$UDID" grant location-always nz.zheha.poki
+          XCTESTRUN="$(ls -t build/sim/Build/Products/*.xctestrun | head -1)"
+          xcodebuild test-without-building -xctestrun "$XCTESTRUN" \
+            -destination "platform=iOS Simulator,id=$UDID" \
+            -only-testing:PokiTests \
+            2>&1 | tee build/tests.log | grep --line-buffered -E "Test Case|error:|failed|passed|TEST (SUCCEEDED|FAILED)|\*\* "
           grep -q "TEST SUCCEEDED" build/tests.log
 
       # Shut down the iPhone simulator before booting the iPad simulator so the 3-core runner never
