@@ -1,7 +1,7 @@
 import XCTest
 
 final class MemoryPageEditorUITests: XCTestCase {
-    func testSamplePageEditorOpensAndKeepsDraft() {
+    func testSamplePageEditorOpensWithCurrentText() {
         let app = XCUIApplication()
         app.launchArguments += ["-pokiScreen", "memory", "-pokiMemorySample", "YES",
                                 "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
@@ -15,6 +15,9 @@ final class MemoryPageEditorUITests: XCTestCase {
         let field = app.textFields["memory.pageEditor"]
         let view = app.textViews["memory.pageEditor"]
         XCTAssertTrue(field.waitForExistence(timeout: 5) || view.waitForExistence(timeout: 5))
+        let editor = field.exists ? field : view
+        XCTAssertTrue((editor.value as? String)?.contains("不吃香菜") == true)
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Memory page editor"
         attachment.lifetime = .keepAlways
