@@ -316,7 +316,7 @@ final class LiveActivityTests: XCTestCase {
         try await withSessionApp { app, activities in
             let session = "capture-session"
             app.startSession()
-            await app.chatTaskBegan()
+            app.handle(.toolStarted(name: "look", summary: "Look at Notes", session: session))
             let original = try XCTUnwrap(activities().first)
             let hidden = await app.hideLiveActivityForCapture(task: .external(session))
             XCTAssertFalse(hidden.isError)
@@ -352,7 +352,7 @@ final class LiveActivityTests: XCTestCase {
             let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
             app.startSession()
             app.inProcessReadyForProbe()
-            await app.chatTaskBegan()
+            app.handle(.toolStarted(name: "look", summary: "Look at Notes", session: session))
             XCTAssertTrue(app.sessionOn, app.problem ?? "Session did not start")
             let original = try XCTUnwrap(activities().first, AppLog.shared.lines.suffix(12).joined(separator: "\n"))
             let looked = await core.handle(RelayRequest(id: "look", method: "POST",
