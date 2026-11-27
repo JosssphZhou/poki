@@ -1,0 +1,507 @@
+{
+  "schema": "poki.voice-speed-samples/1",
+  "replay_entry": {
+    "shared_replay_contract": "-pokiVoiceLink \"poki://voice?bridge=<address>&test=<n>-<n>&muted=1\" with bin/voice-bridge.mjs --test-dir <dir> serving uNN.24k.pcm (24 kHz mono PCM16) and recording voice-test-report.jsonl",
+    "fallback_simulator_entry": "-pokiTalk talk -pokiTalkRehearsal 1|lost (silent simulator rehearsal used while recorded audio fixtures are not yet provisioned)"
+  },
+  "required_voice_hosts": [
+    "phone_direct",
+    "voice_bridge"
+  ],
+  "required_groups": [
+    "cold_start",
+    "warm_session",
+    "visual_evidence",
+    "mid_turn_revision"
+  ],
+  "required_utterance_classes": [
+    "short_command",
+    "long_paused_utterance"
+  ],
+  "required_edge_flags": [
+    "animation_enabled",
+    "target_unchanged",
+    "no_new_frame"
+  ],
+  "required_checklist_categories": [
+    "stop",
+    "duplicate_utterance",
+    "disconnect_reconnect",
+    "tool_failure",
+    "continuation",
+    "permission_denied"
+  ],
+  "samples": [
+    {
+      "id": "pd-cold-short-rehearsal-en",
+      "utterance_index": 1,
+      "audio_file": "u01.24k.pcm",
+      "entry_modes": [
+        "rehearsal",
+        "bridge_replay"
+      ],
+      "rehearsal_variant": "1",
+      "locale": "en",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "cold_start",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled",
+        "target_unchanged",
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "Open Settings and turn the brightness up a little",
+      "expected_target": {
+        "kind": "app_foreground",
+        "name": "Settings",
+        "bundle_id": "com.apple.Preferences"
+      }
+    },
+    {
+      "id": "pd-cold-short-rehearsal-zh",
+      "utterance_index": 2,
+      "audio_file": "u02.24k.pcm",
+      "entry_modes": [
+        "rehearsal",
+        "bridge_replay"
+      ],
+      "rehearsal_variant": "1",
+      "locale": "zh-Hans",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "cold_start",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled",
+        "target_unchanged",
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "打开设置，把屏幕调亮一点",
+      "expected_target": {
+        "kind": "app_foreground",
+        "name": "Settings",
+        "bundle_id": "com.apple.Preferences"
+      }
+    },
+    {
+      "id": "pd-disconnect-rehearsal-en",
+      "utterance_index": 3,
+      "audio_file": "u03.24k.pcm",
+      "entry_modes": [
+        "rehearsal",
+        "bridge_replay"
+      ],
+      "rehearsal_variant": "lost",
+      "locale": "en",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "cold_start",
+      "utterance_class": "short_command",
+      "checklist_category": "disconnect_reconnect",
+      "edge_flags": [
+        "animation_enabled",
+        "target_unchanged",
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": true,
+      "prompt": "Open Settings and turn the brightness up a little (connection drops after reply)",
+      "expected_target": {
+        "kind": "app_foreground",
+        "name": "Settings",
+        "bundle_id": "com.apple.Preferences"
+      }
+    },
+    {
+      "id": "pd-cold-short-calc7",
+      "utterance_index": 4,
+      "audio_file": "u04.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "cold_start",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "Open Calculator and press 7",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "7",
+        "app": "Calculator"
+      }
+    },
+    {
+      "id": "pd-warm-short-calc7-zh",
+      "utterance_index": 5,
+      "audio_file": "u05.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "warm_session",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "计算器按 7",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "7",
+        "app": "Calculator"
+      }
+    },
+    {
+      "id": "pd-warm-long-address-pause",
+      "utterance_index": 6,
+      "audio_file": "u06.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "warm_session",
+      "utterance_class": "long_paused_utterance",
+      "checklist_category": "continuation",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "打开备忘录，记一下地址，输入“海淀区中关村南大街五号”……明天上午九点送达",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "海淀区中关村南大街五号",
+        "app": "Notes"
+      }
+    },
+    {
+      "id": "pd-visual-short-settings-about",
+      "utterance_index": 7,
+      "audio_file": "u07.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "visual_evidence",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled",
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": true,
+      "expects_connection_drop": false,
+      "prompt": "Open Settings About and describe what is on screen",
+      "expected_target": {
+        "kind": "settings_page",
+        "page": "about"
+      }
+    },
+    {
+      "id": "pd-revision-long-notes-saturday",
+      "utterance_index": 8,
+      "audio_file": "u08.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "mid_turn_revision",
+      "utterance_class": "long_paused_utterance",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "打开备忘录记周五……不对，改成输入“周六”，先别发送",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "周六",
+        "app": "Notes"
+      }
+    },
+    {
+      "id": "pd-checklist-stop-unchanged",
+      "utterance_index": 9,
+      "audio_file": "u09.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "warm_session",
+      "utterance_class": "short_command",
+      "checklist_category": "stop",
+      "edge_flags": [
+        "animation_enabled",
+        "target_unchanged"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "打开设置……停",
+      "expected_target": {
+        "kind": "screen_read"
+      }
+    },
+    {
+      "id": "pd-checklist-duplicate-utterance",
+      "utterance_index": 10,
+      "audio_file": "u10.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "warm_session",
+      "utterance_class": "short_command",
+      "checklist_category": "duplicate_utterance",
+      "edge_flags": [
+        "target_unchanged"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "打开备忘录新建一条测试草稿（同一句话不重复执行）",
+      "expected_target": {
+        "kind": "app_foreground",
+        "name": "Notes",
+        "bundle_id": "com.apple.mobilenotes"
+      }
+    },
+    {
+      "id": "pd-checklist-tool-failure-no-frame",
+      "utterance_index": 11,
+      "audio_file": "u11.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "visual_evidence",
+      "utterance_class": "short_command",
+      "checklist_category": "tool_failure",
+      "edge_flags": [
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": true,
+      "expects_connection_drop": false,
+      "prompt": "Check what is on screen while frame capture fails",
+      "expected_target": {
+        "kind": "screen_read"
+      }
+    },
+    {
+      "id": "pd-checklist-permission-denied",
+      "utterance_index": 12,
+      "audio_file": "u12.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "phone_direct",
+      "expected_action_host": "phone_local",
+      "group": "warm_session",
+      "utterance_class": "short_command",
+      "checklist_category": "permission_denied",
+      "edge_flags": [
+        "target_unchanged"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "Send the draft message (owner denies approval)",
+      "expected_target": {
+        "kind": "screen_read"
+      }
+    },
+    {
+      "id": "vb-cold-short-calc7",
+      "utterance_index": 13,
+      "audio_file": "u13.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "voice_bridge",
+      "expected_action_host": "phone_local",
+      "group": "cold_start",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "Open Calculator and press 7",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "7",
+        "app": "Calculator"
+      }
+    },
+    {
+      "id": "vb-warm-short-settings-mac",
+      "utterance_index": 14,
+      "audio_file": "u14.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "voice_bridge",
+      "expected_action_host": "mac_tools",
+      "group": "warm_session",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "Open Settings General",
+      "expected_target": {
+        "kind": "settings_page",
+        "page": "general"
+      }
+    },
+    {
+      "id": "vb-warm-long-contact-pause",
+      "utterance_index": 15,
+      "audio_file": "u15.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "voice_bridge",
+      "expected_action_host": "phone_local",
+      "group": "warm_session",
+      "utterance_class": "long_paused_utterance",
+      "checklist_category": "continuation",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "在联系人里找一下张……不是张三，搜索“张伟”，看一眼他的公司地址",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "张伟",
+        "app": "Contacts"
+      }
+    },
+    {
+      "id": "vb-visual-short-screen-mac",
+      "utterance_index": 16,
+      "audio_file": "u16.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "zh-Hans",
+      "voice_host": "voice_bridge",
+      "expected_action_host": "mac_tools",
+      "group": "visual_evidence",
+      "utterance_class": "short_command",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled",
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": true,
+      "expects_connection_drop": false,
+      "prompt": "看看当前屏幕上显示的是什么",
+      "expected_target": {
+        "kind": "screen_read"
+      }
+    },
+    {
+      "id": "vb-revision-long-notes-en",
+      "utterance_index": 17,
+      "audio_file": "u17.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "voice_bridge",
+      "expected_action_host": "phone_local",
+      "group": "mid_turn_revision",
+      "utterance_class": "long_paused_utterance",
+      "checklist_category": "core_speed",
+      "edge_flags": [
+        "animation_enabled"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": false,
+      "prompt": "Open Notes and note Friday... actually change it to type \"Saturday\" and do not send",
+      "expected_target": {
+        "kind": "screen_text",
+        "expected": "Saturday",
+        "app": "Notes"
+      }
+    },
+    {
+      "id": "vb-disconnect-unchanged-mac",
+      "utterance_index": 18,
+      "audio_file": "u18.24k.pcm",
+      "entry_modes": [
+        "bridge_replay"
+      ],
+      "rehearsal_variant": null,
+      "locale": "en",
+      "voice_host": "voice_bridge",
+      "expected_action_host": "mac_tools",
+      "group": "warm_session",
+      "utterance_class": "short_command",
+      "checklist_category": "disconnect_reconnect",
+      "edge_flags": [
+        "animation_enabled",
+        "target_unchanged",
+        "no_new_frame"
+      ],
+      "requires_visual_evidence": false,
+      "expects_connection_drop": true,
+      "prompt": "Open Settings and check Wi-Fi after temporary disconnect",
+      "expected_target": {
+        "kind": "settings_page",
+        "page": "wifi"
+      }
+    }
+  ]
+}
