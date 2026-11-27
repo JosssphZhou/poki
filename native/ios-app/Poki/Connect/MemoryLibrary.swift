@@ -132,7 +132,16 @@ struct MemoryChange: Identifiable, Equatable {
 /// What the page lists: the items, the changes, and what the page may do with them.
 @MainActor @Observable
 final class MemoryLibrary {
-    static let shared = MemoryLibrary()
+    static let shared: MemoryLibrary = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-pokiUITestMemoryPageConflict") {
+            let store = RoutineStore(url: nil)
+            store.writePage(app: nil, text: "Original synthetic memory\nSynthetic second memory\nSynthetic third memory\nSynthetic fourth memory", by: "Poki")
+            return MemoryLibrary(store: store)
+        }
+        #endif
+        return MemoryLibrary()
+    }()
     nonisolated static let sampleKey = "pokiMemorySample"
     static let noteLimit = 300
 
@@ -184,7 +193,19 @@ final class MemoryLibrary {
     func pageSummary(_ app: String?) -> String? { store?.page(app)?.summary }
     func pageLocked(_ app: String?) -> Bool { store?.page(app)?.isLocked == true }
 
-    func pageForEditing(_ app: String?) -> StoredMemoryPage? { store?.page(app) }
+    func pageForEditing(_ app: String?) -> StoredMemoryPage? {
+        let snapshot = store?.page(app)
+        #if DEBUG
+        // Disposable real-store race for the mounted editor regression. Normal launches never run it.
+        if ProcessInfo.processInfo.arguments.contains("-pokiUITestMemoryPageConflict"), let store {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                store.writePage(app: app, text: "Updated synthetic memory", by: "Poki")
+            }
+        }
+        #endif
+        return snapshot
+    }
 
     func savePageEdit(_ app: String?, original: StoredMemoryPage?, text: String, locked: Bool) -> Bool {
         guard let store else {
