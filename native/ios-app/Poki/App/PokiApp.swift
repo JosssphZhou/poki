@@ -62,7 +62,11 @@ struct PokiApp: App {
         // Started by iOS in the background (a change of place, a shortcut) with Screen History on:
         // reading starts without waiting for Poki to be opened.
         HistoryCapture.shared.monitor(model: model)
-        BackgroundRefresh.register { model.background.woke("background refresh") }
+        BackgroundRefresh.register(shouldContinue: {
+            model.background.isOn || HistoryCapture.isEnabled
+        }, onWake: {
+            model.background.woke("background refresh")
+        })
         _model = State(initialValue: model)
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
