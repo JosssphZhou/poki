@@ -2,48 +2,90 @@
 // Siri and Spotlight. In both the app and the widget extension, because a control's action has to be
 // in both; it always runs in the app (`openAppWhenRun`).
 import AppIntents
+import Foundation
 import Observation
+import os
 
-/// What a system entry asked Poki to show. The intent only records it; RootView takes it when its
-/// scene is up, so a cold launch, Poki in the background and Poki in front all go the same way.
 @MainActor
 @Observable
 final class PokiEntry {
-    enum Request { case talk, show }
+    enum Destination: Equatable { case talk, voice, chat }
+    enum Source: String { case appShortcut, control, link, anytime, sendTask }
+
+    struct Request: Equatable {
+        let id: UUID
+        let destination: Destination
+        let issuedAt: Date
+        let receivedAt = ContinuousClock.now
+        let source: Source
+        let epoch: Int
+
+        func isExpired(at now: Date = PokiEntry.now()) -> Bool {
+            now.timeIntervalSince(issuedAt) > 15
+        }
+    }
 
     static let shared = PokiEntry()
-    private(set) var pending: Request?
-    @ObservationIgnored private var askedAt = Date.distantPast
+    private(set) var pending: [Request] = []
+    @ObservationIgnored private var accepted = Set<UUID>()
+    private nonisolated static let epochState = OSAllocatedUnfairLock(initialState: 0)
+    private nonisolated static let clockState = OSAllocatedUnfairLock<@Sendable () -> Date>(initialState: { Date.now })
+    nonisolated static var currentEpoch: Int { epochState.withLock { $0 } }
+    nonisolated static var now: @Sendable () -> Date {
+        get { clockState.withLock { $0 } }
+        set { clockState.withLock { $0 = newValue } }
+    }
+    nonisolated var epoch: Int { Self.currentEpoch }
+
+    func ask(_ destination: Destination, from source: Source, id: UUID = UUID(), issuedAt: Date? = nil, epoch: Int? = nil) {
+        ask(Request(id: id, destination: destination, issuedAt: issuedAt ?? Self.now(), source: source, epoch: epoch ?? self.epoch))
+    }
 
     func ask(_ request: Request) {
-        pending = request
-        askedAt = .now
+        guard accepted.insert(request.id).inserted else { return }
+        #if POKI_APP
+        if request.destination != .chat { request.recordStage(.receipt) }
+        #endif
+        pending.append(request)
     }
 
-    /// A Talk request that waited more than a few seconds only shows the chat: the microphone starts
-    /// on a press, never later on its own.
-    func take() -> Request? {
-        defer { pending = nil }
-        if pending == .talk, Date.now.timeIntervalSince(askedAt) > 15 { return .show }
+    func take() -> [Request] {
+        defer { pending.removeAll() }
         return pending
     }
+
+    func advanceEpoch() { Self.epochState.withLock { $0 += 1 } }
 }
 
-/// Opens Poki's chat and starts voice there. A task Poki is already doing is shown, not interrupted.
+/// Opens Poki's chat to start or return to a talk.
 /// A tool for Siri AI in the app only (POKI_SIRI_TOOLS is never set for the widget extension, which
 /// carries this intent for its control): see SendTaskToPokiIntent.
 struct TalkToPokiIntent: AppIntent {
     static let title = LocalizedStringResource("Talk to Poki", table: "Entry")
-    static let description = IntentDescription(LocalizedStringResource("Opens Poki and starts talking. If Poki is doing a task, it shows that task and leaves it running.", table: "Entry"))
+    static let description = IntentDescription(LocalizedStringResource("Opens Poki to start or return to a talk. If Poki is doing a task, it shows the task and leaves it running.", table: "Entry"))
     static let openAppWhenRun = true
     @available(iOS 26.0, *)
     static var supportedModes: IntentModes { .foreground(.immediate) }
 
+    private let requestID = UUID()
+    private let issuedAt = PokiEntry.now()
+    private let issuedEpoch = PokiEntry.currentEpoch
+
+    // WidgetKit serializes intent parameters between its extension and the app.
+    @Parameter(title: "Control")
+    var fromControl: Bool?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Talk to Poki", table: "Entry")
+    }
+
     init() {}
+    init(fromControl: Bool) { self.fromControl = fromControl }
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        PokiEntry.shared.ask(.talk)
+        PokiEntry.shared.ask(.talk, from: fromControl == true ? .control : .appShortcut,
+                             id: requestID, issuedAt: issuedAt, epoch: issuedEpoch)
         return .result()
     }
 }

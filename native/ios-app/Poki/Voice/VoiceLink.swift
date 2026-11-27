@@ -9,6 +9,7 @@ protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func startOpeningCapture(session: Int) throws -> OpeningVoiceCapture?
     @MainActor func useOpeningCapture(_ capture: OpeningVoiceCapture?)
     @MainActor func ensureOpeningCaptureRunning(_ capture: OpeningVoiceCapture) -> Bool
+    @MainActor func hasSentMicrophoneAudio() async -> Bool
     func hasRemoteSpeech() async -> Bool
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
@@ -21,6 +22,7 @@ extension VoiceConnection {
     func startOpeningCapture(session: Int) throws -> OpeningVoiceCapture? { nil }
     func useOpeningCapture(_ capture: OpeningVoiceCapture?) {}
     @MainActor func ensureOpeningCaptureRunning(_ capture: OpeningVoiceCapture) -> Bool { capture.audio.ensureRunning() }
+    func hasSentMicrophoneAudio() async -> Bool { false }
     func hasRemoteSpeech() async -> Bool { false }
 }
 
@@ -210,6 +212,19 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         }
         lock.withLock { opened = true }
         if microphone { diagnoseCapture() }
+    }
+
+    @MainActor
+    func hasSentMicrophoneAudio() async -> Bool {
+        guard let peer else { return false }
+        return await withCheckedContinuation { done in
+            peer.statistics { report in
+                done.resume(returning: report.statistics.values.contains { stat in
+                    stat.type == "outbound-rtp" && (stat.values["kind"] as? String) == "audio"
+                        && ((stat.values["bytesSent"] as? NSNumber)?.uint64Value ?? 0) > 0
+                })
+            }
+        }
     }
 
     func hasRemoteSpeech() async -> Bool {
