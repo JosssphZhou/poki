@@ -5,6 +5,9 @@ import ImageIO
 #if canImport(CoreML)
 import CoreML
 #endif
+#if os(macOS) && canImport(Metal)
+import Metal
+#endif
 #endif
 
 /// A line of text read from the screenshot. `box` is in parts of the picture (0 to 1, from the top
@@ -21,9 +24,32 @@ public struct RecognizedText: Sendable, Equatable {
 /// Text recognition on the phone (Vision). Nil where Vision is missing (Linux) or the picture cannot
 /// be read.
 enum TextRecognizer {
+    #if os(macOS) && canImport(Metal)
+    private static let prefersCPU: Bool = {
+        guard let device = MTLCreateSystemDefaultDevice() else { return true }
+        return device.name.localizedCaseInsensitiveContains("Paravirtual")
+    }()
+    #else
+    private static let prefersCPU = false
+    #endif
+
     static func recognize(png: Data, in region: Rect? = nil) -> [RecognizedText]? {
         #if canImport(Vision) && canImport(ImageIO)
-        return recognize(png: png, in: region, run: performVision)
+        return recognize(png: png, in: region, preferCPU: prefersCPU, run: performVision)
+        #else
+        return nil
+        #endif
+    }
+
+    /// Runs Vision off Swift Concurrency's cooperative thread pool so a slow or hung Vision call
+    /// cannot starve deadlines or timers on small-core hosts.
+    static func recognizeAsync(png: Data, in region: Rect? = nil) async -> [RecognizedText]? {
+        #if canImport(Vision) && canImport(ImageIO)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: recognize(png: png, in: region))
+            }
+        }
         #else
         return nil
         #endif
@@ -36,13 +62,14 @@ enum TextRecognizer {
         let cpuOnly: Bool
     }
 
-    static func attempts(for region: Rect?) -> [Attempt] {
+    static func attempts(for region: Rect?, preferCPU: Bool = prefersCPU) -> [Attempt] {
         let primaryLevel: VNRequestTextRecognitionLevel = region == nil ? .accurate : .fast
         let detectLanguage = region == nil
-        var list = [
-            Attempt(level: primaryLevel, detectLanguage: detectLanguage, cpuOnly: false),
-            Attempt(level: primaryLevel, detectLanguage: detectLanguage, cpuOnly: true),
-        ]
+        var list = preferCPU
+            ? [Attempt(level: primaryLevel, detectLanguage: detectLanguage, cpuOnly: true),
+               Attempt(level: primaryLevel, detectLanguage: detectLanguage, cpuOnly: false)]
+            : [Attempt(level: primaryLevel, detectLanguage: detectLanguage, cpuOnly: false),
+               Attempt(level: primaryLevel, detectLanguage: detectLanguage, cpuOnly: true)]
         if region == nil {
             list.append(Attempt(level: .accurate, detectLanguage: false, cpuOnly: true))
             list.append(Attempt(level: .fast, detectLanguage: false, cpuOnly: true))
@@ -53,6 +80,7 @@ enum TextRecognizer {
     static func recognize(
         png: Data,
         in region: Rect? = nil,
+        preferCPU: Bool = prefersCPU,
         run: (CGImage, Attempt) throws -> [VNRecognizedTextObservation]
     ) -> [RecognizedText]? {
         guard let source = CGImageSourceCreateWithData(png as CFData, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
@@ -72,7 +100,7 @@ enum TextRecognizer {
             area = Rect(x: 0, y: 0, width: 1, height: 1)
         }
         var observations: [VNRecognizedTextObservation]?
-        for attempt in attempts(for: region) {
+        for attempt in attempts(for: region, preferCPU: preferCPU) {
             if let results = try? run(input, attempt) {
                 observations = results
                 break
@@ -114,7 +142,7 @@ enum TextRecognizer {
 
 extension CoreHost {
     /// Vision on the phone; a host may answer differently (tests do).
-    public func recognizeText(inPNG png: Data) async -> [RecognizedText]? { TextRecognizer.recognize(png: png) }
+    public func recognizeText(inPNG png: Data) async -> [RecognizedText]? { await TextRecognizer.recognizeAsync(png: png) }
     /// Nothing to prepare by default.
     public func warmUp() {}
 }

@@ -1904,7 +1904,7 @@ final class TextRecognitionTests: XCTestCase {
     func testVisionFallsBackToCPUWhenDefaultComputeDeviceFails() throws {
         let png = try Self.samplePNG()
         var attempts: [TextRecognizer.Attempt] = []
-        let found = try XCTUnwrap(TextRecognizer.recognize(png: png) { image, attempt in
+        let found = try XCTUnwrap(TextRecognizer.recognize(png: png, preferCPU: false) { image, attempt in
             attempts.append(attempt)
             if !attempt.cpuOnly {
                 throw NSError(domain: "PokiCoreTests.Vision", code: 9, userInfo: [NSLocalizedDescriptionKey: "simulated GPU inference failure"])
@@ -1913,6 +1913,14 @@ final class TextRecognitionTests: XCTestCase {
         })
         XCTAssertEqual(attempts.first?.cpuOnly, false)
         XCTAssertTrue(attempts.dropFirst().contains { $0.cpuOnly })
+        let line = try XCTUnwrap(found.first { $0.text.contains("13") }, "\(found)")
+        XCTAssertLessThan(line.box.y, 0.5, "the box is measured from the top: \(line.box)")
+    }
+
+    func testRecognizeAsyncReturnsRecognizedTextOffCooperativePool() async throws {
+        let png = try Self.samplePNG()
+        let recognized = await TextRecognizer.recognizeAsync(png: png)
+        let found = try XCTUnwrap(recognized)
         let line = try XCTUnwrap(found.first { $0.text.contains("13") }, "\(found)")
         XCTAssertLessThan(line.box.y, 0.5, "the box is measured from the top: \(line.box)")
     }

@@ -2152,7 +2152,7 @@ final class Computer: @unchecked Sendable {
         guard remaining > 0, !Task.isCancelled else { return false }
         let region = target.pictureRegion
         guard let text = try? await withDeadline(min(0.25, remaining), "confirming the display in the screenshot", {
-            TextRecognizer.recognize(png: png, in: region)
+            await TextRecognizer.recognizeAsync(png: png, in: region)
         }), text.count == 1, let digit = text.first else { return false }
         return digit.text == target.expected && region.contains(digit.box.centre)
     }
