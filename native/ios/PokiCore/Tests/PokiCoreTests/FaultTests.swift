@@ -668,6 +668,35 @@ final class FaultTests: XCTestCase {
         XCTAssertTrue(wda.sent.contains("POST /wda/apps/launch"))
     }
 
+    /// In-process activate polls up to 5 s on its first try and retries once with up to 10 s.
+    /// A launch whose second activate attempt succeeds at the end of that 15 s retry budget
+    /// must not be cut short by either the outer action cap or the runner input timeout.
+    func testLaunchSurvivesSecondActivateAttempt() async {
+        let defaults = CoreConfig()
+        let (core, wda, _) = makeCore {
+            $0.toolDeadline = defaults.toolDeadline
+            $0.actionCap = defaults.actionCap
+            $0.readTimeout = defaults.readTimeout
+        }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "nz.zheha.poki", "name": "Poki"]]) }
+        let attempts = LockedBox(0)
+        wda.set("POST /wda/apps/activate") { [wda] _ in
+            // Attempt 1 exhausts its 5 s foreground wait without arriving; attempt 2 brings Settings forward at 15.2 s.
+            attempts.value = 1
+            try await Task.sleep(nanoseconds: 5_200_000_000)
+            attempts.value = 2
+            try await Task.sleep(nanoseconds: 10_000_000_000)
+            wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.Preferences", "name": "Settings"]]) }
+            wda.source([("Cell", "General")], app: "Settings")
+            return (200, ["value": .null])
+        }
+        let result = await core.call("do", ["actions": [["launch": "com.apple.Preferences"]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(attempts.value, 2)
+        XCTAssertTrue(result.text.contains("launch com.apple.Preferences (sent"), result.text)
+        XCTAssertTrue(result.text.hasPrefix("app: Settings"), result.text)
+    }
+
     /// Seen on the phone: the last selection tap was batched with the Delete, so the whole batch waited
     /// for approval and the Delete, once approved, would have missed a photo. The plain actions before
     /// the first that needs approval go first, and the answer says which to send again.
