@@ -399,6 +399,7 @@ final class LiveActivityTests: XCTestCase {
         let background = recordEvidence ? UIApplication.shared.beginBackgroundTask(withName: "Capture QA") : .invalid
         defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
         defer { activity.end(dismissalPolicy: .immediate) }
+        activity.hidesWhenIdle = { false }
         activity.start(deviceName: "Capture QA")
         XCTAssertTrue(activity.isRunning, activity.lastError ?? "ActivityKit did not start")
         let initial = try XCTUnwrap(Activity<PokiActivityAttributes>.activities.first {
@@ -416,6 +417,7 @@ final class LiveActivityTests: XCTestCase {
         try await captureEvidenceWindow("hidden")
         activity.update { $0.phase = .working; $0.headline = "Capture QA" }
         activity.reopenedAfterBackground()
+        activity.hidesWhenIdle = { false }
         activity.start(deviceName: "Capture QA")
         XCTAssertFalse(activity.isRunning)
 
@@ -424,6 +426,7 @@ final class LiveActivityTests: XCTestCase {
         try await captureEvidenceWindow("reopen")
         if recordEvidence { XCTAssertEqual(UIApplication.shared.applicationState, .active) }
         activity.reopenedAfterBackground()
+        activity.hidesWhenIdle = { false }
         activity.start(deviceName: "Capture QA")
         XCTAssertTrue(activity.isRunning, activity.lastError ?? "ActivityKit did not restore")
         try await captureEvidenceWindow("restored")
@@ -453,6 +456,7 @@ final class LiveActivityTests: XCTestCase {
             for (key, value) in zip(keys, saved) { defaults.set(value, forKey: key) }
             setup.save()
         }
+        app.activity.hidesWhenIdle = { false }
         app.loopback.simulate(.working(ms: 9))
         app.setup.loopback = .proxy
         XCTAssertTrue(app.setRelay("https://relay.invalid"))
@@ -865,7 +869,8 @@ final class LiveActivityTests: XCTestCase {
                 setup.save()
             }
             UserDefaults.standard.set(ApprovalClassifier.Mode.confirm.rawValue, forKey: ApprovalClassifier.modeKey)
-            app.loopback.simulate(.working(ms: 9))
+            app.activity.hidesWhenIdle = { false }
+        app.loopback.simulate(.working(ms: 9))
             app.setup.loopback = .proxy
             XCTAssertTrue(app.setRelay("https://relay.invalid"))
             app.becameActive()
@@ -941,6 +946,7 @@ final class LiveActivityTests: XCTestCase {
         let existingIDs = Set(Activity<PokiActivityAttributes>.activities.map(\.id))
         let automation = FakeAutomation()
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation)
+        app.activity.hidesWhenIdle = { false }
         app.loopback.simulate(.working(ms: 9))
         app.setup.loopback = .proxy
         XCTAssertTrue(app.setRelay("https://relay.invalid"))
