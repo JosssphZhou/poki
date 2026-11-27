@@ -16,6 +16,19 @@ final class BackgroundKeeperTests: XCTestCase {
         XCTAssertFalse(restarted)
     }
 
+    func testStoppingWithoutOtherHoldersCancelsRecovery() async {
+        let keeper = BackgroundKeeper()
+        var restarted = false
+        let recovery = keeper.scheduleAudioRecovery(wait: {
+            keeper.stop()
+        }, recover: {
+            restarted = true
+        })
+
+        await recovery.value
+        XCTAssertFalse(restarted)
+    }
+
     func testRecoveryRunsWhenAudioIsNotPaused() async {
         let keeper = BackgroundKeeper()
         var restarted = false
