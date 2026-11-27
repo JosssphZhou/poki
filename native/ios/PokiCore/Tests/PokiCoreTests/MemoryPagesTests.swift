@@ -5,6 +5,32 @@ import XCTest
 final class MemoryPagesTests: XCTestCase {
     let wechat = "com.tencent.xin"
 
+    func testOwnerDraftDoesNotOverwriteConcurrentPageChanges() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        store.writePage(app: wechat, text: "Updated", by: "Poki")
+
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Original", locked: false))
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: original, text: "My edit", locked: true))
+        XCTAssertFalse(store.page(wechat)?.isLocked ?? true)
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Original", locked: true))
+        XCTAssertEqual(store.page(wechat)?.text, "Updated")
+        XCTAssertTrue(store.page(wechat)?.isLocked ?? false)
+    }
+
+    func testNewPageDraftCannotOverwritePageCreatedAfterOpening() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Added in the background", by: "Poki")
+        let current = store.page(wechat)
+
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: nil, text: "New draft", locked: true))
+        XCTAssertEqual(store.page(wechat), current)
+        XCTAssertTrue(store.savePageEdit(app: nil, original: nil, text: "About me", locked: true))
+        XCTAssertEqual(store.page(nil)?.text, "About me")
+        XCTAssertTrue(store.page(nil)?.isLocked ?? false)
+    }
+
     func testNotesFromBeforePagesBecomeTheLinesOfTheirAppsPages() throws {
         let old = """
         {"schema":"poki.agent-backup/2","skills":[],"runs":[],"notes":[

@@ -1,6 +1,38 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Memory Page Changed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记忆页面已更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記憶頁面已更新"
+          }
+        }
+      }
+    },
+    "This page changed while you were editing. Copy your edits before closing and reopening the page.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此页面在编辑期间已更新。请先复制你的修改，再关闭并重新打开页面。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此頁面在編輯期間已更新。請先複製你的修改，再關閉並重新開啟頁面。"
+          }
+        }
+      }
+    },
     "Tap Poki" : {
       "localizations" : {
         "zh-Hans" : {

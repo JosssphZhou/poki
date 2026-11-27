@@ -183,6 +183,18 @@ final class MemoryLibrary {
     func pageSummary(_ app: String?) -> String? { store?.page(app)?.summary }
     func pageLocked(_ app: String?) -> Bool { store?.page(app)?.isLocked == true }
 
+    func pageForEditing(_ app: String?) -> MemoryPage? { store?.page(app) }
+
+    func savePageEdit(_ app: String?, original: MemoryPage?, text: String, locked: Bool) -> Bool {
+        guard let store else {
+            writePage(app, text: text, locked: locked)
+            return true
+        }
+        let saved = store.savePageEdit(app: app, original: original, text: text, locked: locked)
+        reload()
+        return saved
+    }
+
     /// The owner's write of a whole page: a line already there keeps its id and where it came from,
     /// a new one is the owner's and locked; a line left out is forgotten. `locked` locks the page whole.
     func writePage(_ app: String?, text: String, locked: Bool) {
