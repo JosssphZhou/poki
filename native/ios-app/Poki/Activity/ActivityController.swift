@@ -584,6 +584,9 @@ final class ActivityController {
     /// so an update is never lost to size.
     private static func fittedState(_ original: PokiState) -> PokiState? {
         var state = original
+        // The classifier uses these fields in the app; ActivityKit only needs the display data.
+        state.approval?.session = nil
+        state.approval?.intent = nil
         let encoder = JSONEncoder()
         func fits() -> Bool { (try? encoder.encode(state).count).map { $0 <= 3_500 } ?? false }
         if !fits() {

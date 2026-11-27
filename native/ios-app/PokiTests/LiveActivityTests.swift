@@ -43,6 +43,27 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertEqual(activity.state.plan?.steps.count, 80)
     }
 
+    func testLargeClassifierIntentDoesNotSuppressLiveApproval() throws {
+        let activity = ActivityController()
+        let intent = String(repeating: "a", count: 4_096)
+        let expiry = Date().addingTimeInterval(60)
+        activity.update {
+            $0.phase = .approval
+            $0.approval = .init(id: "approval-id", app: "Notes", summary: "Confirm action",
+                                reason: "Owner approval required", expires: expiry,
+                                session: "agent-session", intent: intent)
+        }
+
+        let content = try XCTUnwrap(activity.content())
+        XCTAssertEqual(content.state.approval?.id, "approval-id")
+        XCTAssertEqual(content.state.approval?.summary, "Confirm action")
+        XCTAssertEqual(content.staleDate, expiry)
+        XCTAssertNil(content.state.approval?.intent)
+        XCTAssertNil(content.state.approval?.session)
+        XCTAssertEqual(activity.state.approval?.intent, intent)
+        XCTAssertEqual(activity.state.approval?.session, "agent-session")
+    }
+
     func testEscapedFallbackStillFitsAndKeepsApprovalIdentity() throws {
         let activity = ActivityController()
         let escaped = String(repeating: "\u{0001}", count: 160)
