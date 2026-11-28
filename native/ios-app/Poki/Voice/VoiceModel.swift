@@ -236,6 +236,7 @@ struct VoiceCall: Identifiable, Equatable {
     /// The model has the result (as a function_call_output, or in a reconnect note).
     var delivered = false
     var silentResult = false
+    var progressTool: VoiceProgressSync.Tool?
     let started = Date()
     var finished: Date?
 }
@@ -929,7 +930,7 @@ final class VoiceModel {
                     openingCapture?.audio.markPhoneActionStarted(session: number)
                     activeCodexTools += 1
                     lastActivity = time.now()
-                    progressSync.toolStarted(at: lastActivity)
+                    let progressTool = progressSync.toolStarted(at: lastActivity)
                     keepOpen()
                     if phase != .speaking && phase != .hearing { phase = .thinking }
                     defer {
@@ -942,7 +943,7 @@ final class VoiceModel {
                     }
                     var answer = await runPhoneTool(name, arguments: arguments, cancellation: nil)
                     if number == session {
-                        let update = progressSync.toolCompleted(name: name, arguments: arguments, output: answer.text,
+                        let update = progressSync.toolCompleted(progressTool, name: name, arguments: arguments, output: answer.text,
                                                                 failed: answer.failed, at: time.now())
                         if let update, !liveSpeechStopped, phase != .hearing, phase != .speaking {
                             answer.text = "\(update.codexHeader)\n\(answer.text)"
@@ -2331,8 +2332,8 @@ final class VoiceModel {
             "type": "function_call_output", "call_id": call.id, "output": output,
         ]]) == true
         if let index = calls.firstIndex(where: { $0.id == call.id }) {
+            if let progressTool = calls[index].progressTool { progressSync.toolAborted(progressTool) }
             calls[index] = result
-            if Self.phoneTools.contains(call.name) { progressSync.toolAborted() }
         } else {
             calls.append(result)
         }
@@ -2372,8 +2373,8 @@ final class VoiceModel {
         }
         var call = call
         call.silentResult = usesLive && liveSpeechStopped
+        if Self.phoneTools.contains(call.name) { call.progressTool = progressSync.toolStarted(at: time.now()) }
         calls.append(call)
-        if Self.phoneTools.contains(call.name) { progressSync.toolStarted(at: time.now()) }
         clock.call = clock.call ?? Date()
         clock.callNames.append(call.name)
         phase = .thinking
@@ -2560,11 +2561,13 @@ final class VoiceModel {
                                                outputChars: output.count, state: state,
                                                screenBytes: screenBytes, screenOutcome: screenOutcome)
         log.add("voice", "tool \(calls[index].name) \(state == .done ? "done" : "failed") | \(summary)")
-        let progressUpdate: VoiceProgressSync.Update? =
-            calls[index].session == session && Self.phoneTools.contains(calls[index].name)
-            ? progressSync.toolCompleted(name: calls[index].name, arguments: calls[index].arguments,
-                                         output: rawToolOutput ?? output, failed: state != .done, at: time.now())
-            : nil
+        let progressUpdate: VoiceProgressSync.Update?
+        if calls[index].session == session, let progressTool = calls[index].progressTool {
+            progressUpdate = progressSync.toolCompleted(progressTool, name: calls[index].name, arguments: calls[index].arguments,
+                                                        output: rawToolOutput ?? output, failed: state != .done, at: time.now())
+        } else {
+            progressUpdate = nil
+        }
         if calls[index].silentResult {
             if phase == .thinking, !answerDue { phase = .listening }
             endIfDone()

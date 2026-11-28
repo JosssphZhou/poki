@@ -36,6 +36,11 @@ enum VoiceBargeInPolicy {
 /// Tracks multi-step phone execution during a live voice turn and decides when a confirmed tool
 /// milestone should trigger a brief factual spoken progress update after prolonged silence.
 struct VoiceProgressSync {
+    struct Tool: Hashable {
+        fileprivate let id = UUID()
+        fileprivate let turn: UUID
+    }
+
     struct Update: Equatable {
         let app: String?
         let stepSummary: String
@@ -49,20 +54,19 @@ struct VoiceProgressSync {
     static let minCompletedSteps = 2
 
     private(set) var completedSteps = 0
-    private(set) var inFlightTools = 0
+    private var turn = UUID()
+    private var tools: Set<Tool> = []
+    var inFlightTools: Int { tools.count }
     private(set) var lastApp: String?
     private(set) var lastSpokenAt: Date?
 
     mutating func reset() {
-        completedSteps = 0
-        inFlightTools = 0
-        lastApp = nil
-        lastSpokenAt = nil
+        self = Self()
     }
 
     mutating func beginTurn(at now: Date) {
+        turn = UUID()
         completedSteps = 0
-        inFlightTools = 0
         lastApp = nil
         lastSpokenAt = now
     }
@@ -71,17 +75,19 @@ struct VoiceProgressSync {
         lastSpokenAt = now
     }
 
-    mutating func toolStarted(at now: Date) {
-        inFlightTools += 1
+    mutating func toolStarted(at now: Date) -> Tool {
+        let tool = Tool(turn: turn)
+        tools.insert(tool)
         if lastSpokenAt == nil { lastSpokenAt = now }
+        return tool
     }
 
-    mutating func toolAborted() {
-        inFlightTools = max(0, inFlightTools - 1)
+    mutating func toolAborted(_ tool: Tool) {
+        tools.remove(tool)
     }
 
-    mutating func toolCompleted(name: String, arguments: String, output: String, failed: Bool, at now: Date) -> Update? {
-        inFlightTools = max(0, inFlightTools - 1)
+    mutating func toolCompleted(_ tool: Tool, name: String, arguments: String, output: String, failed: Bool, at now: Date) -> Update? {
+        guard tools.remove(tool) != nil, tool.turn == turn else { return nil }
         guard !failed, !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         completedSteps += 1
         let currentApp = Self.extractApp(name: name, arguments: arguments, output: output)
