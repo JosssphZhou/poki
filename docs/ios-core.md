@@ -390,16 +390,26 @@ on the phone; the next first `look` of a task in that app names the saved skills
   the on-device chat the same brief).
 - **A path is a skill sent once.** `do {actions: [{path: {goal, steps: [{tap: "Compose"}, {type: "…",
   into: "Search"}, …]}}]}` runs up to 20 steps across screens in one call, each target named by the
-  text it shows (or `{label, type}`, or a point), never by a number from an earlier read. Each step
-  waits for its target as a skill's does and is held by the same approval rules. Nothing is saved.
-  With no model at all: a step's `expect: "text"` must be on screen after it (read from the tree, up
-  to 3 s) or the path stops there; `optional: true` leaves a step out when its target is not on a
-  screen that holds still; the path's `dismiss: ["Not Now", "Later"]` names controls that are closed
-  when they are in the way of a step (each such tap is still held by the approval rules);
-  `read: ["label"]` answers values from the last screen. A run or path that ended on a check that
-  passed skips the pause before the final read. A step that would send input while Poki is in front
-  stops the path, as a `do` sending it there is refused; a step not read for itself asks the runner
-  which app is in front first. A swipe in a path takes no `in: n`.
+  text it shows (including numeric string labels such as `"7"`), `{label, type?, with?}`,
+  `{contains, with?}` (matching an element with row-context qualifiers for duplicate list entries),
+  or a point, never by a number from an earlier read. A step may also be a bounded visible-branch
+  selector `{choose: [{when?, tap|steps}, ...], optional?}` (up to 6 branches, up to 4 plain steps
+  each, no nesting or loops): evaluated once on the current screen, stopping immediately if a target
+  is ambiguous. Each step waits for its target as a skill's does and is held by the same approval
+  rules; `scroll_to` inside a path stops the path immediately when its target is not found so
+  downstream steps do not run blindly. Nothing is saved. With no model at all: a step's
+  `expect: "text"` must be on screen after it (read from the tree, up to 3 s) or the path stops
+  there; `optional: true` leaves a step out when its target is not on a screen that holds still;
+  the path's `dismiss: ["Not Now", "Later"]` names controls that are closed when they are in the
+  way of a step (each such tap is still held by the approval rules); `read: ["label"]` waits up to
+  3 s (or `wait_ms` up to 10,000 ms) and answers `label = value` from the last screen (by identifier,
+  label+value, combined label, adjacent cell/row value, or numeric display OCR). When any requested
+  field cannot be captured, the call reports `missing fields:` and returns the fresh screen state to
+  the model without guessing or repeating sent steps. A run or path that ended on a confirmed read
+  reuses that tree for the final reply (skipping the settle pause and redundant tree read). A step
+  that would send input while Poki is in front stops the path, as a `do` sending it there is refused;
+  a step not read for itself asks the runner which app is in front first. A swipe in a path takes no
+  `in: n`.
 - **Intent.** Any action may carry `intent: "why"`; it is kept with the recorded step and is what a
   fix is decided from.
 - **Fixes on the way, and fast decisions.** Where a step would stop, a run first applies what the skill
@@ -459,9 +469,11 @@ on the phone; the next first `look` of a task in that app names the saved skills
   transition frames). If a capture channel without frame timestamps only returns a delayed
   pre-action image after the screen moved or switched apps, Poki rejects it, clears the cached
   pre-action screenshot, and omits the picture so subsequent coordinate taps require a fresh `look`.
-  After a single local number-key tap on an identified numeric display, reading starts immediately
-  and reuses a verified screenshot once a second tree confirms the app, layout, and value (retaking
-  the screenshot if the confirming tree arrives more than 0.6 s after the picture). If nothing
+  After a single local number-key tap (`Button` or `Key`) on an identified numeric display (a
+  labeled `StaticText`/`Other`/`TextField`, or an unlabeled display `Other` above a numeric keypad
+  verified via Vision OCR), reading starts immediately and reuses a verified screenshot once a
+  second tree confirms the app, layout, and value (retaking the screenshot if the confirming tree
+  arrives more than 0.6 s after the picture). If nothing
   changes through the 0.8 s late-update window or the tap stays unconfirmed on the same display,
   observation stops, reports `touch effect: unconfirmed`, and omits the screenshot rather than
   returning an unconfirmed or cached pre-tap image, so the caller rechecks with `look` without

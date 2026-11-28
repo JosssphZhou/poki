@@ -77,7 +77,7 @@ extension Computer {
     /// What sits over an app's own content: closing it is what "something is in the way" means.
     static let overlays: Set<String> = ["Alert", "Sheet", "Popover", "Dialog", "Menu", "ActivityListView"]
     /// Types that take a tap.
-    static let tappable: Set<String> = ["Button", "Cell", "Link", "Switch", "Toggle", "Tab", "MenuItem", "SegmentedControl", "Icon", "TextField", "SearchField", "TextView", "CheckBox", "RadioButton", "DisclosureTriangle", "PopUpButton", "MenuButton"]
+    static let tappable: Set<String> = ["Button", "Key", "Cell", "Link", "Switch", "Toggle", "Tab", "MenuItem", "SegmentedControl", "Icon", "TextField", "SearchField", "TextView", "CheckBox", "RadioButton", "DisclosureTriangle", "PopUpButton", "MenuButton"]
 
     /// The overlay an element is in, when it is in one.
     static func overlay(of e: Element, in all: [Element]) -> Element? {

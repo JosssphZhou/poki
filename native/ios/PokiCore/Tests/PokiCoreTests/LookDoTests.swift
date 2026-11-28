@@ -944,7 +944,7 @@ final class LookDoTests: XCTestCase {
         XCTAssertEqual(taps.value, 1)
     }
 
-    private func numberDisplayPicture(_ digit: String, transitioning: Bool = false, xOffset: CGFloat = 0) -> Data {
+    private func numberDisplayPicture(_ digit: String, transitioning: Bool = false, xOffset: CGFloat = 0, textY: CGFloat = 681) -> Data {
         PictureSketchTests.png { context in
             if transitioning {
                 context.setFillColor(CGColor(gray: 0.8, alpha: 1))
@@ -954,9 +954,99 @@ final class LookDoTests: XCTestCase {
                 NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 60, nil),
                 NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
             ])
-            context.textPosition = CGPoint(x: 169 + xOffset, y: 681)
+            context.textPosition = CGPoint(x: 169 + xOffset, y: textY)
             CTLineDraw(CTLineCreateWithAttributedString(glyph), context)
         }
+    }
+
+    /// Real iOS 27.3 Calculator fixture: digit keys have role `Key`, and the display above the keypad
+    /// is an unlabeled `Other` (`[16, 256, 370, 90]` on a 402x874 screen).
+    private func realDeviceCalculatorTree(clearLabel: String = "AC", width: Double = 402, height: Double = 874) -> JSON {
+        let keys: [(String, Double, Double)] = [
+            (clearLabel, 16, 360), ("%", 112, 360), ("÷", 208, 360), ("×", 304, 360),
+            ("7", 16, 456), ("8", 112, 456), ("9", 208, 456), ("−", 304, 456),
+            ("4", 16, 552), ("5", 112, 552), ("6", 208, 552), ("+", 304, 552),
+            ("1", 16, 648), ("2", 112, 648), ("3", 208, 648), ("=", 304, 648),
+            ("0", 112, 744), (".", 208, 744),
+        ]
+        var children: [JSON] = [
+            ["type": "XCUIElementTypeButton", "label": "History",
+             "rect": ["x": 16, "y": 68, "width": 44, "height": 44], "children": []],
+            ["type": "XCUIElementTypeOther", "label": .null, "value": .null,
+             "rect": ["x": 16, "y": 256, "width": 370, "height": 90], "children": []],
+        ]
+        for (label, x, y) in keys {
+            children.append([
+                "type": "XCUIElementTypeKey", "label": .string(label),
+                "rect": ["x": .number(x), "y": .number(y), "width": 82, "height": 82], "children": [],
+            ])
+        }
+        return ["type": "XCUIElementTypeApplication", "label": "Calculator",
+                "rect": ["x": 0, "y": 0, "width": .number(width), "height": .number(height)],
+                "children": .array(children)]
+    }
+
+    func testRealDeviceCalculatorKeyAndUnlabeledOtherDisplayUsesFastRead() async throws {
+        let (core, wda, _) = makeCore()
+        let taps = LockedBox(0)
+        // Display frame is y=256...346 from top on 402x874 -> CoreGraphics bottom-up y=528...618.
+        let before = numberDisplayPicture("0", textY: 545)
+        let after = numberDisplayPicture("7", textY: 545)
+        let beforeTree = realDeviceCalculatorTree(clearLabel: "AC")
+        let afterTree = realDeviceCalculatorTree(clearLabel: "C")
+        wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 402, "height": 874]]]) }
+        wda.set("GET /wda/activeAppInfo") { _ in
+            (200, ["value": ["bundleId": "com.apple.calculator", "name": "Calculator"]])
+        }
+        wda.set("GET /source") { _ in (200, ["value": taps.value > 0 ? afterTree : beforeTree]) }
+        wda.set("GET /screenshot") { _ in
+            let picture = taps.value > 0 ? after : before
+            return (200, ["value": .string(picture.base64EncodedString())])
+        }
+        wda.set("POST /wda/tap") { _ in
+            taps.update { $0 += 1 }
+            return (200, ["value": .null])
+        }
+
+        let look = await core.call("look", ["full": true], local: true)
+        let sevenRef = try XCTUnwrap(look.numberedScreen?.elements.first(where: { $0.value.type == "Key" && $0.value.label == "7" })?.key, look.text)
+        let result = await core.call("do", ["actions": [["tap": .number(Double(sevenRef))]], "full": true], local: true)
+
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertFalse(result.text.contains("paused 450 ms before reading"), result.text)
+        XCTAssertFalse(result.text.contains("touch effect: unconfirmed"), result.text)
+        XCTAssertEqual(result.jpeg, Data("jpeg:\(after.count)".utf8), result.text)
+        XCTAssertEqual(taps.value, 1)
+    }
+
+    func testRealDeviceCalculatorUnlabeledDisplayOmitsOldPictureWhenTapHasNoEffect() async throws {
+        let (core, wda, _) = makeCore()
+        let taps = LockedBox(0)
+        let unchanged = numberDisplayPicture("0", textY: 545)
+        let tree = realDeviceCalculatorTree()
+        wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 402, "height": 874]]]) }
+        wda.set("GET /wda/activeAppInfo") { _ in
+            (200, ["value": ["bundleId": "com.apple.calculator", "name": "Calculator"]])
+        }
+        wda.set("GET /source") { _ in (200, ["value": tree]) }
+        wda.set("GET /screenshot") { _ in (200, ["value": .string(unchanged.base64EncodedString())]) }
+        wda.set("POST /wda/tap") { _ in
+            taps.update { $0 += 1 }
+            return (200, ["value": .null])
+        }
+
+        let look = await core.call("look", ["full": true], local: true)
+        let sevenRef = try XCTUnwrap(look.numberedScreen?.elements.first(where: { $0.value.type == "Key" && $0.value.label == "7" })?.key, look.text)
+        let started = Date()
+        let result = await core.call("do", ["actions": [["tap": .number(Double(sevenRef))]], "full": true], local: true)
+        let elapsed = Date().timeIntervalSince(started)
+
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertFalse(result.text.contains("paused 450 ms before reading"), result.text)
+        XCTAssertTrue(result.text.contains("touch effect: unconfirmed"), result.text)
+        XCTAssertNil(result.jpeg, result.text)
+        XCTAssertLessThan(elapsed, 1.3, result.text)
+        XCTAssertEqual(taps.value, 1)
     }
 
     func testNumberKeyDoesNotConfirmAChangedValueWithoutANewPicture() async {

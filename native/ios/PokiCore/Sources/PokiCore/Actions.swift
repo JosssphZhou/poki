@@ -317,6 +317,7 @@ extension Computer {
             try await tap(p, within: frame(of: spec))
             return ("tap", "tap \(describe(action))\(offCentre(spec, p))\(fillsScreen(spec, p))\(container(spec))")
         case .type:
+            lastTypeTree = nil
             guard let text = spec.text else { throw ActionFailure(message: "type takes the text to type", delivery: .notSent) }
             let via = action["via"]?.string == "paste" ? "pasted" : "typed"
             guard via == "pasted" || text.count <= 2000 else {
@@ -345,7 +346,7 @@ extension Computer {
                 note = try await type(text, clear: clear, hidden: hidden, target: target, until: until)
             }
             // What the field holds now, so the model sees at once whether the text arrived whole.
-            let reads = await fieldValue(target: target, holding: text, timeout: min(1.5, max(0.3, until - now() - 0.2)))
+            let reads = await fieldValue(target: target, holding: text, timeout: min(1.5, max(0.3, until - now() - 0.2)), recordTree: true)
             let readBack = reads.map { hidden ? "; the field now holds \($0.count) characters" : "; the field now reads \"\($0.count > 200 ? String($0.prefix(190)) + "…" : $0)\"" }
                 ?? "; the field could not be read back (no focused field answered in time), so check the elements or the picture"
             if let ref = action["ref"]?.int { typedInto = (ref, text) }
@@ -632,8 +633,9 @@ extension Computer {
     /// The field the text goes to, from one tree read: the field under or around the tapped target,
     /// else the field holding `holding`, else the only field on screen. `keyboard`: the keyboard is
     /// up; `came`: the tree was read.
-    func fieldOnScreen(target: Element?, holding: String? = nil, timeout: Double) async -> (field: Element?, keyboard: Bool, came: Bool) {
+    func fieldOnScreen(target: Element?, holding: String? = nil, timeout: Double, recordTree: Bool = false) async -> (field: Element?, keyboard: Bool, came: Bool) {
         guard let seen = try? await runner.tree(timeout: timeout, format: config.treeFormat) else { return (nil, false, false) }
+        if recordTree { lastTypeTree = (seen.elements, seen.foreground, now()) }
         let all = seen.elements
         let keyboard = all.contains { $0.type == "Keyboard" }
         let fields = all.filter { Self.fieldTypes.contains($0.type) }
@@ -719,8 +721,8 @@ extension Computer {
     }
 
     /// What the field holds now (its value from the tree), or nil when no field is found or read.
-    func fieldValue(target: Element?, holding: String? = nil, timeout: Double) async -> String? {
-        let seen = await fieldOnScreen(target: target, holding: holding, timeout: timeout)
+    func fieldValue(target: Element?, holding: String? = nil, timeout: Double, recordTree: Bool = false) async -> String? {
+        let seen = await fieldOnScreen(target: target, holding: holding, timeout: timeout, recordTree: recordTree)
         guard let field = seen.field else { return nil }
         return field.value ?? ""
     }
@@ -844,11 +846,16 @@ extension Computer {
     /// swipe. The finger stops before lifting, so the list does not coast past the target. Stops at
     /// the end of the list, at max_swipes, or when the action time runs out.
     func scrollTo(_ spec: JSON, until: Double) async throws -> String {
+        scrollFound = nil
+        scrollObservation = nil
         let screen = try await screenSize(until: until)
         let wantedElement: Element? = try spec["ref"]?.int.map(element)
         let wantedKey = wantedElement?.key
         let wantedText = spec.string ?? spec["text"]?.string ?? wantedElement.flatMap { $0.text.isEmpty ? nil : $0.text }
         guard wantedKey != nil || wantedText != nil else { throw ActionFailure(message: "scroll_to takes text or ref", delivery: .notSent) }
+        let qualifiers: [String] = (spec["with"]?.array?.compactMap(\.string) ?? spec["with"]?.string.map { [$0] } ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         let region = try area(spec["in"], screen)
         let fingerGoes = ["down": "up", "up": "down", "right": "left", "left": "right"][spec["direction"]?.string ?? "down"] ?? "up"
         let max = min(15, spec["max_swipes"]?.int ?? 12)
@@ -856,6 +863,10 @@ extension Computer {
             let layout = Layout(all: all, screen: screen)
             return all.first { e in
                 guard wantedKey.map({ e.key == $0 }) ?? (!e.text.isEmpty && e.text.lowercased().contains(wantedText!.lowercased())) else { return false }
+                if !qualifiers.isEmpty {
+                    let context = SkillTarget.rowContext(of: e, in: all)
+                    guard qualifiers.allSatisfy({ context.localizedCaseInsensitiveContains($0) }) else { return false }
+                }
                 let f = e.frame
                 guard f.x >= 0, f.y >= 0, f.maxX <= screen.width, f.maxY <= screen.height else { return false }
                 let c = f.centre
@@ -890,6 +901,11 @@ extension Computer {
         func alertNote() -> String { alertOnScreen().map { "; an alert is over the list (\($0)): answer it first" } ?? "" }
         func found(_ e: Element) -> String {
             scrollFound = e
+            if let seen = lastSeen {
+                lastAll = seen.elements
+                lastForeground = seen.foreground
+                if let seenAt = lastSeenAt { lastTreeAt = seenAt }
+            }
             if swipes > 0, let inputAt = lastSwipeAt, let seen = lastSeen, let seenAt = lastSeenAt {
                 scrollObservation = ScrollTargetObservation(inputAt: inputAt, elements: seen.elements, foreground: seen.foreground, targetTreeAt: seenAt, target: e, swipes: swipes)
             }
@@ -922,6 +938,9 @@ extension Computer {
                 }
                 lastSeen = seen
                 lastSeenAt = now()
+                lastAll = seen.elements
+                lastForeground = seen.foreground
+                lastTreeAt = lastSeenAt
                 swipeUnread = false
                 if let what = swipeChangedTheScreen(from: all, to: seen.elements, in: region, now: seen.foreground) {
                     all = seen.elements

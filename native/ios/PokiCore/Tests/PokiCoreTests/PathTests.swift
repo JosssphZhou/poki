@@ -1,4 +1,8 @@
 import XCTest
+#if canImport(Vision) && canImport(ImageIO) && canImport(CoreText) && os(macOS)
+import CoreGraphics
+import CoreText
+#endif
 @testable import PokiCore
 
 /// Paths: steps written ahead by the text of their targets, crossed in one call with no model, and
@@ -283,5 +287,389 @@ final class PathTests: XCTestCase {
         XCTAssertTrue(result.isError)
         XCTAssertTrue(result.text.contains("a target in a path is the element's text"), result.text)
         XCTAssertEqual(wda.bodies("POST /wda/tap").count, taps, "nothing was sent")
+    }
+
+    // MARK: Bounded continuous steps (calculator, duplicate contacts, search scroll, failure handback)
+
+    func testCalculatorMultiDigitPathHandlesRealDeviceKeysAndReducesReads() async {
+        let wda = FakeWDA()
+        let display = LockedBox("12")
+        let tapped = LockedBox<[String]>([])
+        let keypad: [(String, [Double])] = [
+            ("C", [16, 360, 82, 82]), ("%", [112, 360, 82, 82]), ("÷", [208, 360, 82, 82]), ("×", [304, 360, 82, 82]),
+            ("7", [16, 456, 82, 82]), ("8", [112, 456, 82, 82]), ("9", [208, 456, 82, 82]), ("−", [304, 456, 82, 82]),
+            ("4", [16, 552, 82, 82]), ("5", [112, 552, 82, 82]), ("6", [208, 552, 82, 82]), ("+", [304, 552, 82, 82]),
+            ("1", [16, 648, 82, 82]), ("2", [112, 648, 82, 82]), ("3", [208, 648, 82, 82]), ("=", [304, 648, 82, 82]),
+            ("0", [112, 744, 82, 82]), (".", [208, 744, 82, 82]),
+        ]
+        #if canImport(Vision) && canImport(ImageIO) && canImport(CoreText) && os(macOS)
+        @Sendable func displayPNG(_ text: String) -> Data {
+            PictureSketchTests.png { context in
+                let glyph = NSAttributedString(string: text, attributes: [
+                    NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName("Helvetica" as CFString, 56, nil),
+                    NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+                ])
+                context.textPosition = CGPoint(x: 90, y: 545)
+                CTLineDraw(CTLineCreateWithAttributedString(glyph), context)
+            }
+        }
+        wda.set("GET /screenshot") { _ in (200, ["value": .string(displayPNG(display.value).base64EncodedString())]) }
+        #endif
+        @Sendable func calculatorTree(labeledDisplay: Bool) -> JSON {
+            let clearLabel = display.value == "0" ? "AC" : "C"
+            var children: [JSON] = [
+                ["type": "XCUIElementTypeButton", "label": "History", "rect": ["x": 16, "y": 68, "width": 44, "height": 44], "children": []],
+                ["type": labeledDisplay ? "XCUIElementTypeStaticText" : "XCUIElementTypeOther",
+                 "name": labeledDisplay ? "display" : .null,
+                 "label": labeledDisplay ? .string(display.value) : .null,
+                 "rect": ["x": 16, "y": 256, "width": 370, "height": 90], "children": []],
+            ]
+            for (rawLabel, rect) in keypad {
+                let label = rawLabel == "C" ? clearLabel : rawLabel
+                children.append([
+                    "type": "XCUIElementTypeKey", "label": .string(label),
+                    "rect": ["x": .number(rect[0]), "y": .number(rect[1]), "width": .number(rect[2]), "height": .number(rect[3])],
+                    "children": [],
+                ])
+            }
+            return ["type": "XCUIElementTypeApplication", "label": "Calculator",
+                    "rect": ["x": 0, "y": 0, "width": 402, "height": 874], "children": .array(children)]
+        }
+        let labeledDisplay = LockedBox(false)
+        wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 402, "height": 874]]]) }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.calculator", "name": "Calculator"]]) }
+        wda.set("GET /source") { _ in (200, ["value": calculatorTree(labeledDisplay: labeledDisplay.value)]) }
+        wda.set("POST /wda/tap") { body in
+            let x = body?["x"]?.double ?? -1, y = body?["y"]?.double ?? -1
+            if let hit = keypad.first(where: { x >= $0.1[0] && x <= $0.1[0] + $0.1[2] && y >= $0.1[1] && y <= $0.1[1] + $0.1[3] }) {
+                let actual = hit.0 == "C" ? (display.value == "0" ? "AC" : "C") : hit.0
+                tapped.update { $0.append(actual) }
+                if actual == "C" || actual == "AC" { display.value = "0" }
+                else { display.update { $0 = $0 == "0" ? actual : $0 + actual } }
+            }
+            return (200, ["value": .null])
+        }
+
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let readsBefore = wda.sent.filter { $0 == "GET /source" }.count
+
+        let result = await core.call("do", ["actions": [["path": [
+            "goal": "enter 778",
+            "steps": [
+                ["choose": [["tap": "C"], ["tap": "AC"]], "optional": true],
+                ["tap": "7"], ["tap": "7"], ["tap": "8"],
+            ],
+            "read": ["display"],
+        ]]]])
+
+        let readsDuring = wda.sent.filter { $0 == "GET /source" }.count - readsBefore
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(tapped.value, ["C", "7", "7", "8"])
+        XCTAssertEqual(display.value, "778")
+        #if canImport(Vision) && canImport(ImageIO) && canImport(CoreText) && os(macOS)
+        XCTAssertTrue(result.text.contains("read: display = 778"), result.text)
+        #endif
+        XCTAssertLessThanOrEqual(readsDuring, 3, "bounded keypad path must avoid per-digit tree reads: \(readsDuring)")
+
+        // Also verify when display is labeled with the same digit ("7") as Key "7": repeated digit picks Key "7".
+        labeledDisplay.value = true
+        display.value = "7"
+        tapped.value = []
+        _ = await core.call("look", [:])
+        let repeatDigit = await core.call("do", ["actions": [["path": [
+            "steps": [["tap": "7"], ["tap": "9"]],
+            "read": ["display"],
+        ]]]])
+        XCTAssertFalse(repeatDigit.isError, repeatDigit.text)
+        XCTAssertEqual(tapped.value, ["7", "9"])
+        XCTAssertTrue(repeatDigit.text.contains("read: display = 779"), repeatDigit.text)
+    }
+
+    func testContactsDuplicateNameDisambiguatesByRowContextAndStopsWhenAmbiguous() async {
+        let wda = FakeWDA()
+        let selectedContact = LockedBox<String?>(nil)
+        let duplicateSameOrg = LockedBox(false)
+        @Sendable func contactsNodes() -> [Node] {
+            if let org = selectedContact.value {
+                let phone = org == "Acme Corp" ? "+1 415-555-0101" : "+1 415-555-0202"
+                return [
+                    Node("NavigationBar", "Alex Chen", [0, 50, 390, 44]),
+                    Node("StaticText", org, [16, 110, 358, 24]),
+                    Node("Cell", nil, [0, 160, 390, 64], [
+                        Node("StaticText", "mobile", [16, 166, 120, 20], value: "mobile"),
+                        Node("StaticText", phone, [16, 190, 300, 28], value: phone),
+                    ]),
+                ]
+            }
+            let secondOrg = duplicateSameOrg.value ? "Acme Corp" : "Beta Studio"
+            return [
+                Node("NavigationBar", "Contacts", [0, 50, 390, 44]),
+                Node("Table", nil, [0, 94, 390, 700], [
+                    Node("Cell", "Alex Chen", [0, 100, 390, 64], [
+                        Node("StaticText", "Alex Chen", [16, 106, 200, 24]),
+                        Node("StaticText", "Acme Corp", [16, 132, 200, 20]),
+                    ]),
+                    Node("Cell", "Alex Chen", [0, 164, 390, 64], [
+                        Node("StaticText", "Alex Chen", [16, 170, 200, 24]),
+                        Node("StaticText", secondOrg, [16, 196, 200, 20]),
+                    ]),
+                ]),
+            ]
+        }
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.MobileAddressBook", "name": "Contacts"]]) }
+        wda.set("GET /source") { _ in
+            func json(_ n: Node) -> JSON {
+                ["type": .string("XCUIElementType\(n.type)"),
+                 "name": n.label.map(JSON.string) ?? .null,
+                 "label": n.label.map(JSON.string) ?? .null,
+                 "value": n.value.map(JSON.string) ?? .null,
+                 "rect": ["x": .number(n.frame[0]), "y": .number(n.frame[1]), "width": .number(n.frame[2]), "height": .number(n.frame[3])],
+                 "children": .array(n.children.map(json))]
+            }
+            return (200, ["value": ["type": "XCUIElementTypeApplication", "label": "Contacts",
+                                    "rect": ["x": 0, "y": 0, "width": 390, "height": 844],
+                                    "children": .array(contactsNodes().map(json))]])
+        }
+        wda.set("POST /wda/tap") { body in
+            let y = body?["y"]?.double ?? -1
+            if selectedContact.value == nil {
+                if y >= 100 && y < 164 { selectedContact.value = "Acme Corp" }
+                else if y >= 164 && y < 228 { selectedContact.value = duplicateSameOrg.value ? "Acme Corp" : "Beta Studio" }
+            }
+            return (200, ["value": .null])
+        }
+
+        let (core, _, _) = makeCore(wda) { $0.actionCap = 1.2 }
+        _ = await core.call("look", [:])
+        let readsBefore = wda.sent.filter { $0 == "GET /source" }.count
+
+        let picked = await core.call("do", ["actions": [["path": [
+            "goal": "open Alex Chen at Beta Studio and read mobile",
+            "steps": [
+                ["choose": [
+                    ["when": "Beta Studio", "tap": ["label": "Alex Chen", "with": "Beta Studio"]],
+                    ["when": "Search", "steps": [["type": "Alex Chen", "into": "Search"], ["tap": ["label": "Alex Chen", "with": "Beta Studio"]]]],
+                ]],
+            ],
+            "read": ["mobile"],
+        ]]]])
+
+        let readsDuring = wda.sent.filter { $0 == "GET /source" }.count - readsBefore
+        XCTAssertFalse(picked.isError, picked.text)
+        XCTAssertEqual(selectedContact.value, "Beta Studio")
+        XCTAssertTrue(picked.text.contains("read: mobile = +1 415-555-0202"), picked.text)
+        XCTAssertLessThanOrEqual(readsDuring, 3, "bounded choose + read should reuse fresh trees: \(readsDuring)")
+
+        // Ambiguous duplicate rows: both match "Alex Chen" with "Acme Corp" -> must stop without tapping either.
+        selectedContact.value = nil
+        duplicateSameOrg.value = true
+        _ = await core.call("look", [:])
+        let tapsBefore = wda.bodies("POST /wda/tap").count
+        let ambiguous = await core.call("do", ["actions": [["path": [
+            "steps": [["choose": [["tap": ["label": "Alex Chen", "with": "Acme Corp"]]]]],
+            "read": ["mobile"],
+        ]]]])
+
+        XCTAssertTrue(ambiguous.isError, ambiguous.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, tapsBefore, "must not guess among ambiguous duplicate contacts")
+        XCTAssertNil(selectedContact.value)
+    }
+
+    func testSearchResultsScrollPathOpensTargetAndStopsImmediatelyWhenNotFound() async {
+        let wda = FakeWDA()
+        let query = LockedBox("")
+        let scrolled = LockedBox(false)
+        let opened = LockedBox<String?>(nil)
+        let scrollCalls = LockedBox(0)
+        @Sendable func nodes() -> [Node] {
+            if let page = opened.value {
+                return [
+                    Node("NavigationBar", page, [0, 50, 390, 44]),
+                    Node("StaticText", "Status", [16, 120, 358, 44], value: "Ready"),
+                ]
+            }
+            var items: [Node] = [
+                Node("SearchField", "Search", [16, 60, 358, 36], value: query.value),
+            ]
+            if query.value.lowercased().contains("lang") {
+                if !scrolled.value {
+                    items.append(Node("Table", nil, [0, 110, 390, 700], [
+                        Node("Cell", "Preferred Languages", [0, 120, 390, 60], [
+                            Node("StaticText", "Preferred Languages", [16, 126, 300, 24]),
+                            Node("StaticText", "Apps", [16, 152, 200, 20]),
+                        ]),
+                        Node("Cell", "Keyboard Languages", [0, 180, 390, 60]),
+                    ]))
+                } else {
+                    items.append(Node("Table", nil, [0, 110, 390, 700], [
+                        Node("Cell", "Language & Region", [0, 200, 390, 60], [
+                            Node("StaticText", "Language & Region", [16, 206, 300, 24]),
+                            Node("StaticText", "General", [16, 232, 200, 20]),
+                        ]),
+                    ]))
+                }
+            }
+            return items
+        }
+        wda.set("GET /source") { _ in
+            func json(_ n: Node) -> JSON {
+                ["type": .string("XCUIElementType\(n.type)"),
+                 "name": n.label.map(JSON.string) ?? .null,
+                 "label": n.label.map(JSON.string) ?? .null,
+                 "value": n.value.map(JSON.string) ?? .null,
+                 "rect": ["x": .number(n.frame[0]), "y": .number(n.frame[1]), "width": .number(n.frame[2]), "height": .number(n.frame[3])],
+                 "children": .array(n.children.map(json))]
+            }
+            return (200, ["value": ["type": "XCUIElementTypeApplication", "label": "Settings",
+                                    "rect": ["x": 0, "y": 0, "width": 390, "height": 844],
+                                    "children": .array(nodes().map(json))]])
+        }
+        wda.set("POST /wda/keys") { body in
+            let text = (body?["value"]?.array ?? []).compactMap(\.string).joined()
+            query.update { $0 += text }
+            return (200, ["value": .null])
+        }
+        wda.set("POST /wda/pressAndDragWithVelocity") { _ in
+            scrollCalls.update { $0 += 1 }
+            scrolled.value = true
+            return (200, ["value": .null])
+        }
+        wda.set("POST /wda/tap") { body in
+            let y = body?["y"]?.double ?? -1
+            if scrolled.value && y >= 200 && y <= 260 { opened.value = "Language & Region" }
+            return (200, ["value": .null])
+        }
+
+        let (core, _, _) = makeCore(wda) { $0.toolDeadline = 12; $0.actionCap = 3 }
+        _ = await core.call("look", [:])
+        let found = await core.call("do", ["actions": [["path": [
+            "goal": "search Lang, scroll to Language & Region, and read Status",
+            "steps": [
+                ["type": "Lang", "into": "Search"],
+                ["scroll_to": ["text": "Language & Region", "with": "General"]],
+                ["tap": ["contains": "Language & Region", "with": "General"]],
+            ],
+            "read": ["Status"],
+        ]]]])
+
+        XCTAssertFalse(found.isError, found.text)
+        XCTAssertEqual(opened.value, "Language & Region")
+        XCTAssertTrue(found.text.contains("read: Status = Ready"), found.text)
+        XCTAssertEqual(scrollCalls.value, 1)
+
+        // Not-found scroll inside path: must stop at scroll_to and never run downstream tap.
+        opened.value = nil
+        let tapsBefore = wda.bodies("POST /wda/tap").count
+        let missing = await core.call("do", ["actions": [["path": [
+            "steps": [
+                ["scroll_to": ["text": "Nonexistent Result", "max_swipes": 3]],
+                ["tap": "Nonexistent Result"],
+            ],
+        ]]]])
+
+        XCTAssertTrue(missing.isError, missing.text)
+        XCTAssertTrue(missing.text.contains("stopped at step 1"), missing.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, tapsBefore, "downstream tap must not run after scroll_to fails")
+    }
+
+    func testMissingRequiredReadFieldReturnsFreshScreenWithoutRepeatingSideEffects() async {
+        let wda = FakeWDA()
+        let opened = LockedBox(false)
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": "com.apple.MobileAddressBook", "name": "Contacts"]]) }
+        wda.set("GET /source") { _ in
+            let nodes: [Node] = opened.value ? [
+                Node("NavigationBar", "Alex Chen", [0, 50, 390, 44]),
+                Node("StaticText", "Acme Corp", [16, 110, 358, 24]),
+                Node("Cell", nil, [0, 160, 390, 64], [
+                    Node("StaticText", "mobile", [16, 166, 120, 20]),
+                    Node("Button", "+1 415-555-0101", [16, 190, 300, 28]),
+                ]),
+            ] : [
+                Node("NavigationBar", "Contacts", [0, 50, 390, 44]),
+                Node("Cell", "Alex Chen", [0, 100, 390, 64], [
+                    Node("StaticText", "Alex Chen", [16, 106, 200, 24]),
+                    Node("StaticText", "Acme Corp", [16, 132, 200, 20]),
+                ]),
+            ]
+            func json(_ n: Node) -> JSON {
+                ["type": .string("XCUIElementType\(n.type)"),
+                 "name": n.label.map(JSON.string) ?? .null,
+                 "label": n.label.map(JSON.string) ?? .null,
+                 "value": n.value.map(JSON.string) ?? .null,
+                 "rect": ["x": .number(n.frame[0]), "y": .number(n.frame[1]), "width": .number(n.frame[2]), "height": .number(n.frame[3])],
+                 "children": .array(n.children.map(json))]
+            }
+            return (200, ["value": ["type": "XCUIElementTypeApplication", "label": "Contacts",
+                                    "rect": ["x": 0, "y": 0, "width": 390, "height": 844],
+                                    "children": .array(nodes.map(json))]])
+        }
+        wda.set("POST /wda/tap") { _ in
+            opened.value = true
+            return (200, ["value": .null])
+        }
+
+        let (core, _, _) = makeCore(wda)
+        _ = await core.call("look", [:])
+        let tapsBefore = wda.bodies("POST /wda/tap").count
+
+        let result = await core.call("do", ["actions": [["path": [
+            "goal": "open Alex Chen and read mobile and Email",
+            "steps": [["tap": ["label": "Alex Chen", "with": "Acme Corp"]]],
+            "read": ["mobile", "Email"],
+            "wait_ms": 400,
+        ]]]])
+
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, tapsBefore + 1, "side-effecting tap must run exactly once")
+        XCTAssertTrue(result.text.contains("read: mobile = +1 415-555-0101"), result.text)
+        XCTAssertTrue(result.text.contains("missing fields: \"Email\""), result.text)
+        XCTAssertTrue(result.text.contains("do not repeat"), result.text)
+        XCTAssertTrue(result.text.contains("+1 415-555-0101"), "fresh detail screen returned: \(result.text)")
+        XCTAssertNotNil(result.jpeg, "fresh screenshot returned to model")
+    }
+
+    func testBoundedChooseRejectsNestingAndEnforcesApprovalAndPokiGuards() async {
+        let wda = FakeWDA()
+        wda.tree([Node("Button", "Pay", [16, 100, 358, 44])], app: "Shop")
+        let (core, _, _) = makeCore(wda) { $0.actionCap = 1.2 }
+        _ = await core.call("look", [:])
+
+        // Nested choose must be refused before any input is sent.
+        let nested = await core.call("do", ["actions": [["path": ["steps": [
+            ["choose": [["when": "Pay", "steps": [["choose": [["tap": "Pay"]]]]]]],
+        ]]]]])
+        XCTAssertTrue(nested.isError, nested.text)
+        XCTAssertTrue(nested.text.contains("nothing was sent"), nested.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 0)
+
+        // Too many branches (> 6) must be refused before any input is sent.
+        let tooMany = await core.call("do", ["actions": [["path": ["steps": [
+            ["choose": .array((1...7).map { ["tap": .string("B\($0)")] })],
+        ]]]]])
+        XCTAssertTrue(tooMany.isError, tooMany.text)
+        XCTAssertTrue(tooMany.text.contains("at most 6 branches"), tooMany.text)
+
+        // Sensitive action inside choose branch must still require owner approval.
+        let sensitiveBranch = await core.call("do", ["actions": [["path": ["steps": [
+            ["choose": [["when": "Pay", "tap": "Pay"]]],
+        ]]]]])
+        XCTAssertTrue(sensitiveBranch.isError, sensitiveBranch.text)
+        XCTAssertTrue(sensitiveBranch.text.contains("needs the owner's approval"), sensitiveBranch.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 0)
+
+        // Poki guard inside choose branch must still block input in Poki.
+        pokiOnLaunch(wda)
+        let intoPoki = await core.call("do", ["actions": [["path": ["steps": [
+            ["choose": [["when": "Pay", "steps": [["launch": "nz.zheha.poki"], ["tap": "Never Ask"]]]]],
+        ]]]]])
+        XCTAssertTrue(intoPoki.isError, intoPoki.text)
+        XCTAssertTrue(intoPoki.text.contains("Poki takes no taps or typing inside the Poki app"), intoPoki.text)
+        XCTAssertEqual(wda.bodies("POST /wda/tap").count, 0)
+    }
+
+    func testPromptAndDoToolDescriptionDoNotGrowPastBaseline() {
+        let doDescription = PokiCore.tools.first { $0["name"]?.string == "do" }?["description"]?.string ?? ""
+        XCTAssertLessThanOrEqual(PokiCore.instructions.count, 1835)
+        XCTAssertLessThanOrEqual(doDescription.count, 7666)
     }
 }
