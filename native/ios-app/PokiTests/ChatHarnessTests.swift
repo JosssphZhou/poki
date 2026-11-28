@@ -2810,9 +2810,12 @@ final class ChatHarnessTests: XCTestCase {
             let source = try XCTUnwrap(capture.0, "screen read failed: \(capture.1 ?? "unknown")")
             try source.write(to: folder.appendingPathComponent("\(name).xml"), atomically: true, encoding: .utf8)
             let elements = Elements()
-            let parser = XMLParser(data: Data(source.utf8))
+            // Preserve the disabled state when the native snapshot repeats this attribute.
+            let parseable = source.replacingOccurrences(of: #"enabled="false"(?=[^>]*enabled="false")"#,
+                                                        with: "", options: .regularExpression)
+            let parser = XMLParser(data: Data(parseable.utf8))
             parser.delegate = elements
-            XCTAssertTrue(parser.parse())
+            XCTAssertTrue(parser.parse(), "\(String(describing: parser.parserError))")
             return (source, elements)
         }
         func tap(_ name: String, field: Bool = false) async throws {
@@ -2826,9 +2829,11 @@ final class ChatHarnessTests: XCTestCase {
             }.value
             XCTAssertEqual(delivery, .sent)
         }
-        func type(_ text: String) async {
-            let delivery = await Task.detached { PKInProcess.shared().type(text, timeout: 5).delivery }.value
+        func type(_ text: String) async throws {
+            let delivery = await Task.detached { PKInProcess.shared().type(text, typingSpeed: 20, timeout: 5).delivery }.value
             XCTAssertEqual(delivery, .sent)
+            let read = try await screen("typed-text")
+            XCTAssertTrue(read.source.contains("value=\"\(text)\""), "the complete text must reach the field: \(read.source)")
         }
         func capture(_ name: String) async throws {
             _ = try await screen(name)
@@ -2872,7 +2877,7 @@ final class ChatHarnessTests: XCTestCase {
             let preparation = await Task.detached { String(describing: PKInProcess.shared().prepare()) }.value
             XCTAssertEqual(UIApplication.shared.applicationState, .active, preparation)
             try await tap("message-field", field: true)
-            await type("Find Saturday concert tickets")
+            try await type("Find Saturday concert tickets")
             try await capture("\(name)-01-request")
             try await tap("Send")
             let waiting = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in chat.waitingQuestion != nil }, object: nil)
@@ -2888,7 +2893,7 @@ final class ChatHarnessTests: XCTestCase {
                 try await tap("Stop")
             } else {
                 try await tap("Other answer")
-                await type("Use the venue website")
+                try await type("Use the venue website")
                 try await capture("\(name)-03-other-answer")
                 try await tap("Send")
             }
