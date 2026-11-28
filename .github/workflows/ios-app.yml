@@ -536,6 +536,7 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           # Setup's last item needs location; PokiTests check a simulator with every item done (app-tests.sh).
           xcrun simctl privacy "$UDID" grant location-always nz.zheha.poki
+          xcrun simctl privacy "$UDID" revoke microphone nz.zheha.poki
           # Session and dictation tests must not leave system permission alerts over later UI tests.
           # simctl privacy cannot set notification or speech-recognition permission.
           command -v applesimutils >/dev/null || brew install wix/brew/applesimutils
