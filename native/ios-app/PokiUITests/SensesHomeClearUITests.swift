@@ -7,6 +7,8 @@ final class SensesHomeClearUITests: XCTestCase {
                                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
+        let wifiOnly = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["仅限无线局域网"]
+        if wifiOnly.waitForExistence(timeout: 3) { wifiOnly.tap() }
         let clear = app.buttons["fixture.history.clear"]
         XCTAssertTrue(clear.waitForExistence(timeout: 20))
         clear.tap()
