@@ -2776,6 +2776,140 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } })
     }
 
+    func testQuestionCanBeAnsweredOrStoppedFromTheChatScreen() async throws {
+        let language = AppLocalization.shared.preference
+        let sample = UserDefaults.standard.object(forKey: "pokiChat")
+        AppLocalization.shared.preference = "en"
+        UserDefaults.standard.removeObject(forKey: "pokiChat")
+        defer {
+            AppLocalization.shared.preference = language
+            UserDefaults.standard.set(sample, forKey: "pokiChat")
+        }
+        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AskUserEvidence", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        print("AskUserEvidence: \(folder.path)")
+
+        final class Elements: NSObject, XMLParserDelegate {
+            var items: [(kind: String, label: String, name: String, frame: CGRect)] = []
+            func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+                        qualifiedName: String?, attributes: [String: String]) {
+                guard attributes["visible"] != "false",
+                      let x = attributes["x"].flatMap(Double.init), let y = attributes["y"].flatMap(Double.init),
+                      let width = attributes["width"].flatMap(Double.init), let height = attributes["height"].flatMap(Double.init),
+                      width > 0, height > 0 else { return }
+                items.append((elementName, attributes["label"] ?? "", attributes["name"] ?? "",
+                              CGRect(x: x, y: y, width: width, height: height)))
+            }
+        }
+        func screen(_ name: String) async throws -> (source: String, elements: Elements) {
+            let capture = await Task.detached { () -> (String?, String?) in
+                var code: NSString?
+                return (PKInProcess.shared().sourceXML(nil, code: &code), code as String?)
+            }.value
+            let source = try XCTUnwrap(capture.0, "screen read failed: \(capture.1 ?? "unknown")")
+            try source.write(to: folder.appendingPathComponent("\(name).xml"), atomically: true, encoding: .utf8)
+            let elements = Elements()
+            let parser = XMLParser(data: Data(source.utf8))
+            parser.delegate = elements
+            XCTAssertTrue(parser.parse())
+            return (source, elements)
+        }
+        func tap(_ name: String, field: Bool = false) async throws {
+            let read = try await screen("before-\(name)")
+            let element = try XCTUnwrap(read.elements.items.first {
+                field ? $0.kind.contains("TextView") : $0.kind.contains("Button") && ($0.label == name || $0.name == name)
+            }, "the chat must show \(name): \(read.source)")
+            let point = CGPoint(x: element.frame.midX, y: element.frame.midY)
+            let delivery = await Task.detached {
+                PKInProcess.shared().touch([[PKTouchPoint.at(point, offset: 0), PKTouchPoint.at(point, offset: 0.08)]], timeout: 5).delivery
+            }.value
+            XCTAssertEqual(delivery, .sent)
+        }
+        func type(_ text: String) async {
+            let delivery = await Task.detached { PKInProcess.shared().type(text, timeout: 5).delivery }.value
+            XCTAssertEqual(delivery, .sent)
+        }
+        func capture(_ name: String) async throws {
+            _ = try await screen(name)
+            let data = await Task.detached { () -> Data? in
+                var code: NSString?
+                return PKInProcess.shared().screenshot(&code)
+            }.value
+            let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(data)))
+            try XCTUnwrap(image.pngData()).write(to: folder.appendingPathComponent("\(name).png"))
+        }
+
+        for (name, style, stop) in [("light-answer", UIUserInterfaceStyle.light, false), ("dark-stop", .dark, true)] {
+            let server = try FakeCompletions(replies: [
+                FakeCompletions.tool("ask_user", ["question": "Where should I find concert tickets?",
+                                                  "options": [["label": "Use Safari"], ["label": "Install Damai"]],
+                                                  "allow_other": true]),
+                FakeCompletions.tool("finish_task", ["success": true, "summary": "Found two shows.", "details": [], "answer": ["kind": "action"]]),
+                FakeCompletions.text("Saturday has two shows."),
+            ])
+            let chat = chat(on: server, kind: .poki)
+            chat.newConversation()
+            let model = try XCTUnwrap(app)
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
+            covered.forEach { $0.accessibilityElementsHidden = true }
+            let window = UIWindow(windowScene: scene)
+            window.frame = scene.screen.bounds
+            window.overrideUserInterfaceStyle = style
+            window.rootViewController = UIHostingController(rootView: NavigationStack {
+                ChatView(openVoice: {}, openSetup: {}, openModel: {}, openThreads: {})
+            }.environment(model).environment(chat).environment(\.accessibilityReduceMotion, true))
+            window.makeKeyAndVisible()
+            defer {
+                if chat.running { chat.stop() }
+                model.stopSession()
+                QuestionNotice.cancel()
+                SessionStore.shared.delete(chat.sessionID)
+                window.isHidden = true
+                covered.forEach { $0.accessibilityElementsHidden = false }
+            }
+            let preparation = await Task.detached { String(describing: PKInProcess.shared().prepare()) }.value
+            XCTAssertEqual(UIApplication.shared.applicationState, .active, preparation)
+            try await tap("message-field", field: true)
+            await type("Find Saturday concert tickets")
+            try await capture("\(name)-01-request")
+            try await tap("Send")
+            let waiting = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in chat.waitingQuestion != nil }, object: nil)
+            await fulfillment(of: [waiting], timeout: 10)
+            let question = try XCTUnwrap(chat.waitingQuestion)
+            let asking = try await screen("\(name)-02-question")
+            XCTAssertTrue(asking.source.contains(question.text), asking.source)
+            XCTAssertTrue(asking.source.contains("Other answer"), asking.source)
+            XCTAssertTrue(chat.running)
+            XCTAssertEqual(server.requests.count, 1, "waiting must not advance the model")
+            try await capture("\(name)-02-question")
+            if stop {
+                try await tap("Stop")
+            } else {
+                try await tap("Other answer")
+                await type("Use the venue website")
+                try await capture("\(name)-03-other-answer")
+                try await tap("Send")
+            }
+            let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !chat.running }, object: nil)
+            await fulfillment(of: [finished], timeout: 10)
+            let result = try await screen("\(name)-04-result")
+            XCTAssertTrue(result.source.contains(question.text), result.source)
+            XCTAssertFalse(result.elements.items.contains { $0.kind.contains("Button") && ["Use Safari", "Install Damai", "Other answer"].contains($0.label) },
+                           "answered or stopped questions must lose all answer buttons")
+            if stop {
+                XCTAssertFalse(chat.entries.contains { if case .answer = $0.kind { true } else { false } })
+                XCTAssertTrue(chat.entries.contains { if case .question(let q) = $0.kind { q.state == .stopped } else { false } })
+            } else {
+                XCTAssertTrue(result.source.contains("Use the venue website"), result.source)
+                XCTAssertTrue(result.source.contains("Saturday has two shows."), result.source)
+                XCTAssertTrue(Self.toolAnswer(try XCTUnwrap(server.requests.dropFirst().first)).contains("not an approval"))
+            }
+            try await capture("\(name)-04-result")
+        }
+    }
+
     private static func userMessages(_ request: [String: Any]) -> [String] {
         let messages = request["messages"] as? [[String: Any]] ?? []
         return messages.compactMap { msg -> String? in
