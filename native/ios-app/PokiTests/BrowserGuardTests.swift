@@ -414,6 +414,7 @@ final class BrowserGuardTests: XCTestCase {
         XCTAssertTrue(requests.contains("ordinary updated search"), requests)
         let session = try XCTUnwrap(SessionStore.shared.session(chat.sessionID))
         let exported = String(decoding: try JSONEncoder().encode(session), as: UTF8.self)
+        SessionStore.shared.flush()
         let support = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
         let stored = try String(contentsOf: support.appendingPathComponent("Poki/Sessions/\(chat.sessionID).json"), encoding: .utf8)
         XCTAssertTrue(stored.contains("web_handoff"))
@@ -642,7 +643,6 @@ final class PageServer: @unchecked Sendable {
             let received = received + (data ?? Data())
             if received.range(of: Data("\r\n\r\n".utf8)) != nil {
                 let path = String(decoding: received.prefix(64), as: UTF8.self).split(separator: " ").dropFirst().first.map(String.init) ?? "/"
-                print("[BrowserFixture] received \(path)")
                 let body = self.pages[path] ?? ""
                 let status = self.pages[path] == nil ? "404 Not Found" : "200 OK"
                 let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
