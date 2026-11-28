@@ -2784,6 +2784,7 @@ final class ChatHarnessTests: XCTestCase {
         defer {
             AppLocalization.shared.preference = language
             UserDefaults.standard.set(sample, forKey: "pokiChat")
+            UIPasteboard.general.items = []
         }
         let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("AskUserEvidence", isDirectory: true)
@@ -2829,10 +2830,11 @@ final class ChatHarnessTests: XCTestCase {
             }.value
             XCTAssertEqual(delivery, .sent)
         }
-        func type(_ text: String) async throws {
-            let delivery = await Task.detached { PKInProcess.shared().type(text, typingSpeed: 20, timeout: 5).delivery }.value
-            XCTAssertEqual(delivery, .sent)
-            let read = try await screen("typed-text")
+        func paste(_ text: String) async throws {
+            UIPasteboard.general.string = text
+            XCTAssertTrue(UIApplication.shared.sendAction(#selector(UIResponder.paste(_:)), to: nil, from: nil, for: nil),
+                          "the focused chat field must accept the system paste action")
+            let read = try await screen("pasted-text")
             XCTAssertTrue(read.source.contains("value=\"\(text)\""), "the complete text must reach the field: \(read.source)")
         }
         func capture(_ name: String) async throws {
@@ -2877,7 +2879,7 @@ final class ChatHarnessTests: XCTestCase {
             let preparation = await Task.detached { String(describing: PKInProcess.shared().prepare()) }.value
             XCTAssertEqual(UIApplication.shared.applicationState, .active, preparation)
             try await tap("message-field", field: true)
-            try await type("Find Saturday concert tickets")
+            try await paste("Find Saturday concert tickets")
             try await capture("\(name)-01-request")
             try await tap("Send")
             let waiting = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in chat.waitingQuestion != nil }, object: nil)
@@ -2893,7 +2895,7 @@ final class ChatHarnessTests: XCTestCase {
                 try await tap("Stop")
             } else {
                 try await tap("Other answer")
-                try await type("Use the venue website")
+                try await paste("Use the venue website")
                 try await capture("\(name)-03-other-answer")
                 try await tap("Send")
             }
