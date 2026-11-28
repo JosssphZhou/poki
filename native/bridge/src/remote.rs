@@ -302,8 +302,9 @@ impl Session {
                                     .into(),
                             );
                         }
-                        if services_updated(rsd, &new_rsd) {
-                            *rsd = new_rsd;
+                        let retry = has_new_or_changed_service(rsd, &new_rsd);
+                        *rsd = new_rsd;
+                        if retry {
                             continue;
                         }
                     }
@@ -357,7 +358,6 @@ impl Session {
 
 const RSD_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const DIAL_TOTAL_BUDGET: Duration = Duration::from_secs(15);
-const DIAL_MIN_PER_ADDRESS: Duration = Duration::from_millis(1500);
 const DIAL_MAX_PER_ADDRESS: Duration = Duration::from_secs(5);
 
 enum RsdRefresh {
@@ -375,10 +375,6 @@ fn matches_expected_id(rsd: &RsdHandshake, expected: &str) -> bool {
 }
 
 async fn refresh_rsd(adapter: &mut AdapterHandle, rsd_port: u16) -> RsdRefresh {
-    #[cfg(test)]
-    if let Some(outcome) = tests::refresh_rsd_override() {
-        return outcome;
-    }
     // Let jktcp's own connect timeout bound the TCP SYN instead of cancelling connect()
     // early (which would leave jktcp's single-threaded adapter loop blocked for the remaining
     // SYN retry window). Only the post-connect XPC handshake has an outer timeout, where
@@ -393,10 +389,15 @@ async fn refresh_rsd(adapter: &mut AdapterHandle, rsd_port: u16) -> RsdRefresh {
     }
 }
 
-fn services_updated(old: &RsdHandshake, new: &RsdHandshake) -> bool {
+// Pure removals still replace the cached handshake (see Session::request) to prune stale entries
+// without triggering a redundant retry.
+fn has_new_or_changed_service(old: &RsdHandshake, new: &RsdHandshake) -> bool {
     new.services.iter().any(|(name, service)| {
         old.services.get(name).is_none_or(|previous| {
-            previous.port != service.port || previous.features != service.features
+            previous.port != service.port
+                || previous.uses_remote_xpc != service.uses_remote_xpc
+                || previous.features != service.features
+                || previous.service_version != service.service_version
         })
     })
 }
@@ -415,48 +416,65 @@ fn missing_service(error: &(dyn std::error::Error + Send + Sync + 'static)) -> b
     }
 }
 
-fn per_address_timeout(address_count: usize) -> Option<Duration> {
-    if address_count <= 1 {
-        return None;
+fn attempt_timeout(remaining_budget: Duration, remaining_addresses: usize) -> Duration {
+    if remaining_budget.is_zero() || remaining_addresses <= 1 {
+        return remaining_budget;
     }
-    let share = DIAL_TOTAL_BUDGET / address_count as u32;
-    Some(share.clamp(DIAL_MIN_PER_ADDRESS, DIAL_MAX_PER_ADDRESS))
+    let share = remaining_budget / remaining_addresses as u32;
+    share
+        .clamp(Duration::from_nanos(1), DIAL_MAX_PER_ADDRESS)
+        .min(remaining_budget)
 }
 
 // Tries every resolved address in order, as a host-and-port connect does, but keeps
 // each address's OS error: the last error alone cannot tell routing from policy.
-// Multi-address resolutions share a bounded dial budget so a blackholed first address
-// (such as link-local IPv6) cannot starve reachable fallback addresses, while a single
-// resolved address keeps the full open() budget for slow cellular/Tailscale handshakes.
+// Multi-address resolutions share a single 15-second deadline so blackholed early
+// addresses (such as link-local IPv6) cannot starve reachable fallback addresses,
+// while a single resolved address keeps the full open() budget for slow cellular/
+// Tailscale handshakes.
 async fn dial(host: &str, port: u16) -> std::result::Result<TcpStream, String> {
     let addresses: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
         .await
         .map_err(|error| format!("{host} did not resolve: {error}"))?
         .collect();
-    let per_address = per_address_timeout(addresses.len());
-    dial_with(host, addresses, per_address, TcpStream::connect).await
+    let budget = (addresses.len() > 1).then_some(DIAL_TOTAL_BUDGET);
+    dial_with(host, addresses, budget, TcpStream::connect).await
 }
 
 async fn dial_with<F, Fut, S>(
     host: &str,
     addresses: impl IntoIterator<Item = SocketAddr>,
-    per_address: Option<Duration>,
+    total_budget: Option<Duration>,
     mut connect: F,
 ) -> std::result::Result<S, String>
 where
     F: FnMut(SocketAddr) -> Fut,
     Fut: std::future::Future<Output = std::io::Result<S>>,
 {
+    let addresses: Vec<SocketAddr> = addresses.into_iter().collect();
+    let total = addresses.len();
+    let deadline = total_budget.map(|budget| tokio::time::Instant::now() + budget);
     let mut attempts = Vec::new();
-    for address in addresses {
-        let outcome = match per_address {
-            Some(limit) => tokio::time::timeout(limit, connect(address)).await,
+    for (index, address) in addresses.into_iter().enumerate() {
+        let outcome = match deadline {
+            Some(deadline) => {
+                let remaining_budget =
+                    deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining_budget.is_zero() {
+                    Err(())
+                } else {
+                    let limit = attempt_timeout(remaining_budget, total - index);
+                    tokio::time::timeout(limit, connect(address))
+                        .await
+                        .map_err(|_| ())
+                }
+            }
             None => Ok(connect(address).await),
         };
         match outcome {
             Ok(Ok(socket)) => return Ok(socket),
             Ok(Err(error)) => attempts.push(format!("{}: {error}", endpoint(address))),
-            Err(_) => attempts.push(format!("{}: connection timed out", endpoint(address))),
+            Err(()) => attempts.push(format!("{}: connection timed out", endpoint(address))),
         }
     }
     if attempts.is_empty() {
@@ -769,36 +787,230 @@ mod tests {
     thread_local! {
         // Receives the phone end of every tunnel the session builds.
         static PHONE: RefCell<Option<mpsc::UnboundedSender<DuplexStream>>> = const { RefCell::new(None) };
-        // Optional per-test override for in-place RSD refreshes on a live tunnel.
-        static RSD_REFRESH: RefCell<Option<Box<dyn FnMut() -> RsdRefresh>>> = const { RefCell::new(None) };
     }
 
-    pub(super) fn refresh_rsd_override() -> Option<RsdRefresh> {
-        RSD_REFRESH.with(|slot| slot.borrow_mut().as_mut().map(|cb| cb()))
+    fn encode_rsd_handshake_frame(rsd: &RsdHandshake) -> Vec<u8> {
+        use idevice::xpc::{Dictionary, XPCMessage, XPCObject};
+        let mut services = Dictionary::new();
+        for (name, service) in &rsd.services {
+            let mut props = Dictionary::new();
+            props.insert(
+                "UsesRemoteXPC".into(),
+                XPCObject::Bool(service.uses_remote_xpc),
+            );
+            if let Some(features) = &service.features {
+                props.insert(
+                    "Features".into(),
+                    XPCObject::Array(features.iter().cloned().map(XPCObject::String).collect()),
+                );
+            }
+            if let Some(version) = service.service_version {
+                props.insert("ServiceVersion".into(), XPCObject::Int64(version));
+            }
+            let mut entry = Dictionary::new();
+            entry.insert(
+                "Entitlement".into(),
+                XPCObject::String(service.entitlement.clone()),
+            );
+            entry.insert("Port".into(), XPCObject::String(service.port.to_string()));
+            entry.insert("Properties".into(), XPCObject::Dictionary(props));
+            services.insert(name.clone(), XPCObject::Dictionary(entry));
+        }
+        let mut properties = Dictionary::new();
+        for (k, v) in &rsd.properties {
+            properties.insert(k.clone(), XPCObject::from(v.clone()));
+        }
+        let mut root = Dictionary::new();
+        root.insert("Services".into(), XPCObject::Dictionary(services));
+        root.insert(
+            "MessagingProtocolVersion".into(),
+            XPCObject::Int64(rsd.protocol_version as i64),
+        );
+        root.insert("UUID".into(), XPCObject::String(rsd.uuid.clone()));
+        root.insert("Properties".into(), XPCObject::Dictionary(properties));
+
+        let xpc_bytes = XPCMessage::new(None, Some(XPCObject::Dictionary(root)), Some(1))
+            .encode(1)
+            .unwrap();
+        let len = (xpc_bytes.len() as u32).to_be_bytes();
+        let mut frame = Vec::with_capacity(9 + xpc_bytes.len());
+        frame.extend_from_slice(&[len[1], len[2], len[3], 0x00, 0x00]);
+        frame.extend_from_slice(&1u32.to_be_bytes());
+        frame.extend_from_slice(&xpc_bytes);
+        frame
     }
 
-    struct ResetRsdRefresh;
-    impl Drop for ResetRsdRefresh {
-        fn drop(&mut self) {
-            RSD_REFRESH.with(|slot| slot.borrow_mut().take());
+    #[derive(Default)]
+    struct MockPhoneStats {
+        syns_by_port: HashMap<u16, usize>,
+        rsd_handshakes: usize,
+        input_deliveries: usize,
+    }
+
+    impl MockPhoneStats {
+        fn syns(&self, port: u16) -> usize {
+            self.syns_by_port.get(&port).copied().unwrap_or(0)
         }
     }
 
-    fn stub_rsd_refresh(
-        mut cb: impl FnMut() -> RsdRefresh + 'static,
-    ) -> (
-        ResetRsdRefresh,
-        std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    ) {
-        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter = calls.clone();
-        RSD_REFRESH.with(|slot| {
-            *slot.borrow_mut() = Some(Box::new(move || {
-                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                cb()
-            }));
-        });
-        (ResetRsdRefresh, calls)
+    struct MockConnState {
+        server_seq: u32,
+        received: Vec<u8>,
+        rsd_replied: bool,
+    }
+
+    async fn answer_rsd(
+        mut wire: DuplexStream,
+        mut open: Vec<u16>,
+        rsd_port: u16,
+        rsd_reply: Option<RsdHandshake>,
+    ) -> MockPhoneStats {
+        let host: Ipv6Addr = "fd00::1".parse().unwrap();
+        let phone: Ipv6Addr = "fd00::2".parse().unwrap();
+        let rsd_frame = rsd_reply.as_ref().map(encode_rsd_handshake_frame);
+        if rsd_frame.is_some() && !open.contains(&rsd_port) {
+            open.push(rsd_port);
+        }
+        let mut stats = MockPhoneStats::default();
+        let mut conns: HashMap<(u16, u16), MockConnState> = HashMap::new();
+        'wire: loop {
+            let mut header = [0u8; 40];
+            if wire.read_exact(&mut header).await.is_err() {
+                break;
+            }
+            let mut packet = vec![0u8; u16::from_be_bytes([header[4], header[5]]) as usize];
+            if wire.read_exact(&mut packet).await.is_err() {
+                break;
+            }
+            if header[6] != ProtocolNumber::Tcp as u8 {
+                continue;
+            }
+            let segment = TcpPacket::parse(&packet).unwrap();
+            let key = (segment.source_port, segment.destination_port);
+            if segment.flags.rst {
+                continue;
+            }
+            if segment.flags.syn {
+                *stats
+                    .syns_by_port
+                    .entry(segment.destination_port)
+                    .or_insert(0) += 1;
+                let flags = if open.contains(&segment.destination_port) {
+                    conns.insert(
+                        key,
+                        MockConnState {
+                            server_seq: 1,
+                            received: Vec::new(),
+                            rsd_replied: false,
+                        },
+                    );
+                    TcpFlags {
+                        syn: true,
+                        ack: true,
+                        ..Default::default()
+                    }
+                } else {
+                    TcpFlags {
+                        rst: true,
+                        ack: true,
+                        ..Default::default()
+                    }
+                };
+                let ack = segment.sequence_number.wrapping_add(1);
+                let reply = TcpPacket::create(
+                    IpAddr::V6(phone),
+                    IpAddr::V6(host),
+                    segment.destination_port,
+                    segment.source_port,
+                    0,
+                    ack,
+                    flags,
+                    u16::MAX,
+                    &[],
+                    &[],
+                );
+                let reply = Ipv6Packet::create(phone, host, ProtocolNumber::Tcp, 64, &reply);
+                if wire.write_all(&reply).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+            if segment.payload.is_empty() && !segment.flags.fin {
+                continue;
+            }
+            let Some(state) = conns.get_mut(&key) else {
+                continue;
+            };
+            state.received.extend_from_slice(&segment.payload);
+            let ack = segment
+                .sequence_number
+                .wrapping_add(segment.payload.len() as u32 + u32::from(segment.flags.fin));
+            let ack_pkt = TcpPacket::create(
+                IpAddr::V6(phone),
+                IpAddr::V6(host),
+                segment.destination_port,
+                segment.source_port,
+                state.server_seq,
+                ack,
+                TcpFlags {
+                    ack: true,
+                    ..Default::default()
+                },
+                u16::MAX,
+                &[],
+                &[],
+            );
+            let ack_pkt = Ipv6Packet::create(phone, host, ProtocolNumber::Tcp, 64, &ack_pkt);
+            if wire.write_all(&ack_pkt).await.is_err() {
+                break;
+            }
+            if segment.destination_port == rsd_port
+                && !state.rsd_replied
+                && let Some(frame) = &rsd_frame
+                && state
+                    .received
+                    .windows(b"Handshake\0".len())
+                    .any(|w| w == b"Handshake\0")
+            {
+                state.rsd_replied = true;
+                stats.rsd_handshakes += 1;
+                for chunk in frame.chunks(1024) {
+                    let data_pkt = TcpPacket::create(
+                        IpAddr::V6(phone),
+                        IpAddr::V6(host),
+                        segment.destination_port,
+                        segment.source_port,
+                        state.server_seq,
+                        ack,
+                        TcpFlags {
+                            psh: true,
+                            ack: true,
+                            ..Default::default()
+                        },
+                        u16::MAX,
+                        &[],
+                        chunk,
+                    );
+                    let data_pkt =
+                        Ipv6Packet::create(phone, host, ProtocolNumber::Tcp, 64, &data_pkt);
+                    if wire.write_all(&data_pkt).await.is_err() {
+                        break 'wire;
+                    }
+                    state.server_seq = state.server_seq.wrapping_add(chunk.len() as u32);
+                }
+            }
+        }
+        stats.input_deliveries = conns
+            .values()
+            .map(|state| {
+                state
+                    .received
+                    .windows(b"send\0".len())
+                    .filter(|w| *w == b"send\0")
+                    .count()
+            })
+            .sum();
+        stats
     }
 
     fn tunnel() -> (Connection, DuplexStream) {
@@ -1827,26 +2039,32 @@ mod tests {
         let (sender, mut phones) = mpsc::unbounded_channel();
         PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
 
-        // Simulate a tunnel established while the phone was locked (empty RSD service map),
-        // then unlocked so a fresh RSD handshake now advertises DisplayService on a live port.
+        // Simulate a tunnel established while the phone was locked (advertising deviceinfo only,
+        // before DisplayService is ready), then unlocked so a fresh RSD handshake now advertises
+        // DisplayService on a live port.
         let (mut live, phone) = tunnel();
         let full_rsd = live.rsd.clone();
+        let device_info_name = "com.apple.coredevice.deviceinfo";
+        let device_info_port = full_rsd.services[device_info_name].port;
         let display_port = full_rsd.services
             [DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().as_ref()]
         .port;
-        live.rsd.services.clear();
+        let touch_port = full_rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
+        live.rsd.services.retain(|name, _| name == device_info_name);
         live.rsd.uuid = "live-before-unlock".into();
-
-        // Phone resets the newly advertised display port on retry (proving the retry used the
-        // refreshed service port rather than failing immediately with ServiceNotFound) while
-        // still accepting rsd_port so the tunnel stays alive.
-        let rsd_port = live.rsd_port;
-        tokio::spawn(answer(phone, vec![rsd_port], None));
 
         let mut updated_rsd = full_rsd.clone();
         updated_rsd.uuid = "live-after-unlock".into();
-        let (_guard, refresh_calls) =
-            stub_rsd_refresh(move || RsdRefresh::Updated(updated_rsd.clone()));
+
+        // Phone completes the real RemoteXPC RSD handshake on rsd_port and resets the newly
+        // advertised display port on retry (proving the retry used the refreshed service map).
+        let rsd_port = live.rsd_port;
+        let phone_task = tokio::spawn(answer_rsd(
+            phone,
+            vec![rsd_port],
+            rsd_port,
+            Some(updated_rsd),
+        ));
 
         let mut session = Session {
             transport: Transport::Local("fixture-phone".into()),
@@ -1859,11 +2077,6 @@ mod tests {
             .expect("unsent service reset should return a structured reply");
         PHONE.with(|slot| slot.borrow_mut().take());
 
-        assert_eq!(
-            refresh_calls.load(std::sync::atomic::Ordering::SeqCst),
-            1,
-            "RSD refresh should run exactly once"
-        );
         assert!(
             phones.try_recv().is_err(),
             "in-place RSD refresh must keep the existing live tunnel instead of rebuilding it"
@@ -1886,22 +2099,49 @@ mod tests {
             reply["reason"], "display_service_missing",
             "retry did not use the refreshed RSD service map: {reply}"
         );
+
+        drop(session);
+        let stats = phone_task.await.unwrap();
+        assert_eq!(stats.rsd_handshakes, 1, "RSD refresh should run once");
+        assert_eq!(
+            stats.syns(device_info_port),
+            2,
+            "tap should run once before refresh and once after refresh"
+        );
+        assert_eq!(
+            stats.syns(display_port),
+            1,
+            "refreshed DisplayService port should be dialed once"
+        );
+        assert_eq!(stats.syns(touch_port), 0);
+        assert_eq!(stats.input_deliveries, 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn unchanged_rsd_refresh_keeps_live_tunnel_without_redundant_retry() {
         let (sender, mut phones) = mpsc::unbounded_channel();
         PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
 
-        let (mut live, _phone) = tunnel();
-        live.rsd.services.clear();
-        live.rsd.uuid = "live-no-ddi".into();
+        let (mut live, phone) = tunnel();
+        let device_info_name = "com.apple.coredevice.deviceinfo";
+        let device_info_port = live.rsd.services[device_info_name].port;
+        let display_port = live.rsd.services
+            [DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().as_ref()]
+        .port;
+        let touch_port = live.rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
+        live.rsd.services.retain(|name, _| name == device_info_name);
+        live.rsd.uuid = "live-no-ddi-unchanged".into();
 
-        // Use a distinct uuid to verify an unchanged service map does not overwrite *rsd or retry.
-        let mut empty_rsd = live.rsd.clone();
-        empty_rsd.uuid = "live-no-ddi-refreshed".into();
-        let (_guard, refresh_calls) =
-            stub_rsd_refresh(move || RsdRefresh::Updated(empty_rsd.clone()));
+        // Phone advertises the identical service map on refresh; Session::request must not retry tap.
+        let mut unchanged_rsd = live.rsd.clone();
+        unchanged_rsd.uuid = "live-no-ddi-refreshed".into();
+        let rsd_port = live.rsd_port;
+        let phone_task = tokio::spawn(answer_rsd(
+            phone,
+            vec![rsd_port],
+            rsd_port,
+            Some(unchanged_rsd),
+        ));
 
         let mut session = Session {
             transport: Transport::Local("fixture-phone".into()),
@@ -1914,11 +2154,92 @@ mod tests {
             .expect("missing display service should return a reply");
         PHONE.with(|slot| slot.borrow_mut().take());
 
-        assert_eq!(refresh_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(reply["outcome"], "not_sent", "{reply}");
         assert_eq!(reply["reason"], "display_service_missing", "{reply}");
         assert!(phones.try_recv().is_err(), "live tunnel was rebuilt");
-        assert_eq!(session.connection.as_ref().unwrap().rsd.uuid, "live-no-ddi");
+        assert_eq!(
+            session.connection.as_ref().unwrap().rsd.uuid,
+            "live-no-ddi-refreshed"
+        );
+
+        drop(session);
+        let stats = phone_task.await.unwrap();
+        assert_eq!(stats.rsd_handshakes, 1, "RSD refresh should run once");
+        assert_eq!(
+            stats.syns(device_info_port),
+            1,
+            "unchanged service map must not replay tap"
+        );
+        assert_eq!(stats.syns(display_port), 0);
+        assert_eq!(stats.syns(touch_port), 0);
+        assert_eq!(stats.input_deliveries, 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rsd_refresh_prunes_removed_services_without_redundant_retry() {
+        let (sender, mut phones) = mpsc::unbounded_channel();
+        PHONE.with(|slot| *slot.borrow_mut() = Some(sender));
+
+        let (mut live, phone) = tunnel();
+        let device_info_name = "com.apple.coredevice.deviceinfo";
+        let ax_name = "com.apple.accessibility.axAuditDaemon.remoteAXService";
+        let device_info_port = live.rsd.services[device_info_name].port;
+        let display_port = live.rsd.services
+            [DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().as_ref()]
+        .port;
+        let touch_port = live.rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
+        live.rsd
+            .services
+            .retain(|name, _| name == device_info_name || name == ax_name);
+        live.rsd.uuid = "live-with-stale-ax".into();
+
+        // Refresh drops ax_name while keeping device_info unchanged and DisplayService absent.
+        let mut pruned_rsd = live.rsd.clone();
+        pruned_rsd.services.remove(ax_name);
+        pruned_rsd.uuid = "live-pruned-ax".into();
+        let rsd_port = live.rsd_port;
+        let phone_task = tokio::spawn(answer_rsd(
+            phone,
+            vec![rsd_port],
+            rsd_port,
+            Some(pruned_rsd),
+        ));
+
+        let mut session = Session {
+            transport: Transport::Local("fixture-phone".into()),
+            control: None,
+            connection: Some(live),
+        };
+        let reply = session
+            .request(json!({"op":"tap","x":100,"y":200}))
+            .await
+            .expect("missing display service should return a reply");
+        PHONE.with(|slot| slot.borrow_mut().take());
+
+        assert_eq!(reply["outcome"], "not_sent", "{reply}");
+        assert_eq!(reply["reason"], "display_service_missing", "{reply}");
+        assert!(phones.try_recv().is_err(), "live tunnel was rebuilt");
+        let kept = session
+            .connection
+            .as_ref()
+            .expect("live tunnel was dropped");
+        assert_eq!(kept.rsd.uuid, "live-pruned-ax");
+        assert!(
+            !kept.rsd.services.contains_key(ax_name),
+            "removed service stayed in cached RSD map"
+        );
+
+        drop(session);
+        let stats = phone_task.await.unwrap();
+        assert_eq!(stats.rsd_handshakes, 1);
+        assert_eq!(
+            stats.syns(device_info_port),
+            1,
+            "pure service removal must not trigger a redundant retry"
+        );
+        assert_eq!(stats.syns(display_port), 0);
+        assert_eq!(stats.syns(touch_port), 0);
+        assert_eq!(stats.input_deliveries, 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -1956,25 +2277,43 @@ mod tests {
         assert_eq!(reply["outcome"], "not_sent", "{reply}");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn remote_rsd_refresh_with_mismatched_udid_drops_connection_and_control() {
         use tokio::net::TcpListener;
-        for host in ["phone.local", "127.0.0.1", "phone.tailnet.ts.net"] {
+        for (idx, host) in ["phone.local", "127.0.0.1", "phone.tailnet.ts.net"]
+            .into_iter()
+            .enumerate()
+        {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let client = TcpStream::connect(listener.local_addr().unwrap())
                 .await
                 .unwrap();
             let (_phone_ctrl, _) = listener.accept().await.unwrap();
 
-            let (mut live, _phone) = tunnel();
+            let (mut live, phone) = tunnel();
+            let device_info_name = "com.apple.coredevice.deviceinfo";
+            let device_info_port = live.rsd.services[device_info_name].port;
+            let display_port = live.rsd.services
+                [DisplayServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().as_ref()]
+            .port;
+            let touch_port = live.rsd.services[crate::Hid::rsd_service_name().as_ref()].port;
+
             let mut wrong_device = live.rsd.clone();
+            wrong_device.uuid = format!("wrong-device-{idx}");
             wrong_device.properties.insert(
                 "UniqueDeviceID".into(),
                 plist::Value::String("other-phone-udid".into()),
             );
-            live.rsd.services.clear();
+            live.rsd.uuid = format!("expected-before-mismatch-{idx}");
+            live.rsd.services.retain(|name, _| name == device_info_name);
 
-            let (_guard, _) = stub_rsd_refresh(move || RsdRefresh::Updated(wrong_device.clone()));
+            let rsd_port = live.rsd_port;
+            let phone_task = tokio::spawn(answer_rsd(
+                phone,
+                vec![rsd_port],
+                rsd_port,
+                Some(wrong_device),
+            ));
 
             let mut session = Session {
                 transport: Transport::Remote(Config {
@@ -2009,29 +2348,42 @@ mod tests {
                 session.control.is_none(),
                 "{host}: control session for mismatched remote UDID was kept"
             );
+
+            drop(session);
+            let stats = phone_task.await.unwrap();
+            assert_eq!(stats.rsd_handshakes, 1, "{host}");
+            assert_eq!(stats.syns(device_info_port), 1, "{host}");
+            assert_eq!(stats.syns(display_port), 0, "{host}");
+            assert_eq!(stats.syns(touch_port), 0, "{host}");
+            assert_eq!(stats.input_deliveries, 0, "{host}");
         }
     }
 
     #[tokio::test(start_paused = true)]
     async fn ax_tree_missing_service_refreshes_cached_rsd_on_live_tunnel() {
         let (mut live, phone) = tunnel();
+        let ax_port =
+            live.rsd.services["com.apple.accessibility.axAuditDaemon.remoteAXService"].port;
         let mut updated_rsd = live.rsd.clone();
         updated_rsd.properties.insert(
             "UniqueDeviceID".into(),
-            plist::Value::String("synthetic-phone".into()),
+            plist::Value::String("synthetic-phone-ax".into()),
         );
         updated_rsd.uuid = "ax-after-unlock".into();
+        live.rsd.uuid = "ax-before-unlock".into();
         live.rsd.services.clear();
 
         let rsd_port = live.rsd_port;
-        tokio::spawn(answer(phone, vec![rsd_port], None));
-
-        let (_guard, refresh_calls) =
-            stub_rsd_refresh(move || RsdRefresh::Updated(updated_rsd.clone()));
+        let phone_task = tokio::spawn(answer_rsd(
+            phone,
+            vec![rsd_port],
+            rsd_port,
+            Some(updated_rsd),
+        ));
 
         let mut session = Session {
             transport: Transport::Remote(Config {
-                id: "synthetic-phone".into(),
+                id: "synthetic-phone-ax".into(),
                 host: "phone.local".into(),
                 port: 49152,
                 pairing_file: "/not-real".into(),
@@ -2045,7 +2397,6 @@ mod tests {
             .expect_err("reset AX port returns an error")
             .to_string();
 
-        assert_eq!(refresh_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(
             session.connection.as_ref().unwrap().rsd.uuid,
             "ax-after-unlock"
@@ -2058,11 +2409,17 @@ mod tests {
             !err.contains("Input may have been delivered"),
             "read-only ax_tree error falsely claimed input delivery: {err}"
         );
+
+        drop(session);
+        let stats = phone_task.await.unwrap();
+        assert_eq!(stats.rsd_handshakes, 1);
+        assert_eq!(stats.syns(ax_port), 1);
+        assert_eq!(stats.input_deliveries, 0);
     }
 
     #[tokio::test(start_paused = true)]
     async fn remote_read_only_failure_never_claims_input_delivery() {
-        let (mut live, phone) = tunnel();
+        let (live, phone) = tunnel();
         let rsd_port = live.rsd_port;
         let ax_port =
             live.rsd.services["com.apple.accessibility.axAuditDaemon.remoteAXService"].port;
@@ -2071,7 +2428,7 @@ mod tests {
         tokio::spawn(answer(phone, vec![rsd_port, ax_port], None));
         let mut session = Session {
             transport: Transport::Remote(Config {
-                id: "synthetic-phone".into(),
+                id: "synthetic-phone-ro".into(),
                 host: "phone.local".into(),
                 port: 49152,
                 pairing_file: "/not-real".into(),
@@ -2092,20 +2449,53 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn dial_with_allocates_budget_and_falls_back_after_stalled_address() {
-        // Single-address targets (fixed IP / Tailscale) keep the full open() budget.
-        assert_eq!(per_address_timeout(1), None);
-        assert_eq!(per_address_timeout(2), Some(Duration::from_secs(5)));
-        assert_eq!(per_address_timeout(6), Some(Duration::from_millis(2500)));
-        assert_eq!(per_address_timeout(12), Some(Duration::from_millis(1500)));
+        // Single-address targets keep the full open() budget; multi-address targets share 15s.
+        assert_eq!(
+            attempt_timeout(Duration::from_secs(15), 1),
+            Duration::from_secs(15)
+        );
+        assert_eq!(
+            attempt_timeout(Duration::from_secs(15), 2),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            attempt_timeout(Duration::from_secs(15), 6),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(
+            attempt_timeout(Duration::from_secs(15), 12),
+            Duration::from_millis(1250)
+        );
+        assert_eq!(
+            attempt_timeout(Duration::from_secs(15), 18),
+            Duration::from_nanos(833_333_333)
+        );
 
         let blackholed: SocketAddr = "[fe80::1]:49152".parse().unwrap();
         let reachable: SocketAddr = "127.0.0.1:49152".parse().unwrap();
 
+        // Single-address target (total_budget = None) is not cut off at 15s.
+        let single_started = tokio::time::Instant::now();
+        let single = dial_with(
+            "phone.tailnet.ts.net",
+            [reachable],
+            None,
+            |address| async move {
+                tokio::time::sleep(Duration::from_secs(20)).await;
+                Ok(address)
+            },
+        )
+        .await
+        .expect("single-address target should keep full open() budget past 15s");
+        assert_eq!(single, reachable);
+        assert_eq!(single_started.elapsed(), Duration::from_secs(20));
+
+        // 2-address fallback: stalled first address falls back at 5s.
         let started = tokio::time::Instant::now();
         let connected = dial_with(
             "phone.local",
             [blackholed, reachable],
-            per_address_timeout(2),
+            Some(DIAL_TOTAL_BUDGET),
             |address| async move {
                 if address == blackholed {
                     std::future::pending::<std::io::Result<SocketAddr>>().await
@@ -2119,40 +2509,96 @@ mod tests {
         assert_eq!(connected, reachable);
         assert_eq!(started.elapsed(), Duration::from_secs(5));
 
+        // 18-address fallback: 17 blackholed addresses before 1 reachable address must still reach
+        // the 18th address well within the shared 15s budget (and 25s open() timeout).
+        let stalled_many: Vec<SocketAddr> = (1..=17)
+            .map(|i| {
+                SocketAddr::new(
+                    IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, i)),
+                    49152,
+                )
+            })
+            .chain(std::iter::once(reachable))
+            .collect();
+        let started_18 = tokio::time::Instant::now();
+        let connected_18 = dial_with(
+            "phone.local",
+            stalled_many,
+            Some(DIAL_TOTAL_BUDGET),
+            |address| async move {
+                if address == reachable {
+                    Ok(address)
+                } else {
+                    std::future::pending::<std::io::Result<SocketAddr>>().await
+                }
+            },
+        )
+        .await
+        .expect("18th reachable address should be dialed within the shared 15s budget");
+        assert_eq!(connected_18, reachable);
+        assert!(
+            started_18.elapsed() < DIAL_TOTAL_BUDGET,
+            "18-address fallback exceeded shared 15s budget: {:?}",
+            started_18.elapsed()
+        );
+
+        // 12 stalled addresses: total elapsed time must not exceed the shared 15s deadline.
+        let stalled_12: Vec<SocketAddr> = (1..=12)
+            .map(|i| {
+                SocketAddr::new(
+                    IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, i)),
+                    49152,
+                )
+            })
+            .collect();
+        let started_12 = tokio::time::Instant::now();
         let err = dial_with(
             "phone.local",
-            [blackholed],
-            Some(Duration::from_secs(2)),
+            stalled_12,
+            Some(DIAL_TOTAL_BUDGET),
             |_address| std::future::pending::<std::io::Result<()>>(),
         )
         .await
         .expect_err("all stalled addresses should fail with timeout diagnostics");
         assert!(
-            err.contains("connection timed out"),
-            "expected timeout diagnostics, got: {err}"
+            started_12.elapsed() <= DIAL_TOTAL_BUDGET,
+            "12 stalled addresses exceeded shared 15s budget: {:?}",
+            started_12.elapsed()
         );
+        for i in 1..=12 {
+            assert!(
+                err.contains(&format!("[fe80::{i:x}]:49152: connection timed out")),
+                "missing address {i} timeout diagnostic: {err}"
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]
     async fn read_only_list_apps_refreshes_cached_rsd_on_live_remote_tunnel() {
         let (mut live, phone) = tunnel();
+        let app_port = live.rsd.services
+            [AppServiceClient::<Box<dyn ReadWrite>>::rsd_service_name().as_ref()]
+        .port;
         let mut updated_rsd = live.rsd.clone();
         updated_rsd.properties.insert(
             "UniqueDeviceID".into(),
-            plist::Value::String("synthetic-phone".into()),
+            plist::Value::String("synthetic-phone-apps".into()),
         );
         updated_rsd.uuid = "remote-after-unlock".into();
+        live.rsd.uuid = "remote-before-unlock".into();
         live.rsd.services.clear();
 
         let rsd_port = live.rsd_port;
-        tokio::spawn(answer(phone, vec![rsd_port], None));
-
-        let (_guard, refresh_calls) =
-            stub_rsd_refresh(move || RsdRefresh::Updated(updated_rsd.clone()));
+        let phone_task = tokio::spawn(answer_rsd(
+            phone,
+            vec![rsd_port],
+            rsd_port,
+            Some(updated_rsd),
+        ));
 
         let mut session = Session {
             transport: Transport::Remote(Config {
-                id: "synthetic-phone".into(),
+                id: "synthetic-phone-apps".into(),
                 host: "phone.local".into(),
                 port: 49152,
                 pairing_file: "/not-real".into(),
@@ -2166,7 +2612,6 @@ mod tests {
             .expect_err("reset AppService port returns an error")
             .to_string();
 
-        assert_eq!(refresh_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_eq!(
             session.connection.as_ref().unwrap().rsd.uuid,
             "remote-after-unlock"
@@ -2179,5 +2624,11 @@ mod tests {
             !err.to_lowercase().contains("service not found"),
             "retry did not use refreshed AppService port: {err}"
         );
+
+        drop(session);
+        let stats = phone_task.await.unwrap();
+        assert_eq!(stats.rsd_handshakes, 1);
+        assert_eq!(stats.syns(app_port), 1);
+        assert_eq!(stats.input_deliveries, 0);
     }
 }
