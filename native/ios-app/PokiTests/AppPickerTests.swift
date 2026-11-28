@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor
 final class AppPickerTests: XCTestCase {
+    func testMentionRankingToleratesDuplicateStoredRecentIDs() throws {
+        let suite = "AppPickerTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["com.example.second", "com.example.first", "COM.EXAMPLE.SECOND"],
+                     forKey: RecentAppsStore.defaultsKey)
+        let state = try XCTUnwrap(AppPickerCatalog.mentionState(
+            input: "@PokiFixture", mentionReady: true, adding: false,
+            recentIDs: RecentAppsStore(defaults: defaults).recentIDs, language: .english,
+            dynamicApps: [DynamicApps.Entry(id: "com.example.first", name: "PokiFixture Alpha", user: true),
+                          DynamicApps.Entry(id: "com.example.second", name: "PokiFixture Beta", user: true)]))
+        XCTAssertEqual(state.matches.map(\.id), ["com.example.second", "com.example.first"])
+    }
+
     func testQuickAndRecentAppsFollowRecentOrderWithLanguageDefaults() {
         let suiteName = "AppPickerTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
