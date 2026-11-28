@@ -318,7 +318,10 @@ jobs:
 
       - name: PokiCore tests
         timeout-minutes: 15
-        run: swift test --parallel --package-path native/ios/PokiCore
+        run: |
+          # Vision-backed display confirmation has a bounded deadline; avoid competing test processes.
+          swift test --parallel --num-workers 1 --filter 'LookDoTests/testNumberKey' --package-path native/ios/PokiCore
+          swift test --parallel --skip 'LookDoTests/testNumberKey' --package-path native/ios/PokiCore
 
       - name: Poki keyboard tests
         if: ${{ hashFiles('native/ios-app/KeyboardShared/Package.swift') != '' }}
