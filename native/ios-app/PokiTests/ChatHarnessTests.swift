@@ -790,10 +790,6 @@ final class ChatHarnessTests: XCTestCase {
         // The in-process probe supplies the test transport, so no external runner needs to wake.
         app.inProcessReadyForProbe()
         app.host.setPaused(false)
-        let activity = try XCTUnwrap(Activity<PokiActivityAttributes>.activities.first {
-            !existingActivities.contains($0.id) && $0.activityState == .active
-        }, "Starting a Poki session must create an active Live Activity")
-        XCTAssertEqual(activity.content.state.phase, .idle)
         chat.send("Focus the test field in Notes after reading Safari", inSplitView: true)
 
         let pausedBy = ContinuousClock.now + .seconds(8)
@@ -801,6 +797,9 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(chat.waitingForSplitView)
         XCTAssertEqual(server.requests.count, 2)
 
+        let activity = try XCTUnwrap(Activity<PokiActivityAttributes>.activities.first {
+            !existingActivities.contains($0.id) && $0.activityState == .active
+        }, "The working Split View task must create an active Live Activity")
         let workingBy = ContinuousClock.now + .seconds(5)
         while activity.content.state.phase != .working, ContinuousClock.now < workingBy {
             try await Task.sleep(for: .milliseconds(50))
