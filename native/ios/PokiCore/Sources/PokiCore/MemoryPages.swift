@@ -102,41 +102,70 @@ extension SkillStore {
     @discardableResult
     public func writePage(app: String?, text: String, summary: String? = nil, by: String, heard: NoteOrigin? = nil) -> PageWrite {
         withFile(true) { f in
-            let owner = by == Self.owner
-            let index = f.pages.firstIndex { MemoryPage.sameArea($0.app, app) }
-            let before = index.map { f.pages[$0] }
-            if let before, before.isLocked, !owner { return .locked }
-            let old = before?.lines ?? []
-            let now = Date()
-            var lines: [MemoryNote] = []
-            for words in MemoryPage.lines(of: text, limit: Self.maxNoteLength) {
-                if let same = old.first(where: { $0.text.caseInsensitiveCompare(words) == .orderedSame }) {
-                    lines.append(same)
-                } else {
-                    lines.append(MemoryNote(id: String(UUID().uuidString.prefix(8)).lowercased(), text: words, by: by, at: now,
-                                            locked: owner ? true : nil, app: app, heard: owner ? nil : heard))
-                }
-            }
-            var kept = 0
-            if !owner {
-                for line in old where line.isLocked && !lines.contains(where: { $0.id == line.id }) {
-                    lines.append(line)
-                    kept += 1
-                }
-            }
-            // An id another page already uses would make forgetting or undoing by id reach the wrong line.
-            let elsewhere = Set(f.pages.enumerated().filter { $0.offset != index }.flatMap { $0.element.lines.map(\.id) })
-            for i in lines.indices where elsewhere.contains(lines[i].id) { lines[i].id = String(UUID().uuidString.prefix(8)).lowercased() }
-            var page = before ?? MemoryPage(app: app, lines: [])
-            page.lines = lines
-            if let summary { page.summary = summary.isEmpty ? nil : String(summary.prefix(160)) }
-            page.updated = now
-            if let index { f.pages[index] = page } else if app == nil { f.pages.insert(page, at: 0) } else { f.pages.append(page) }
-            f.pages.removeAll { $0.lines.isEmpty && $0.summary == nil }
-            Self.log(&f, MemoryChangeRecord(action: before == nil ? MemoryChangeRecord.added : MemoryChangeRecord.edited, id: Self.newID(), at: now, by: by,
-                                            page: page, pageBefore: before))
-            return .written(page, kept: kept)
+            Self.replacePage(in: &f, app: app, text: text, summary: summary, by: by, heard: heard)
         }
+    }
+
+    /// Applies only the fields the owner changed and refuses to replace a concurrently edited field.
+    public func savePageEdit(app: String?, original: MemoryPage?, text: String, locked: Bool) -> Bool {
+        let editsText = text != (original?.text ?? "")
+        let editsLock = locked != (original?.isLocked ?? false)
+        guard editsText || editsLock else { return true }
+        do {
+            try withFile(true) { f in
+                let current = f.pages.first { MemoryPage.sameArea($0.app, app) }
+                if editsText, current?.lines != original?.lines { throw PageEditConflict.changed }
+                if editsLock, (current?.isLocked ?? false) != (original?.isLocked ?? false) { throw PageEditConflict.changed }
+                if editsText {
+                    _ = Self.replacePage(in: &f, app: app, text: text, summary: nil, by: Self.owner, heard: nil, locked: editsLock ? locked : nil)
+                } else if editsLock, let i = f.pages.firstIndex(where: { MemoryPage.sameArea($0.app, app) }) {
+                    f.pages[i].locked = locked ? true : nil
+                }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private enum PageEditConflict: Error { case changed }
+
+    private static func replacePage(in f: inout MemoryFile, app: String?, text: String, summary: String?, by: String, heard: NoteOrigin?, locked: Bool? = nil) -> PageWrite {
+        let owner = by == Self.owner
+        let index = f.pages.firstIndex { MemoryPage.sameArea($0.app, app) }
+        let before = index.map { f.pages[$0] }
+        if let before, before.isLocked, !owner { return .locked }
+        let old = before?.lines ?? []
+        let now = Date()
+        var lines: [MemoryNote] = []
+        for words in MemoryPage.lines(of: text, limit: Self.maxNoteLength) {
+            if let same = old.first(where: { $0.text.caseInsensitiveCompare(words) == .orderedSame }) {
+                lines.append(same)
+            } else {
+                lines.append(MemoryNote(id: String(UUID().uuidString.prefix(8)).lowercased(), text: words, by: by, at: now,
+                                        locked: owner ? true : nil, app: app, heard: owner ? nil : heard))
+            }
+        }
+        var kept = 0
+        if !owner {
+            for line in old where line.isLocked && !lines.contains(where: { $0.id == line.id }) {
+                lines.append(line)
+                kept += 1
+            }
+        }
+        // An id another page already uses would make forgetting or undoing by id reach the wrong line.
+        let elsewhere = Set(f.pages.enumerated().filter { $0.offset != index }.flatMap { $0.element.lines.map(\.id) })
+        for i in lines.indices where elsewhere.contains(lines[i].id) { lines[i].id = String(UUID().uuidString.prefix(8)).lowercased() }
+        var page = before ?? MemoryPage(app: app, lines: [])
+        page.lines = lines
+        if let locked { page.locked = locked ? true : nil }
+        if let summary { page.summary = summary.isEmpty ? nil : String(summary.prefix(160)) }
+        page.updated = now
+        if let index { f.pages[index] = page } else if app == nil { f.pages.insert(page, at: 0) } else { f.pages.append(page) }
+        f.pages.removeAll { $0.lines.isEmpty && $0.summary == nil }
+        Self.log(&f, MemoryChangeRecord(action: before == nil ? MemoryChangeRecord.added : MemoryChangeRecord.edited, id: Self.newID(), at: now, by: by,
+                                        page: page, pageBefore: before))
+        return .written(page, kept: kept)
     }
 
     /// Locks or unlocks a whole page. Only the Memory page calls it.
@@ -187,3 +216,6 @@ extension SkillStore {
         return out.joined(separator: "\n")
     }
 }
+
+/// A stored page snapshot, distinct from UI types named MemoryPage.
+public typealias StoredMemoryPage = MemoryPage

@@ -1,4 +1,5 @@
 import PokiCore
+
 import SwiftUI
 
 // What the Memory page shows, in one shape for the three kinds the memory system plan names: memories,
@@ -131,7 +132,16 @@ struct MemoryChange: Identifiable, Equatable {
 /// What the page lists: the items, the changes, and what the page may do with them.
 @MainActor @Observable
 final class MemoryLibrary {
-    static let shared = MemoryLibrary()
+    static let shared: MemoryLibrary = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-pokiUITestMemoryPageConflict") {
+            let store = RoutineStore(url: nil)
+            store.writePage(app: nil, text: "Original synthetic memory\nSynthetic second memory\nSynthetic third memory\nSynthetic fourth memory", by: "Poki")
+            return MemoryLibrary(store: store)
+        }
+        #endif
+        return MemoryLibrary()
+    }()
     nonisolated static let sampleKey = "pokiMemorySample"
     static let noteLimit = 300
 
@@ -182,6 +192,18 @@ final class MemoryLibrary {
     /// The page's one line for the index, and whether the owner locked it whole.
     func pageSummary(_ app: String?) -> String? { store?.page(app)?.summary }
     func pageLocked(_ app: String?) -> Bool { store?.page(app)?.isLocked == true }
+
+    func pageForEditing(_ app: String?) -> StoredMemoryPage? { store?.page(app) }
+
+    func savePageEdit(_ app: String?, original: StoredMemoryPage?, text: String, locked: Bool) -> Bool {
+        guard let store else {
+            writePage(app, text: text, locked: locked)
+            return true
+        }
+        let saved = store.savePageEdit(app: app, original: original, text: text, locked: locked)
+        reload()
+        return saved
+    }
 
     /// The owner's write of a whole page: a line already there keeps its id and where it came from,
     /// a new one is the owner's and locked; a line left out is forgotten. `locked` locks the page whole.

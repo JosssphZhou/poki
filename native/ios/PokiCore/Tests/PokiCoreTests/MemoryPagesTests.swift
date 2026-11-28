@@ -5,6 +5,100 @@ import XCTest
 final class MemoryPagesTests: XCTestCase {
     let wechat = "com.tencent.xin"
 
+    func testOwnerDraftDoesNotOverwriteConcurrentPageChanges() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        store.writePage(app: wechat, text: "Updated", by: "Poki")
+
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Original", locked: false))
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: original, text: "My edit", locked: true))
+        XCTAssertFalse(store.page(wechat)?.isLocked ?? true)
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Original", locked: true))
+        XCTAssertEqual(store.page(wechat)?.text, "Updated")
+        XCTAssertTrue(store.page(wechat)?.isLocked ?? false)
+    }
+
+    func testNewPageDraftCannotOverwritePageCreatedAfterOpening() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Added in the background", by: "Poki")
+        let current = store.page(wechat)
+
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: nil, text: "New draft", locked: true))
+        XCTAssertEqual(store.page(wechat), current)
+        XCTAssertTrue(store.savePageEdit(app: nil, original: nil, text: "About me", locked: true))
+        XCTAssertEqual(store.page(nil)?.text, "About me")
+        XCTAssertTrue(store.page(nil)?.isLocked ?? false)
+    }
+
+    func testOwnerTextAndLockEditRecordsFinalPageAndCanBeUndone() throws {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Edited", locked: true))
+        let change = try XCTUnwrap(store.changes.first)
+        XCTAssertEqual(change.page, store.page(wechat))
+        XCTAssertTrue(change.page?.isLocked ?? false)
+        XCTAssertTrue(store.undo(change.id))
+        XCTAssertEqual(store.page(wechat), original)
+    }
+
+    func testConflictingPageEditDoesNotPersistOrNotify() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        store.writePage(app: wechat, text: "Updated", by: "Poki")
+        let before = store.changes
+        store.onChange = { XCTFail("A rejected edit must not notify a change") }
+
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: original, text: "My edit", locked: false))
+        XCTAssertEqual(store.changes, before)
+    }
+
+    func testPageEditPersistsAndRejectedDraftLeavesDiskUnchanged() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("memory.json")
+        let store = SkillStore(url: url)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Owner edit", locked: true))
+        let saved = try Data(contentsOf: url)
+        XCTAssertFalse(store.savePageEdit(app: wechat, original: original, text: "Stale edit", locked: false))
+        XCTAssertEqual(try Data(contentsOf: url), saved)
+        let reopened = SkillStore(url: url)
+        XCTAssertEqual(reopened.page(wechat)?.text, "Owner edit")
+        XCTAssertTrue(reopened.page(wechat)?.isLocked ?? false)
+    }
+
+    func testTwoEditorsCannotBothReplaceTheSameSnapshot() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        let resultLock = NSLock()
+        var accepted = 0
+        DispatchQueue.concurrentPerform(iterations: 2) { index in
+            let saved = store.savePageEdit(app: wechat, original: original, text: "Draft \(index)", locked: false)
+            resultLock.lock()
+            if saved { accepted += 1 }
+            resultLock.unlock()
+        }
+        XCTAssertEqual(accepted, 1)
+        XCTAssertTrue(["Draft 0", "Draft 1"].contains(store.page(wechat)?.text ?? ""))
+    }
+
+    func testTextEditKeepsConcurrentPageLock() {
+        let store = SkillStore(url: nil)
+        store.writePage(app: wechat, text: "Original", by: "Poki")
+        let original = store.page(wechat)
+        store.setPageLocked(wechat, true)
+
+        XCTAssertTrue(store.savePageEdit(app: wechat, original: original, text: "Owner edit", locked: false))
+        XCTAssertEqual(store.page(wechat)?.text, "Owner edit")
+        XCTAssertTrue(store.page(wechat)?.isLocked ?? false)
+    }
+
     func testNotesFromBeforePagesBecomeTheLinesOfTheirAppsPages() throws {
         let old = """
         {"schema":"poki.agent-backup/2","skills":[],"runs":[],"notes":[

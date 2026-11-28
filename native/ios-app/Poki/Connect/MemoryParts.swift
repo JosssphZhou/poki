@@ -1,3 +1,4 @@
+import PokiCore
 import SwiftUI
 
 // The Memory page's pieces, after the design "Poki 记忆页设计稿" (Paper, page 第二轮定稿, the
@@ -525,6 +526,9 @@ struct MemoryPageEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var locked = false
+    @State private var original: StoredMemoryPage?
+    @State private var loaded = false
+    @State private var conflict = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -535,6 +539,16 @@ struct MemoryPageEditor: View {
                         .lineLimit(6...30)
                         .focused($focused)
                         .accessibilityIdentifier("memory.pageEditor")
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-pokiUITestMemoryPageConflict") {
+                        Button("Apply synthetic background write") {
+                            library.writePage(app, text: "Updated synthetic memory", locked: false)
+                        }
+                        .accessibilityIdentifier("memory.fixture.write")
+                        Text(verbatim: library.pageLines(app).map(\.text).joined(separator: "\n"))
+                            .accessibilityIdentifier("memory.fixture.saved")
+                    }
+                    #endif
                 } footer: {
                     Group {
                         Text("Each line is one memory. Remove a line to forget it.")
@@ -560,17 +574,28 @@ struct MemoryPageEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
-                        library.writePage(app, text: text, locked: locked)
-                        dismiss()
+                        if library.savePageEdit(app, original: original, text: text, locked: locked) {
+                            dismiss()
+                        } else {
+                            conflict = true
+                        }
                     }
                     .fontWeight(.semibold)
                     .accessibilityIdentifier("memory.pageEditor.save")
                 }
             }
         }
+        .alert("Memory Page Changed", isPresented: $conflict) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("This page changed while you were editing. Copy your edits before closing and reopening the page.")
+        }
         .onAppear {
-            text = library.pageLines(app).map(\.text).joined(separator: "\n")
-            locked = library.pageLocked(app)
+            guard !loaded else { return }
+            loaded = true
+            original = library.pageForEditing(app)
+            text = original?.text ?? library.pageLines(app).map(\.text).joined(separator: "\n")
+            locked = original?.isLocked ?? false
             focused = true
         }
     }
