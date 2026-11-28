@@ -58,7 +58,7 @@ struct SetupView: View {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(localized("Poki Setup can't see devices right now"))
-                        Text(err.message).font(.callout).foregroundStyle(.secondary)
+                        Text(err.localizedDescription).font(.callout).foregroundStyle(.secondary)
                     }
                 } icon: {
                     Image(systemName: "cable.connector.slash").foregroundStyle(.orange)
@@ -102,7 +102,7 @@ struct SetupView: View {
                 if let f = row.facts {
                     Text("iOS \(f.ios) · \(f.productType)").font(.callout).foregroundStyle(.secondary)
                 } else if let e = row.error {
-                    Text(e).font(.callout).foregroundStyle(.secondary)
+                    Text(progressLine(e)).font(.callout).foregroundStyle(.secondary)
                 }
             }
         }
@@ -169,7 +169,7 @@ struct SetupView: View {
                                 Text(localized("When macOS asks for keychain access, enter your Mac login password and choose “Always Allow”, then retry."))
                                     .font(.callout).foregroundStyle(.secondary)
                             }
-                            Text(err.message)
+                            Text(err.localizedDescription)
                                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                         }
                     } icon: {
@@ -321,7 +321,7 @@ struct SetupView: View {
             Label(localized("Poki \(r.record.version) is on \(r.record.phoneName). It stays signed until \(expiry)."), systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.primary)
             ForEach(Array(r.notes.enumerated()), id: \.offset) { _, n in
-                Text(n).font(.callout).foregroundStyle(.secondary)
+                Text(progressLine(n)).font(.callout).foregroundStyle(.secondary)
             }
             Text(localized("Open Poki on your device. If it says the developer is untrusted, go to Settings › General › VPN & Device Management and trust your Apple Account."))
                 .font(.callout)

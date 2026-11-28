@@ -268,18 +268,7 @@ struct StepItem: Identifiable, Equatable {
     var detail: String?
     var notes: [String] = []
 
-    var displayTitle: String {
-        let localization = SetupLocalization.shared
-        if id == "sign", title.hasPrefix("Signing Poki for ") {
-            let team = String(title.dropFirst("Signing Poki for ".count))
-            return localization.text("Signing Poki for \(team)", table: "Progress")
-        }
-        if id == "release", title.hasPrefix("Downloading test build ") {
-            let build = String(title.dropFirst("Downloading test build ".count))
-            return localization.text("Downloading test build \(build)", table: "Progress")
-        }
-        return progressLine(title)
-    }
+    var displayTitle: String { progressLine(title) }
 }
 
 /// The SF Symbol for a device: an iPad by its product type ("iPad16,3") or, without one, by name.

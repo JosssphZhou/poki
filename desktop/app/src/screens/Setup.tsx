@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, failureKind, failureText, installClosingPoki, onProgress, type Account, type Handoff, type PhoneRow } from "../api";
-import { t } from "../i18n";
+import { progressLine, t } from "../i18n";
 import { Capsule, Card, ErrorBox, INSTALL_WEIGHTS, JobBar, Pill, Qr, useInterval, useSteps } from "../ui";
 
 const STEPS = [
@@ -87,7 +87,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
             <div className="grow">
               <h2 style={{ margin: 0 }}>{phone.facts?.name ?? t("Device")}</h2>
               <div className="muted small">
-                {phone.facts ? `${phone.facts.product_type} · iOS ${phone.facts.ios}` : phone.error}
+                {phone.facts ? `${phone.facts.product_type} · iOS ${phone.facts.ios}` : phone.error && progressLine(phone.error)}
                 {phone.record && <> · {t("Last installed by this computer")} {phone.record.version}</>}
               </div>
             </div>
@@ -130,7 +130,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
           <h2>{t("Poki is installed")}</h2>
           <p style={{ margin: 0 }}>Poki {result.version} · {result.name}</p>
           <p>{t("Open Poki on your device. If it says the developer is untrusted, go to Settings › General › VPN & Device Management and trust your Apple Account.")}</p>
-          {result.notes.map((n, i) => <p key={i} className="muted small" style={{ margin: "6px 0 0" }}>{t(n)}</p>)}
+          {result.notes.map((n, i) => <p key={i} className="muted small" style={{ margin: "6px 0 0" }}>{progressLine(n)}</p>)}
           {result.handoff && (
             <div className="row" style={{ marginTop: 14, alignItems: "flex-start" }}>
               <Qr svg={result.handoff.qr_svg} />

@@ -34,7 +34,7 @@ struct AccountView: View {
                 Text(localized("When macOS asks to access your keychain, enter your Mac login password and choose “Always Allow”, then click Retry."))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(err.message)
+            Text(err.localizedDescription)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)

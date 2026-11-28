@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { Progress } from "./api";
-import { t } from "./i18n";
+import { progressLine, t } from "./i18n";
 import { failStep, type Step } from "./progress";
 
 export function Card({ children, white, className = "" }: { children: ReactNode; white?: boolean; className?: string }) {
@@ -75,9 +75,9 @@ export function Steps({ steps, summarized }: { steps: Step[]; summarized?: { id:
         <li key={s.id} className={s.state}>
           <span className="dot">{s.state === "done" ? "✓" : s.state === "failed" ? "!" : i + 1}</span>
           <div className="grow">
-            <div>{t(s.title)}</div>
-            {s.detail && !(summarized?.id === s.id && summarized.line === s.detail) && <div className="detail">{t(s.detail)}</div>}
-            {s.notes.map((n, j) => summarized?.id === s.id && summarized.line === n ? null : <div className="detail" key={j}>· {t(n)}</div>)}
+            <div>{progressLine(s.title)}</div>
+            {s.detail && !(summarized?.id === s.id && summarized.line === s.detail) && <div className="detail">{progressLine(s.detail)}</div>}
+            {s.notes.map((n, j) => summarized?.id === s.id && summarized.line === n ? null : <div className="detail" key={j}>· {progressLine(n)}</div>)}
             {s.fraction !== undefined && s.state === "active" && <div className="bar"><i style={{ width: `${Math.round(s.fraction * 100)}%` }} /></div>}
           </div>
         </li>
@@ -108,11 +108,11 @@ export function JobBar({ steps, running, weights, doneTitle = "Done", detailsOnl
     <div className={`jobbar ${failed ? "failed" : ""} ${current?.state === "waiting" ? "waiting" : ""}`}>
       {!detailsOnly && <>
         <div className="row between">
-          <b className="grow">{finished ? t(doneTitle) : t(current?.title ?? "Starting")}</b>
+          <b className="grow">{finished ? t(doneTitle) : progressLine(current?.title ?? "Starting")}</b>
           <span className="muted small mono">{Math.round(fraction * 100)}%</span>
         </div>
         <div className="bar wide"><i style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
-        {line && <div className="detail">{t(line)}</div>}
+        {line && <div className="detail">{progressLine(line)}</div>}
       </>}
       <button type="button" className="linkish small" onClick={() => setOpen(!open)}>{t(open ? "Hide Details" : "Show Details")}</button>
       {open && <Steps steps={steps.filter((s) => s.state !== "todo")} summarized={!detailsOnly && current && line ? { id: current.id, line } : null} />}

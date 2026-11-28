@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { certificateWarning, type CertificateToReplace } from "./certificate";
-import { t } from "./i18n";
+import { progressLine, t } from "./i18n";
 
 export type Failure = { kind: string; message: string; certificate?: CertificateToReplace };
 export type Progress =
@@ -113,7 +113,7 @@ export function failureText(e: unknown): string {
   if (e && typeof e === "object" && "message" in e) {
     const { kind, message, certificate } = e as Failure;
     if (kind === "certificate_limit" && certificate) return certificateWarning(certificate, t);
-    return String(message);
+    return progressLine(String(message));
   }
   return String(e);
 }

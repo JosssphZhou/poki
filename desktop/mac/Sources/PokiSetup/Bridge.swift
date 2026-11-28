@@ -9,7 +9,7 @@ struct CoreError: Decodable, LocalizedError, Equatable {
 
     var errorDescription: String? {
         if kind == "certificate_limit", let certificate { return certificate.warning(in: .shared) }
-        return message
+        return progressLine(message)
     }
 }
 

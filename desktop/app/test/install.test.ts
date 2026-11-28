@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { createServer } from "vite";
@@ -81,4 +82,37 @@ test("Windows certificate warning keeps the identity and consequence in both lan
   assert.match(chinese, /Example Certificate \{days\}.*5F00.*Example Mac/);
   assert.match(chinese, /3 天后到期/);
   assert.equal(api.failureText({ kind: "certificate_limit", message: "English fallback" }), "English fallback");
+});
+
+test("Windows localizes stock Rust install progress and recovery without losing data", async () => {
+  i18n.setLang("zh-Hans");
+  for (const file of ["setup.rs", "device/pairing.rs", "device/devmode.rs", "device/ddi.rs", "device/install.rs"]) {
+    const source = await readFile(new URL(`../../core/src/${file}`, import.meta.url), "utf8");
+    const production = source.split("#[cfg(all(test,")[0];
+    for (const [, title] of production.matchAll(/reporter\.step\("[^"]+", "([^"]+)"\)/g)) {
+      assert.notEqual(i18n.progressLine(title), title, file + ": " + title);
+    }
+  }
+  const cases = [
+    ["More than one iPhone is plugged in. Choose one.", /请选择一部/],
+    ["No iPhone found. Plug it in with a cable and unlock it.", /数据线连接并解锁/],
+    ["The iPhone said Don't Trust. Unplug it, plug it in again and tap Trust.", /选择了“不信任”/],
+    ["The iPhone no longer trusts this computer. Plug it in with a cable, unlock it and tap Trust, then try again.", /不再信任这台电脑/],
+    ["The developer disk image is already mounted.", /开发者磁盘映像已挂载/],
+    ["R2 download was interrupted. Using GitHub.", /下载中断，改用 GitHub/],
+    ["The iPhone did not accept the app's signature. Make sure this iPhone is registered on the Apple ID's team and Developer Mode is on, then try again.", /未接受 App 签名/],
+    ["The installed Poki has a different application signing identity. Keep Poki installed to preserve its data, and update it using the original signing identity on the original computer.", /请不要卸载 Poki.*原签名身份更新/],
+    ["Signing Poki for Example Team", /正在为 Example Team 签名 Poki/],
+    ["Poki 0.5.1 (456) signed for Example Team", /已为 Example Team 签名 Poki 0\.5\.1（456）/],
+    ["Example Team (free, 7-day signing)", /Example Team（免费团队，签名有效期 7 天）/],
+    ["App ID and profile for PokiWidgets", /为 PokiWidgets 设置 App ID 和描述文件/],
+    ["Remote pairing did not finish (lockdown: InvalidHostID (0x42)). Poki can pair on the iPhone instead.", /远程配对未完成（lockdown: InvalidHostID \(0x42\)）/],
+    ["The iPhone refused a provisioning profile: MobileInstallation (0xe8008001). On a free team the phone must be registered on the Apple ID; sign in again.", /iPhone 拒绝了描述文件：MobileInstallation \(0xe8008001\).*请重新登录/],
+    ["The iPhone stopped answering while installing Poki (unlock the iPhone, check it for a prompt, then try again). Unplug it, plug it in again and unlock it, then try again.", /安装 Poki时，iPhone 停止响应/],
+  ] as const;
+  for (const [english, expected] of cases) assert.match(api.failureText({ kind: "device", message: english }), expected);
+  const diagnostic = "third-party reply: %s [0x42]";
+  assert.equal(i18n.progressLine(diagnostic), diagnostic);
+  i18n.setLang("en");
+  for (const [english] of cases) assert.equal(i18n.progressLine(english), english);
 });
