@@ -293,7 +293,7 @@ enum ModelPicks {
     private static func split(_ choices: [ChatModelChoice], _ custom: CustomProvider, as pick: (String) -> ModelPick) -> [ModelGroup.Item] {
         choices.compactMap { choice in
             guard let parsed = CustomProviders.parse(choice.id), parsed.provider == custom.id else { return nil }
-            return ModelGroup.Item(name: parsed.model, pick: pick(choice.id))
+            return ModelGroup.Item(name: choice.shortName, pick: pick(choice.id))
         }
     }
 
@@ -312,9 +312,9 @@ enum ModelPicks {
                 guard ref.uses.contains(use) else { continue }
                 let items: [ModelGroup.Item]
                 switch use {
-                case .chat: items = ModelCatalog.available(provider).map { .init(name: $0.name, pick: .account(provider, $0.id)) }
+                case .chat: items = ModelCatalog.available(provider).map { .init(name: $0.shortName, pick: .account(provider, $0.id)) }
                 case .voice: items = ModelCatalog.voiceOffered(for: .openai).map { .init(name: $0.name, pick: .voice(.openai, $0.id)) }
-                case .decision: items = DecisionOffers.available(provider).map { .init(name: $0.name, pick: .account(provider, $0.id)) }
+                case .decision: items = DecisionOffers.available(provider).map { .init(name: $0.shortName, pick: .account(provider, $0.id)) }
                 case .senses: items = []
                 }
                 if !items.isEmpty { groups.append(ModelGroup(id: ref.id, name: ref.name, items: items)) }
@@ -384,35 +384,79 @@ enum ModelPicks {
         let pick = current(use)
         return groups(use).flatMap(\.items).first { $0.pick == pick }?.name
     }
+
+    /// The collapsed picker text for a use: the selected model's short name, appending its
+    /// provider's name only when another provider in the same picker offers an item with the same
+    /// short name.
+    @MainActor static func closedLabel(_ use: ModelUse, in groups: [ModelGroup]? = nil) -> (text: String, ambiguous: Bool)? {
+        let groups = groups ?? self.groups(use)
+        let pick = current(use)
+        guard let match = groups.lazy.compactMap({ group in
+            group.items.first(where: { $0.pick == pick }).map { (group: group, item: $0) }
+        }).first else { return nil }
+        let needle = match.item.name.lowercased()
+        let ambiguous = groups.contains { other in
+            other.id != match.group.id && other.items.contains { $0.name.lowercased() == needle }
+        }
+        let disambiguated = ambiguous && !match.group.name.isEmpty
+        return (disambiguated ? "\(match.item.name) (\(match.group.name))" : match.item.name, disambiguated)
+    }
 }
 
 /// A use's picker on the Models page: Off (where a use can be off) and each provider's ticked models
-/// in a section of its own.
+/// in a section of its own. Closed rows append the account name when another provider in the same
+/// picker offers a model with the same short name; opened sections stay bare under their headers.
 struct ModelUsePicker: View {
     var use: ModelUse
     /// The page's count of changes: a new pick or tick redraws the picker.
     var version: Int
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let _ = version
         let groups = ModelPicks.groups(use)
-        Picker(selection: Binding(get: { ModelPicks.current(use) }, set: { ModelPicks.pick($0, for: use) })) {
-            if use != .chat || groups.isEmpty {
-                Text(use == .chat ? LocalizedStringKey("No Model") : LocalizedStringKey("Off")).tag(ModelPick.off)
-            }
-            ForEach(groups) { group in
-                Section {
-                    ForEach(group.items) { Text(verbatim: $0.name).tag($0.pick) }
-                } header: {
-                    Group {
+        let selection = Binding(get: { ModelPicks.current(use) }, set: { ModelPicks.pick($0, for: use) })
+        let fallback = AppLocalization.text(use == .chat ? LocalizedStringResource("No Model") : LocalizedStringResource("Off"))
+        let resolved = ModelPicks.closedLabel(use, in: groups)
+        let closedTitle = resolved?.text ?? fallback
+        Menu {
+            Picker(selection: selection) {
+                if use != .chat || groups.isEmpty {
+                    Text(use == .chat ? LocalizedStringKey("No Model") : LocalizedStringKey("Off")).tag(ModelPick.off)
+                }
+                ForEach(groups) { group in
+                    Section {
+                        ForEach(group.items) { Text(verbatim: $0.name).tag($0.pick) }
+                    } header: {
                         Text(verbatim: group.name)
                     }
-                    .settingsHeader()
                 }
+            } label: {
+                EmptyView()
             }
+            .pickerStyle(.inline)
         } label: {
-            SettingsLabel(use.title, systemImage: use.symbol)
+            LabeledContent {
+                HStack(spacing: 4) {
+                    Text(verbatim: closedTitle)
+                        .lineLimit(1)
+                        .truncationMode(resolved?.ambiguous == true ? .middle : .tail)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(.tint)
+            } label: {
+                SettingsLabel(use.title, systemImage: use.symbol)
+                    .foregroundStyle(Color(.label))
+                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
+            }
+            .contentShape(.rect)
         }
-        .pickerStyle(.menu)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: use.name))
+        .accessibilityValue(Text(verbatim: closedTitle))
         .accessibilityIdentifier("models.use.\(use.rawValue)")
     }
 }
@@ -501,22 +545,22 @@ struct ModelTickList: View {
             return LocalModels.onPhone.map { Row(id: $0.id, name: $0.name, fast: false, on: LocalModels.isOffered($0, for: use)) }
         case (.account(let p), .chat):
             let on = ModelCatalog.enabled(p)
-            return ModelCatalog.all(p).map { Row(id: $0.id, name: $0.name, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
+            return ModelCatalog.all(p).map { Row(id: $0.id, name: $0.shortName, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
         case (.custom(let id), .chat):
             let on = ModelCatalog.enabled(.custom)
-            return ModelCatalog.all(custom: id).map { Row(id: $0.id, name: CustomProviders.parse($0.id)?.model ?? $0.name, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
+            return ModelCatalog.all(custom: id).map { Row(id: $0.id, name: $0.shortName, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
         case (.account, .voice), (.custom, .voice):
             let account = voiceAccount
             let on = ModelCatalog.voiceOn(for: account)
             return ModelCatalog.voiceChoices(for: account).map { Row(id: $0.id, name: $0.name, fast: false, on: on.contains($0.id)) }
         case (.account(let p), .decision):
             let on = DecisionOffers.offered(p)
-            return AccountDecisions.models(p).map { Row(id: $0.id, name: $0.name, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
+            return AccountDecisions.models(p).map { Row(id: $0.id, name: $0.shortName, fast: ModelCatalog.fast($0.id), on: on.contains($0.id)) }
         case (.custom(let id), .decision):
             let on = DecisionOffers.offered(.custom)
             return AccountDecisions.models(.custom).compactMap { choice in
                 guard let parsed = CustomProviders.parse(choice.id), parsed.provider == id else { return nil }
-                return Row(id: choice.id, name: parsed.model, fast: ModelCatalog.fast(parsed.model), on: on.contains(choice.id))
+                return Row(id: choice.id, name: choice.shortName, fast: ModelCatalog.fast(parsed.model), on: on.contains(choice.id))
             }
         default:
             return []

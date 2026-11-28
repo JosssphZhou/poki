@@ -149,7 +149,9 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             guard provider.primary != nil else { return [] }
             let models = ([provider.model] + (provider.added ?? [])).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
             return models.map {
-                ChatModelChoice(id: CustomProviders.choiceID(provider.id, $0), name: CustomProviders.choiceName(provider, $0, among: providers.count))
+                ChatModelChoice(id: CustomProviders.choiceID(provider.id, $0),
+                                name: CustomProviders.choiceName(provider, $0, among: providers.count),
+                                shortName: ChatModelChoice.stripProviderPrefix(from: $0))
             }
         }
     }
@@ -260,6 +262,63 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
 struct ChatModelChoice: Hashable, Identifiable, Sendable {
     var id: String
     var name: String
+    var shortName: String
+
+    init(id: String, name: String, shortName: String? = nil) {
+        self.id = id
+        self.name = name
+        self.shortName = shortName ?? Self.stripProviderPrefix(from: name)
+    }
+
+    static func stripProviderPrefix(from rawName: String) -> String {
+        var value = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return rawName }
+
+        let openRouterSuffix = " (OpenRouter)"
+        if value.hasSuffix(openRouterSuffix) {
+            let stripped = String(value.dropLast(openRouterSuffix.count)).trimmingCharacters(in: .whitespaces)
+            if !stripped.isEmpty { value = stripped }
+        }
+
+        if let slash = value.lastIndex(of: "/") {
+            let prefix = value[..<slash]
+            let tail = value[value.index(after: slash)...].trimmingCharacters(in: .whitespaces)
+            if !prefix.isEmpty, !prefix.contains(where: \.isWhitespace), !tail.isEmpty {
+                value = tail
+            }
+        }
+
+        let prefixes = [
+            "chatgpt ",
+            "openai ",
+            "anthropic ",
+            "google ",
+            "gpt-",
+            "gpt ",
+            "claude ",
+            "claude-",
+            "gemini ",
+            "gemini-",
+            "deepseek ",
+            "deepseek-",
+        ]
+        var changed = true
+        while changed {
+            changed = false
+            let lower = value.lowercased()
+            for prefix in prefixes {
+                if lower.hasPrefix(prefix) {
+                    let stripped = String(value.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+                    if !stripped.isEmpty {
+                        value = stripped
+                        changed = true
+                        break
+                    }
+                }
+            }
+        }
+        return value
+    }
 }
 
 /// The owner's keys and the ChatGPT sign-in, in this iPhone's keychain (the relay key's service, one
@@ -471,7 +530,12 @@ enum ModelKeys {
 
     static func selectedAccountName(in storage: PokiStorage = .live) -> String {
         let provider = selectedProvider(in: storage)
-        return provider == .custom ? (CustomProviders.current(in: storage)?.displayName ?? provider.name) : provider.name
+        guard provider == .custom else { return provider.name }
+        if let parsed = CustomProviders.parse(selectedModel(in: storage)),
+           let custom = CustomProviders.provider(parsed.provider, storage: storage) {
+            return custom.displayName
+        }
+        return CustomProviders.current(in: storage)?.displayName ?? provider.name
     }
 
     static var selectedModelName: String { selectedModelName(in: .live) }
@@ -480,6 +544,55 @@ enum ModelKeys {
         let provider = selectedProvider(in: storage)
         let model = selectedModel(in: storage)
         return ModelCatalog.all(provider, storage: storage).first { $0.id == model }?.name ?? model
+    }
+
+    static var selectedShortModelName: String { selectedShortModelName(in: .live) }
+
+    static func selectedShortModelName(in storage: PokiStorage = .live) -> String {
+        let provider = selectedProvider(in: storage)
+        let model = selectedModel(in: storage)
+        let shortName = bareShortModelName(provider: provider, model: model, in: storage)
+        guard hasAmbiguousShortModelName(shortName, for: provider, model: model, in: storage) else {
+            return shortName
+        }
+        let account = selectedAccountName(in: storage)
+        return account.isEmpty ? shortName : "\(shortName) (\(account))"
+    }
+
+    private static func bareShortModelName(provider: ModelProvider, model: String, in storage: PokiStorage) -> String {
+        if let choice = ModelCatalog.all(provider, storage: storage).first(where: { $0.id == model }) {
+            return choice.shortName
+        }
+        if provider == .custom, let parsed = CustomProviders.parse(model) {
+            return ChatModelChoice.stripProviderPrefix(from: parsed.model)
+        }
+        return ChatModelChoice.stripProviderPrefix(from: model)
+    }
+
+    private static func hasAmbiguousShortModelName(
+        _ shortName: String,
+        for provider: ModelProvider,
+        model: String,
+        in storage: PokiStorage
+    ) -> Bool {
+        let needle = shortName.lowercased()
+        let selectedCustomID = provider == .custom ? CustomProviders.parse(model)?.provider : nil
+        let validCustomIDs = Set(CustomProviders.all(in: storage).filter { $0.primary != nil }.map(\.id))
+        for other in ModelProvider.allCases where ModelAccounts.isSetUp(other, storage: storage) && ModelAccounts.canChat(other) {
+            if other == .custom {
+                for choice in ModelCatalog.available(.custom, storage: storage) {
+                    guard let parsed = CustomProviders.parse(choice.id),
+                          validCustomIDs.contains(parsed.provider),
+                          parsed.provider != selectedCustomID else { continue }
+                    if choice.shortName.lowercased() == needle { return true }
+                }
+            } else if other != provider {
+                if ModelCatalog.available(other, storage: storage).contains(where: { $0.shortName.lowercased() == needle }) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Bumped on every change, so views that read keys can redraw; `changed` is posted too (ask_poki is

@@ -221,7 +221,8 @@ final class SettingsRowLayoutTests: XCTestCase {
         let modelRow = try XCTUnwrap(accessibilityElement(identifier: "details.accountsAndModels", in: window))
         let rowTexts = visibleTexts(in: modelRow)
         XCTAssertTrue(rowTexts.contains { $0.contains("模型") }, "Expected Settings Models title, got: \(rowTexts)")
-        XCTAssertTrue(rowTexts.contains { $0.contains(rawModel) }, "Expected raw model name without stripping prefix, got: \(rowTexts)")
+        XCTAssertTrue(rowTexts.contains { $0.contains("v4.1-flash") }, "Expected short model name without provider prefix, got: \(rowTexts)")
+        XCTAssertFalse(rowTexts.contains { $0.contains("workbuddy/") }, "Provider prefix must not appear on Settings Models row, got: \(rowTexts)")
         XCTAssertLessThanOrEqual(
             modelRow.accessibilityFrame.height,
             setupRow.accessibilityFrame.height + 2,
@@ -327,15 +328,16 @@ final class SettingsRowLayoutTests: XCTestCase {
         )
 
         let store = storage.storage
+        let longUnprefixedModel = "enterprise-very-long-custom-model-name-that-exceeds-row-width-2026"
         let workbuddy = CustomProviders.upsert(
             CustomProvider(
                 name: "WorkBuddy",
                 endpoints: [CustomEndpoint(url: "http://127.0.0.1:8767/v1")],
-                model: rawModel
+                model: longUnprefixedModel
             ),
             storage: store
         )
-        ModelKeys.choose(.custom, model: CustomProviders.choiceID(workbuddy.id, rawModel), in: store)
+        ModelKeys.choose(.custom, model: CustomProviders.choiceID(workbuddy.id, longUnprefixedModel), in: store)
 
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: store)
         let chat = ChatModel(app: app)
@@ -360,7 +362,7 @@ final class SettingsRowLayoutTests: XCTestCase {
         XCTAssertTrue(setupTexts.contains { $0.contains("Setup") }, "Expected Setup title, got: \(setupTexts)")
         XCTAssertTrue(setupTexts.contains { $0.contains("Finish Setup") }, "Expected Finish Setup action, got: \(setupTexts)")
         XCTAssertTrue(modelTexts.contains { $0.contains("Models") }, "Expected Models title, got: \(modelTexts)")
-        XCTAssertTrue(modelTexts.contains { $0.contains(rawModel) }, "Expected raw model name, got: \(modelTexts)")
+        XCTAssertTrue(modelTexts.contains { $0.contains(longUnprefixedModel) }, "Expected long model name, got: \(modelTexts)")
         XCTAssertGreaterThanOrEqual(
             liveSetupRow.accessibilityFrame.height,
             liveModelsRow.accessibilityFrame.height + 20,

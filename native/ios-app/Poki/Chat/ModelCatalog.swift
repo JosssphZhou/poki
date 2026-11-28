@@ -86,7 +86,9 @@ enum ModelCatalog {
         if provider == .custom {
             let providers = CustomProviders.all(in: storage)
             return providers.flatMap { custom in listedCustom(custom.id, storage: storage).map {
-                ChatModelChoice(id: CustomProviders.choiceID(custom.id, $0), name: CustomProviders.choiceName(custom, $0, among: providers.count))
+                ChatModelChoice(id: CustomProviders.choiceID(custom.id, $0),
+                                name: CustomProviders.choiceName(custom, $0, among: providers.count),
+                                shortName: ChatModelChoice.stripProviderPrefix(from: $0))
             } }
         }
         return (storage.defaults.stringArray(forKey: "models.listed.\(provider.rawValue)") ?? []).map { ChatModelChoice(id: $0, name: $0) }
