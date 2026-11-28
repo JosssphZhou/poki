@@ -152,7 +152,16 @@ final class HealthRelayLoopbackTests: XCTestCase {
             XCTAssertFalse(tabAgentsJoined.contains(leaked), "AgentsView leaked raw English '\(leaked)': \(tabAgentsJoined)")
         }
 
-        let relayIssue = try XCTUnwrap(Issue.current(model).first { $0.id == "relay" })
+        var offlineIssue: Issue?
+        let issueReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            MainActor.assumeIsolated {
+                guard model.relayStatus.isOffline else { return false }
+                offlineIssue = Issue.current(model).first { $0.id == "relay" }
+                return offlineIssue != nil
+            }
+        }, object: nil)
+        await fulfillment(of: [issueReady], timeout: 10)
+        let relayIssue = try XCTUnwrap(offlineIssue)
         XCTAssertEqual(relayIssue.title, "智能体无法连接此 iPhone")
         XCTAssertTrue(relayIssue.text.contains("无法连接到远程连接服务"), relayIssue.text)
         for leaked in leakedTokens {
@@ -782,14 +791,18 @@ final class HealthRelayLoopbackTests: XCTestCase {
         await fulfillment(of: [drawn], timeout: 5)
         display.invalidate()
 
+        var matchedLabels: [String]?
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             MainActor.assumeIsolated {
                 window.layoutIfNeeded()
-                return condition(Self.collectLabels(in: window))
+                let labels = Self.collectLabels(in: window)
+                guard condition(labels) else { return false }
+                matchedLabels = labels
+                return true
             }
         }, object: nil)
         await fulfillment(of: [ready], timeout: 5)
-        return Self.collectLabels(in: window)
+        return try XCTUnwrap(matchedLabels)
     }
 
     private static func collectLabels(in root: NSObject) -> [String] {
