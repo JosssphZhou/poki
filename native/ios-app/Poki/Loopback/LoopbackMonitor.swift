@@ -22,6 +22,7 @@ final class LoopbackMonitor {
     /// The interfaces the system path lists, for Diagnostics: a proxy app's tunnel can change what the path reports.
     private(set) var pathSummary = ""
     private(set) var checkedAt: Date?
+    private(set) var probeStartedAt: Date?
     /// Something answered at 10.7.0.1, and also on ports nothing on this iPhone listens on: a proxy
     /// app (Karing, for one) accepts the connection itself instead of reflecting it to this iPhone, so
     /// the connect proves nothing. Shown as no answer, with the proxy's setting to change.
@@ -100,6 +101,7 @@ final class LoopbackMonitor {
     private func networkChanged(physical: Bool) {
         probeEpoch &+= 1
         checkedAt = nil
+        probeStartedAt = nil
         onNetworkChange?()
         if physical { resetPortSearch(); proxyFound = false }
         if !isWorking { publish(.checking, log: false) }
@@ -216,6 +218,7 @@ final class LoopbackMonitor {
         running = true
         checkQueued = false
         let epoch = probeEpoch
+        let started = Date()
         Task {
             defer {
                 running = false
@@ -266,6 +269,7 @@ final class LoopbackMonitor {
             let next = Self.forcedCellular || Self.forced == "noanswer" ? State.noAnswer : Self.forced == "working" ? State.working(ms: 5) : probed
             // Only a change is published, so the screens are not redrawn every 3 s (a redraw while
             // the person drags a list makes scrolling stutter).
+            probeStartedAt = started
             checkedAt = Date()
             publish(next, log: true)
         }
@@ -311,6 +315,7 @@ final class LoopbackMonitor {
 
     /// Tests: set the state as a probe result would, running the change hook.
     func simulate(_ next: State) {
+        probeStartedAt = Date()
         publish(next, log: false)
     }
     #endif

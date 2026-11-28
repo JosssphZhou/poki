@@ -11,15 +11,17 @@ final class LoopbackRecoveryTests: XCTestCase {
         var probeResponds = true
         var checkedAt: Date?
         var launches = 0
+        var handoffsEnded = 0
         var failures = 0
         var interrupted: [LoopbackRecovery.Demand] = []
         var allowed: Set<LoopbackRecovery.Demand> = [.screenHistory, .automation, .pairing, .automaticSigning, .signing]
         var needed: Set<LoopbackRecovery.Demand> = [.screenHistory, .automation, .pairing, .automaticSigning, .signing]
         var onLaunch: () -> Void = {}
         var cooldown = Duration.zero
+        var timeout: Duration = .milliseconds(35)
 
         lazy var recovery = LoopbackRecovery(
-            confirmation: .milliseconds(15), timeout: .milliseconds(35),
+            confirmation: .milliseconds(15), timeout: timeout,
             cooldown: cooldown, interval: .milliseconds(2),
             active: { [unowned self] in active }, canRun: { [unowned self] in configured },
             canInterrupt: { [unowned self] in
@@ -29,7 +31,11 @@ final class LoopbackRecoveryTests: XCTestCase {
             stillNeeded: { [unowned self] in needed.contains($0) },
             status: { [unowned self] in (working, checkedAt) },
             check: { [unowned self] in if probeResponds { checkedAt = Date() } },
-            launch: { [unowned self] in launches += 1; onLaunch() },
+            launch: { [unowned self] in
+                launches += 1
+                onLaunch()
+                return { [unowned self] in handoffsEnded += 1 }
+            },
             onFailure: { [unowned self] in failures += 1 }
         )
 
@@ -51,6 +57,7 @@ final class LoopbackRecoveryTests: XCTestCase {
             let connected = await f.recovery.restore(for: demand)
             XCTAssertTrue(connected, "\(demand) must resume when its new probe answers")
             XCTAssertEqual(f.launches, 1)
+            XCTAssertEqual(f.handoffsEnded, 1)
             XCTAssertEqual(f.failures, 0)
         }
     }
@@ -63,6 +70,7 @@ final class LoopbackRecoveryTests: XCTestCase {
         XCTAssertFalse(historyRestored)
         XCTAssertFalse(signingRestored)
         XCTAssertEqual(f.launches, 1)
+        XCTAssertEqual(f.handoffsEnded, 1)
         XCTAssertEqual(f.failures, 1)
         XCTAssertTrue(f.recovery.failurePending)
 
@@ -114,6 +122,76 @@ final class LoopbackRecoveryTests: XCTestCase {
         let connected = await f.recovery.restore(for: .signing)
         XCTAssertFalse(connected, "A previous good probe does not authorize an install")
         XCTAssertEqual(f.launches, 0, "An unanswered check is not a confirmed outage")
+    }
+
+    func testShortcutRequiresFreshConnectionForPendingPhoneWorkEvenWithHistoryOff() async throws {
+        let storage = try IsolatedTestStorage()
+        defer { try? storage.tearDown() }
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage.storage)
+        let history = HistoryCapture.shared
+        let wasEnabled = history.enabled
+        defer { history.enabled = wasEnabled }
+        history.enabled = false
+        let collector = HistoryCollector(noteReconnect: { _ in })
+        let manual = await collector.ready(model, by: "test")
+        XCTAssertTrue(manual, "Without blocked phone work the manual shortcut behaves as before")
+        for demand in [LoopbackRecovery.Demand.automation, .pairing, .automaticSigning, .signing] {
+            let f = Fixture()
+            f.timeout = .seconds(2)
+            model.loopbackRecovery = f.recovery
+            f.onLaunch = { [unowned f] in
+                Task {
+                    let ready = await collector.ready(model, by: "test")
+                    let reconnect = await collector.reconnectSoon(model, by: "test")
+                    XCTAssertFalse(ready, "\(demand) still needs a fresh connection")
+                    XCTAssertFalse(reconnect, "A fresh connection must also answer on reconnect")
+                    f.answer(true)
+                    let fresh = await collector.reconnectSoon(model, by: "test")
+                    XCTAssertTrue(fresh)
+                    f.returnConnected()
+                }
+            }
+            let connected = await f.recovery.restore(for: demand)
+            XCTAssertTrue(connected)
+        }
+    }
+
+    func testShortcutDoesNotTreatAHistoryOnlyAttemptAsFreshPhoneWork() async {
+        let f = Fixture()
+        f.onLaunch = { [unowned f] in
+            XCTAssertFalse(f.recovery.shortcutNeedsFreshConnection)
+            f.needed.remove(.screenHistory)
+        }
+        _ = await f.recovery.restore(for: .screenHistory)
+        XCTAssertEqual(f.launches, 1)
+    }
+
+    func testPairingShowsAVisibleReasonWhenRetriedAfterTimeout() async throws {
+        let storage = try IsolatedTestStorage()
+        defer { try? storage.tearDown() }
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage.storage)
+        model.loopback.simulate(.off)
+        let f = Fixture()
+        model.loopbackRecovery = f.recovery
+
+        let first = await model.startPairing()
+        XCTAssertFalse(first)
+        XCTAssertTrue(f.recovery.failurePending)
+        f.recovery.dismissFailure()
+
+        let retry = await model.startPairing()
+        XCTAssertFalse(retry)
+        guard case .failed(let text) = model.pairing else { return XCTFail("Pairing gave no reason") }
+        XCTAssertTrue(text.contains("Poki Loopback"), text)
+        XCTAssertEqual(f.launches, 1)
+        XCTAssertFalse(f.recovery.failurePending, "The retry explains the problem without a duplicate alert")
+    }
+
+    func testConfiguredRecoveryKeepsTheBackgroundDisconnectNotice() {
+        XCTAssertTrue(HistoryCapture.tracksDisconnect(cellularRefused: false, recoveryConfigured: true, inForeground: false))
+        XCTAssertFalse(HistoryCapture.tracksDisconnect(cellularRefused: false, recoveryConfigured: true, inForeground: true))
+        XCTAssertTrue(HistoryCapture.tracksDisconnect(cellularRefused: false, recoveryConfigured: false, inForeground: true))
+        XCTAssertFalse(HistoryCapture.tracksDisconnect(cellularRefused: true, recoveryConfigured: true, inForeground: false))
     }
 
     func testWaitsForForegroundBeforeResumingSigning() async {

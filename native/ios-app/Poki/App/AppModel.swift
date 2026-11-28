@@ -36,12 +36,22 @@ final class AppModel {
         canRun: { [weak self] in self?.canAutoRecoverLoopback == true },
         canInterrupt: { [weak self] in self?.canInterruptForLoopback($0) == true },
         stillNeeded: { [weak self] in self?.needsLoopbackRecovery($0) == true },
-        status: { [weak self] in (self?.loopback.isWorking == true, self?.loopback.checkedAt) },
+        status: { [weak self] in (self?.loopback.isWorking == true, self?.loopback.probeStartedAt) },
         check: { [weak self] in self?.loopback.check() },
         launch: { [weak self] in
-            guard let self else { return }
+            guard let self else { return {} }
+            var background = UIBackgroundTaskIdentifier.invalid
+            let end: @MainActor () -> Void = {
+                guard background != .invalid else { return }
+                UIApplication.shared.endBackgroundTask(background)
+                background = .invalid
+            }
+            background = UIApplication.shared.beginBackgroundTask(withName: "Poki Loopback Shortcut") {
+                Task { @MainActor in end() }
+            }
             LoopbackShortcut.shared.listen(true, model: self)
             UIApplication.shared.open(LoopbackShortcut.recoveryRun)
+            return end
         },
         onFailure: { [weak self] in self?.presentLoopbackFailure() }
     )
@@ -353,12 +363,16 @@ final class AppModel {
         guard !(presenter is UIAlertController), !presenter.isBeingDismissed else { return }
         let alert = UIAlertController(
             title: AppLocalization.text(LocalizedStringResource("Local Connection Not Restored")),
-            message: AppLocalization.text(LocalizedStringResource("Run the Poki Loopback shortcut or reconnect your VPN, then try again.")),
+            message: Self.loopbackRecoveryHelp,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: AppLocalization.text(LocalizedStringResource("OK")), style: .default))
         presenter.present(alert, animated: true)
         loopbackRecovery.dismissFailure()
+    }
+
+    private static var loopbackRecoveryHelp: String {
+        AppLocalization.text(LocalizedStringResource("Run the Poki Loopback shortcut or reconnect your VPN, then try again."))
     }
 
     /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
@@ -2851,18 +2865,17 @@ final class AppModel {
     func startPairing() async -> Bool {
         guard !pairingUnderWay, pairingRecovery == nil else { return false }
         if !loopback.isWorking {
-            guard canAutoRecoverLoopback else {
-                pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
-                return false
-            }
+            let retriedAfterFailure = loopbackRecovery.attemptedDuringOutage
             let pending = UUID()
             pairingRecovery = pending
             let connected = await loopbackRecovery.restore(for: .pairing)
             guard pairingRecovery == pending else { return false }
             pairingRecovery = nil
             guard connected else {
-                if !loopbackRecovery.attemptedDuringOutage {
-                    pairing = .failed("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")
+                if retriedAfterFailure {
+                    pairing = .failed(Self.loopbackRecoveryHelp)
+                } else if !loopbackRecovery.attemptedDuringOutage {
+                    pairing = .failed(AppLocalization.text(LocalizedStringResource("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")))
                 }
                 return false
             }

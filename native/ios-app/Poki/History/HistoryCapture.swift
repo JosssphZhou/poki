@@ -636,8 +636,7 @@ final class HistoryCapture: ObservableObject {
         if status != .waiting { status = .waiting }
         // An agent's task is no accident, and neither is being on cellular, where iOS refuses the
         // local connection for as long as it lasts: nothing to turn back on.
-        if why == .noConnection, let model, !model.loopback.cellularRefused,
-           !model.canAutoRecoverLoopback { failing() } else { failingSince = nil }
+        if why == .noConnection, let model, tracksDisconnect(model) { failing() } else { failingSince = nil }
     }
 
     /// Reads go on.
@@ -655,6 +654,16 @@ final class HistoryCapture: ObservableObject {
     /// How long reads must have failed before the owner is told. A try to open the local
     /// connection takes up to 20 seconds, so this is about three in a row.
     private static let confirmAfter: TimeInterval = 60
+
+    static func tracksDisconnect(cellularRefused: Bool, recoveryConfigured: Bool, inForeground: Bool) -> Bool {
+        !cellularRefused && (!recoveryConfigured || !inForeground)
+    }
+
+    private func tracksDisconnect(_ model: AppModel) -> Bool {
+        Self.tracksDisconnect(cellularRefused: model.loopback.cellularRefused,
+                              recoveryConfigured: loopbackBlocked && model.canAutoRecoverLoopback,
+                              inForeground: UIApplication.shared.applicationState == .active)
+    }
 
     private func failing() {
         guard !once else { return }
@@ -873,7 +882,7 @@ final class HistoryCapture: ObservableObject {
             // The same reason is said once and counted, whatever the network: a try with no
             // tunnel comes five times a second around a change of network.
             say((line["tunnel"] as? Bool == false ? "no tunnel: " : "read failed: ") + Self.brief(error))
-            if !model.loopback.cellularRefused, !loopbackBlocked || !model.canAutoRecoverLoopback { failing() }
+            if tracksDisconnect(model) { failing() }
         }
         if keep(read), once { end(me, .finished) }
     }

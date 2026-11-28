@@ -22,17 +22,18 @@ final class LoopbackRecovery {
     private let canRun: () -> Bool
     private let canInterrupt: (Demand) -> Bool
     private let stillNeeded: (Demand) -> Bool
-    private let status: () -> (working: Bool, checkedAt: Date?)
+    private let status: () -> (working: Bool, startedAt: Date?)
     private let check: () -> Void
-    private let launch: () -> Void
+    private let launch: @MainActor () -> (@MainActor () -> Void)
     private let onFailure: () -> Void
 
     init(confirmation: Duration = .seconds(8), timeout: Duration = .seconds(25),
          cooldown: Duration = .seconds(60), interval: Duration = .milliseconds(350),
          active: @escaping () -> Bool, canRun: @escaping () -> Bool,
          canInterrupt: @escaping (Demand) -> Bool, stillNeeded: @escaping (Demand) -> Bool,
-         status: @escaping () -> (working: Bool, checkedAt: Date?),
-         check: @escaping () -> Void, launch: @escaping () -> Void, onFailure: @escaping () -> Void) {
+         status: @escaping () -> (working: Bool, startedAt: Date?),
+         check: @escaping () -> Void, launch: @escaping @MainActor () -> (@MainActor () -> Void),
+         onFailure: @escaping () -> Void) {
         self.confirmation = confirmation
         self.timeout = timeout
         self.cooldown = cooldown
@@ -83,9 +84,24 @@ final class LoopbackRecovery {
 
     func dismissFailure() { failurePending = false }
 
+    var shortcutNeedsFreshConnection: Bool {
+        attempt != nil && demands.contains { $0 != .screenHistory && stillNeeded($0) }
+    }
+
+    func checkFreshConnection(within duration: Duration) async -> Bool {
+        let requested = Date()
+        let deadline = clock.now + duration
+        check()
+        while status().startedAt.map({ $0 < requested }) ?? true {
+            guard !Task.isCancelled, clock.now < deadline else { return false }
+            try? await clock.sleep(until: min(deadline, clock.now + interval))
+        }
+        return available(since: requested)
+    }
+
     private func available(since: Date) -> Bool {
         let result = status()
-        return result.working && result.checkedAt.map { $0 >= since } == true
+        return result.working && result.startedAt.map { $0 >= since } == true
     }
 
     private func recover() async -> Bool {
@@ -93,7 +109,7 @@ final class LoopbackRecovery {
         let checkedSince = Date()
         let confirmBy = clock.now + confirmation
         check()
-        while status().checkedAt.map({ $0 < checkedSince }) ?? true {
+        while status().startedAt.map({ $0 < checkedSince }) ?? true {
             guard clock.now < confirmBy, active(), demands.contains(where: stillNeeded) else { return false }
             try? await clock.sleep(until: min(confirmBy, clock.now + interval))
         }
@@ -111,7 +127,8 @@ final class LoopbackRecovery {
         shortcutReturnedAt = nil
         let deadline = clock.now + timeout
         AppLog.shared.add("loopback", "running the Poki Loopback Shortcut for \(demand.rawValue)")
-        launch()
+        let endHandoff = launch()
+        defer { endHandoff() }
         var nextCheck = clock.now
         repeat {
             let restored = active() && shortcutReturnedAt.map { available(since: $0) } == true
