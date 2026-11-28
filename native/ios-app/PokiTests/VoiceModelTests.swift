@@ -5245,11 +5245,13 @@ extension VoiceModelTests {
         let outputsBeforeRetry = h.link.sent.filter { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-fail-img" }
         let asksBeforeRetry = h.link.sent.indices.filter { h.link.sent[$0]["type"] as? String == "response.create" }
         XCTAssertEqual(toolRuns, 1)
-        XCTAssertEqual(outputsBeforeRetry.count, 1)
+        XCTAssertEqual(outputsBeforeRetry.count, 0, "visual tool output must wait for its image")
         XCTAssertEqual(asksBeforeRetry.count, 0, "model must not announce completion while screenshot delivery failed")
         let failImgBefore = h.voice.calls.first(where: { $0.id == "c-fail-img" })
         XCTAssertEqual(failImgBefore?.delivered, false)
-        XCTAssertEqual(failImgBefore?.toolDelivery, .delivered)
+        XCTAssertEqual(failImgBefore?.toolDelivery, .pending)
+        XCTAssertEqual(failImgBefore?.result?.status, .incomplete)
+        XCTAssertNil(failImgBefore?.result?.evidenceID)
         XCTAssertEqual(failImgBefore?.observationDelivery, .failed(reason: "data channel send failed", retryable: true))
         XCTAssertNotNil(failImgBefore?.screenDataURL)
 
@@ -5261,8 +5263,13 @@ extension VoiceModelTests {
         XCTAssertEqual(outputsAfterRetry.count, 1, "image retry must not repeat function_call_output")
         XCTAssertEqual(imagesAfterRetry.count, 1)
         XCTAssertEqual(asksAfterRetry.count, 1)
-        if let imageIndex = imagesAfterRetry.first?.index, let askIndex = asksAfterRetry.first {
-            XCTAssertLessThan(imageIndex, askIndex)
+        if let imageIndex = imagesAfterRetry.first?.index, let askIndex = asksAfterRetry.first,
+           let outputIndex = h.link.sent.firstIndex(where: { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-fail-img" }) {
+            let output = (h.link.sent[outputIndex]["item"] as? [String: Any])?["output"] as? String ?? ""
+            XCTAssertTrue(output.contains("status=verified_completed"), output)
+            XCTAssertFalse(output.contains("evidence=none"), output)
+            XCTAssertLessThan(imageIndex, outputIndex)
+            XCTAssertLessThan(outputIndex, askIndex)
         }
         let failImgAfter = h.voice.calls.first(where: { $0.id == "c-fail-img" })
         XCTAssertEqual(failImgAfter?.delivered, true)
@@ -5298,8 +5305,11 @@ extension VoiceModelTests {
         for _ in 0..<4 { await exhausted.time.advance(1.0) }
         XCTAssertEqual(exhaustedRuns, 1)
         XCTAssertTrue(Self.sentInputImages(in: exhausted.link.sent).isEmpty)
-        XCTAssertTrue(exhausted.link.notes.contains { $0.contains("status=blocked") && $0.contains("evidence=none") },
-                      "exhausted image retries must tell the model the step is blocked without evidence: \(exhausted.link.notes)")
+        let exhaustedOutputs = exhausted.link.sent.compactMap { $0["item"] as? [String: String] }
+            .filter { $0["call_id"] == "c-exhaust" }.compactMap { $0["output"] }
+        XCTAssertEqual(exhaustedOutputs.count, 1)
+        XCTAssertTrue(exhaustedOutputs.allSatisfy { $0.contains("status=blocked") && $0.contains("evidence=none") }, "\(exhaustedOutputs)")
+        XCTAssertFalse(exhaustedOutputs.contains { $0.contains("status=verified_completed") })
         XCTAssertEqual(exhausted.link.sent.filter { $0["type"] as? String == "response.create" }.count, 1)
         let exhaustedCall = exhausted.voice.calls.first(where: { $0.id == "c-exhaust" })
         XCTAssertEqual(exhaustedCall?.toolDelivery, .delivered)
@@ -5315,6 +5325,12 @@ extension VoiceModelTests {
             ("app: Photos (com.apple.mobileslideshow)   read: 2026-11-27T01:00:00Z (90 ms)", false, compressible)
         })
         await okHarness.talk()
+        var compressedImageAttempts = 0
+        okHarness.link.shouldSend = { event in
+            guard !Self.sentInputImages(in: [event]).isEmpty else { return true }
+            compressedImageAttempts += 1
+            return compressedImageAttempts > 1
+        }
         okHarness.link.play(
             ["type": "response.created", "response": ["id": "r-ok"]],
             ["type": "response.output_item.done", "item": [
@@ -5323,6 +5339,9 @@ extension VoiceModelTests {
             ["type": "response.done", "response": ["id": "r-ok"]]
         )
         await okHarness.time.settle()
+        XCTAssertEqual(compressedImageAttempts, 1)
+        XCTAssertFalse(okHarness.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-big-ok" })
+        await okHarness.time.advance(1.0)
         let okImages = Self.sentInputImages(in: okHarness.link.sent)
         XCTAssertEqual(okImages.count, 1)
         if let url = okImages.first?.url {
@@ -5332,6 +5351,10 @@ extension VoiceModelTests {
             .first { $0["call_id"] == "c-big-ok" }?["output"] ?? ""
         XCTAssertTrue(okOutput.contains("status=verified_completed"), okOutput)
         XCTAssertFalse(okOutput.contains("evidence=none"), okOutput)
+        if let imageIndex = okImages.first?.index,
+           let outputIndex = okHarness.link.sent.firstIndex(where: { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-big-ok" }) {
+            XCTAssertLessThan(imageIndex, outputIndex)
+        }
         okHarness.voice.stop()
 
         let noisy = try Self.noisyOversizedJPEG()
@@ -5427,6 +5450,10 @@ extension VoiceModelTests {
         XCTAssertFalse(finalImages.contains(olderURL))
         let deleted = lateHarness.link.sent.filter { $0["type"] as? String == "conversation.item.delete" }
         XCTAssertTrue(deleted.isEmpty, "newer screenshot item must not be deleted by an older late call")
+        let lateOutput = lateHarness.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-early" }?["output"] ?? ""
+        XCTAssertTrue(lateOutput.contains("status=incomplete"), lateOutput)
+        XCTAssertTrue(lateOutput.contains("evidence=none"), lateOutput)
         lateHarness.voice.stop()
     }
 
@@ -5459,6 +5486,7 @@ extension VoiceModelTests {
         await h.time.settle()
         XCTAssertEqual(doRuns, 1)
         XCTAssertTrue(h.link.sent.filter { $0["type"] as? String == "response.create" }.isEmpty)
+        XCTAssertFalse(h.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-drop" })
 
         h.link.onClosed?("network dropped")
         await h.time.settle()
@@ -5472,8 +5500,16 @@ extension VoiceModelTests {
         XCTAssertTrue(h.link.notes.contains { $0.contains("do not run it again") }, "\(h.link.notes)")
         XCTAssertEqual(reconnectImages.map(\.url), [retainedURL], "reconnected session must deliver the retained fresh screenshot")
         XCTAssertEqual(reconnectAsks.count, 1)
-        if let imageIndex = reconnectImages.first?.index, let askIndex = reconnectAsks.first {
-            XCTAssertLessThan(imageIndex, askIndex)
+        if let imageIndex = reconnectImages.first?.index, let askIndex = reconnectAsks.first,
+           let resultIndex = h.link.sent.firstIndex(where: { event in
+               let item = event["item"] as? [String: Any]
+               let text = (item?["content"] as? [[String: Any]])?.first?["text"] as? String ?? ""
+               return text.contains("status=verified_completed")
+           }) {
+            XCTAssertLessThan(imageIndex, resultIndex)
+            XCTAssertLessThan(resultIndex, askIndex)
+        } else {
+            XCTFail("reconnect must deliver its completion receipt after the retained image")
         }
 
         // Before new user speech in the reconnected session, a re-issued mutating call with a new call_id must not re-run.
@@ -5619,15 +5655,14 @@ extension VoiceModelTests {
             ]],
             ["type": "response.done", "response": ["id": "r-sim-img"]]
         )
-        let toolSent = expectation(for: NSPredicate { _, _ in
-            h.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "sim-img-retry" }
-        }, evaluatedWith: nil)
-        await fulfillment(of: [toolSent], timeout: 15)
+        let imageAttempted = expectation(for: NSPredicate { _, _ in imageAttempts == 1 }, evaluatedWith: nil)
+        await fulfillment(of: [imageAttempted], timeout: 15)
         await h.time.settle()
 
         XCTAssertGreaterThan(capturedBytes, 1000, "Real simulator look must capture a JPEG screenshot")
         XCTAssertEqual(toolRuns, 1)
         XCTAssertEqual(imageAttempts, 1)
+        XCTAssertFalse(h.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "sim-img-retry" })
         XCTAssertTrue(h.link.sent.filter { $0["type"] as? String == "response.create" }.isEmpty,
                       "model must wait for image retry before announcing completion")
 
@@ -5638,8 +5673,14 @@ extension VoiceModelTests {
         XCTAssertEqual(images.count, 1)
         XCTAssertTrue(images.first?.url.hasPrefix("data:image/jpeg;base64,") == true)
         XCTAssertEqual(asks.count, 1)
-        if let imageIndex = images.first?.index, let askIndex = asks.first {
-            XCTAssertLessThan(imageIndex, askIndex)
+        if let imageIndex = images.first?.index, let askIndex = asks.first,
+           let outputIndex = h.link.sent.firstIndex(where: { ($0["item"] as? [String: Any])?["call_id"] as? String == "sim-img-retry" }) {
+            let output = (h.link.sent[outputIndex]["item"] as? [String: Any])?["output"] as? String ?? ""
+            XCTAssertTrue(output.contains("status=verified_completed"), output)
+            XCTAssertLessThan(imageIndex, outputIndex)
+            XCTAssertLessThan(outputIndex, askIndex)
+        } else {
+            XCTFail("simulator image must precede its completion receipt and response")
         }
         let newLogs = AppLog.shared.lines.filter { !priorLogs.contains($0) }
         XCTAssertTrue(newLogs.contains { $0.contains("call=sim-img-retry") && $0.contains("obsDelivery=") },
