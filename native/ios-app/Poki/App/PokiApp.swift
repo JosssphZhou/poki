@@ -75,6 +75,9 @@ struct PokiApp: App {
                 // Body text in Allo wherever a view does not choose a font of its own.
                 .font(.allo(.body))
                 #if DEBUG
+                .overlay(alignment: .top) {
+                    if SensesHomeUITestFixture.active { SensesHomeUITestControls() }
+                }
                 .overlay { if UserDefaults.standard.string(forKey: "pokiScreen") == "fonts" { FontCompare().background(Color(.systemBackground)) } }
                 .overlay { if UserDefaults.standard.string(forKey: "pokiScreen") == "bear" { BearStage() } }
                 #endif

@@ -18,7 +18,12 @@ import PokiCore
 /// go to Poki's model only when the owner taps it and sends them.
 @MainActor
 final class SensesSuggestions {
-    static let shared = SensesSuggestions()
+    static let shared: SensesSuggestions = {
+        #if DEBUG
+        if SensesHomeUITestFixture.active { return SensesHomeUITestFixture.suggestions() }
+        #endif
+        return SensesSuggestions()
+    }()
 
     static let shown = 3
     private static let every: TimeInterval = 30 * 60
@@ -30,12 +35,25 @@ final class SensesSuggestions {
 
     private var last = Date.distantPast
     private var running = false
+    private var epoch = UUID()
     private var kept: [(pill: HomeShortcut, at: Date)] = []
+
+    private let enabled: @MainActor () -> Bool
+    private let deliver: @MainActor ([HomeShortcut]) -> Void
+    private let produce: (@MainActor () async -> [HomeShortcut])?
+
+    init(enabled: @escaping @MainActor () -> Bool = { SensesUse.shared.suggesting },
+         deliver: @escaping @MainActor ([HomeShortcut]) -> Void = { HomeShortcutStore.shared.suggest($0) },
+         produce: (@MainActor () async -> [HomeShortcut])? = nil) {
+        self.enabled = enabled
+        self.deliver = deliver
+        self.produce = produce
+    }
 
     /// Called when the home page shows. Looks again at most every half hour, or when the time of day
     /// moved on.
     func refresh() async {
-        guard SensesUse.shared.suggesting else {
+        guard enabled() else {
             clear()
             return
         }
@@ -44,14 +62,24 @@ final class SensesSuggestions {
             publish()
             return
         }
+        let requested = epoch
         running = true
-        defer { running = false }
+        defer { if epoch == requested { running = false } }
         last = Date()
         lastPart = part
-        let memories = SensesMemories.shared
-        await memories.refresh()
-        var pills = await habitPills(memories.habits, part: part)
-        pills += await followUps(existing: HomeShortcutStore.shared.shortcuts + pills, room: Self.shown - pills.count)
+        let pills: [HomeShortcut]
+        if let produce {
+            pills = await produce()
+        } else {
+            let memories = SensesMemories.shared
+            await memories.refresh()
+            guard epoch == requested, enabled(), !Task.isCancelled else { return }
+            var generated = await habitPills(memories.habits, part: part)
+            guard epoch == requested, enabled(), !Task.isCancelled else { return }
+            generated += await followUps(existing: HomeShortcutStore.shared.shortcuts + generated, room: Self.shown - generated.count)
+            pills = generated
+        }
+        guard epoch == requested, enabled(), !Task.isCancelled else { return }
         AppLog.shared.add("history", "suggestions: \(pills.count) kept")
         kept = pills.prefix(Self.shown).map { ($0, Date()) }
         publish()
@@ -60,13 +88,17 @@ final class SensesSuggestions {
     private var lastPart: SensesPartOfDay?
 
     func clear() {
+        epoch = UUID()
+        running = false
+        last = .distantPast
+        lastPart = nil
         kept = []
-        HomeShortcutStore.shared.suggest([])
+        deliver([])
     }
 
     private func publish() {
         kept.removeAll { Date().timeIntervalSince($0.at) > Self.life }
-        HomeShortcutStore.shared.suggest(kept.map(\.pill))
+        deliver(kept.map(\.pill))
     }
 
     // MARK: Habits for now
