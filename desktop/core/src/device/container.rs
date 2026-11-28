@@ -43,6 +43,16 @@ pub async fn write_file(phone: &Phone, bundle_id: &str, relative: &str, bytes: &
     Ok(())
 }
 
+/// Removes `relative` inside Poki's sandbox. A file that is not there is not an error.
+pub async fn remove_file(phone: &Phone, bundle_id: &str, relative: &str) -> Result<()> {
+    let mut afc = afc_for(phone, bundle_id).await?;
+    match afc.remove(relative).await {
+        Ok(()) => Ok(()),
+        Err(idevice::IdeviceError::Afc(idevice::afc::errors::AfcError::ObjectNotFound)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub async fn read_file(phone: &Phone, bundle_id: &str, relative: &str) -> Result<Vec<u8>> {
     let mut afc = afc_for(phone, bundle_id).await?;
     let mut file = afc.open(relative, AfcFopenMode::RdOnly).await?;

@@ -177,15 +177,74 @@ pub async fn mount(phone: &Phone, reporter: &Reporter) -> Result<()> {
     if kind == Kind::Cryptex {
         return mount_cryptex(phone, dir, reporter).await;
     }
-    let provider = phone.provider()?;
-    let mut lockdown = LockdownClient::connect(&*provider).await?;
-    let record = super::pairing::saved(&phone.udid)?.ok_or_else(|| Error::device("Pair the iPhone first."))?;
-    lockdown.start_session(&record).await?;
-    let chip = lockdown.get_value(Some("UniqueChipID"), None).await?.as_unsigned_integer().ok_or_else(|| Error::device("no UniqueChipID"))?;
-    let mut mounter = ImageMounter::connect(&*provider).await?;
     let image = tokio::fs::read(dir.join("Image.dmg")).await?;
     let trust_cache = tokio::fs::read(dir.join("Image.dmg.trustcache")).await?;
     let manifest = tokio::fs::read(dir.join("BuildManifest.plist")).await?;
+    // Through the CoreDevice tunnel first (iOS 17.4 and later), the way Poki's launcher mounts it on
+    // the phone and the way the cryptex goes on. The tunnel is opened with the one record the USB
+    // service holds. The lockdown route below used to start its session with the record Poki Setup
+    // saved and then open the image mounter with the USB service's record, so it needed both to be
+    // trusted. On Windows the USB service is Apple's driver, which keeps its own record (see #421).
+    let tunnel = {
+        let (image, trust_cache, manifest, r) = (image.clone(), trust_cache.clone(), manifest.clone(), reporter.clone());
+        super::running::on_own_thread(phone, async move |p: &Phone| mount_personalized_tunnel(p, image, trust_cache, manifest, &r).await).await
+    };
+    match tunnel {
+        Ok(()) => {
+            reporter.done("mount", None);
+            return Ok(());
+        }
+        Err(e @ Error::NeedsPerson(_)) => return Err(e),
+        Err(e) => tracing::info!(error = %e, "personalized image over the CoreDevice tunnel failed; trying lockdown"),
+    }
+    mount_personalized_lockdown(phone, image, trust_cache, manifest, reporter).await?;
+    reporter.done("mount", None);
+    Ok(())
+}
+
+fn personalized_error(e: idevice::IdeviceError) -> Error {
+    match e {
+        idevice::IdeviceError::DeveloperModeNotEnabled => Error::NeedsPerson("Turn on Developer Mode on the iPhone first.".into()),
+        other => Error::device(format!("Mounting failed: {other}. Apple's signing service must be reachable, and the phone must be unlocked.")),
+    }
+}
+
+/// The image mounter behind the CoreDevice tunnel (`mobile_image_mounter.shim.remote`), with the
+/// chip id from the tunnel's trusted lockdown.
+async fn mount_personalized_tunnel(phone: &Phone, image: Vec<u8>, trust_cache: Vec<u8>, manifest: Vec<u8>, reporter: &Reporter) -> Result<()> {
+    use idevice::RsdService;
+    let mut t = super::running::tunnel(phone).await.map_err(Error::device)?;
+    if !t.rsd.services.contains_key(ImageMounter::rsd_service_name().as_ref()) {
+        return Err(Error::device("the CoreDevice tunnel offers no image mounter"));
+    }
+    let chip = {
+        let mut lockdown = LockdownClient::connect_rsd(&mut t.adapter, &mut t.rsd).await?;
+        lockdown.get_value(Some("UniqueChipID"), None).await?.as_unsigned_integer().ok_or_else(|| Error::device("no UniqueChipID"))?
+    };
+    let mut mounter = ImageMounter::connect_rsd(&mut t.adapter, &mut t.rsd).await?;
+    let r = reporter.clone();
+    mounter
+        .mount_personalized_with_callback_rsd(&mut t.adapter, &mut t.rsd, image, trust_cache, &manifest, None, chip, move |((n, d), _)| {
+            let r = r.clone();
+            async move { r.part("mount", if d == 0 { 0.0 } else { n as f64 / d as f64 }, None) }
+        }, ())
+        .await
+        .map_err(personalized_error)
+}
+
+/// Through lockdown over USB (iOS 17.0 to 17.3, or when the tunnel does not come up). The session
+/// uses the record the USB service holds, the same one the image mounter connection uses, and the
+/// record Poki Setup saved only when the USB service has none.
+async fn mount_personalized_lockdown(phone: &Phone, image: Vec<u8>, trust_cache: Vec<u8>, manifest: Vec<u8>, reporter: &Reporter) -> Result<()> {
+    let provider = phone.provider()?;
+    let record = match provider.get_pairing_file().await {
+        Ok(r) => r,
+        Err(_) => super::pairing::saved(&phone.udid)?.ok_or_else(|| Error::device("Pair the iPhone first."))?,
+    };
+    let mut lockdown = LockdownClient::connect(&*provider).await?;
+    lockdown.start_session(&record).await?;
+    let chip = lockdown.get_value(Some("UniqueChipID"), None).await?.as_unsigned_integer().ok_or_else(|| Error::device("no UniqueChipID"))?;
+    let mut mounter = ImageMounter::connect(&*provider).await?;
     let r = reporter.clone();
     mounter
         .mount_personalized_with_callback(&*provider, image, trust_cache, &manifest, None, chip, move |((n, d), _)| {
@@ -193,12 +252,7 @@ pub async fn mount(phone: &Phone, reporter: &Reporter) -> Result<()> {
             async move { r.part("mount", if d == 0 { 0.0 } else { n as f64 / d as f64 }, None) }
         }, ())
         .await
-        .map_err(|e| match e {
-            idevice::IdeviceError::DeveloperModeNotEnabled => Error::NeedsPerson("Turn on Developer Mode on the iPhone first.".into()),
-            other => Error::device(format!("Mounting failed: {other}. Apple's signing service must be reachable, and the phone must be unlocked.")),
-        })?;
-    reporter.done("mount", None);
-    Ok(())
+        .map_err(personalized_error)
 }
 
 /// iOS 26.4 and later: the image goes on as a Cryptex1 cryptex through cryptexd, over the CoreDevice
@@ -227,6 +281,13 @@ pub async fn seed_container(phone: &Phone, bundle_id: &str, reporter: &Reporter)
     let (dir, _) = ensure(reporter, kind).await?;
     let files = kind.files();
     reporter.step("seed", "Copying the disk image into Poki");
+    if kind == Kind::Personalized {
+        // A cryptex left by an older Poki, or by an iOS update and downgrade: Poki refuses a
+        // personalized image that sits beside cryptex files and downloads it again.
+        for name in Kind::Cryptex.files().iter().filter(|n| !Kind::Personalized.files().contains(n)) {
+            let _ = super::container::remove_file(phone, bundle_id, &format!("{}/ddi/{name}", super::container::SUPPORT_DIR)).await;
+        }
+    }
     for (i, name) in files.iter().enumerate() {
         let bytes = std::fs::read(dir.join(name))?;
         super::container::write_file(phone, bundle_id, &format!("{}/ddi/{name}", super::container::SUPPORT_DIR), &bytes).await?;
