@@ -69,8 +69,13 @@ final class Computer: @unchecked Sendable {
     var nextRef = 1
     /// Every element of the latest tree with a frame, listed or not (for what covers what).
     var lastAll: [Element] = [] {
-        didSet { currentBackTarget = BackTarget(in: lastAll) }
+        didSet {
+            currentBackTarget = BackTarget(in: lastAll)
+            lastUnpositioned = UnpositionedScreen()
+        }
     }
+    /// On a legacy screen, AX can still identify password fields and delete menus/dialogs independently of positions.
+    var lastUnpositioned = UnpositionedScreen()
     private(set) var currentBackTarget = BackTarget(in: [])
     /// When the latest tree was read (a `wait_until: settled` takes a fresh one as its first sample).
     var lastTreeAt: Double?
@@ -196,6 +201,7 @@ final class Computer: @unchecked Sendable {
     var fixesMade = 0
 
     var lastElements: [Element] { listed.map(\.element) }
+    var lastScreenHasSecureField: Bool { lastUnpositioned.hasSecureField || lastElements.contains(where: \.isSecure) }
     var layout: Layout { Layout(all: lastAll, screen: size ?? ScreenSize(width: 10_000, height: 10_000)) }
 
     static let settle: [String: Double] = ["tap": 0.45, "type": 0.25, "key": 0.3, "swipe": 0.6, "drag": 0.35, "adjust": 0.2, "long_press": 0.4, "pinch": 0.6, "button": 0.7, "launch": 0.9, "scroll_to": 0.2, "wait": 0, "wait_until": 0, "run_read": 0]
@@ -265,7 +271,8 @@ final class Computer: @unchecked Sendable {
                     reading.elements = []
                 }
             } else {
-                confirmedPaneRead = front == pane.app && reading.png != nil && (besidePoki || !reading.elements.isEmpty)
+                confirmedPaneRead = front == pane.app && reading.png != nil &&
+                    (besidePoki || !reading.elements.isEmpty || reading.coordinatesUnavailable)
             }
             if !confirmedPaneRead {
                 invalidateWorkspaceRead()
@@ -279,6 +286,12 @@ final class Computer: @unchecked Sendable {
             await updateReadSize(until: now() + 1.5)
         }
         let screen = size ?? ScreenSize(width: 10_000, height: 10_000)
+        if reading.coordinatesUnavailable {
+            refs = [:]; listed = []; lastAll = []; lastTreeAt = nil
+            lastUnpositioned = reading.unpositioned
+        } else if let app = reading.foreground?.bundleID, app != lastForeground?.bundleID {
+            lastUnpositioned = UnpositionedScreen()
+        }
         var notes = reading.notes
         if let modal = modalOnly(reading.elements) { notes.append(modal) }
         if reading.png == nil && reading.elements.isEmpty {
@@ -458,7 +471,10 @@ final class Computer: @unchecked Sendable {
         } else {
             refs = [:]
             listed = []
-            for (i, e) in shown.enumerated() { refs[assigned[i]!] = e }
+            for (i, e) in shown.enumerated() {
+                refs[assigned[i]!] = e
+                listed.append((assigned[i]!, e))
+            }
         }
 
         func line(_ ref: Int, _ e: Element, _ mark: String) -> String {
@@ -504,7 +520,10 @@ final class Computer: @unchecked Sendable {
                 body.append("found by scroll_to: \(line(assigned[i]!, shown[i], " ").trimmingCharacters(in: .whitespaces)) (tap \(assigned[i]!))")
             }
         }
-        if pictureOnly { heading = "elements (\(shown.count), read from the picture because the element tree did not come in time; a number taps the text's centre):" }
+        if pictureOnly {
+            let reason = reading.coordinatesUnavailable ? "the app reports local coordinates" : "the element tree did not come in time"
+            heading = "elements (\(shown.count), read from the picture because \(reason); a number taps the text's centre):"
+        }
         if !collapsed.isEmpty, !full { heading += "  ([collapsed] = one element whose parts are not in the tree; full=true adds the text read from the picture inside it, or tap a point on the screenshot)" }
 
         var jpeg: Data?
@@ -2570,7 +2589,7 @@ final class Computer: @unchecked Sendable {
         return (now() - began, false, nil)
     }
 
-    private func finalizeSettledPauseTree(_ tree: (elements: [Element], foreground: Foreground), treeAt: Double, waited: Double, samples: Int, targetAt: Double?, generation: UInt64, earliestAllowedAt: Double, beforePicture: PictureSketch?, until: Double) async -> FreshScreenObservation? {
+    private func finalizeSettledPauseTree(_ tree: SourceTree, treeAt: Double, waited: Double, samples: Int, targetAt: Double?, generation: UInt64, earliestAllowedAt: Double, beforePicture: PictureSketch?, until: Double) async -> FreshScreenObservation? {
         guard selectedPane == nil, tree.foreground.pokiPane == nil, !config.isPoki(tree.foreground),
               !tree.elements.contains(where: { $0.type == "Alert" && !$0.fromPicture }) else {
             cancelPreparedCapture()
@@ -2760,6 +2779,41 @@ final class Computer: @unchecked Sendable {
             .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 
+    /// Reads a fresh screenshot and recognizes text targets for approval hit-testing on
+    /// compatibility screens whose accessibility frames are app-local.
+    func ocrElementsForApproval(until: Double) async -> [Element]? {
+        let shotBudget = min(3, max(0, until - now() - 0.3))
+        guard shotBudget >= 0.3, let png = try? await runner.screenshot(timeout: shotBudget) else { return nil }
+        let currentSize: ScreenSize? = if size == nil || runner.transport.usesDynamicScreenSize {
+            (try? await screenSize(until: min(until, now() + 1.5), refreshing: true)) ?? size
+        } else {
+            size
+        }
+        guard let currentSize, currentSize.width > 0, currentSize.height > 0 else { return nil }
+        let ocrBudget = min(3.5, until - now() - 0.2)
+        guard ocrBudget >= 0.3 else { return nil }
+        let host = self.host
+        guard let texts = (try? await withDeadline(ocrBudget, "reading text from the picture", { await host.recognizeText(inPNG: png) })) ?? nil else {
+            return nil
+        }
+        return texts.map { t in
+            Element(
+                type: "Text",
+                label: t.text,
+                value: nil,
+                identifier: nil,
+                frame: Rect(
+                    x: t.box.x * currentSize.width,
+                    y: t.box.y * currentSize.height,
+                    width: t.box.width * currentSize.width,
+                    height: t.box.height * currentSize.height
+                ),
+                depth: 0,
+                fromPicture: true
+            )
+        }
+    }
+
     /// The element a spec points at: a number of the latest read, or what lies under a point (of the
     /// latest read, or of `elements`, where numbers mean nothing).
     func target(_ spec: JSON?, in elements: [Element]? = nil) -> Element? {
@@ -2787,6 +2841,9 @@ final class Computer: @unchecked Sendable {
         var moved = false
         var typingTarget: Element?
         var secureOnScreen: Bool
+        /// Whether OCR-only targets should require deletion approval because the screen has a
+        /// menu/confirmation dialog or no positioned accessibility tree to rule one out.
+        var ocrDeletesRequireApproval = false
         /// The elements to look under a point in; nil for the latest read (and its numbers).
         var elements: [Element]?
         /// The full element tree for ancestor context; nil uses `lastAll`.
@@ -2797,7 +2854,14 @@ final class Computer: @unchecked Sendable {
     /// `rules`: judged by these instead of the ones the way of asking leaves (`stopsWhenOff`).
     func sensitiveSteps(_ actions: [JSON], under rules: SensitivityRules? = nil) -> [(at: Int, reason: String)] {
         guard config.sensitive.enabled else { return [] }
-        var scan = SensitiveScan(front: lastForeground, secureOnScreen: lastElements.contains(where: \.isSecure))
+        let ocrDeletesRequireApproval = lastUnpositioned.active
+            ? lastUnpositioned.hasDeleteMenuOrDialog
+            : lastAll.isEmpty
+        var scan = SensitiveScan(
+            front: lastForeground,
+            secureOnScreen: lastScreenHasSecureField,
+            ocrDeletesRequireApproval: ocrDeletesRequireApproval
+        )
         var matches: [(at: Int, reason: String)] = []
         for (at, action) in actions.enumerated() {
             if let reason = sensitive(action, &scan, under: rules) { matches.append((at, reason)) }
@@ -2896,7 +2960,17 @@ final class Computer: @unchecked Sendable {
         let spec = action[kind.rawValue] ?? .null
         if kind == .drag, spec["to_pane"] != nil, let destination = selectedPane?.other,
            destination != "com.apple.mobilenotes" { return "dropping content into \(destination)" }
-        let tree = scan.read ? (scan.allElements ?? lastAll) : []
+        let tree: [Element]? = if !scan.read {
+            []
+        } else if let all = scan.allElements {
+            all
+        } else if !lastAll.isEmpty {
+            lastAll
+        } else if scan.ocrDeletesRequireApproval {
+            nil
+        } else {
+            []
+        }
         if kind == .tap { scan.typingTarget = unread ? nil : target(spec, in: scan.elements) }
         for press in presses(kind, action, scan, unread: unread) {
             if let r = rules.reason(touching: press.element, typing: false, app: press.judged == .stroke ? nil : scan.front, secureOnScreen: scan.secureOnScreen, in: tree) { return r }
@@ -2941,12 +3015,16 @@ final class Computer: @unchecked Sendable {
                 scan.read ? scan.typingTarget : nil
             }
             scan.typingTarget = e
-            if let r = rules.reason(touching: e, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen && e == nil, in: tree) { return r }
+            let field = e?.fromPicture == true ? nil : e
+            if let r = rules.reason(touching: field, typing: true, app: scan.front, secureOnScreen: scan.read && scan.secureOnScreen, in: tree) { return r }
             if messaging, text.contains(where: \.isNewline), !Self.isSearch(e) { return "sending a message (a return typed in \(app))" }
         case .key:
             let key = spec.text ?? ""
-            if key.lowercased() == "return", let field = scan.typingTarget, rules.reason(touching: field, typing: true, app: scan.front, secureOnScreen: false, in: tree) != nil {
-                return "submitting a password field"
+            if key.lowercased() == "return" {
+                let field = scan.typingTarget?.fromPicture == true ? nil : scan.typingTarget
+                if rules.secureFields, field?.isSecure == true || (field == nil && scan.read && scan.secureOnScreen) {
+                    return "submitting a password field"
+                }
             }
             // Return is the send key in WeChat, WhatsApp and Telegram: typed text goes out on it.
             if messaging, (Self.keyText[key.lowercased()] ?? key).contains(where: \.isNewline), !Self.isSearch(scan.typingTarget) {
@@ -2975,7 +3053,8 @@ final class Computer: @unchecked Sendable {
         }
         if let text = action["type"]?.text {
             let e = action["ref"].flatMap { refs[$0.int ?? -1] }
-            return e?.isSecure == true || lastElements.contains(where: \.isSecure) ? "type \(text.count) characters (hidden)" : "type \"\(text.prefix(40))\""
+            return e?.isSecure == true || lastScreenHasSecureField
+                ? "type \(text.count) characters (hidden)" : "type \"\(text.prefix(40))\""
         }
         return action.serialized()
     }

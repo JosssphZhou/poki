@@ -45,6 +45,7 @@ public struct Element: Equatable, Sendable {
     public var enabled = true
     /// The picked tab, segment or row.
     public var selected = false
+    var keyboardFocused = false
 
     public init(type: String, label: String?, value: String?, identifier: String?, frame: Rect, depth: Int, node: Int = 0, end: Int = 0, fromPicture: Bool = false, enabled: Bool = true, selected: Bool = false, isDisabled: Bool = false) {
         self.type = type
@@ -112,6 +113,26 @@ struct ScreenCapture: Sendable {
     let finishedAt: Double
 }
 
+/// Semantic accessibility facts retained from a screen whose element frames are app-local
+/// and therefore unusable for screen-space touch coordinates.
+struct UnpositionedScreen: Equatable, Sendable {
+    var active = false
+    var hasSecureField = false
+    var hasDeleteMenuOrDialog = false
+
+    init(active: Bool = false, hasSecureField: Bool = false, hasDeleteMenuOrDialog: Bool = false) {
+        self.active = active
+        self.hasSecureField = hasSecureField
+        self.hasDeleteMenuOrDialog = hasDeleteMenuOrDialog
+    }
+
+    init(elements: [Element]) {
+        self.active = true
+        self.hasSecureField = elements.contains(where: \.isSecure)
+        self.hasDeleteMenuOrDialog = elements.isEmpty || SensitivityRules.hasDeleteMenuOrDialog(in: elements)
+    }
+}
+
 /// One read of the screen. Either part may be missing; `notes` says why.
 public struct Reading: Sendable {
     public var elements: [Element] = []
@@ -121,6 +142,8 @@ public struct Reading: Sendable {
     var firstPictureStartedAt: Double?
     var firstPictureAt: Double?
     var treeAt: Double?
+    var unpositioned = UnpositionedScreen()
+    var coordinatesUnavailable: Bool { unpositioned.active }
     public var notes: [String] = []
     public var ms = 0
 
@@ -128,7 +151,19 @@ public struct Reading: Sendable {
         png = capture.data
         screenshotCompanion = capture.companion
     }
+
+    fileprivate mutating func use(_ tree: SourceTree) {
+        foreground = tree.foreground
+        if tree.coordinatesUnavailable {
+            unpositioned = UnpositionedScreen(elements: tree.elements)
+            notes.append("the app reports local coordinates; use the screenshot for positions")
+        } else {
+            elements = tree.elements
+        }
+    }
 }
+
+typealias SourceTree = (elements: [Element], foreground: Foreground, coordinatesUnavailable: Bool)
 
 private func reportsDisabled(_ enabled: String?) -> Bool {
     enabled == "false" || enabled == "0"
@@ -164,7 +199,7 @@ func flatten(_ root: JSON) -> [Element] {
 
 /// WDA's XML source (`<AppiumAUT><XCUIElementTypeApplication …><XCUIElementTypeButton name label
 /// value x y width height …/>…`) as the same flat list. The wrapper element is not counted.
-func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, name: String?))? {
+func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, name: String?), coordinatesUnavailable: Bool)? {
     final class Walker: NSObject, XMLParserDelegate {
         var out: [Element] = []
         var counter = 0
@@ -172,8 +207,12 @@ func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, na
         var depth = -1
         var root: (label: String?, name: String?) = (nil, nil)
         var failed = false
+        var coordinatesUnavailable = false
         func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
-            guard name != "AppiumAUT" else { return }
+            if name == "AppiumAUT" {
+                coordinatesUnavailable = attributes["screenCoordinates"] == "unavailable"
+                return
+            }
             depth += 1
             counter += 1
             let place = counter
@@ -181,12 +220,16 @@ func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, na
             let visible = attributes["visible"].map { $0 == "true" } ?? true
             if depth == 0 { root = (attributes["label"], attributes["name"]) }
             var index: Int?
-            if depth > 0, visible, frame.width > 0, frame.height > 0 {
+            if depth > 0, visible, coordinatesUnavailable || (frame.width > 0 && frame.height > 0) {
                 let type = name.replacingOccurrences(of: "XCUIElementType", with: "")
                 let id = attributes["name"]
                 index = out.count
-                out.append(Element(type: type, label: attributes["label"] ?? id, value: attributes["value"], identifier: id, frame: frame, depth: depth, node: place, end: place,
-                                   enabled: !reportsDisabled(attributes["enabled"]), selected: attributes["selected"] == "true"))
+                let position = coordinatesUnavailable ? Rect(x: 0, y: 0, width: 0, height: 0) : frame
+                var element = Element(type: type, label: attributes["label"] ?? id, value: attributes["value"], identifier: id,
+                                      frame: position, depth: depth, node: place, end: place,
+                                      enabled: !reportsDisabled(attributes["enabled"]), selected: attributes["selected"] == "true")
+                element.keyboardFocused = attributes["keyboardFocused"] == "true"
+                out.append(element)
             }
             open.append(index)
         }
@@ -202,7 +245,7 @@ func flattenXML(_ data: Data) -> (elements: [Element], root: (label: String?, na
     parser.delegate = walker
     parser.parse()
     guard !walker.failed || !walker.out.isEmpty else { return nil }
-    return (walker.out, walker.root)
+    return (walker.out, walker.root, walker.coordinatesUnavailable)
 }
 
 func listable(_ elements: [Element], _ size: ScreenSize, includeUnlabeledImages: Bool = false) -> [Element] {
@@ -239,7 +282,7 @@ extension Runner {
     /// point, depth) live in WDA's process, set by the first session of the runner's life.
     /// `countsAsMiss: false` for a read given less time than a read may take.
     func tree(timeout: Double, format: String = "json", workspace: Bool = false, countsAsMiss: Bool = true,
-              appAfterSource: Bool = false) async throws -> (elements: [Element], foreground: Foreground) {
+              appAfterSource: Bool = false, includeUnpositioned: Bool = false) async throws -> SourceTree {
         let xml = format.lowercased() == "xml"
         await ensureSettings(timeout: min(timeout, 3))
         let started = now()
@@ -266,11 +309,16 @@ extension Runner {
             guard let text = sourceValue.string, let parsed = flattenXML(Data(text.utf8)) else {
                 throw RunnerError(message: "the runner's XML tree could not be read", delivery: .notSent)
             }
-            return (parsed.elements, Foreground(bundleID: bundleID, name: appName ?? parsed.root.label ?? parsed.root.name, pokiPane: pokiPane))
+            let foreground = Foreground(bundleID: bundleID, name: appName ?? parsed.root.label ?? parsed.root.name, pokiPane: pokiPane)
+            if parsed.coordinatesUnavailable, !includeUnpositioned {
+                throw RunnerError(message: "the app reports local coordinates; use the screenshot for positions",
+                                  delivery: .notSent, code: "compatibility_window_requires_screenshot_coordinates", foreground: foreground)
+            }
+            return (parsed.elements, foreground, parsed.coordinatesUnavailable)
         }
         let root = (try? sourceValue.string.map(JSON.parse)) ?? sourceValue
         let name = appName ?? root["label"]?.text ?? root["name"]?.text
-        return (flatten(root), Foreground(bundleID: bundleID, name: name, pokiPane: pokiPane))
+        return (flatten(root), Foreground(bundleID: bundleID, name: name, pokiPane: pokiPane), false)
     }
 
     static let pictureLagLimit = 0.6
@@ -319,9 +367,9 @@ extension Runner {
         let wanted = nextLimits.value
         if wanted != limits.value { await useLimits(wanted) }
         let readLimits = limits.value
-        async let treePart: Result<(elements: [Element], foreground: Foreground), Error> = {
+        async let treePart: Result<SourceTree, Error> = {
             do {
-                return .success(try await self.tree(timeout: timeout, format: format, workspace: workspace, appAfterSource: appAfterSource))
+                return .success(try await self.tree(timeout: timeout, format: format, workspace: workspace, appAfterSource: appAfterSource, includeUnpositioned: true))
             } catch { return .failure(error) }
         }()
         async let picturePart: Result<ScreenCapture, Error>? = wantPicture ? {
@@ -340,7 +388,7 @@ extension Runner {
         var reading = Reading()
         var treeCame = false
         switch await treePart {
-        case .success(let t): reading.elements = t.elements; reading.foreground = t.foreground; treeCame = true
+        case .success(let t): reading.use(t); treeCame = true
         case .failure(let e):
             reading.foreground = (e as? RunnerError)?.foreground
             // A snapshot the runner refused at once (the app's main loop was busy for the moment:
@@ -350,8 +398,8 @@ extension Runner {
             let left = started + timeout - now()
             if (e as? RunnerError)?.delivery == .notSent, left > 1.2 {
                 await sleep(seconds: 0.3)
-                if let again = try? await self.tree(timeout: left - 0.4, format: format, workspace: workspace) {
-                    reading.elements = again.elements; reading.foreground = again.foreground; treeCame = true
+                if let again = try? await self.tree(timeout: left - 0.4, format: format, workspace: workspace, includeUnpositioned: true) {
+                    reading.use(again); treeCame = true
                     reading.notes.append("the element tree came on the second try (the first was refused: \(e))")
                 } else {
                     reading.notes.append("no element tree: \(e); a second try within the read's time was refused too")
@@ -365,9 +413,9 @@ extension Runner {
                 reading.notes.append("no element tree (\(readLimits.isFull ? "full" : readLimits.described)): \(e)")
                 if await waitUntilFree(timeout: min(3, retryUntil - now() - 1.5)) {
                     await useLimits(smaller)
-                    if limits.value == smaller, let again = try? await self.tree(timeout: max(0.5, min(2, retryUntil - now() - 0.2)), format: format, workspace: workspace) {
-                        reading.elements = again.elements; reading.foreground = again.foreground; treeCame = true
+                    if limits.value == smaller, let again = try? await self.tree(timeout: max(0.5, min(2, retryUntil - now() - 0.2)), format: format, workspace: workspace, includeUnpositioned: true) {
                         reading.notes.removeLast()
+                        reading.use(again); treeCame = true
                         reading.notes.append("the full tree timed out (\(e)), so it was read again with \(smaller.described) within this call; \(smaller.caveat)")
                     }
                 }
@@ -443,7 +491,7 @@ extension Runner {
             }
         }
         reading.ms = Int(((now() - started) * 1000).rounded())
-        if treeCame { reading.treeAt = treeAt }
+        if treeCame, !reading.coordinatesUnavailable { reading.treeAt = treeAt }
         return reading
     }
 }

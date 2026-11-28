@@ -505,7 +505,15 @@ extension Computer {
         var deletes = 0
         var before: String?
         if clear {
-            before = await fieldValue(target: target, timeout: 1.5)
+            let seen = await fieldOnScreen(target: target, timeout: 1.5)
+            if seen.coordinatesUnavailable || (!seen.came && lastUnpositioned.active) {
+                guard let field = seen.field else {
+                    throw ActionFailure(message: "clear needs a readable focused field; nothing was typed", delivery: .notSent)
+                }
+                before = field.value ?? ""
+            } else {
+                before = seen.field.map { $0.value ?? "" }
+            }
             if let s = before { deletes = min(400, s.count) }
         }
         let keys = Array(repeating: "\u{8}", count: deletes) + text.map(String.init)
@@ -632,18 +640,24 @@ extension Computer {
     /// The field the text goes to, from one tree read: the field under or around the tapped target,
     /// else the field holding `holding`, else the only field on screen. `keyboard`: the keyboard is
     /// up; `came`: the tree was read.
-    func fieldOnScreen(target: Element?, holding: String? = nil, timeout: Double) async -> (field: Element?, keyboard: Bool, came: Bool) {
-        guard let seen = try? await runner.tree(timeout: timeout, format: config.treeFormat) else { return (nil, false, false) }
+    func fieldOnScreen(target: Element?, holding: String? = nil, timeout: Double) async -> (field: Element?, keyboard: Bool, came: Bool, coordinatesUnavailable: Bool) {
+        guard let seen = try? await runner.tree(timeout: timeout, format: config.treeFormat, includeUnpositioned: true) else {
+            return (nil, false, false, false)
+        }
         let all = seen.elements
         let keyboard = all.contains { $0.type == "Keyboard" }
         let fields = all.filter { Self.fieldTypes.contains($0.type) }
+        if seen.coordinatesUnavailable {
+            let focused = fields.filter(\.keyboardFocused)
+            return (focused.count == 1 ? focused.first : nil, keyboard, true, true)
+        }
         var field: Element?
         if let target {
-            field = fields.first { $0.frame.contains(target.frame.centre) || target.frame.contains($0.frame.centre) }
+            field = fields.first { !$0.frame.isEmpty && ($0.frame.contains(target.frame.centre) || target.frame.contains($0.frame.centre)) }
         }
         if field == nil, let holding, !holding.isEmpty { field = fields.first { ($0.value ?? "").contains(holding) } }
         if field == nil, fields.count == 1 { field = fields[0] }
-        return (field, keyboard, true)
+        return (field, keyboard, true, false)
     }
 
     /// The return target from one tree. Without a button, back uses the left-edge gesture.
@@ -874,7 +888,7 @@ extension Computer {
         // cannot pass between them however slow the runner is (seen in the gym: row 250 of 300
         // scrolled past unread over seven calls whose reads all came late, then "not found").
         var all = lastAll, swipes = 0, last: String?, still = 0, waited = false
-        var lastSwipeAt: Double?, lastSeen: (elements: [Element], foreground: Foreground)?, lastSeenAt: Double?
+        var lastSwipeAt: Double?, lastSeen: SourceTree?, lastSeenAt: Double?
         // After a swipe whose read shares nothing with the read before (the list moved more than a
         // screen), the next swipe is a short one back, so nothing is passed unread.
         var corrective = false, corrected = false, overshoots = 0
@@ -1076,9 +1090,10 @@ extension Computer {
         while now() < limit || (settled && text == nil && reads == 1 && until - now() > 1.5) {
             let room = until - now() - 0.9
             guard room >= 0.3 else { break }
-            if let seen = try? await runner.tree(timeout: Swift.min(config.readTimeout, room), format: config.treeFormat) {
+            if let seen = try? await runner.tree(timeout: Swift.min(config.readTimeout, room), format: config.treeFormat,
+                                                includeUnpositioned: text != nil) {
                 reads += 1
-                let elements = listable(seen.elements, screen)
+                let elements = seen.coordinatesUnavailable ? seen.elements : listable(seen.elements, screen)
                 let ms = Int(((now() - started) * 1000).rounded())
                 if settled && text == nil {
                     let sig = signature(elements)

@@ -23,7 +23,7 @@ extension Computer {
         }
         if let text = action["type"]?.text {
             let e = action["ref"].flatMap { refs[$0.int ?? -1] }
-            if e?.isSecure == true || lastElements.contains(where: \.isSecure) { return "Type \(text.count) hidden characters" }
+            if e?.isSecure == true || lastScreenHasSecureField { return "Type \(text.count) hidden characters" }
             // Curly quotes in the text become straight ones, so the label's own ” ends it (withoutTypedText).
             let shown = Self.short(text, 32).replacingOccurrences(of: "[“”]", with: "\"", options: .regularExpression)
             return "Type “\(shown)”"

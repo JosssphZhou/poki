@@ -151,6 +151,18 @@ public struct SensitivityRules: Sendable, Equatable {
         return false
     }
 
+    /// Whether a semantic accessibility tree (possibly without usable screen coordinates) contains
+    /// a popup menu or confirmation dialog that can host a destructive delete target.
+    static func hasDeleteMenuOrDialog(in elements: [Element]) -> Bool {
+        elements.contains { element in
+            isContextMenuOrDialogContainer(element)
+                || (deleteControlTypes.contains(element.type)
+                    && !isCancelButton(element)
+                    && !isConfirmationPrompt(element)
+                    && isInDeleteMenuOrDialog(element, in: elements))
+        }
+    }
+
     private static func matches(
         _ text: String,
         _ words: [String],

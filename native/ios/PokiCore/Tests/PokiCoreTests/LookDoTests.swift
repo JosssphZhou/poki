@@ -5,6 +5,334 @@ import XCTest
 /// slow drags, no-op actions that looked like success, the picture's scale, collapsed cells, fixed
 /// waits and repeated text.
 final class LookDoTests: XCTestCase {
+    func testExplicitSplitViewWithLocalCoordinatesUsesOCRAndPreservesTyping() async {
+        let (core, wda, host) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true)) {
+            $0.treeFormat = "xml"
+        }
+        wda.set("POST /poki/pane") { _ in
+            (200, ["value": ["identity": "right/duo", "bundleId": "local.legacy", "otherBundleId": "local.other", "x": 482, "y": 0]])
+        }
+        wda.set("GET /wda/screen") { _ in (200, ["value": ["screenSize": ["width": 469, "height": 669]]]) }
+        let front = LockedBox("local.legacy")
+        wda.set("GET /wda/activeAppInfo") { _ in (200, ["value": ["bundleId": .string(front.value)]]) }
+        let typed = LockedBox(false)
+        wda.set("POST /wda/keys") { _ in typed.value = true; return (200, ["value": .null]) }
+        wda.set("GET /source") { _ in
+            (200, ["value": .string("""
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeTextField label="Unpositioned field" value="\(typed.value ? "Duo" : "")" x="40" y="50" width="80" height="30" keyboardFocused="true"/>
+                <XCUIElementTypeKeyboard/>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """)])
+        }
+        host.texts.value = [RecognizedText(text: "Search", box: Rect(x: 0.5, y: 0.1, width: 0.1, height: 0.1))]
+        let read = await core.call("look", ["pane": "right"], session: "workspace-owner")
+        XCTAssertTrue(read.text.contains("read from the picture"), read.text)
+        XCTAssertFalse(read.text.contains("Unpositioned field"), read.text)
+        let typedResult = await core.call("do", ["actions": [["type": "Duo"]]], session: "workspace-owner")
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1, typedResult.text)
+        XCTAssertTrue(typedResult.text.contains("the field now reads \"Duo\""), typedResult.text)
+        front.value = "local.other"
+        let changed = await core.call("look", ["pane": "right"], session: "workspace-owner")
+        XCTAssertTrue(changed.isError, changed.text)
+        XCTAssertNil(changed.jpeg)
+    }
+
+    func testLegacyPasswordApprovalSurvivesOCRWithoutRevealingTypedText() async {
+        for useRef in [false, true] {
+            let (core, wda, host) = makeCore {
+                $0.treeFormat = "xml"
+                $0.approvalWait = 0
+                $0.approvalMode = { .confirm }
+            }
+            wda.set("GET /source") { _ in
+                (200, ["value": "<AppiumAUT screenCoordinates=\"unavailable\"><XCUIElementTypeApplication><XCUIElementTypeSecureTextField label=\"Password\" keyboardFocused=\"true\"/></XCUIElementTypeApplication></AppiumAUT>"])
+            }
+            host.texts.value = [RecognizedText(text: "Password", box: Rect(x: 0.1, y: 0.2, width: 0.3, height: 0.05))]
+            let read = await core.call("look", [:])
+            XCTAssertTrue(read.text.contains("1 Text \"Password\""), read.text)
+            let testText = "synthetic-secret-value"
+            var action: [String: JSON] = ["type": .string(testText)]
+            if useRef { action["ref"] = 1 }
+            let result = await core.call("do", ["actions": .array([.object(action)])])
+            XCTAssertTrue(result.text.contains("approval_required"), result.text)
+            XCTAssertEqual(core.pendingApproval?.summary, "Type \(testText.count) hidden characters")
+            XCTAssertFalse(result.text.contains(testText))
+            XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty)
+        }
+    }
+
+    func testLegacyClearUsesOnlyTheReadableFocusedField() async {
+        let (core, wda, host) = makeCore { $0.treeFormat = "xml" }
+        let value = LockedBox("oldA")
+        let focus = LockedBox(true)
+        wda.set("GET /source") { _ in
+            (200, ["value": .string("""
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeTextField label="First field" value="\(value.value)" keyboardFocused="\(focus.value)"/>
+                <XCUIElementTypeTextField label="Second field" value="longer value"/>
+                <XCUIElementTypeKeyboard/>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """)])
+        }
+        wda.set("POST /wda/keys") { body in
+            for key in body?["value"]?.array?.compactMap(\.string) ?? [] {
+                if key == "\u{8}" { value.update { if !$0.isEmpty { $0.removeLast() } } }
+                else { value.update { $0.append(contentsOf: key) } }
+            }
+            return (200, ["value": .null])
+        }
+        host.texts.value = [RecognizedText(text: "First field", box: Rect(x: 0.1, y: 0.2, width: 0.3, height: 0.05))]
+        _ = await core.call("look", [:])
+        let replaced = await core.call("do", ["actions": [["type": "new", "ref": 1, "clear": true]]])
+        XCTAssertEqual(value.value, "new", replaced.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        focus.value = false
+        let refused = await core.call("do", ["actions": [["type": "other", "clear": true]]])
+        XCTAssertTrue(refused.text.contains("clear needs a readable focused field"), refused.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+    }
+
+    func testLegacyClearAcceptsEmptyFocusedFieldWithoutValueAttribute() async {
+        let (core, wda, host) = makeCore { $0.treeFormat = "xml" }
+        let typedValue = LockedBox<String?>(nil)
+        wda.set("GET /source") { _ in
+            let valueAttr = typedValue.value.map { " value=\"\($0)\"" } ?? ""
+            return (200, ["value": .string("""
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeTextField label="Search"\(valueAttr) keyboardFocused="true"/>
+                <XCUIElementTypeKeyboard/>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """)])
+        }
+        wda.set("POST /wda/keys") { body in
+            for key in body?["value"]?.array?.compactMap(\.string) ?? [] {
+                if key == "\u{8}" {
+                    typedValue.update { current in
+                        guard var text = current, !text.isEmpty else { return }
+                        text.removeLast()
+                        current = text
+                    }
+                } else {
+                    typedValue.update { $0 = ($0 ?? "") + key }
+                }
+            }
+            return (200, ["value": .null])
+        }
+        host.texts.value = [RecognizedText(text: "Search", box: Rect(x: 0.1, y: 0.2, width: 0.3, height: 0.05))]
+        _ = await core.call("look", [:])
+        let result = await core.call("do", ["actions": [["type": "Duo", "clear": true]]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(typedValue.value, "Duo", result.text)
+        XCTAssertEqual(wda.bodies("POST /wda/keys").count, 1)
+        let sentKeys = wda.bodies("POST /wda/keys").first?["value"]?.array?.compactMap(\.string) ?? []
+        XCTAssertFalse(sentKeys.contains("\u{8}"), "empty focused field should send zero deletes")
+    }
+
+    func testLegacyOCRPreservesDeleteApprovalContext() async {
+        let guardedCases: [(name: String, xml: String)] = [
+            (
+                "Alert dialog",
+                """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeAlert>
+                <XCUIElementTypeStaticText label="Delete this photo?"/>
+                <XCUIElementTypeButton label="Cancel"/>
+                <XCUIElementTypeButton label="Delete"/>
+                </XCUIElementTypeAlert>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """
+            ),
+            (
+                "Popup menu",
+                """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeMenu>
+                <XCUIElementTypeMenuItem label="Delete"/>
+                </XCUIElementTypeMenu>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """
+            ),
+            (
+                "Custom confirmation dialog",
+                """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeOther>
+                <XCUIElementTypeStaticText label="Are you sure you want to delete this?"/>
+                <XCUIElementTypeButton label="Cancel"/>
+                <XCUIElementTypeButton label="Delete"/>
+                </XCUIElementTypeOther>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """
+            ),
+        ]
+        for testCase in guardedCases {
+            for byPoint in [false, true] {
+                let (core, wda, host) = makeCore {
+                    $0.treeFormat = "xml"
+                    $0.approvalWait = 0
+                    $0.approvalMode = { .confirm }
+                }
+                wda.set("GET /source") { _ in (200, ["value": .string(testCase.xml)]) }
+                host.texts.value = [RecognizedText(text: "Delete", box: Rect(x: 0.2, y: 0.4, width: 0.2, height: 0.1))]
+                let look = await core.call("look", [:])
+                XCTAssertTrue(look.text.contains("1 Text \"Delete\""), "\(testCase.name): \(look.text)")
+                let action: JSON = byPoint ? ["tap": [117, 380]] : ["tap": 1]
+                let result = await core.call("do", ["actions": [action]])
+                XCTAssertTrue(result.text.contains("approval_required"), "\(testCase.name) byPoint=\(byPoint): \(result.text)")
+                XCTAssertTrue(core.pendingApproval?.reason.contains("deleting") == true, "\(testCase.name) byPoint=\(byPoint): \(core.pendingApproval?.reason ?? "nil")")
+                XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "\(testCase.name) byPoint=\(byPoint)")
+            }
+        }
+
+        // Ordinary page Delete without a dialog or menu still does not prompt for approval.
+        let (pageCore, pageWDA, pageHost) = makeCore {
+            $0.treeFormat = "xml"
+            $0.approvalWait = 0
+            $0.approvalMode = { .confirm }
+        }
+        pageWDA.set("GET /source") { _ in
+            (200, ["value": """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeWindow><XCUIElementTypeButton label="Delete"/></XCUIElementTypeWindow>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """])
+        }
+        pageHost.texts.value = [RecognizedText(text: "Delete", box: Rect(x: 0.2, y: 0.4, width: 0.2, height: 0.1))]
+        _ = await pageCore.call("look", [:])
+        let allowed = await pageCore.call("do", ["actions": [["tap": 1]]])
+        XCTAssertFalse(allowed.text.contains("approval_required"), allowed.text)
+        XCTAssertEqual(pageWDA.bodies("POST /wda/tap").count, 1)
+    }
+
+    func testLegacyOCRPointTapRequiresApprovalForPaymentTarget() async {
+        for byPoint in [false, true] {
+            let (core, wda, host) = makeCore {
+                $0.treeFormat = "xml"
+                $0.approvalWait = 0
+                $0.approvalMode = { .confirm }
+            }
+            wda.set("GET /source") { _ in
+                (200, ["value": """
+                    <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                    <XCUIElementTypeWindow><XCUIElementTypeButton label="Pay"/></XCUIElementTypeWindow>
+                    </XCUIElementTypeApplication></AppiumAUT>
+                    """])
+            }
+            host.texts.value = [RecognizedText(text: "Pay", box: Rect(x: 0.2, y: 0.4, width: 0.2, height: 0.1))]
+            let look = await core.call("look", [:])
+            XCTAssertTrue(look.text.contains("1 Text \"Pay\""), look.text)
+            let action: JSON = byPoint ? ["tap": [117, 380]] : ["tap": 1]
+            let result = await core.call("do", ["actions": [action]])
+            XCTAssertTrue(result.text.contains("approval_required"), "byPoint=\(byPoint): \(result.text)")
+            XCTAssertTrue(core.pendingApproval?.reason.contains("payment") == true, "byPoint=\(byPoint): \(core.pendingApproval?.reason ?? "nil")")
+            XCTAssertEqual(core.pendingApproval?.summary, "Tap “Pay”")
+            XCTAssertTrue(wda.bodies("POST /wda/tap").isEmpty, "byPoint=\(byPoint)")
+        }
+    }
+
+    func testLegacyReturnSubmitsPasswordRequiresApprovalWithRetainedSecureContext() async {
+        let batches: [(name: String, actions: [JSON])] = [
+            ("tap OCR ref then return", [["tap": 1], ["key": "return"]]),
+            ("tap OCR point then return", [["tap": [98, 190]], ["key": "return"]]),
+            ("standalone return on secure screen", [["key": "return"]]),
+        ]
+        for batch in batches {
+            let (core, wda, host) = makeCore {
+                $0.treeFormat = "xml"
+                $0.approvalWait = 0
+                $0.approvalMode = { .confirm }
+            }
+            wda.set("GET /source") { _ in
+                (200, ["value": """
+                    <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                    <XCUIElementTypeSecureTextField label="Password" keyboardFocused="true"/>
+                    </XCUIElementTypeApplication></AppiumAUT>
+                    """])
+            }
+            host.texts.value = [RecognizedText(text: "Password", box: Rect(x: 0.1, y: 0.2, width: 0.3, height: 0.05))]
+            let look = await core.call("look", [:])
+            XCTAssertTrue(look.text.contains("1 Text \"Password\""), "\(batch.name): \(look.text)")
+            let result = await core.call("do", ["actions": .array(batch.actions)])
+            XCTAssertTrue(result.text.contains("approval_required"), "\(batch.name): \(result.text)")
+            XCTAssertEqual(core.pendingApproval?.reason, "submitting a password field", batch.name)
+            XCTAssertTrue(wda.bodies("POST /wda/keys").isEmpty, batch.name)
+        }
+    }
+
+    func testLegacyPathCoordinateTapRequiresApprovalAndFailsClosedWithoutOCR() async {
+        // Path point tap over an OCR Pay target must stop for owner approval instead of dispatching.
+        let (payCore, payWDA, payHost) = makeCore {
+            $0.treeFormat = "xml"
+            $0.approvalWait = 0
+            $0.approvalMode = { .confirm }
+        }
+        payWDA.set("GET /source") { _ in
+            (200, ["value": """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeWindow><XCUIElementTypeButton label="Pay"/></XCUIElementTypeWindow>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """])
+        }
+        payHost.texts.value = [RecognizedText(text: "Pay", box: Rect(x: 0.2, y: 0.4, width: 0.2, height: 0.1))]
+        let payPath = await payCore.call("do", ["actions": [["path": ["goal": "pay", "steps": [["tap": [117, 380]]]]]]])
+        XCTAssertTrue(payPath.text.contains("approval") && payPath.text.contains("payment"), payPath.text)
+        XCTAssertTrue(payWDA.bodies("POST /wda/tap").isEmpty)
+
+        // Path point tap over a confirmation dialog Delete target must also stop for approval.
+        let (deleteCore, deleteWDA, deleteHost) = makeCore {
+            $0.treeFormat = "xml"
+            $0.approvalWait = 0
+            $0.approvalMode = { .confirm }
+        }
+        deleteWDA.set("GET /source") { _ in
+            (200, ["value": """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeAlert>
+                <XCUIElementTypeStaticText label="Delete item?"/>
+                <XCUIElementTypeButton label="Cancel"/>
+                <XCUIElementTypeButton label="Delete"/>
+                </XCUIElementTypeAlert>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """])
+        }
+        deleteHost.texts.value = [RecognizedText(text: "Delete", box: Rect(x: 0.2, y: 0.4, width: 0.2, height: 0.1))]
+        let deletePath = await deleteCore.call("do", ["actions": [["path": ["goal": "delete", "steps": [["tap": [117, 380]]]]]]])
+        XCTAssertTrue(deletePath.text.contains("approval") && deletePath.text.contains("deleting"), deletePath.text)
+        XCTAssertTrue(deleteWDA.bodies("POST /wda/tap").isEmpty)
+
+        // When OCR verification is unavailable on a compatibility screen, refuse the coordinate tap.
+        let (noOCRCore, noOCRWDA, noOCRHost) = makeCore {
+            $0.treeFormat = "xml"
+            $0.approvalWait = 0
+            $0.approvalMode = { .confirm }
+        }
+        noOCRWDA.set("GET /source") { _ in
+            (200, ["value": """
+                <AppiumAUT screenCoordinates="unavailable"><XCUIElementTypeApplication>
+                <XCUIElementTypeWindow><XCUIElementTypeButton label="Pay"/></XCUIElementTypeWindow>
+                </XCUIElementTypeApplication></AppiumAUT>
+                """])
+        }
+        noOCRHost.texts.value = nil
+        let refused = await noOCRCore.call("do", ["actions": [["path": ["goal": "pay", "steps": [["tap": [117, 380]]]]]]])
+        XCTAssertTrue(refused.text.contains("could not be checked for approval"), refused.text)
+        XCTAssertTrue(noOCRWDA.bodies("POST /wda/tap").isEmpty)
+    }
+
+    func testLegacyWaitUntilFindsAndLosesTextWithoutCoordinates() async {
+        let (core, wda, _) = makeCore { $0.treeFormat = "xml" }
+        let label = LockedBox("Ready")
+        wda.set("GET /source") { _ in
+            (200, ["value": .string("<AppiumAUT screenCoordinates=\"unavailable\"><XCUIElementTypeApplication><XCUIElementTypeStaticText label=\"\(label.value)\"/></XCUIElementTypeApplication></AppiumAUT>")])
+        }
+        let appeared = await core.call("do", ["actions": [["wait_until": ["text": "Ready", "ms": 300]]]])
+        XCTAssertTrue(appeared.text.contains("\"Ready\" appeared after"), appeared.text)
+        label.value = "Done"
+        let gone = await core.call("do", ["actions": [["wait_until": ["text": "Ready", "gone": true, "ms": 300]]]])
+        XCTAssertTrue(gone.text.contains("\"Ready\" was gone after"), gone.text)
+    }
+
     func testDuoCompanionKeepsOnlyThePictureProvenForTheSelectedPaneWhenAccessibilityIsHeld() async {
         let (core, wda, _) = makeCore(FakeWDA(dynamicSize: true, paneSelection: true)) { $0.humanize = false }
         wda.set("POST /poki/pane") { _ in
