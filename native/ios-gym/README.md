@@ -29,10 +29,12 @@ each screen once.
 ## Scorecard
 
 `check/GymScorecard.swift` is the gym driver: it drives look/do through every scenario, the system
-apps (Settings, Contacts or Notes, Safari, Photos), an approval (Pay now), `finish: true` and a few
-faults (a look during a long action, the runner killed and restarted, a scroll_to for text that is
-not there). A run fails on any call that hangs, answers without a picture, misses its budget, or
-does not move the screen. It runs on both automation paths in `.github/workflows/ios-gym.yml`:
+apps (Settings, Contacts or Notes, Safari against a local `127.0.0.1` loopback server, Photos), an
+approval (Pay now), `finish: true` and a few faults (a look during a long action, the runner killed
+and restarted, a scroll_to for text that is not there). A run fails on any call that hangs, answers
+without a picture (except `skills`, `routines`, and `look` when Poki itself is in front, where PokiCore omits
+the screenshot to keep the owner's chat private), misses its budget, or does not move the screen.
+It runs on both automation paths in `.github/workflows/ios-gym.yml`:
 
 - job `scorecard` (the runner path): `check/main.swift` builds it as one more executable of the
   PokiCore package from the same branch and calls PokiCore's MCP handler against a real

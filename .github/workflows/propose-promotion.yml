@@ -78,7 +78,7 @@ jobs:
             echo
             if [ "$channel" = beta ]; then
               echo "- Gate: CHANGELOG.md has a dated entry for this version (promotion-gate.yml)."
-              echo "- Gate: the Gym on this commit, with no more failures than the last beta (promotion-gate.yml)."
+              echo "- Gate: the Gym on this commit, with zero failures on both scorecards (promotion-gate.yml)."
               echo "- Also moves \`native/ios-app/VERSION\` on (see the diff), so later alphas sort above this beta in Poki Setup."
               echo "- Merging publishes the prerelease and creates \`release/X.Y\` on the first beta of a version."
             else

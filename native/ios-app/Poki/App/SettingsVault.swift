@@ -38,6 +38,7 @@ enum SettingsVault {
 
     /// Saves a second after the last change to UserDefaults, and once now.
     static func watch() {
+        guard LaunchMode.current != .xctest else { return }
         save()
         guard observer == nil else { return }
         observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in

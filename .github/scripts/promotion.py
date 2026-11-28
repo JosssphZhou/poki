@@ -13,7 +13,7 @@ PR (gate) and published when it merges into main (publish-promotion.yml).
                                                                     exit 1 if CHANGELOG.md lacks this version
   promotion.py soak                                                 exit 1 if a stable's beta is too new
   promotion.py gym-run <head sha> [exclude run id]                  newest completed gate run with scorecards
-  promotion.py gym <baseline dir> <new dir>                         exit 1 if the Gym got worse
+  promotion.py gym <scorecard dir>                                  exit 1 if either Gym scorecard has failures
 
 Needs gh (GH_TOKEN, GH_REPO). Prints GitHub Actions outputs as key=value lines on stdout.
 """
@@ -354,18 +354,17 @@ def failures(path):
     return int(m.group(1)) if m else None
 
 
-def gym(base_dir, new_dir):
-    worse = []
+def gym(scorecard_dir):
+    bad = []
     for name in ("gym-scorecard.txt", "gym-scorecard-inprocess.txt"):
-        new = failures(Path(new_dir) / name)
-        base = failures(Path(base_dir) / name)
-        print(f"{name}: {new} failures (last beta: {'none' if base is None else base})")
-        if new is None:
-            worse.append(f"{name} has no scorecard")
-        elif base is not None and new > base:
-            worse.append(f"{name}: {new} failures, the last beta had {base}")
-    if worse:
-        sys.exit("The Gym got worse: " + "; ".join(worse))
+        count = failures(Path(scorecard_dir) / name)
+        print(f"{name}: {'missing' if count is None else f'{count} failures'}")
+        if count is None:
+            bad.append(f"{name} has no scorecard")
+        elif count > 0:
+            bad.append(f"{name}: {count} failures (must be 0)")
+    if bad:
+        sys.exit("The Gym failed: " + "; ".join(bad))
 
 
 if __name__ == "__main__":
