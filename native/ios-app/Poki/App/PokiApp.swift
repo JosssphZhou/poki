@@ -34,6 +34,7 @@ struct PokiApp: App {
         // Only a dedicated UI-test launch flag installs the disposable Memory
         // source records; production launches never write synthetic conversations.
         MemorySourceUITestFixture.installIfRequested()
+        ComposerDraftUITestFixture.installIfRequested()
         #endif
         // Whether this phone gets the first run: not when an earlier version was used here. Read before
         // anything this version writes, like the line above.
