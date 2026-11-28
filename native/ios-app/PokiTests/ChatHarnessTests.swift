@@ -3446,10 +3446,11 @@ final class ChatHarnessTests: XCTestCase {
         ])
         let chat = chat(on: server, kind: .poki)
         chat.newConversation()
+        let originalApp = AskPoki.app
         let originalChat = AskPoki.chat
-        AskPoki.chat = chat
+        AskPoki.install(app: try XCTUnwrap(app), chat: chat)
         defer {
-            AskPoki.chat = originalChat
+            if let originalApp, let originalChat { AskPoki.install(app: originalApp, chat: originalChat) }
             if chat.running { chat.stop() }
             QuestionNotice.cancel()
             SessionStore.shared.delete(chat.sessionID)
