@@ -6,6 +6,11 @@ name: iOS app
 on:
   # Manual only (Actions > Run workflow), so nothing runs on every push in this repository.
   workflow_dispatch:
+    inputs:
+      app_tests:
+        description: 'XCTest class or method names, comma-separated; All runs the complete workflow'
+        type: string
+        default: All
   # The release workflow builds the app from the tagged commit with the release's version.
   workflow_call:
     inputs:
@@ -21,6 +26,7 @@ jobs:
   # Poki's in-process automation code on a fresh simulator: read, tap, type and read back; open,
   # switch and end apps; and the idle cycle (close the session, refuse a touch, open a new one).
   inprocess:
+    if: inputs.app_tests == '' || inputs.app_tests == 'All'
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
@@ -54,7 +60,7 @@ jobs:
   # endpoint; the owner's task runs through the real pi loop (plan, open Settings, look, finish), the
   # session is saved, then an outside agent's ask_poki hands a second task to Poki's agent.
   agent-chat:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && (inputs.app_tests == '' || inputs.app_tests == 'All')
     # Poki uses iOS 27 SDK APIs (WKNavigationAction.mainFrameNavigation) and needs Xcode 27, matching build-ipa.
     runs-on: xcode-27
     timeout-minutes: 75
@@ -314,9 +320,11 @@ jobs:
           (nm -g native/launcher/target/aarch64-apple-ios/release/libpoki_launcher.a 2>/dev/null | grep -E '_poki_(launcher|pair|string)_' | sort -u) || echo "nm listed no poki_ symbols"
 
       - name: Local connection tests
+        if: inputs.app_tests == '' || inputs.app_tests == 'All'
         run: swift test --package-path native/ios/PokiLoopback
 
       - name: PokiCore tests
+        if: inputs.app_tests == '' || inputs.app_tests == 'All'
         timeout-minutes: 15
         run: |
           # Vision-backed display confirmation has a bounded deadline; avoid competing test processes.
@@ -344,6 +352,7 @@ jobs:
           xcodegen generate --spec native/ios-app/project-external.yml
 
       - name: Build and package both connection options (unsigned)
+        if: inputs.app_tests == '' || inputs.app_tests == 'All'
         env:
           RELEASE_VERSION: ${{ inputs.version }}
           RELEASE_BUILD: ${{ inputs.build }}
@@ -420,6 +429,7 @@ jobs:
       - name: Simulator smoke test
         env:
           SIM_CACHE_HIT: ${{ steps.sim-cache.outputs.cache-hit }}
+          APP_TESTS: ${{ inputs.app_tests || 'All' }}
         run: |
           set -euo pipefail
           APP=build/sim/Build/Products/Debug-iphonesimulator/Poki.app
@@ -459,6 +469,7 @@ jobs:
           } >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" "$APP"
+          if [ "$APP_TESTS" != All ]; then exit 0; fi
           mkdir -p out/simulator
           xcrun simctl launch "$UDID" nz.zheha.poki
           # Long enough for the first-run disk image download (about 20 MB) to finish.
@@ -527,6 +538,8 @@ jobs:
       # refusal and acceptance, the agent's view of the runner.
       - name: App unit tests (simulator)
         timeout-minutes: 30
+        env:
+          APP_TESTS: ${{ inputs.app_tests || 'All' }}
         run: |
           set -euo pipefail
           trap 'xcrun simctl shutdown "$UDID" || true; xcrun simctl delete "$UDID" || true' EXIT
@@ -544,15 +557,32 @@ jobs:
           # simctl privacy cannot set notification or speech-recognition permission.
           command -v applesimutils >/dev/null || brew install wix/brew/applesimutils
           applesimutils --byId "$UDID" --bundle nz.zheha.poki --setPermissions "notifications=YES,speech=NO"
+          test_args=(-AppleLanguages "(en)" -AppleLocale en_US)
+          if [ "$APP_TESTS" != All ]; then test_args+=(-XCTest "$APP_TESTS"); fi
           launch_status=0
           SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$X/usr/lib/libXCTestBundleInject.dylib" \
           SIMCTL_CHILD_XCTestBundlePath="$APP/PlugIns/PokiTests.xctest" \
           SIMCTL_CHILD_POKI_SIMULATOR_DEVELOPER_DIR="$X" \
           SIMCTL_CHILD_DYLD_FRAMEWORK_PATH="$X/Library/Frameworks:$X/Library/PrivateFrameworks" \
           SIMCTL_CHILD_DYLD_LIBRARY_PATH="$X/usr/lib" \
-            xcrun simctl launch --console-pty "$UDID" nz.zheha.poki -AppleLanguages "(en)" -AppleLocale en_US \
-            2>&1 | tee build/tests.log | grep --line-buffered -E "Test Case|Test Suite|error:|Executed" || launch_status=$?
-          if ! grep -q "Test Suite 'All tests' passed" build/tests.log; then
+            xcrun simctl launch --console-pty "$UDID" nz.zheha.poki "${test_args[@]}" \
+            2>&1 | tee build/tests.log | {
+              completed=0
+              while IFS= read -r line; do
+                case "$line" in *"Test Case"*|*"Test Suite"*|*"error:"*|*"Executed"*) printf '%s\n' "$line" ;; esac
+                case "$line" in
+                  "Test Suite 'All tests' passed at "*|"Test Suite 'All tests' failed at "*|\
+                  "Test Suite 'Selected tests' passed at "*|"Test Suite 'Selected tests' failed at "*) completed=1 ;;
+                esac
+                # Bundle injection leaves the host running after XCTest's final summary.
+                if [ "$completed" = 1 ] && [[ "$line" == *"Executed "* ]]; then
+                  xcrun simctl terminate "$UDID" nz.zheha.poki >/dev/null 2>&1 || true
+                  break
+                fi
+              done
+            } || launch_status=$?
+          if ! grep -Eq "^Test Suite '(All|Selected) tests' passed at " build/tests.log \
+            || ! grep -Eq 'Executed [1-9][0-9]* tests?,' build/tests.log; then
             echo "PokiTests did not report success (wrapper exited $launch_status). Failures:"
             grep -E "error:|failed \(" build/tests.log | tail -80 || true
             echo "--- Console tail"
@@ -563,6 +593,7 @@ jobs:
       # Shut down the iPhone simulator before booting the iPad simulator so the 3-core runner never
       # runs two iOS 27 simulators at once.
       - name: Simulator smoke test (iPad)
+        if: inputs.app_tests == '' || inputs.app_tests == 'All'
         run: |
           set -euo pipefail
           APP=build/sim/Build/Products/Debug-iphonesimulator/Poki.app
@@ -587,6 +618,7 @@ jobs:
           [ "$crashed" = 0 ] || exit 1
 
       - uses: actions/upload-artifact@v4
+        if: inputs.app_tests == '' || inputs.app_tests == 'All'
         with:
           name: Poki-unsigned
           path: out/
