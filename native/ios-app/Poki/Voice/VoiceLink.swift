@@ -10,6 +10,7 @@ protocol VoiceConnection: AnyObject, Sendable {
     @MainActor func useOpeningCapture(_ capture: OpeningVoiceCapture?)
     @MainActor func ensureOpeningCaptureRunning(_ capture: OpeningVoiceCapture) -> Bool
     func hasRemoteSpeech() async -> Bool
+    var maxDataChannelMessageBytes: Int? { get }
     @discardableResult func send(_ event: [String: Any]) -> Bool
     func setRemoteVolume(_ value: Double)
     @MainActor func diagnose(_ write: @escaping @MainActor (String) -> Void)
@@ -22,6 +23,7 @@ extension VoiceConnection {
     func useOpeningCapture(_ capture: OpeningVoiceCapture?) {}
     @MainActor func ensureOpeningCaptureRunning(_ capture: OpeningVoiceCapture) -> Bool { capture.audio.ensureRunning() }
     func hasRemoteSpeech() async -> Bool { false }
+    var maxDataChannelMessageBytes: Int? { nil }
 }
 
 /// The microphone and speaker are WebRTC tracks. The `oai-events` data channel carries JSON events.
@@ -66,12 +68,27 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     @MainActor private var diagnostics: (@MainActor (String) -> Void)?
     /// WebRTC calls the delegate methods on its own threads and the app calls in from the main actor,
     /// so these three are only touched under `lock`.
+    static let defaultMaxMessageBytes = 65_536
+
     private let lock = NSLock()
     private var remoteAudio: RTCAudioTrack?
     private var volume = 1.0
     private var closing = false
     /// Until the connection is open, a failure is connect's to report (it may try again), not a loss.
     private var opened = false
+    private var negotiatedMaxMessageBytes: Int?
+
+    var maxDataChannelMessageBytes: Int? {
+        lock.withLock { negotiatedMaxMessageBytes }
+    }
+
+    static func parseMaxMessageSize(in sdp: String) -> Int? {
+        guard let range = sdp.range(of: #"a=max-message-size:\d+"#, options: .regularExpression),
+              let value = Int(sdp[range].dropFirst(19)), value > 0 else {
+            return nil
+        }
+        return value
+    }
 
     init(onEvent: @escaping @MainActor ([String: Any]) -> Void, onClosed: @escaping @MainActor (String) -> Void) {
         self.onEvent = onEvent
@@ -198,7 +215,9 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         }
         let answer = try await exchange(offer.sdp)
         // The largest event the data channel takes (64 KiB when the answer names none): a screenshot must fit.
-        let size = answer.range(of: #"a=max-message-size:\d+"#, options: .regularExpression).map { answer[$0].dropFirst(19) } ?? "none named"
+        let parsedSize = Self.parseMaxMessageSize(in: answer)
+        lock.withLock { negotiatedMaxMessageBytes = parsedSize }
+        let size = parsedSize.map(String.init) ?? "none named"
         await MainActor.run { AppLog.shared.add("voice", "data channel max-message-size: \(size)") }
         try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
             peer.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: answer)) { error in if let error { done.resume(throwing: error) } else { done.resume() } }
@@ -274,6 +293,13 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
     @discardableResult
     func send(_ event: [String: Any]) -> Bool {
         guard let channel, channel.readyState == .open, let data = try? JSONSerialization.data(withJSONObject: event) else { return false }
+        let limit = lock.withLock { negotiatedMaxMessageBytes } ?? Self.defaultMaxMessageBytes
+        if data.count > limit {
+            let type = event["type"] as? String ?? "event"
+            let size = data.count
+            Task { @MainActor in AppLog.shared.add("voice", "data channel refused \(type): \(size) bytes exceeds limit \(limit)") }
+            return false
+        }
         return channel.sendData(RTCDataBuffer(data: data, isBinary: false))
     }
 
@@ -288,7 +314,10 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
 
     @MainActor
     func close() {
-        lock.withLock { closing = true }
+        lock.withLock {
+            closing = true
+            negotiatedMaxMessageBytes = nil
+        }
         channel?.close()
         peer?.close()
         channel = nil

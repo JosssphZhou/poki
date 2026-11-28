@@ -140,6 +140,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     @MainActor var remoteSpeech = false
     @MainActor var failNetworkPath = false
     var failSend = false
+    var shouldSend: (([String: Any]) -> Bool)?
     @MainActor var openingCaptureRunning: Bool? = true
     @MainActor private(set) var transportOpened = false
     @MainActor private(set) var attachedOpeningCapture: OpeningVoiceCapture?
@@ -180,6 +181,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     }
     func send(_ event: [String: Any]) -> Bool {
         if failSend { return false }
+        if let shouldSend, !shouldSend(event) { return false }
         sent.append(event)
         if let onSend {
             Task { @MainActor in onSend(event) }
@@ -4351,8 +4353,8 @@ extension VoiceModelTests {
         )
     }
 
-    /// The screenshot behind a step reaches the model as an image right after the step's output and before
-    /// the answer is asked for (a function_call_output carries text only); the next step's replaces it.
+    /// The screenshot reaches the model before the step's completion receipt and response request;
+    /// the next step replaces it.
     func testWhatAStepSawReachesTheModelAsAnImage() async {
         let h = Harness(phoneTool: { _, arguments in ("app: Photos", false, Data(arguments.utf8)) })
         await h.talk()
@@ -4376,8 +4378,8 @@ extension VoiceModelTests {
         let asks = sent.indices.filter { sent[$0]["type"] as? String == "response.create" }
         XCTAssertEqual(images.map(\.url), ["data:image/jpeg;base64,e30=", "data:image/jpeg;base64,eyJmdWxsIjp0cnVlfQ=="])
         guard images.count == 2, asks.count == 2 else { return XCTFail("two screenshots and two answers asked for, got \(images.count) and \(asks.count)") }
-        XCTAssertTrue(output("c1") < images[0].index && images[0].index < asks[0])
-        XCTAssertTrue(output("c2") < images[1].index && images[1].index < asks[1])
+        XCTAssertTrue(images[0].index < output("c1") && output("c1") < asks[0])
+        XCTAssertTrue(images[1].index < output("c2") && output("c2") < asks[1])
         let deleted = sent.filter { $0["type"] as? String == "conversation.item.delete" }.compactMap { $0["item_id"] as? String }
         XCTAssertEqual(deleted, [images[0].id], "the earlier screenshot leaves the conversation")
     }
@@ -5176,5 +5178,581 @@ extension VoiceModelTests {
         VoiceReadyCue.play()
 
         XCTAssertTrue(session.allowHapticsAndSystemSoundsDuringRecording, "the cue plays while the microphone is on")
+    }
+
+    private static func compressibleOversizedJPEG() throws -> Data {
+        let width = 900
+        let height = 1600
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 4
+                let stripe = ((x / 12) + (y / 12)) % 2 == 0
+                pixels[offset] = UInt8((x * 255) / width)
+                pixels[offset + 1] = UInt8((y * 255) / height)
+                pixels[offset + 2] = stripe ? 220 : 40
+            }
+        }
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(pixels) as CFData))
+        let image = try XCTUnwrap(CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        ))
+        return try XCTUnwrap(UIImage(cgImage: image).jpegData(compressionQuality: 1.0))
+    }
+
+    private static func sentInputImages(in events: [[String: Any]]) -> [(index: Int, id: String, url: String)] {
+        events.indices.compactMap { index in
+            let event = events[index]
+            guard let item = event["item"] as? [String: Any], item["role"] as? String == "user",
+                  let part = (item["content"] as? [[String: Any]])?.first,
+                  part["type"] as? String == "input_image" else { return nil }
+            return (index: index, id: item["id"] as? String ?? "", url: part["image_url"] as? String ?? "")
+        }
+    }
+
+    func testRealtimeScreenshotSendFailureHoldsCompletionAndRetriesImageOnly() async {
+        var toolRuns = 0
+        let h = Harness(phoneTool: { _, _ in
+            toolRuns += 1
+            return (
+                "app: Messages (com.apple.MobileSMS)   read: 2026-11-27T01:00:00Z (80 ms)\ndid: tap 1 (sent)\n1 StaticText \"Draft\" (10,20,100,20)",
+                false,
+                Data("fresh-screen-bytes".utf8)
+            )
+        })
+        await h.talk()
+        var imageAttempts = 0
+        h.link.shouldSend = { event in
+            if let item = event["item"] as? [String: Any],
+               let part = (item["content"] as? [[String: Any]])?.first,
+               part["type"] as? String == "input_image" {
+                imageAttempts += 1
+                return imageAttempts > 1
+            }
+            return true
+        }
+        h.link.play(
+            ["type": "response.created", "response": ["id": "r1"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-fail-img", "name": "do", "arguments": #"{"actions":[{"tap":1}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r1"]]
+        )
+        await h.time.settle()
+
+        let outputsBeforeRetry = h.link.sent.filter { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-fail-img" }
+        let asksBeforeRetry = h.link.sent.indices.filter { h.link.sent[$0]["type"] as? String == "response.create" }
+        XCTAssertEqual(toolRuns, 1)
+        XCTAssertEqual(outputsBeforeRetry.count, 0, "visual tool output must wait for its image")
+        XCTAssertEqual(asksBeforeRetry.count, 0, "model must not announce completion while screenshot delivery failed")
+        let failImgBefore = h.voice.calls.first(where: { $0.id == "c-fail-img" })
+        XCTAssertEqual(failImgBefore?.delivered, false)
+        XCTAssertEqual(failImgBefore?.toolDelivery, .pending)
+        XCTAssertEqual(failImgBefore?.result?.status, .incomplete)
+        XCTAssertNil(failImgBefore?.result?.evidenceID)
+        XCTAssertEqual(failImgBefore?.observationDelivery, .failed(reason: "data channel send failed", retryable: true))
+        XCTAssertNotNil(failImgBefore?.screenDataURL)
+
+        await h.time.advance(1.0)
+        let outputsAfterRetry = h.link.sent.filter { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-fail-img" }
+        let imagesAfterRetry = Self.sentInputImages(in: h.link.sent)
+        let asksAfterRetry = h.link.sent.indices.filter { h.link.sent[$0]["type"] as? String == "response.create" }
+        XCTAssertEqual(toolRuns, 1, "image retry must not re-send device input")
+        XCTAssertEqual(outputsAfterRetry.count, 1, "image retry must not repeat function_call_output")
+        XCTAssertEqual(imagesAfterRetry.count, 1)
+        XCTAssertEqual(asksAfterRetry.count, 1)
+        if let imageIndex = imagesAfterRetry.first?.index, let askIndex = asksAfterRetry.first,
+           let outputIndex = h.link.sent.firstIndex(where: { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-fail-img" }) {
+            let output = (h.link.sent[outputIndex]["item"] as? [String: Any])?["output"] as? String ?? ""
+            XCTAssertTrue(output.contains("status=verified_completed"), output)
+            XCTAssertFalse(output.contains("evidence=none"), output)
+            XCTAssertLessThan(imageIndex, outputIndex)
+            XCTAssertLessThan(outputIndex, askIndex)
+        }
+        let failImgAfter = h.voice.calls.first(where: { $0.id == "c-fail-img" })
+        XCTAssertEqual(failImgAfter?.delivered, true)
+        XCTAssertEqual(failImgAfter?.toolDelivery, .delivered)
+        XCTAssertEqual(failImgAfter?.observationDelivery, .delivered)
+        XCTAssertEqual(failImgAfter?.result?.status, .verifiedCompleted)
+        XCTAssertNotNil(failImgAfter?.result?.evidenceID)
+        h.voice.stop()
+
+        // Exhausting all image retries must explicitly report blocked status without re-running input.
+        var exhaustedRuns = 0
+        let exhausted = Harness(phoneTool: { _, _ in
+            exhaustedRuns += 1
+            return ("app: Messages   read: 2026-11-27T01:00:00Z (80 ms)\ndid: tap 1 (sent)", false, Data("never-fits-channel".utf8))
+        })
+        await exhausted.talk()
+        exhausted.link.shouldSend = { event in
+            if let item = event["item"] as? [String: Any],
+               let part = (item["content"] as? [[String: Any]])?.first,
+               part["type"] as? String == "input_image" {
+                return false
+            }
+            return true
+        }
+        exhausted.link.play(
+            ["type": "response.created", "response": ["id": "r2"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-exhaust", "name": "do", "arguments": #"{"actions":[{"tap":1}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r2"]]
+        )
+        await exhausted.time.settle()
+        for _ in 0..<4 { await exhausted.time.advance(1.0) }
+        XCTAssertEqual(exhaustedRuns, 1)
+        XCTAssertTrue(Self.sentInputImages(in: exhausted.link.sent).isEmpty)
+        let exhaustedOutputs = exhausted.link.sent.compactMap { $0["item"] as? [String: String] }
+            .filter { $0["call_id"] == "c-exhaust" }.compactMap { $0["output"] }
+        XCTAssertEqual(exhaustedOutputs.count, 1)
+        XCTAssertTrue(exhaustedOutputs.allSatisfy { $0.contains("status=blocked") && $0.contains("evidence=none") }, "\(exhaustedOutputs)")
+        XCTAssertFalse(exhaustedOutputs.contains { $0.contains("status=verified_completed") })
+        XCTAssertEqual(exhausted.link.sent.filter { $0["type"] as? String == "response.create" }.count, 1)
+        let exhaustedCall = exhausted.voice.calls.first(where: { $0.id == "c-exhaust" })
+        XCTAssertEqual(exhaustedCall?.toolDelivery, .delivered)
+        XCTAssertEqual(exhaustedCall?.result?.status, .blocked)
+        XCTAssertNil(exhaustedCall?.result?.evidenceID)
+        exhausted.voice.stop()
+    }
+
+    func testOversizedScreenshotCompressesOrReportsExplicitFailureWithoutClaimingCompletion() async throws {
+        let compressible = try Self.compressibleOversizedJPEG()
+        XCTAssertGreaterThan(compressible.base64EncodedString().count, VoiceScreen.limit)
+        let okHarness = Harness(phoneTool: { _, _ in
+            ("app: Photos (com.apple.mobileslideshow)   read: 2026-11-27T01:00:00Z (90 ms)", false, compressible)
+        })
+        await okHarness.talk()
+        var compressedImageAttempts = 0
+        okHarness.link.shouldSend = { event in
+            guard !Self.sentInputImages(in: [event]).isEmpty else { return true }
+            compressedImageAttempts += 1
+            return compressedImageAttempts > 1
+        }
+        okHarness.link.play(
+            ["type": "response.created", "response": ["id": "r-ok"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-big-ok", "name": "look", "arguments": "{}",
+            ]],
+            ["type": "response.done", "response": ["id": "r-ok"]]
+        )
+        await okHarness.time.settle()
+        XCTAssertEqual(compressedImageAttempts, 1)
+        XCTAssertFalse(okHarness.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-big-ok" })
+        await okHarness.time.advance(1.0)
+        let okImages = Self.sentInputImages(in: okHarness.link.sent)
+        XCTAssertEqual(okImages.count, 1)
+        if let url = okImages.first?.url {
+            XCTAssertLessThanOrEqual(url.count, VoiceScreen.limit + "data:image/jpeg;base64,".count)
+        }
+        let okOutput = okHarness.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-big-ok" }?["output"] ?? ""
+        XCTAssertTrue(okOutput.contains("status=verified_completed"), okOutput)
+        XCTAssertFalse(okOutput.contains("evidence=none"), okOutput)
+        if let imageIndex = okImages.first?.index,
+           let outputIndex = okHarness.link.sent.firstIndex(where: { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-big-ok" }) {
+            XCTAssertLessThan(imageIndex, outputIndex)
+        }
+        okHarness.voice.stop()
+
+        let noisy = try Self.noisyOversizedJPEG()
+        let failHarness = Harness(phoneTool: { _, _ in
+            ("app: Photos (com.apple.mobileslideshow)   read: 2026-11-27T01:00:00Z (90 ms)", false, noisy)
+        })
+        await failHarness.talk()
+        failHarness.link.play(
+            ["type": "response.created", "response": ["id": "r-fail"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-big-fail", "name": "do", "arguments": #"{"actions":[{"tap":2}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r-fail"]]
+        )
+        await failHarness.time.settle()
+        XCTAssertTrue(Self.sentInputImages(in: failHarness.link.sent).isEmpty)
+        let failOutput = failHarness.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-big-fail" }?["output"] ?? ""
+        XCTAssertTrue(failOutput.contains("Screenshot unavailable:"), failOutput)
+        XCTAssertTrue(failOutput.contains("status=blocked"), failOutput)
+        XCTAssertTrue(failOutput.contains("evidence=none"), failOutput)
+        XCTAssertFalse(failOutput.contains("status=verified_completed"), failOutput)
+        failHarness.voice.stop()
+    }
+
+    func testStaleOrLateScreenshotIsRejectedAndDoesNotOverwriteNewerEvidence() async {
+        // Part A: stale pre-action fallback JPEG from PokiCore must be rejected and re-observed via read-only look.
+        var doRuns = 0
+        var lookRuns = 0
+        let staleHarness = Harness(phoneTool: { name, _ in
+            if name == "do" {
+                doRuns += 1
+                return (
+                    "app: Settings   read: 2026-11-27T01:00:00Z (100 ms)   note: the screenshot is the one of the read before, 12 s old (no newer one came); the elements, when read, are current\ndid: tap 1 (sent)",
+                    false,
+                    Data("old-pre-action-jpeg".utf8)
+                )
+            }
+            lookRuns += 1
+            return (
+                "app: Settings   read: 2026-11-27T01:00:02Z (70 ms)\n1 StaticText \"General\" (10,20,100,20)",
+                false,
+                Data("fresh-post-action-jpeg".utf8)
+            )
+        })
+        await staleHarness.talk()
+        staleHarness.link.play(
+            ["type": "response.created", "response": ["id": "r-stale"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-stale", "name": "do", "arguments": #"{"actions":[{"tap":1}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r-stale"]]
+        )
+        await staleHarness.time.settle()
+        XCTAssertEqual(doRuns, 1, "stale screenshot recovery must never re-run device input")
+        XCTAssertEqual(lookRuns, 1, "stale screenshot recovery must re-observe with read-only look")
+        let staleImages = Self.sentInputImages(in: staleHarness.link.sent).map(\.url)
+        let oldURL = "data:image/jpeg;base64," + Data("old-pre-action-jpeg".utf8).base64EncodedString()
+        let freshURL = "data:image/jpeg;base64," + Data("fresh-post-action-jpeg".utf8).base64EncodedString()
+        XCTAssertFalse(staleImages.contains(oldURL), "stale pre-action screenshot must never reach the model")
+        XCTAssertEqual(staleImages, [freshURL])
+        staleHarness.voice.stop()
+
+        // Part B: a late older call finishing after a newer call must never overwrite the newer screenshot.
+        let (releaseEarly, finishEarly) = AsyncStream<Void>.makeStream()
+        let lateHarness = Harness(phoneTool: { _, arguments in
+            if arguments.contains("early") {
+                for await _ in releaseEarly { break }
+                return ("app: Settings   read: 2026-11-27T01:00:00Z (90 ms)", false, Data("older-screen".utf8))
+            }
+            return ("app: Settings   read: 2026-11-27T01:00:05Z (90 ms)", false, Data("newer-screen".utf8))
+        })
+        await lateHarness.talk()
+        lateHarness.link.play(
+            ["type": "response.created", "response": ["id": "r-late"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-early", "name": "look", "arguments": #"{"tag":"early"}"#,
+            ]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-newer", "name": "look", "arguments": #"{"tag":"newer"}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r-late"]]
+        )
+        await lateHarness.time.settle()
+        let newerURL = "data:image/jpeg;base64," + Data("newer-screen".utf8).base64EncodedString()
+        let olderURL = "data:image/jpeg;base64," + Data("older-screen".utf8).base64EncodedString()
+        XCTAssertEqual(Self.sentInputImages(in: lateHarness.link.sent).map(\.url), [newerURL])
+
+        finishEarly.finish()
+        await lateHarness.time.settle()
+        let finalImages = Self.sentInputImages(in: lateHarness.link.sent).map(\.url)
+        XCTAssertEqual(finalImages, [newerURL], "late older screenshot must never overwrite newer evidence")
+        XCTAssertFalse(finalImages.contains(olderURL))
+        let deleted = lateHarness.link.sent.filter { $0["type"] as? String == "conversation.item.delete" }
+        XCTAssertTrue(deleted.isEmpty, "newer screenshot item must not be deleted by an older late call")
+        let lateOutput = lateHarness.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-early" }?["output"] ?? ""
+        XCTAssertTrue(lateOutput.contains("status=incomplete"), lateOutput)
+        XCTAssertTrue(lateOutput.contains("evidence=none"), lateOutput)
+        lateHarness.voice.stop()
+    }
+
+    func testDisconnectAndReconnectDeliversRetainedScreenshotWithoutRepeatingAction() async {
+        var doRuns = 0
+        let h = Harness(phoneTool: { _, _ in
+            doRuns += 1
+            return (
+                "app: Settings   read: 2026-11-27T01:00:00Z (80 ms)\ndid: tap 3 (sent)",
+                false,
+                Data("retained-screen-after-drop".utf8)
+            )
+        })
+        await h.talk()
+        h.link.shouldSend = { event in
+            if let item = event["item"] as? [String: Any],
+               let part = (item["content"] as? [[String: Any]])?.first,
+               part["type"] as? String == "input_image" {
+                return false
+            }
+            return true
+        }
+        h.link.play(
+            ["type": "response.created", "response": ["id": "r1"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-drop", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r1"]]
+        )
+        await h.time.settle()
+        XCTAssertEqual(doRuns, 1)
+        XCTAssertTrue(h.link.sent.filter { $0["type"] as? String == "response.create" }.isEmpty)
+        XCTAssertFalse(h.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "c-drop" })
+
+        h.link.onClosed?("network dropped")
+        await h.time.settle()
+        await h.talk()
+        await h.time.settle()
+
+        let retainedURL = "data:image/jpeg;base64," + Data("retained-screen-after-drop".utf8).base64EncodedString()
+        let reconnectImages = Self.sentInputImages(in: h.link.sent)
+        let reconnectAsks = h.link.sent.indices.filter { h.link.sent[$0]["type"] as? String == "response.create" }
+        XCTAssertEqual(doRuns, 1, "reconnecting must not repeat the previous action")
+        XCTAssertTrue(h.link.notes.contains { $0.contains("do not run it again") }, "\(h.link.notes)")
+        XCTAssertEqual(reconnectImages.map(\.url), [retainedURL], "reconnected session must deliver the retained fresh screenshot")
+        XCTAssertEqual(reconnectAsks.count, 1)
+        if let imageIndex = reconnectImages.first?.index, let askIndex = reconnectAsks.first,
+           let resultIndex = h.link.sent.firstIndex(where: { event in
+               let item = event["item"] as? [String: Any]
+               let text = (item?["content"] as? [[String: Any]])?.first?["text"] as? String ?? ""
+               return text.contains("status=verified_completed")
+           }) {
+            XCTAssertLessThan(imageIndex, resultIndex)
+            XCTAssertLessThan(resultIndex, askIndex)
+        } else {
+            XCTFail("reconnect must deliver its completion receipt after the retained image")
+        }
+
+        // Before new user speech in the reconnected session, a re-issued mutating call with a new call_id must not re-run.
+        h.link.play(
+            ["type": "response.created", "response": ["id": "r2"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-drop-retry", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r2"]]
+        )
+        await h.time.settle()
+        XCTAssertEqual(doRuns, 1, "duplicate mutating tool call right after reconnect must not re-execute before new user speech")
+
+        // After new user speech in the reconnected session, the same action is allowed to run again.
+        h.link.play(["type": "input_audio_buffer.speech_started"], ["type": "input_audio_buffer.speech_stopped"])
+        h.link.play(
+            ["type": "response.created", "response": ["id": "r3"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-new-turn", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r3"]]
+        )
+        await h.time.settle()
+        XCTAssertEqual(doRuns, 2)
+        h.voice.stop()
+    }
+
+    func testStructuredGoalProofAnswersDirectlyWhileUnconfirmedWriteNeverClaimsVerified() async {
+        // 0. Domain invariant: verified_completed without backing evidenceID is downgraded to incomplete.
+        let unbacked = VoiceStepResult.make(goalID: "g-inv", status: .verifiedCompleted, message: "claimed", evidenceID: nil)
+        XCTAssertEqual(unbacked.status, .incomplete)
+        XCTAssertNil(unbacked.evidenceID)
+        let emptyEvidence = VoiceStepResult.make(goalID: "g-inv2", status: .verifiedCompleted, message: "claimed", evidenceID: "   ")
+        XCTAssertEqual(emptyEvidence.status, .incomplete)
+        XCTAssertNil(emptyEvidence.evidenceID)
+
+        // 1. Structured fields alone prove the goal -> verified_completed with non-empty evidence, no screenshot needed.
+        let structured = Harness()
+        await structured.talk()
+        structured.link.play(
+            ["type": "response.created", "response": ["id": "r-ver"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-ver", "name": "get_ios_version", "arguments": "{}",
+            ]],
+            ["type": "response.done", "response": ["id": "r-ver"]]
+        )
+        await structured.time.settle()
+        let verOutput = structured.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-ver" }?["output"] ?? ""
+        XCTAssertTrue(verOutput.contains("goal="), verOutput)
+        XCTAssertTrue(verOutput.contains("status=verified_completed"), verOutput)
+        XCTAssertFalse(verOutput.contains("evidence=none"), verOutput)
+        XCTAssertEqual(structured.link.sent.filter { $0["type"] as? String == "response.create" }.count, 1)
+        structured.voice.stop()
+
+        // 2. Unconfirmed message send must never claim verified_completed.
+        let unconfirmed = Harness(phoneTool: { _, _ in
+            (
+                "app: Messages   read: 2026-11-27T01:00:00Z (90 ms)\ndid: key Return (sent)\nsend check: not confirmed: the message field still holds the text. Read the screen to verify the send before finish_task.",
+                false,
+                nil
+            )
+        })
+        await unconfirmed.talk()
+        unconfirmed.link.play(
+            ["type": "response.created", "response": ["id": "r-send"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-send", "name": "do", "arguments": #"{"actions":[{"key":"return"}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r-send"]]
+        )
+        await unconfirmed.time.settle()
+        let sendOutput = unconfirmed.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-send" }?["output"] ?? ""
+        XCTAssertTrue(sendOutput.contains("status=incomplete"), sendOutput)
+        XCTAssertTrue(sendOutput.contains("evidence=none"), sendOutput)
+        XCTAssertFalse(sendOutput.contains("status=verified_completed"), sendOutput)
+        unconfirmed.voice.stop()
+
+        // 3. Locked screen waiting on owner -> needs_owner_input.
+        let locked = Harness(phoneTool: { _, _ in
+            ("app: Settings\nscreen: locked (the owner has to unlock the phone before anything can be done)", false, nil)
+        })
+        await locked.talk()
+        locked.link.play(
+            ["type": "response.created", "response": ["id": "r-lock"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "c-lock", "name": "do", "arguments": #"{"actions":[{"tap":1}]}"#,
+            ]],
+            ["type": "response.done", "response": ["id": "r-lock"]]
+        )
+        await locked.time.settle()
+        let lockOutput = locked.link.sent.compactMap { $0["item"] as? [String: String] }
+            .first { $0["call_id"] == "c-lock" }?["output"] ?? ""
+        XCTAssertTrue(lockOutput.contains("status=needs_owner_input"), lockOutput)
+        XCTAssertFalse(lockOutput.contains("status=verified_completed"), lockOutput)
+        locked.voice.stop()
+    }
+
+    func testSimulatorVoiceLookChannelFailureRetriesImageOnlyBeforeAnnouncing() async throws {
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: PKInProcess.shared(), storage: storage.storage)
+        let background = UIApplication.shared.beginBackgroundTask(withName: "Voice simulator image retry check")
+        let prepared = await Task.detached { InProcessWDA.openThroughGate { PKInProcess.shared().prepare() } }.value
+        XCTAssertEqual(prepared["ok"] as? Bool, true, "Simulator in-process automation must prepare: \(prepared)")
+        app.inProcessReadyForProbe()
+        let ownBundle = Bundle.main.bundleIdentifier
+        var reactivated = false
+        defer {
+            if !reactivated, let ownBundle {
+                _ = PKInProcess.shared().app(ownBundle, action: "activate")
+            }
+            app.stopSession()
+            UIApplication.shared.endBackgroundTask(background)
+        }
+
+        let launchFailure = await Task.detached { PKInProcess.shared().app("com.apple.Preferences", action: "launch") }.value
+        XCTAssertNil(launchFailure, "Settings must launch on the simulator: \(launchFailure ?? "")")
+
+        let priorLogs = Set(AppLog.shared.lines)
+        var toolRuns = 0
+        var capturedBytes = 0
+        let h = Harness(phoneTool: { name, arguments in
+            toolRuns += 1
+            let answer = await app.phoneToolWithPicture(name, arguments: arguments)
+            capturedBytes = answer.jpeg?.count ?? 0
+            return (answer.text, answer.isError, answer.jpeg)
+        })
+        await h.talk()
+        var imageAttempts = 0
+        h.link.shouldSend = { event in
+            if let item = event["item"] as? [String: Any],
+               let part = (item["content"] as? [[String: Any]])?.first,
+               part["type"] as? String == "input_image" {
+                imageAttempts += 1
+                return imageAttempts > 1
+            }
+            return true
+        }
+        h.link.play(
+            ["type": "response.created", "response": ["id": "r-sim-img"]],
+            ["type": "response.output_item.done", "item": [
+                "type": "function_call", "call_id": "sim-img-retry", "name": "look", "arguments": "{}",
+            ]],
+            ["type": "response.done", "response": ["id": "r-sim-img"]]
+        )
+        let imageAttempted = expectation(for: NSPredicate { _, _ in imageAttempts == 1 }, evaluatedWith: nil)
+        await fulfillment(of: [imageAttempted], timeout: 15)
+        await h.time.settle()
+
+        XCTAssertGreaterThan(capturedBytes, 1000, "Real simulator look must capture a JPEG screenshot")
+        XCTAssertEqual(toolRuns, 1)
+        XCTAssertEqual(imageAttempts, 1)
+        XCTAssertFalse(h.link.sent.contains { ($0["item"] as? [String: Any])?["call_id"] as? String == "sim-img-retry" })
+        XCTAssertTrue(h.link.sent.filter { $0["type"] as? String == "response.create" }.isEmpty,
+                      "model must wait for image retry before announcing completion")
+
+        await h.time.advance(1.0)
+        let images = Self.sentInputImages(in: h.link.sent)
+        let asks = h.link.sent.indices.filter { h.link.sent[$0]["type"] as? String == "response.create" }
+        XCTAssertEqual(toolRuns, 1, "retrying the screenshot must not re-run simulator look")
+        XCTAssertEqual(images.count, 1)
+        XCTAssertTrue(images.first?.url.hasPrefix("data:image/jpeg;base64,") == true)
+        XCTAssertEqual(asks.count, 1)
+        if let imageIndex = images.first?.index, let askIndex = asks.first,
+           let outputIndex = h.link.sent.firstIndex(where: { ($0["item"] as? [String: Any])?["call_id"] as? String == "sim-img-retry" }) {
+            let output = (h.link.sent[outputIndex]["item"] as? [String: Any])?["output"] as? String ?? ""
+            XCTAssertTrue(output.contains("status=verified_completed"), output)
+            XCTAssertLessThan(imageIndex, outputIndex)
+            XCTAssertLessThan(outputIndex, askIndex)
+        } else {
+            XCTFail("simulator image must precede its completion receipt and response")
+        }
+        let newLogs = AppLog.shared.lines.filter { !priorLogs.contains($0) }
+        XCTAssertTrue(newLogs.contains { $0.contains("call=sim-img-retry") && $0.contains("obsDelivery=") },
+                      "logs must record call and observation delivery correlation: \(newLogs)")
+        h.voice.stop()
+        if let ownBundle {
+            _ = await Task.detached { PKInProcess.shared().app(ownBundle, action: "activate") }.value
+            reactivated = true
+        }
+    }
+
+    func testCodexVoiceFailedToolDeliverySuppressesPrematureCompletionSpeech() async throws {
+        var emit: (@MainActor (String) -> Void)?
+        var sentPayloads: [[String: Any]] = []
+        func push(_ payload: [String: Any]) {
+            guard let bytes = try? JSONSerialization.data(withJSONObject: payload) else { return }
+            let text = String(decoding: bytes, as: UTF8.self)
+            Task { @MainActor in emit?(text) }
+        }
+        let codex = CodexVoice(
+            startBridge: { _, next in
+                emit = next
+                return true
+            },
+            sendBridge: { text in
+                guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { return true }
+                sentPayloads.append(object)
+                if object["result"] != nil, object["id"] as? String == "tool-req-1" {
+                    return false
+                }
+                guard let method = object["method"] as? String, let id = object["id"] else { return true }
+                switch method {
+                case "account/read":
+                    push(["id": id, "result": ["account": ["type": "chatgpt"]]])
+                case "thread/start":
+                    push(["id": id, "result": ["thread": ["id": "fixture-thread"]]])
+                case "thread/realtime/start":
+                    push(["id": id, "result": [:]])
+                    push(["method": "thread/realtime/sdp", "params": ["threadId": "fixture-thread", "sdp": "fixture-sdp-answer"]])
+                default:
+                    push(["id": id, "result": [:]])
+                }
+                return true
+            },
+            storage: storage.storage
+        )
+        defer { codex.stop() }
+        let (releaseTool, finishTool) = AsyncStream<Void>.makeStream()
+        var turnEvents: [[String: Any]] = []
+        try await codex.prepare(
+            onEvent: { method, params in
+                if method == "poki/backend/turnCompleted" { turnEvents.append(params) }
+            },
+            onTool: { _, _ in
+                for await _ in releaseTool { break }
+                return ("app: Settings", false, Data("jpeg-bytes".utf8))
+            }
+        )
+        _ = try await codex.start(offer: "sdp-offer")
+
+        push(["method": "poki/backend/turnStarted", "params": ["threadId": "fixture-thread", "turnId": "t1"]])
+        push(["id": "tool-req-1", "method": "item/tool/call", "params": ["threadId": "fixture-thread", "tool": "look", "arguments": "{}"]])
+        for _ in 0..<20 { await Task.yield() }
+        push(["method": "poki/backend/agentMessage", "params": ["threadId": "fixture-thread", "turnId": "t1", "text": "Settings is open."]])
+        push(["method": "poki/backend/turnCompleted", "params": ["threadId": "fixture-thread", "turnId": "t1", "status": "completed"]])
+        for _ in 0..<20 { await Task.yield() }
+
+        finishTool.finish()
+        for _ in 0..<40 { await Task.yield() }
+
+        let speechRequests = sentPayloads.filter { $0["method"] as? String == "thread/realtime/appendSpeech" }
+        XCTAssertTrue(speechRequests.isEmpty, "failed Codex tool+image delivery must not announce completion speech: \(speechRequests)")
+        XCTAssertEqual(turnEvents.last?["hasSpeech"] as? Bool, false)
     }
 }

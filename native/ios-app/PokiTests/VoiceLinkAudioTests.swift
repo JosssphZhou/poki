@@ -82,6 +82,23 @@ final class VoiceLinkAudioTests: XCTestCase {
         XCTAssertFalse(session.isActive, "Stopping opening capture must release the final RTCAudioSession activation")
     }
 
+    func testParseMaxMessageSizeAndScreenBudgetRespectNegotiatedSDPLimit() {
+        let withSize = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=max-message-size:16384\r\n"
+        XCTAssertEqual(VoiceLink.parseMaxMessageSize(in: withSize), 16_384)
+        XCTAssertEqual(VoiceScreen.base64Limit(forMaxMessageBytes: 16_384), 12_384)
+
+        let largeSize = "v=0\r\na=max-message-size:262144\r\n"
+        XCTAssertEqual(VoiceLink.parseMaxMessageSize(in: largeSize), 262_144)
+        XCTAssertEqual(VoiceScreen.base64Limit(forMaxMessageBytes: 262_144), VoiceScreen.limit)
+
+        let missing = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"
+        XCTAssertNil(VoiceLink.parseMaxMessageSize(in: missing))
+        XCTAssertEqual(VoiceScreen.base64Limit(forMaxMessageBytes: nil), VoiceScreen.limit)
+
+        let zero = "v=0\r\na=max-message-size:0\r\n"
+        XCTAssertNil(VoiceLink.parseMaxMessageSize(in: zero))
+    }
+
     @MainActor
     private func connectToUnavailableEndpoint(_ link: VoiceLink) async {
         do {

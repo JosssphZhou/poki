@@ -18,7 +18,12 @@ public struct ToolResult: Sendable {
     /// moved with the same elements (a canvas, a web view). The same screen reads the same, so a loop
     /// that goes nowhere can be told from a task that moves. Nil when no tree was read.
     var screen: String?
-    var waitingForOwner = false
+    public var waitingForOwner = false
+    public var actionGeneration: UInt64 = 0
+    public var actionFinishedAt: Date? = nil
+    public var evidenceSourceAt: Date? = nil
+    public var evidenceID: String? = nil
+    public var screenshotIsStale = false
     var replayedSkills: [String] = []
     var offeredMemories: [MemoryNote] = []
     var readApp: String?
@@ -144,6 +149,7 @@ final class Computer: @unchecked Sendable {
     let failureLog = LockedBox<String?>(nil)
     /// When `lastPNG` was taken (it stands in, marked stale, when a read gives no picture at all).
     var lastPNGAt: Double?
+    var lastPNGWallAt: Date?
     private var activeLocalTask: String?
     /// How long the last look or do took inside the computer, for the MCP's own accounting.
     var lastCallTook: Double?
@@ -294,22 +300,31 @@ final class Computer: @unchecked Sendable {
             // The picture of the read before, marked with its age, is better than none (gym: three
             // calls blind for 32 s while the runner restarted under load).
             var stale: Data?, staleNote: [String] = []
+            var staleSourceAt: Date?
             if let old = lastPNG, let at = lastPNGAt, now() - at < 120, let jpeg = try? host.jpeg(fromPNG: old, width: Self.pictureWidth(size), quality: 0.6) {
                 stale = jpeg
+                staleSourceAt = lastPNGWallAt ?? Date().addingTimeInterval(at - now())
                 staleNote = ["the screenshot is the one of the read before, \(Int((now() - at).rounded())) s old (no newer one came)"]
             }
             var lines: [String] = ["read: failed (\(notes.joined(separator: "; ")))", "runner: \(state.describe)"]
             lines += did.map { "did: \($0)" }
             if let error { lines.append("error: \(error)") }
             lines += extra + kept + staleNote
-            return ToolResult(text: lines.joined(separator: "\n"), jpeg: stale, isError: true, screenEvidence: [], observedApp: reading.foreground?.describe)
+            return ToolResult(text: lines.joined(separator: "\n"), jpeg: stale, isError: true,
+                              actionGeneration: actionGeneration, evidenceSourceAt: staleSourceAt,
+                              screenshotIsStale: stale != nil, screenEvidence: [], observedApp: reading.foreground?.describe)
         }
         let treeRead = !reading.elements.isEmpty || reading.notes.isEmpty
         if !treeRead { currentBackTarget = BackTarget(in: []) }
         let sameApp = reading.foreground?.bundleID == nil || reading.foreground?.bundleID == lastForeground?.bundleID
         lastForeground = reading.foreground ?? lastForeground
         if config.isPoki(reading.foreground) { return pokiInFront(reading, did: did, error: error, extra: extra) }
-        if reading.png != nil { lastPNGAt = now() }
+        let readNowMono = now()
+        let readNowWall = Date()
+        if reading.png != nil {
+            lastPNGAt = readNowMono
+            lastPNGWallAt = reading.firstPictureAt.map { readNowWall.addingTimeInterval($0 - readNowMono) } ?? readNowWall
+        }
         lastPNG = reading.png ?? lastPNG
 
         // Whether the screen changed since the read before (the one the model saw last).
@@ -508,15 +523,25 @@ final class Computer: @unchecked Sendable {
         if !collapsed.isEmpty, !full { heading += "  ([collapsed] = one element whose parts are not in the tree; full=true adds the text read from the picture inside it, or tap a point on the screenshot)" }
 
         var jpeg: Data?
+        var screenshotIsStale = false
+        var evidenceSourceAt: Date?
         let width = Self.pictureWidth(size)
         if let png = reading.png {
-            do { jpeg = try host.jpeg(fromPNG: png, width: width, quality: 0.6) }
-            catch { notes.append("screenshot not encoded: \(error)") }
+            do {
+                jpeg = try host.jpeg(fromPNG: png, width: width, quality: 0.6)
+                evidenceSourceAt = reading.firstPictureAt.map { readNowWall.addingTimeInterval($0 - readNowMono) } ?? readNowWall
+            } catch {
+                notes.append("screenshot not encoded: \(error)")
+            }
         } else if let old = lastPNG, let at = lastPNGAt, now() - at < 120, let stale = try? host.jpeg(fromPNG: old, width: width, quality: 0.6) {
             // No picture from the runner or the host (a restart under load): the picture of the read
             // before, marked with its age, is better than none (gym: three calls blind for 32 s).
             jpeg = stale
+            screenshotIsStale = true
+            evidenceSourceAt = lastPNGWallAt ?? readNowWall.addingTimeInterval(at - readNowMono)
             notes.append("the screenshot is the one of the read before, \(Int((now() - at).rounded())) s old (no newer one came); the elements, when read, are current")
+        } else if let treeAt = reading.treeAt {
+            evidenceSourceAt = readNowWall.addingTimeInterval(treeAt - readNowMono)
         }
         let app = reading.foreground?.describe ?? "unknown"
         var header = ["app: \(app)   read: \(ISO8601DateFormatter().string(from: Date())) (\(reading.ms) ms)" + (notes.isEmpty ? "" : "   note: \(notes.joined(separator: "; "))")]
@@ -555,10 +580,15 @@ final class Computer: @unchecked Sendable {
             let images = reading.elements.filter { $0.type == "Image" && !$0.fromPicture }.map(\.frame)
             itemPictureSource = ItemPictureSource(png: png, screen: size, images: images)
         }
+        let evidenceID: String? = (reading.png != nil && jpeg != nil && !screenshotIsStale)
+            ? "obs-\(UUID().uuidString.prefix(8).lowercased())"
+            : nil
         // A screenshot helps the caller recover from a failed action without hiding the failure.
         return ToolResult(text: (header + body + footer).joined(separator: "\n"), jpeg: jpeg, isError: error != nil,
                           screen: treeRead ? "\(reading.foreground?.bundleID ?? "")\n\(tree)" + (pictureMoved ? "\npicture moved: \(UUID().uuidString)" : "") : nil,
-                          waitingForOwner: handoffWaiting, readApp: treeRead ? reading.foreground?.bundleID : nil,
+                          waitingForOwner: handoffWaiting, actionGeneration: actionGeneration,
+                          evidenceSourceAt: evidenceSourceAt, evidenceID: evidenceID,
+                          screenshotIsStale: screenshotIsStale, readApp: treeRead ? reading.foreground?.bundleID : nil,
                           screenEvidence: evidence, numberedScreen: numberedScreen, itemPictureSource: itemPictureSource,
                           freshPNG: reading.png, observedApp: lastForeground?.describe)
     }
@@ -571,14 +601,19 @@ final class Computer: @unchecked Sendable {
         guard timeout > 0.3, let png = try? await runner.screenshot(timeout: min(3, timeout)) else {
             // The runner gives none: the host's own path to the screen, when it has one.
             if selectedPane == nil, timeout > 0.3, let fallback = runner.screenshotFallback, let png = (try? await withDeadline(6, "the host's screenshot") { await fallback() }) ?? nil, let jpeg = try? host.jpeg(fromPNG: png, width: Self.pictureWidth(size), quality: 0.6) {
-                return ToolResult(text: text + "\nscreenshot: the screen now, taken apart from the runner (nothing was sent)", jpeg: jpeg, isError: false, freshPNG: png, observedApp: lastForeground?.describe)
+                return ToolResult(text: text + "\nscreenshot: the screen now, taken apart from the runner (nothing was sent)", jpeg: jpeg, isError: false, actionGeneration: actionGeneration, evidenceSourceAt: Date(), evidenceID: "obs-\(UUID().uuidString.prefix(8).lowercased())", freshPNG: png, observedApp: lastForeground?.describe)
             }
-            return ToolResult(text: text + "\nscreenshot: none (the runner did not give one either)", jpeg: nil, isError: isErrorWithoutPicture)
+            return ToolResult(text: text + "\nscreenshot: none (the runner did not give one either)", jpeg: nil, isError: isErrorWithoutPicture, actionGeneration: actionGeneration)
         }
         await updateReadSize(until: now() + 1)
-        if remember { lastPNG = png }
+        let capturedAt = Date()
+        if remember {
+            lastPNG = png
+            lastPNGAt = now()
+            lastPNGWallAt = capturedAt
+        }
         let jpeg = try? host.jpeg(fromPNG: png, width: Self.pictureWidth(size), quality: 0.6)
-        return ToolResult(text: text + (jpeg == nil ? "" : "\nscreenshot: the screen now (nothing was sent)"), jpeg: jpeg, isError: jpeg == nil && isErrorWithoutPicture, freshPNG: png, observedApp: lastForeground?.describe)
+        return ToolResult(text: text + (jpeg == nil ? "" : "\nscreenshot: the screen now (nothing was sent)"), jpeg: jpeg, isError: jpeg == nil && isErrorWithoutPicture, actionGeneration: actionGeneration, evidenceSourceAt: jpeg == nil ? nil : capturedAt, evidenceID: jpeg == nil ? nil : "obs-\(UUID().uuidString.prefix(8).lowercased())", freshPNG: png, observedApp: lastForeground?.describe)
     }
 
     /// The answer when Poki is in front, as when a task asked in Poki's chat begins (ESP-465: the first
@@ -593,6 +628,7 @@ final class Computer: @unchecked Sendable {
         lastPicture = nil
         lastPNG = nil
         lastPNGAt = nil
+        lastPNGWallAt = nil
         var lines = ["app: \(reading.foreground?.describe ?? "Poki")   read: \(ISO8601DateFormatter().string(from: Date())) (\(reading.ms) ms)"]
         lines += did.map { "did: \($0)" }
         if let error { lines.append("error: \(error)") }
@@ -1414,6 +1450,7 @@ final class Computer: @unchecked Sendable {
         let approved = approvedNote == nil ? [:] : Dictionary(steps.map { ($0.at, $0.reason) }, uniquingKeysWith: { a, _ in a })
         let movedBefore = actions[..<(actions.count - toRun.count)].contains { ActionKind($0)?.changesScreen($0) == true }
         let (moreDid, moreError, moreKind, moreReplayedSkills) = await run(toRun, started: started, until: until, numberedFrom: actions.count - toRun.count, moved: movedBefore, approved: approved, onActionSucceeded: onActionSucceeded)
+        let actionFinishedWall = Date()
         let actionsTook = now() - actionsStarted
         did += moreDid
         error = moreError
@@ -1426,6 +1463,7 @@ final class Computer: @unchecked Sendable {
                 if tapRead.reading?.png == nil {
                     lastPNG = nil
                     lastPNGAt = nil
+                    lastPNGWallAt = nil
                 }
                 extra.append("touch effect: unconfirmed (\(tapRead.reason)). Recheck the display with look before continuing. The tap was sent once.")
             }
@@ -1441,6 +1479,7 @@ final class Computer: @unchecked Sendable {
             if let screenObservation, screenObservation.omitStalePicture {
                 lastPNG = nil
                 lastPNGAt = nil
+                lastPNGWallAt = nil
                 extra.append("screenshot omitted: only a pre-action image arrived after the action; call look before tapping coordinates")
             }
         }
@@ -1459,6 +1498,7 @@ final class Computer: @unchecked Sendable {
                     if reused.omitStalePicture {
                         lastPNG = nil
                         lastPNGAt = nil
+                        lastPNGWallAt = nil
                         extra.append("screenshot omitted: only a pre-action image arrived after the action; call look before tapping coordinates")
                     }
                 }
@@ -1587,6 +1627,12 @@ final class Computer: @unchecked Sendable {
             result.text = lines.joined(separator: "\n")
         }
         result.replayedSkills = replayedSkills + moreReplayedSkills
+        result.actionGeneration = generation
+        result.actionFinishedAt = actionFinishedWall
+        if screenObservation?.omitStalePicture == true {
+            result.screenshotIsStale = true
+            result.evidenceID = nil
+        }
         return result
     }
 

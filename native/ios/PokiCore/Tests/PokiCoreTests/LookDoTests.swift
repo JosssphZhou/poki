@@ -1800,6 +1800,41 @@ final class LookDoTests: XCTestCase {
         XCTAssertTrue(text.contains("not_hittable"))
         XCTAssertTrue(text.contains("screen_changed"))
     }
+
+    func testToolResultCarriesGenerationTimestampsEvidenceIDAndStaleFlag() async {
+        let (core, wda, _) = makeCore { $0.humanize = false }
+        let initial = await core.call("look", [:])
+        XCTAssertFalse(initial.isError, initial.text)
+        XCTAssertEqual(initial.actionGeneration, 0)
+        XCTAssertNil(initial.actionFinishedAt)
+        XCTAssertNotNil(initial.evidenceSourceAt)
+        XCTAssertNotNil(initial.evidenceID)
+        XCTAssertFalse(initial.screenshotIsStale)
+
+        let acted = await core.call("do", ["actions": [["tap": [100, 100]]]])
+        XCTAssertFalse(acted.isError, acted.text)
+        XCTAssertGreaterThan(acted.actionGeneration, initial.actionGeneration)
+        XCTAssertNotNil(acted.actionFinishedAt)
+        XCTAssertNotNil(acted.evidenceSourceAt)
+        XCTAssertNotNil(acted.evidenceID)
+        XCTAssertNotEqual(acted.evidenceID, initial.evidenceID)
+        XCTAssertFalse(acted.screenshotIsStale)
+        if let finishedAt = acted.actionFinishedAt, let sourceAt = acted.evidenceSourceAt {
+            XCTAssertGreaterThanOrEqual(sourceAt.timeIntervalSince(finishedAt), -0.05)
+        }
+
+        wda.set("GET /screenshot") { _ in (500, ["value": ["error": "unknown error", "message": "screenshot failed"]]) }
+        let stale = await core.call("do", ["actions": [["tap": [120, 120]]]])
+        XCTAssertFalse(stale.isError, stale.text)
+        XCTAssertGreaterThan(stale.actionGeneration, acted.actionGeneration)
+        XCTAssertNotNil(stale.actionFinishedAt)
+        XCTAssertNotNil(stale.jpeg, "stale fallback still supplies the last image for diagnostics")
+        XCTAssertTrue(stale.screenshotIsStale)
+        XCTAssertNil(stale.evidenceID, "stale fallback screenshot must never produce fresh visual evidenceID")
+        if let staleSourceAt = stale.evidenceSourceAt, let finishedAt = stale.actionFinishedAt {
+            XCTAssertLessThanOrEqual(staleSourceAt.timeIntervalSince(finishedAt), 0.05)
+        }
+    }
 }
 
 #if canImport(Vision) && canImport(ImageIO) && canImport(CoreText) && os(macOS)

@@ -399,23 +399,27 @@ final class AppModel {
         // Production instances (`storage == nil`) bind the live singleton CodexVoice bridge; isolated storage
         // instances must inject an explicit SubscriptionVoice bridge instead of falling back to `.shared`.
         let subscriptionBridge: (any SubscriptionVoice)? = codex ?? (storage == nil ? CodexVoice.shared : nil)
+        let runVoicePhoneTool: @MainActor (String, String, PhoneOperationCancellation?) async -> VoicePhoneResult = { name, arguments, cancellation in
+            #if DEBUG && targetEnvironment(simulator)
+            if TalkRehearsal.asked { return VoicePhoneResult(await TalkRehearsal.step()) }
+            #endif
+            return await PhoneOperationCancellation.$current.withValue(cancellation) {
+                let tool = { (name: String, arguments: String) async -> VoicePhoneResult in
+                    VoicePhoneResult(await core.tool(name, arguments: arguments))
+                }
+                guard name == "open_app" else { return await tool(name, arguments) }
+                return await VoiceApps.openResult(arguments, tool: tool, openLink: { url in
+                    guard cancellation?.isCancelled != true, UIApplication.shared.applicationState == .active else { return false }
+                    return await UIApplication.shared.open(url)
+                })
+            }
+        }
         voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
                            phoneTool: { name, arguments, cancellation in
-                               #if DEBUG && targetEnvironment(simulator)
-                               if TalkRehearsal.asked { return await TalkRehearsal.step() }
-                               #endif
-                               return await PhoneOperationCancellation.$current.withValue(cancellation) {
-                                   let tool = { (name: String, arguments: String) async -> PhoneAnswer in
-                                       let result = await core.tool(name, arguments: arguments)
-                                       return (result.text, result.isError, result.jpeg)
-                                   }
-                                   guard name == "open_app" else { return await tool(name, arguments) }
-                                   return await VoiceApps.open(arguments, tool: tool, openLink: { url in
-                                       guard cancellation?.isCancelled != true, UIApplication.shared.applicationState == .active else { return false }
-                                       return await UIApplication.shared.open(url)
-                                   })
-                               }
+                               let result = await runVoicePhoneTool(name, arguments, cancellation)
+                               return (result.text, result.failed, result.screen)
                            },
+                           phoneToolResult: runVoicePhoneTool,
                            holdMicrophone: { [background] on in on ? background.pauseAudio() : background.resumeAudio() },
                            connection: VoiceModel.connection,
                            codex: subscriptionBridge,

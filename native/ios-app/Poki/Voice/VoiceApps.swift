@@ -38,37 +38,46 @@ enum VoiceApps {
     /// Runs open_app. `tool` is PokiCore's look and do; `openLink` opens a Settings link from Poki and
     /// says whether iOS took it (only while Poki is in front).
     static func open(_ arguments: String, tool: (String, String) async -> PhoneAnswer, openLink: (URL) async -> Bool) async -> PhoneAnswer {
+        let result = await openResult(arguments, tool: { name, args in
+            VoicePhoneResult(await tool(name, args))
+        }, openLink: openLink)
+        return (result.text, result.failed, result.screen)
+    }
+
+    static func openResult(_ arguments: String, tool: (String, String) async -> VoicePhoneResult, openLink: (URL) async -> Bool) async -> VoicePhoneResult {
         let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
         let name = (args["app"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let ids: [String]
         switch match(name) {
         case .app(let found): ids = found
         case .several(let found):
-            return ("not_sent: “\(name)” could be any of \(found.joined(separator: ", ")). Ask the user which app, or call open_app with its full name.", true, nil)
+            return VoicePhoneResult(text: "not_sent: “\(name)” could be any of \(found.joined(separator: ", ")). Ask the user which app, or call open_app with its full name.", failed: true, screen: nil)
         case .unknown:
-            return ("not_sent: Poki does not know an app called “\(name)”. Search the Home Screen for it: go home ({button: \"home\"}), swipe down, type its name and tap it.", true, nil)
+            return VoicePhoneResult(text: "not_sent: Poki does not know an app called “\(name)”. Search the Home Screen for it: go home ({button: \"home\"}), swipe down, type its name and tap it.", failed: true, screen: nil)
         }
         var note = ""
         if let page = args["page"] as? String, let route = settingsPages[page] {
             if ids.first == settingsID, let link = URL(string: "App-prefs:\(route)"), await openLink(link) {
                 // Settings slides the page in; read it once it holds still.
-                let read = await tool("do", #"{"actions":[{"wait_until":{"settled":true,"ms":2500}}]}"#)
+                var read = await tool("do", #"{"actions":[{"wait_until":{"settled":true,"ms":2500}}]}"#)
                 // The link can land on Settings' first page when iOS no longer knows the route.
-                return ("opened Settings by the link to its \(page) page. If the screen is not that page, tap it in Settings.\n" + read.text, read.failed, read.screen)
+                read.text = "opened Settings by the link to its \(page) page. If the screen is not that page, tap it in Settings.\n" + read.text
+                return read
             }
             note = ids.first == settingsID
                 ? "The \(page) page could not be opened by its link (Poki opens links only while it is in front); Settings is open: tap the page, using scroll_to when it is not listed.\n"
                 : "page is for Settings only; \(name) is open.\n"
         }
-        var answer: PhoneAnswer = ("", true, nil)
+        var answer = VoicePhoneResult(text: "", failed: true, screen: nil)
         for id in ids {
             answer = await tool("do", #"{"actions":[{"launch":{"bundle":"\#(id)"}}]}"#)
             guard answer.failed, answer.text.contains(notInstalled) else { break }
         }
         if answer.failed, answer.text.contains(notInstalled) {
-            return ("not_sent: \(name) (\(ids.joined(separator: ", "))) is not installed on this iPhone. Search the Home Screen for it before telling the user: go home ({button: \"home\"}), swipe down, type its name and tap it.", true, nil)
+            return VoicePhoneResult(text: "not_sent: \(name) (\(ids.joined(separator: ", "))) is not installed on this iPhone. Search the Home Screen for it before telling the user: go home ({button: \"home\"}), swipe down, type its name and tap it.", failed: true, screen: nil)
         }
-        return (note + answer.text, answer.failed, answer.screen)
+        answer.text = note + answer.text
+        return answer
     }
 
     /// PokiCore's words for a launch of a bundle id this iPhone does not have.

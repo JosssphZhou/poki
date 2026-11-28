@@ -62,6 +62,7 @@ final class CodexVoice: SubscriptionVoice {
     @ObservationIgnored private var sessionInstructions: String?
     @ObservationIgnored private var activeTurnID: String?
     @ObservationIgnored private var inFlightTools = 0
+    @ObservationIgnored private var toolDeliveryFailedInTurn = false
     @ObservationIgnored private var pendingFinalSpeech: String?
     @ObservationIgnored private var deferredTurnCompleted: JSON?
     @ObservationIgnored private var nextRequest = 0
@@ -146,6 +147,7 @@ final class CodexVoice: SubscriptionVoice {
     private func resetTurnSync() {
         activeTurnID = nil
         inFlightTools = 0
+        toolDeliveryFailedInTurn = false
         pendingFinalSpeech = nil
         deferredTurnCompleted = nil
     }
@@ -423,12 +425,18 @@ final class CodexVoice: SubscriptionVoice {
                 guard self.active == active else { reject("session ended"); return }
                 let answer = await onTool(name, argumentsText)
                 guard self.active == active else { reject("session ended"); return }
-                AppLog.shared.add("voice", "Codex tool executed: \(name) (\(answer.failed ? "failed" : "ok"), image: \(answer.screen != nil))")
                 var content: [[String: Any]] = [["type": "inputText", "text": String(answer.text.prefix(6000))]]
-                if let screen = answer.screen {
+                var attachedImage = false
+                if let screen = answer.screen, !screen.isEmpty {
                     content.append(["type": "inputImage", "imageUrl": "data:image/jpeg;base64,\(screen.base64EncodedString())"])
+                    attachedImage = true
                 }
-                _ = send(["id": id, "result": ["success": !answer.failed, "contentItems": content]])
+                let delivered = send(["id": id, "result": ["success": !answer.failed, "contentItems": content]])
+                AppLog.shared.add("voice", "Codex tool executed: \(name) (\(answer.failed ? "failed" : "ok"), image: \(attachedImage), delivered: \(delivered))")
+                if !delivered {
+                    self.toolDeliveryFailedInTurn = true
+                    self.pendingFinalSpeech = nil
+                }
             }
         case "thread/realtime/itemAdded":
             if (params["item"] as? JSON)?["type"] as? String == "handoff_request" {
@@ -437,6 +445,7 @@ final class CodexVoice: SubscriptionVoice {
             onEvent?(method, params)
         case "poki/backend/turnStarted":
             activeTurnID = params["turnId"] as? String
+            toolDeliveryFailedInTurn = false
             pendingFinalSpeech = nil
             deferredTurnCompleted = nil
             AppLog.shared.add("voice", "Codex backend turn started")
@@ -500,7 +509,8 @@ final class CodexVoice: SubscriptionVoice {
     }
 
     private func deliverTurnCompleted(_ params: JSON) {
-        let status = params["status"] as? String ?? "unknown"
+        let rawStatus = params["status"] as? String ?? "unknown"
+        let status = (rawStatus == "completed" && toolDeliveryFailedInTurn) ? "delivery_failed" : rawStatus
         let detail = Self.formatBackendDiagnostic(params)
         AppLog.shared.add("voice", "Codex backend turn completed: \(status)\(detail)")
         let speech: String?
@@ -513,7 +523,11 @@ final class CodexVoice: SubscriptionVoice {
         }
         pendingFinalSpeech = nil
         deferredTurnCompleted = nil
+        toolDeliveryFailedInTurn = false
         var forwarded = params
+        if status != rawStatus {
+            forwarded["status"] = status
+        }
         if let speech, let thread {
             sendWithoutWaiting("thread/realtime/appendSpeech", ["threadId": thread, "text": speech])
             forwarded["hasSpeech"] = true

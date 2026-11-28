@@ -403,6 +403,7 @@ extension Runner {
                 reading.notes.append("the screenshot came on the second try (the first: \(e))")
             } else if let early = hostEarly, let png = await early.value {
                 reading.png = png
+                reading.firstPictureAt = now()
                 reading.notes.append("screenshot: taken apart from the runner, started beside its own (the runner gave none: \(e))")
             } else if allowHostPicture, let fallback = screenshotFallback {
                 // The answer says what became of the host's path, so a missing picture can be traced.
@@ -415,6 +416,8 @@ extension Runner {
                 switch hostResult {
                 case .success(let png?):
                     reading.png = png
+                    reading.firstPictureStartedAt = began
+                    reading.firstPictureAt = now()
                     reading.notes.append("screenshot: taken apart from the runner (the runner gave none: \(e))")
                 case .success(nil):
                     reading.notes.append("no screenshot: \(e); the host's own path gave none either (\(Int(((now() - began) * 1000).rounded())) ms)")
@@ -432,6 +435,8 @@ extension Runner {
         if treeCame, reading.png != nil, let at = pictureAt.value, treeAt - at > Self.pictureLagLimit, started + timeout - now() > 0.4 {
             if let first = reading.png, let again = try? await captureScreen(timeout: min(1.5, started + timeout - now())) {
                 reading.use(again)
+                reading.firstPictureStartedAt = again.startedAt
+                reading.firstPictureAt = again.finishedAt
                 reading.notes.append("the picture was taken again after the tree, which came \(Int(((treeAt - at) * 1000).rounded())) ms later than the first picture")
                 // The two pictures differ: the screen moved while the tree was read, so its frames
                 // may be off; the model should go by text (scroll_to, numbers) rather than points.

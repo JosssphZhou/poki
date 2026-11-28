@@ -15,15 +15,22 @@ enum VoiceScreen {
 
     /// Characters of base64 an image may take, leaving room for the rest of the event.
     static let limit = 60_000
+    private static let envelopeReserveBytes = 4_000
 
-    static func dataURL(_ jpeg: Data) -> String? {
-        if case .ok(let url) = encodeDataURL(jpeg) { return url }
+    static func base64Limit(forMaxMessageBytes maxMessageBytes: Int?) -> Int {
+        guard let maxMessageBytes else { return Self.limit }
+        return min(Self.limit, max(0, maxMessageBytes - envelopeReserveBytes))
+    }
+
+    static func dataURL(_ jpeg: Data, limit: Int = Self.limit) -> String? {
+        if case .ok(let url) = encodeDataURL(jpeg, limit: limit) { return url }
         return nil
     }
 
-    static func encodeDataURL(_ jpeg: Data) -> DataURLResult {
+    static func encodeDataURL(_ jpeg: Data, limit: Int = Self.limit) -> DataURLResult {
         guard !jpeg.isEmpty else { return .empty }
-        if let url = fitting(jpeg) { return .ok(url) }
+        guard limit > 0 else { return .tooLarge(bytes: jpeg.count) }
+        if let url = fitting(jpeg, limit: limit) { return .ok(url) }
         guard let source = CGImageSourceCreateWithData(jpeg as CFData, nil),
               CGImageSourceGetCount(source) > 0 else {
             return .invalidImage(bytes: jpeg.count)
@@ -34,13 +41,13 @@ enum VoiceScreen {
         for (side, quality) in [(874, 0.45), (700, 0.4), (560, 0.35)] {
             if let smaller = encode(source, side: side, quality: quality) {
                 encodedAny = true
-                if let url = fitting(smaller) { return .ok(url) }
+                if let url = fitting(smaller, limit: limit) { return .ok(url) }
             }
         }
         return encodedAny ? .tooLarge(bytes: jpeg.count) : .invalidImage(bytes: jpeg.count)
     }
 
-    private static func fitting(_ data: Data) -> String? {
+    private static func fitting(_ data: Data, limit: Int) -> String? {
         let base64 = data.base64EncodedString()
         return base64.count <= limit ? "data:image/jpeg;base64," + base64 : nil
     }

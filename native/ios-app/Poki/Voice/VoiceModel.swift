@@ -218,6 +218,112 @@ enum VoiceError: LocalizedError {
 /// the screenshot behind it.
 typealias PhoneAnswer = (text: String, failed: Bool, screen: Data?)
 
+enum VoiceStepStatus: String, Equatable, Sendable {
+    case verifiedCompleted = "verified_completed"
+    case needsOwnerInput = "needs_owner_input"
+    case incomplete = "incomplete"
+    case blocked = "blocked"
+}
+
+struct VoiceStepResult: Equatable, Sendable {
+    let goalID: String
+    let status: VoiceStepStatus
+    let message: String
+    let evidenceID: String?
+
+    static func make(goalID: String, status: VoiceStepStatus, message: String, evidenceID: String?) -> VoiceStepResult {
+        let trimmed = evidenceID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let validEvidence = (trimmed?.isEmpty == false) ? trimmed : nil
+        let safeStatus: VoiceStepStatus = (status == .verifiedCompleted && validEvidence == nil) ? .incomplete : status
+        return VoiceStepResult(goalID: goalID, status: safeStatus, message: message, evidenceID: validEvidence)
+    }
+
+    var wireFooter: String {
+        "result: goal=\(goalID) status=\(status.rawValue) evidence=\(evidenceID ?? "none")"
+    }
+}
+
+enum VoiceDeliveryStatus: Equatable, Sendable {
+    case pending
+    case delivered
+    case failed(reason: String, retryable: Bool)
+    case skipped(reason: String)
+
+    var logTag: String {
+        switch self {
+        case .pending: "pending"
+        case .delivered: "delivered"
+        case .failed(let reason, let retryable): "failed(\(retryable ? "retryable:" : "terminal:")\(reason))"
+        case .skipped(let reason): "skipped(\(reason))"
+        }
+    }
+}
+
+enum VoiceObservationRequirement: String, Equatable, Sendable {
+    case structuredOnly = "structured"
+    case visualConfirmation = "visual"
+}
+
+struct VoicePhoneResult: Sendable {
+    var text: String
+    var failed: Bool
+    var screen: Data?
+    var waitingForOwner = false
+    var actionGeneration: UInt64 = 0
+    var actionFinishedAt: Date? = nil
+    var evidenceSourceAt: Date? = nil
+    var evidenceID: String? = nil
+    var screenshotIsStale = false
+
+    init(text: String, failed: Bool, screen: Data?, waitingForOwner: Bool = false,
+         actionGeneration: UInt64 = 0, actionFinishedAt: Date? = nil,
+         evidenceSourceAt: Date? = nil, evidenceID: String? = nil, screenshotIsStale: Bool = false) {
+        self.text = text
+        self.failed = failed
+        self.screen = screen
+        self.waitingForOwner = waitingForOwner
+        self.actionGeneration = actionGeneration
+        self.actionFinishedAt = actionFinishedAt
+        self.evidenceSourceAt = evidenceSourceAt
+        self.evidenceID = evidenceID
+        self.screenshotIsStale = screenshotIsStale
+    }
+
+    init(_ answer: PhoneAnswer) {
+        self.text = answer.text
+        self.failed = answer.failed
+        self.screen = answer.screen
+        self.waitingForOwner = Self.detectWaitingForOwner(in: answer.text)
+        self.screenshotIsStale = Self.detectStaleScreenshot(in: answer.text)
+    }
+
+    init(_ result: ToolResult) {
+        self.text = result.text
+        self.failed = result.isError
+        self.screen = result.jpeg
+        self.waitingForOwner = result.waitingForOwner || Self.detectWaitingForOwner(in: result.text)
+        self.actionGeneration = result.actionGeneration
+        self.actionFinishedAt = result.actionFinishedAt
+        self.evidenceSourceAt = result.evidenceSourceAt
+        self.evidenceID = result.evidenceID
+        self.screenshotIsStale = result.screenshotIsStale || Self.detectStaleScreenshot(in: result.text)
+    }
+
+    static func detectStaleScreenshot(in text: String) -> Bool {
+        text.contains("the screenshot is the one of the read before")
+            || text.contains("screenshot omitted: only a pre-action image arrived")
+    }
+
+    static func detectWaitingForOwner(in text: String) -> Bool {
+        text.contains("screen: locked")
+            || text.contains("approval_required")
+            || text.contains("handoff:")
+            || text.contains("Poki is waiting for automation to be ready")
+            || text.contains("the user declined on the phone")
+            || text.contains("the user did not allow it on the phone")
+    }
+}
+
 /// One function call the model asked for. Keyed by the model's call_id, it runs at most once, whatever
 /// happens to the connection: a call outlives the session that asked for it, and a new session is told
 /// how it ended instead of asking for it again.
@@ -229,12 +335,25 @@ struct VoiceCall: Identifiable, Equatable {
     /// The connection that asked for it. Only that connection can take a function_call_output for it.
     let session: Int
     var delegation: String? = nil
+    var goalID: String = ""
+    var sequence: UInt64 = 0
+    var deviceGeneration: UInt64 = 0
+    var actionFinishedAt: Date? = nil
+    var evidenceSourceAt: Date? = nil
+    var observationRequirement: VoiceObservationRequirement = .structuredOnly
     var state = State.running
     var output = ""
-    /// The encoded screen when the call finished (look, do, open_app): Realtime sends it next to the output.
+    /// The encoded screen when the call finished (look, do, open_app): Realtime sends it before the output.
     var screenDataURL: String?
-    /// The model has the result (as a function_call_output, or in a reconnect note).
+    /// The model has both the tool result and any required observation (or terminal failure).
     var delivered = false
+    var toolDelivery: VoiceDeliveryStatus = .pending
+    var toolDeliverySession: Int? = nil
+    var observationDelivery: VoiceDeliveryStatus = .skipped(reason: "none")
+    var observationRetryCount = 0
+    var observationSession: Int? = nil
+    var pendingEvidenceID: String? = nil
+    var result: VoiceStepResult? = nil
     var silentResult = false
     let started = Date()
     var finished: Date?
@@ -607,9 +726,20 @@ final class VoiceModel {
     /// the microphone should not stay on for an event that never comes.
     static let stall: Duration = .seconds(60)
     static let backgroundStall: Duration = .seconds(30)
+    static let observationRetryDelay: Duration = .milliseconds(500)
+    static let maxObservationRetries = 3
+    private static let maxStaleReobservations = 2
     private var localTools: Set<String> = []
     /// The conversation item holding the screenshot the model sees now.
     private var screenItem: String?
+    private var nextCallSequence: UInt64 = 0
+    private var currentGoalSequence = 0
+    private var currentGoalID = "g-0"
+    private var latestShownObservation: (sequence: UInt64, generation: UInt64, sourceAt: Date?)?
+    private var observationRetries: [String: Task<Void, Never>] = [:]
+    private var pendingObservationEvents: [String: (callID: String, itemID: String)] = [:]
+    private var hadPriorSession = false
+    private var hasUserTurnInSession = false
     private let log = AppLog.shared
     /// Poki's approval for a tap (PokiCore's rules and approval card): text, app bundle id, app name.
     private let clearTap: @MainActor (String, String?, String?) async -> TapClearance
@@ -619,6 +749,7 @@ final class VoiceModel {
 
     /// look, do and open_app, run by PokiCore on this phone (the relay's tools): name, JSON arguments.
     private let phoneTool: @MainActor (String, String, PhoneOperationCancellation?) async -> PhoneAnswer
+    private let phoneToolResult: (@MainActor (String, String, PhoneOperationCancellation?) async -> VoicePhoneResult)?
 
     /// true while a conversation with the microphone is on: Poki's silent keep-alive audio steps aside
     /// (its .playback session cannot record), and the voice-chat session keeps Poki running instead.
@@ -638,6 +769,7 @@ final class VoiceModel {
 
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String, PhoneOperationCancellation?) async -> PhoneAnswer,
+         phoneToolResult: (@MainActor (String, String, PhoneOperationCancellation?) async -> VoicePhoneResult)? = nil,
          holdMicrophone: @escaping @MainActor (Bool) -> Void = { _ in },
          readyCue: @escaping @MainActor () -> Void = { VoiceReadyCue.play() },
          connection: @escaping @MainActor (@escaping @MainActor ([String: Any]) -> Void, @escaping @MainActor (String) -> Void) -> VoiceConnection = { VoiceLink(onEvent: $0, onClosed: $1) },
@@ -651,6 +783,7 @@ final class VoiceModel {
         self.bridge = VoiceBridge.saved(in: storage)
         self.clearTap = clearTap
         self.phoneTool = phoneTool
+        self.phoneToolResult = phoneToolResult
         self.holdMicrophone = holdMicrophone
         self.readyCue = readyCue
         self.connection = connection
@@ -933,7 +1066,24 @@ final class VoiceModel {
                             endIfDone()
                         }
                     }
-                    return await runPhoneTool(name, arguments: arguments, cancellation: nil)
+                    var result = await runPhoneToolResult(name, arguments: arguments, cancellation: nil)
+                    if result.screenshotIsStale || Self.isStaleFromTimestamps(result) {
+                        result.screen = nil
+                        result.evidenceID = nil
+                        for _ in 0..<Self.maxStaleReobservations where number == session {
+                            let fresh = await runPhoneToolResult("look", arguments: "{}", cancellation: nil)
+                            if !fresh.failed, !fresh.screenshotIsStale, !Self.isStaleFromTimestamps(fresh, against: result.actionFinishedAt),
+                               let screen = fresh.screen, !screen.isEmpty {
+                                result.screen = screen
+                                result.screenshotIsStale = false
+                                break
+                            }
+                        }
+                        if result.screen == nil {
+                            result.text += Self.screenFailureNote("Screenshot unavailable", reason: "stale pre-action screenshot rejected")
+                        }
+                    }
+                    return (result.text, result.failed, result.screen)
                 })
                 return VoiceBridge.Token(value: nil, model: CodexVoice.model, local_tools: [], live: true)
             }
@@ -1383,6 +1533,11 @@ final class VoiceModel {
         liveCloseTimeout = nil
         liveCloseWaiters.resumeAll()
         closeConnection("session ended")
+        if ready || !calls.isEmpty { hadPriorSession = true }
+        hasUserTurnInSession = false
+        cancelAllObservationRetries()
+        pendingObservationEvents.removeAll()
+        latestShownObservation = nil
         usesLive = false
         appAudio = nil
         screenItem = nil
@@ -1410,7 +1565,8 @@ final class VoiceModel {
     private var codexWorkPending: Bool { codexBusy || codexHandoffPending }
 
     private var answerDue: Bool {
-        awaitingAnswer || liveAwaitingPlayback || !liveResultReceipts.isEmpty || activeResponse != nil || wantsResponse || pendingRealtimeTurns > 0
+        awaitingAnswer || liveAwaitingPlayback || !liveResultReceipts.isEmpty || !observationRetries.isEmpty
+            || activeResponse != nil || wantsResponse || pendingRealtimeTurns > 0
             || phase == .hearing || phase == .speaking || calls.contains { $0.state == .running } || codexWorkPending
     }
 
@@ -1710,6 +1866,7 @@ final class VoiceModel {
             sent = link.send(["type": "conversation.item.create", "item": ["type": "message", "role": "user", "content": [["type": "input_audio", "audio": audio]]]]) && sent
         }
         if !sent { log.add("voice", "the recorded speech did not go out on the data channel") }
+        beginUserTurn()
         clock = TurnClock(said: Date())
         wantsResponse = true
         flush()
@@ -1918,6 +2075,7 @@ final class VoiceModel {
                     let stopped = appAudio == nil ? "The user stopped the reply and cancelled the phone task." : "The user stopped the reply."
                     stopLivePlayback(on: link, note: stopped + " Drop the reply and stay silent until a new request.")
                 } else if !liveCallerSpeech.alreadyHandled, !utterance.isEmpty {
+                    beginUserTurn()
                     resumeLiveAudio(link)
                     if !answerDue, phase != .thinking { clock = TurnClock(said: time.now()) }
                     else if clock.call == nil { clock.said = time.now() }
@@ -1965,7 +2123,10 @@ final class VoiceModel {
             guard let id = event["client_event_id"] as? String,
                   let call = liveResultReceipts.removeValue(forKey: id),
                   let index = calls.firstIndex(where: { $0.id == call }) else { return }
+            calls[index].toolDelivery = .delivered
+            calls[index].toolDeliverySession = session
             calls[index].delivered = true
+            logObservationCorrelation(calls[index], note: "live_reconnect_acked")
             endIfDone()
         case "response.event":
             guard var backend = event["event"] as? [String: Any], let kind = backend["type"] as? String else { return }
@@ -1985,6 +2146,7 @@ final class VoiceModel {
         case "input_audio_buffer.speech_started":
             trace("model speech started, reply was playing: \(phase == .speaking)")
             keepOpen()
+            beginUserTurn()
             if usesLive {
                 let eventID = event["event_id"] as? String
                 if let eventID {
@@ -2007,6 +2169,7 @@ final class VoiceModel {
                 openingCapture?.audio.confirmRemoteAudio(session: number, endMilliseconds: end)
             }
             guard !usesLive else { return }
+            if !hasUserTurnInSession { beginUserTurn() }
             phase = .thinking
             awaitingAnswer = true
             clock = TurnClock(said: Date())
@@ -2018,14 +2181,20 @@ final class VoiceModel {
                 liveCallerSpeech.recordInput(id: (event["item_id"] as? String) ?? (event["event_id"] as? String))
                 return
             }
+            if !hasUserTurnInSession { beginUserTurn() }
             guard manualRealtimeTurns, let item = event["item_id"] as? String, !item.isEmpty,
                   committedRealtimeItems.insert(item).inserted else { return }
             pendingRealtimeTurns += 1
             flush()
+        case "conversation.item.created":
+            if let itemID = (event["item"] as? [String: Any])?["id"] as? String {
+                pendingObservationEvents = pendingObservationEvents.filter { $0.value.itemID != itemID }
+            }
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
             if let text = event["transcript"] as? String, !text.isEmpty {
+                if !hasUserTurnInSession { beginUserTurn() }
                 lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
         case "response.created":
@@ -2087,7 +2256,29 @@ final class VoiceModel {
             // request for an answer is out, leaves that answer expected.
             let error = event["error"] as? [String: Any]
             let about = (error?["client_event_id"] ?? error?["event_id"]) as? String
-            if let about, liveResultReceipts.removeValue(forKey: about) != nil {
+            if let about, let callID = liveResultReceipts.removeValue(forKey: about) {
+                if let index = calls.firstIndex(where: { $0.id == callID }) {
+                    calls[index].toolDelivery = .failed(reason: message, retryable: true)
+                    logObservationCorrelation(calls[index], note: "live_receipt_error")
+                }
+                endIfDone()
+                return
+            }
+            if let about, let pendingObs = pendingObservationEvents.removeValue(forKey: about) {
+                if screenItem == pendingObs.itemID { screenItem = nil }
+                if let index = calls.firstIndex(where: { $0.id == pendingObs.callID }) {
+                    calls[index].observationDelivery = .failed(reason: message, retryable: false)
+                    calls[index].pendingEvidenceID = nil
+                    let blocked = VoiceStepResult.make(
+                        goalID: calls[index].goalID,
+                        status: .blocked,
+                        message: "Screenshot was rejected by the server: \(message)",
+                        evidenceID: nil
+                    )
+                    calls[index].result = blocked
+                    logObservationCorrelation(calls[index], note: "obs_server_error")
+                    _ = link.send(note("Screenshot item for \(calls[index].name) (\(calls[index].id)) was rejected by the server (\(message)). Do not announce completion.\n\(blocked.wireFooter)"))
+                }
                 endIfDone()
                 return
             }
@@ -2201,12 +2392,18 @@ final class VoiceModel {
 
     private func completeLiveControl(_ call: VoiceCall, state: VoiceCall.State, output: String) {
         var result = call
+        if result.goalID.isEmpty { result.goalID = activeGoalID(for: result) }
         result.state = state
         result.output = output
         result.finished = Date()
-        result.delivered = ready && link?.send(["type": "response.item.create", "item": [
+        let sent = ready && link?.send(["type": "response.item.create", "item": [
             "type": "function_call_output", "call_id": call.id, "output": output,
         ]]) == true
+        result.toolDelivery = sent ? .delivered : .failed(reason: "data channel send failed", retryable: false)
+        result.toolDeliverySession = sent ? session : nil
+        result.observationDelivery = .skipped(reason: "control")
+        result.result = VoiceStepResult.make(goalID: result.goalID, status: state == .done ? .incomplete : .blocked, message: output, evidenceID: nil)
+        result.delivered = sent
         if let index = calls.firstIndex(where: { $0.id == call.id }) { calls[index] = result }
         else { calls.append(result) }
         log.add("voice", "tool \(call.name) \(state == .done ? "done" : "failed") | control: \(Self.sanitizeLogText(output, limit: 120))")
@@ -2220,6 +2417,17 @@ final class VoiceModel {
         guard liveSpeechStopped else { return }
         liveSpeechStopped = false
         link.setRemoteVolume(muted ? 0 : 1)
+    }
+
+    private func beginUserTurn() {
+        hasUserTurnInSession = true
+        currentGoalSequence += 1
+        currentGoalID = "g-\(session)-\(currentGoalSequence)"
+    }
+
+    private func activeGoalID(for call: VoiceCall) -> String {
+        if hasUserTurnInSession { return currentGoalID }
+        return "g-\(call.session)-\(call.sequence)"
     }
 
     /// Runs a call once. The same call_id again (a repeated event) is ignored.
@@ -2244,7 +2452,28 @@ final class VoiceModel {
             return
         }
         var call = call
+        nextCallSequence += 1
+        call.sequence = nextCallSequence
+        call.goalID = activeGoalID(for: call)
         call.silentResult = usesLive && liveSpeechStopped
+        if hadPriorSession && !hasUserTurnInSession && Self.isMutatingAction(call.name, arguments: call.arguments),
+           let prior = calls.last(where: {
+               $0.session < call.session
+                   && $0.name == call.name
+                   && Self.canonicalArguments($0.arguments) == Self.canonicalArguments(call.arguments)
+                   && $0.state != .failed
+           }) {
+            call.state = .done
+            call.output = "This action already ran before reconnecting (call \(prior.id)). Do not run it again; use the previous result."
+            call.observationRequirement = .structuredOnly
+            call.observationDelivery = .skipped(reason: "duplicate_after_reconnect")
+            call.result = VoiceStepResult.make(goalID: call.goalID, status: .blocked, message: call.output, evidenceID: nil)
+            call.finished = Date()
+            calls.append(call)
+            logObservationCorrelation(call, note: "duplicate_blocked")
+            deliver(calls.count - 1)
+            return
+        }
         calls.append(call)
         clock.call = clock.call ?? Date()
         clock.callNames.append(call.name)
@@ -2284,10 +2513,43 @@ final class VoiceModel {
             var state = VoiceCall.State.done
             var output: String
             var screen: Data?
+            var waitingForOwner = false
+            var deviceGeneration: UInt64 = 0
+            var actionFinishedAt: Date?
+            var evidenceSourceAt: Date?
+            var pendingEvidenceID: String?
+            var staleRejected = false
             if local, Self.phoneTools.contains(call.name) {
-                let answer = await runPhoneTool(call.name, arguments: call.arguments, cancellation: operation)
+                var answer = await runPhoneToolResult(call.name, arguments: call.arguments, cancellation: operation)
+                waitingForOwner = answer.waitingForOwner
+                deviceGeneration = answer.actionGeneration
+                actionFinishedAt = answer.actionFinishedAt
+                evidenceSourceAt = answer.evidenceSourceAt ?? Self.parseReadTimestamp(in: answer.text)
+                if answer.screenshotIsStale || Self.isStaleFromTimestamps(answer) {
+                    answer.screen = nil
+                    answer.evidenceID = nil
+                    staleRejected = true
+                    for _ in 0..<Self.maxStaleReobservations {
+                        guard call.session == session, !stopped(call) else { break }
+                        let fresh = await runPhoneToolResult("look", arguments: "{}", cancellation: operation)
+                        if !fresh.failed, !fresh.screenshotIsStale,
+                           !Self.isStaleFromTimestamps(fresh, against: actionFinishedAt),
+                           let freshScreen = fresh.screen, !freshScreen.isEmpty {
+                            answer.screen = freshScreen
+                            answer.screenshotIsStale = false
+                            evidenceSourceAt = fresh.evidenceSourceAt ?? Self.parseReadTimestamp(in: fresh.text)
+                            deviceGeneration = max(deviceGeneration, fresh.actionGeneration)
+                            pendingEvidenceID = fresh.evidenceID ?? "obs-\(UUID().uuidString.prefix(8).lowercased())"
+                            staleRejected = false
+                            break
+                        }
+                    }
+                }
                 output = answer.text.count > 6000 ? String(answer.text.prefix(6000)) + "…" : answer.text
                 screen = answer.screen
+                if pendingEvidenceID == nil, let screen, !screen.isEmpty, !staleRejected {
+                    pendingEvidenceID = answer.evidenceID ?? "obs-\(UUID().uuidString.prefix(8).lowercased())"
+                }
                 if answer.failed { state = .failed }
                 if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     state = .failed
@@ -2318,10 +2580,12 @@ final class VoiceModel {
                             result = try await bridge.run(callID: call.id, name: call.name, arguments: call.arguments, checked: checked)
                         } else {
                             result = Self.refused(clearance)
+                            waitingForOwner = true
                             log.add("voice", "tap not sent: \(result.output)")
                         }
                     }
                     output = note + result.output
+                    if VoicePhoneResult.detectWaitingForOwner(in: output) { waitingForOwner = true }
                     if result.state != "done" { state = .failed }
                 } catch {
                     // The bridge may have run it; never send it again. The model hears that the outcome is unknown.
@@ -2332,14 +2596,28 @@ final class VoiceModel {
                 output = "error: no voice bridge"
                 state = .failed
             }
+            if actionFinishedAt == nil, Self.isMutatingAction(call.name, arguments: call.arguments) {
+                actionFinishedAt = time.now()
+            }
             let rawToolOutput = output
             var screenOutcome = ScreenAttachmentOutcome.none
             let screenBytes = screen?.count
             var deliveredScreenURL: String?
-            if live, let screen {
+            var observationDelivery: VoiceDeliveryStatus = .skipped(reason: "no_screenshot")
+            let observationRequirement: VoiceObservationRequirement = (screen != nil || staleRejected) ? .visualConfirmation : .structuredOnly
+            if staleRejected {
+                let reason = "stale pre-action screenshot rejected"
+                output += Self.screenFailureNote(live ? "Current screen description failed" : "Screenshot unavailable", reason: reason)
+                screenOutcome = live ? .liveFailed(reason) : .realtimeImageFailed(reason)
+                observationDelivery = .failed(reason: reason, retryable: false)
+                pendingEvidenceID = nil
+            } else if live, let screen {
                 if let describeScreen {
                     if call.session != session || !ready || stopped(call) {
-                        screenOutcome = .liveSkipped(stopped(call) ? "cancelled" : "session closed")
+                        let reason = stopped(call) ? "cancelled" : "session closed"
+                        screenOutcome = .liveSkipped(reason)
+                        observationDelivery = .skipped(reason: reason)
+                        pendingEvidenceID = nil
                     } else {
                         switch VoiceScreen.encodeDataURL(screen) {
                         case .ok(let image):
@@ -2349,64 +2627,110 @@ final class VoiceModel {
                                     let reason = "screen description returned empty text"
                                     output += Self.screenFailureNote("Current screen description failed", reason: reason)
                                     screenOutcome = .liveFailed(reason)
+                                    observationDelivery = .failed(reason: reason, retryable: false)
+                                    pendingEvidenceID = nil
                                 } else {
                                     output += "\nCurrent screen description: " + description
                                     screenOutcome = .liveDescribed(chars: description.count)
+                                    observationDelivery = .delivered
+                                    pendingEvidenceID = pendingEvidenceID ?? "desc-\(call.id)"
                                 }
                             } catch {
                                 let reason = Self.screenDescriptionFailureReason(for: error)
                                 output += Self.screenFailureNote("Current screen description failed", reason: reason)
                                 screenOutcome = .liveFailed(reason)
+                                observationDelivery = .failed(reason: reason, retryable: false)
+                                pendingEvidenceID = nil
                             }
                         case .empty:
                             let reason = "screenshot image was empty"
                             output += Self.screenFailureNote("Current screen description failed", reason: reason)
                             screenOutcome = .liveFailed(reason)
+                            observationDelivery = .failed(reason: reason, retryable: false)
+                            pendingEvidenceID = nil
                         case .invalidImage(let bytes):
                             let reason = "screenshot (\(bytes) bytes) could not be encoded as JPEG"
                             output += Self.screenFailureNote("Current screen description failed", reason: reason)
                             screenOutcome = .liveFailed(reason)
+                            observationDelivery = .failed(reason: reason, retryable: false)
+                            pendingEvidenceID = nil
                         case .tooLarge(let bytes):
                             let reason = "screenshot (\(bytes) bytes) exceeded the upload size limit after compression"
                             output += Self.screenFailureNote("Current screen description failed", reason: reason)
                             screenOutcome = .liveFailed(reason)
+                            observationDelivery = .failed(reason: reason, retryable: false)
+                            pendingEvidenceID = nil
                         }
                     }
                 } else {
                     output += "\nScreenshot descriptions require an HTTPS voice bridge. Use the screen elements."
                     screenOutcome = .liveUnavailable("HTTPS voice bridge required")
+                    observationDelivery = .skipped(reason: "https_bridge_required")
+                    pendingEvidenceID = nil
                 }
             } else if !live, let screen {
-                switch VoiceScreen.encodeDataURL(screen) {
+                let imageLimit = VoiceScreen.base64Limit(forMaxMessageBytes: link?.maxDataChannelMessageBytes)
+                switch VoiceScreen.encodeDataURL(screen, limit: imageLimit) {
                 case .ok(let image):
                     deliveredScreenURL = image
+                    observationDelivery = .pending
+                    pendingEvidenceID = pendingEvidenceID ?? "obs-\(UUID().uuidString.prefix(8).lowercased())"
                 case .empty:
                     let reason = "screenshot image was empty"
                     output += Self.screenFailureNote("Screenshot unavailable", reason: reason)
                     screenOutcome = .realtimeImageFailed(reason)
+                    observationDelivery = .failed(reason: reason, retryable: false)
+                    pendingEvidenceID = nil
                 case .invalidImage(let bytes):
                     let reason = "screenshot (\(bytes) bytes) could not be encoded as JPEG"
                     output += Self.screenFailureNote("Screenshot unavailable", reason: reason)
                     screenOutcome = .realtimeImageFailed(reason)
+                    observationDelivery = .failed(reason: reason, retryable: false)
+                    pendingEvidenceID = nil
                 case .tooLarge(let bytes):
                     let reason = "screenshot (\(bytes) bytes) exceeded the data channel size limit after compression"
                     output += Self.screenFailureNote("Screenshot unavailable", reason: reason)
                     screenOutcome = .realtimeImageFailed(reason)
+                    observationDelivery = .failed(reason: reason, retryable: false)
+                    pendingEvidenceID = nil
                 }
             }
+            let stepResult = Self.classifyStepResult(
+                call: call,
+                state: state,
+                rawToolOutput: rawToolOutput,
+                waitingForOwner: waitingForOwner,
+                localPhoneTool: local && Self.phoneTools.contains(call.name),
+                live: live,
+                observationRequirement: observationRequirement,
+                observationDelivery: observationDelivery,
+                screenOutcome: screenOutcome,
+                pendingEvidenceID: pendingEvidenceID
+            )
             finish(call.id, state: state, output: output, rawToolOutput: rawToolOutput,
-                   screenDataURL: deliveredScreenURL, screenBytes: screenBytes, screenOutcome: screenOutcome)
+                   screenDataURL: deliveredScreenURL, screenBytes: screenBytes, screenOutcome: screenOutcome,
+                   deviceGeneration: deviceGeneration, actionFinishedAt: actionFinishedAt,
+                   evidenceSourceAt: evidenceSourceAt, observationRequirement: observationRequirement,
+                   observationDelivery: observationDelivery, pendingEvidenceID: pendingEvidenceID, result: stepResult)
         }
     }
 
     private static let mediaToolRefusal = "This is a media question. Phone tools are unavailable. Answer the user's question from the media excerpt."
 
     private func runPhoneTool(_ name: String, arguments: String, cancellation: PhoneOperationCancellation?) async -> PhoneAnswer {
+        let result = await runPhoneToolResult(name, arguments: arguments, cancellation: cancellation)
+        return (result.text, result.failed, result.screen)
+    }
+
+    private func runPhoneToolResult(_ name: String, arguments: String, cancellation: PhoneOperationCancellation?) async -> VoicePhoneResult {
         guard appAudio == nil else {
             log.add("voice", "tool refused during media questions")
-            return (Self.mediaToolRefusal, true, nil)
+            return VoicePhoneResult(text: Self.mediaToolRefusal, failed: true, screen: nil)
         }
-        return await phoneTool(name, arguments, cancellation)
+        if let phoneToolResult {
+            return await phoneToolResult(name, arguments, cancellation)
+        }
+        return VoicePhoneResult(await phoneTool(name, arguments, cancellation))
     }
 
     private func refuseMediaTool(_ call: VoiceCall) {
@@ -2421,17 +2745,29 @@ final class VoiceModel {
     }
 
     private func finish(_ id: String, state: VoiceCall.State, output: String, rawToolOutput: String? = nil,
-                        screenDataURL: String? = nil, screenBytes: Int? = nil, screenOutcome: ScreenAttachmentOutcome = .none) {
+                        screenDataURL: String? = nil, screenBytes: Int? = nil, screenOutcome: ScreenAttachmentOutcome = .none,
+                        deviceGeneration: UInt64 = 0, actionFinishedAt: Date? = nil, evidenceSourceAt: Date? = nil,
+                        observationRequirement: VoiceObservationRequirement = .structuredOnly,
+                        observationDelivery: VoiceDeliveryStatus = .skipped(reason: "no_screenshot"),
+                        pendingEvidenceID: String? = nil, result: VoiceStepResult? = nil) {
         guard let index = calls.firstIndex(where: { $0.id == id }) else { return }
         calls[index].state = state
         calls[index].output = output
         calls[index].screenDataURL = screenDataURL
+        calls[index].deviceGeneration = deviceGeneration
+        calls[index].actionFinishedAt = actionFinishedAt
+        calls[index].evidenceSourceAt = evidenceSourceAt
+        calls[index].observationRequirement = observationRequirement
+        calls[index].observationDelivery = observationDelivery
+        calls[index].pendingEvidenceID = pendingEvidenceID
+        calls[index].result = result
         calls[index].finished = Date()
         clock.toolDone = Date()
         let summary = Self.summarizeToolOutput(tool: calls[index].name, rawOutput: rawToolOutput ?? output,
                                                outputChars: output.count, state: state,
                                                screenBytes: screenBytes, screenOutcome: screenOutcome)
         log.add("voice", "tool \(calls[index].name) \(state == .done ? "done" : "failed") | \(summary)")
+        logObservationCorrelation(calls[index], note: "finished")
         if calls[index].silentResult {
             if phase == .thinking, !answerDue { phase = .listening }
             endIfDone()
@@ -2543,7 +2879,8 @@ final class VoiceModel {
     }
 
     /// Hands a finished call to the model: as its function_call_output in the session that asked, or as a
-    /// note in a later session. With no session, it waits for the next one.
+    /// note in a later session. Tool delivery and observation delivery are tracked separately so a failed
+    /// screenshot retries image-only without re-sending input or repeating function_call_output.
     private func deliver(_ index: Int) {
         guard appAudio == nil, let link, ready, !calls[index].delivered,
               !calls[index].silentResult, calls[index].state != .running else { return }
@@ -2553,17 +2890,65 @@ final class VoiceModel {
             reportLiveReconnect(call, on: link)
             return
         }
-        let itemEvent = usesLive ? "response.item.create" : "conversation.item.create"
-        let reconnect = "While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(call.output)"
-        let sent = sameSession
-            ? link.send(["type": itemEvent, "item": ["type": "function_call_output", "call_id": call.id, "output": call.output]])
-            : link.send(note(reconnect, spoken: true))
-        guard sent else { return }
-        if !usesLive, sameSession, let imageURL = call.screenDataURL { show(imageURL, on: link) }
-        calls[index].screenDataURL = nil
+        if !usesLive, let imageURL = calls[index].screenDataURL {
+            if calls[index].observationSession != session {
+                calls[index].observationSession = session
+                calls[index].observationRetryCount = 0
+                calls[index].observationDelivery = .pending
+            }
+            let imageSent = calls[index].observationDelivery == .delivered || show(imageURL, for: index, on: link)
+            calls[index].result = Self.classifyStepResult(
+                call: calls[index], state: call.state, rawToolOutput: call.output,
+                waitingForOwner: call.result?.status == .needsOwnerInput,
+                localPhoneTool: localTools.contains(call.name) && Self.phoneTools.contains(call.name), live: false,
+                observationRequirement: call.observationRequirement,
+                observationDelivery: calls[index].observationDelivery, screenOutcome: .none,
+                pendingEvidenceID: calls[index].pendingEvidenceID
+            )
+            if !imageSent {
+                calls[index].observationDelivery = .failed(reason: "data channel send failed", retryable: true)
+                calls[index].observationRetryCount += 1
+                if calls[index].observationRetryCount <= Self.maxObservationRetries {
+                    lastActivity = time.now()
+                    logObservationCorrelation(calls[index], note: "obs_retry_\(calls[index].observationRetryCount)")
+                    scheduleObservationRetry(for: call.id, session: session)
+                    return
+                }
+                cancelObservationRetry(for: call.id)
+                let blockedMessage = "Screenshot delivery failed after \(Self.maxObservationRetries) retries. Do not announce completion."
+                let blockedResult = VoiceStepResult.make(goalID: calls[index].goalID, status: .blocked, message: blockedMessage, evidenceID: nil)
+                calls[index].observationDelivery = .failed(reason: "data channel send failed after \(Self.maxObservationRetries) retries", retryable: false)
+                calls[index].screenDataURL = nil
+                calls[index].pendingEvidenceID = nil
+                calls[index].result = blockedResult
+                logObservationCorrelation(calls[index], note: "obs_exhausted")
+                _ = link.send(note("Screenshot delivery failed for \(call.name) (\(call.id)) after retries; the post-action image did not reach the model. Do not announce completion.\n\(blockedResult.wireFooter)"))
+            }
+        }
+
+        let toolAlreadyDeliveredInSession = calls[index].toolDelivery == .delivered && calls[index].toolDeliverySession == session
+        if !toolAlreadyDeliveredInSession {
+            let itemEvent = usesLive ? "response.item.create" : "conversation.item.create"
+            let payload = wireOutput(for: calls[index])
+            let reconnect = "While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(payload)"
+            let sent = sameSession
+                ? link.send(["type": itemEvent, "item": ["type": "function_call_output", "call_id": call.id, "output": payload]])
+                : link.send(note(reconnect, spoken: true))
+            guard sent else {
+                calls[index].toolDelivery = .failed(reason: "data channel send failed", retryable: true)
+                logObservationCorrelation(calls[index], note: "tool_send_failed")
+                return
+            }
+            calls[index].toolDelivery = .delivered
+            calls[index].toolDeliverySession = session
+        }
+
+        cancelObservationRetry(for: call.id)
         calls[index].delivered = true
+        calls[index].screenDataURL = nil
         lastActivity = time.now()
         clock.delivered = Date()
+        logObservationCorrelation(calls[index], note: "delivered")
         if usesLive, stopped(call) {
             endIfDone()
             return
@@ -2587,14 +2972,175 @@ final class VoiceModel {
         keepOpen()
     }
 
-    /// A function_call_output carries text only, so the screenshot behind it follows as an image in a
-    /// user message. Only the latest stays: the one before is deleted, as it no longer shows the screen.
-    private func show(_ image: String, on link: VoiceConnection) {
-        if let old = screenItem { link.send(["type": "conversation.item.delete", "item_id": old, "event_id": "delete-\(old)"]) }
+    /// A function_call_output carries text only, so its required screenshot is sent first in a
+    /// user message. Only the latest stays: the one before is deleted after the new one is sent, and a
+    /// late older call never overwrites newer evidence.
+    private func show(_ image: String, for index: Int, on link: VoiceConnection) -> Bool {
+        let call = calls[index]
+        if isSupersededByNewerObservation(call) {
+            calls[index].observationDelivery = .skipped(reason: "superseded_by_newer_observation")
+            calls[index].screenDataURL = nil
+            logObservationCorrelation(calls[index], note: "obs_superseded")
+            return true
+        }
+        let oldItem = screenItem
         let id = "screen-\(UUID().uuidString.prefix(8).lowercased())"
+        let eventID = "add-\(id)"
         let item: [String: Any] = ["id": id, "type": "message", "role": "user", "content": [["type": "input_image", "image_url": image]]]
-        screenItem = link.send(["type": "conversation.item.create", "event_id": "add-\(id)", "item": item]) ? id : nil
-        if screenItem == nil { log.add("voice", "screenshot not sent (\(image.count) characters)") }
+        guard link.send(["type": "conversation.item.create", "event_id": eventID, "item": item]) else {
+            log.add("voice", "screenshot not sent (\(image.count) characters)")
+            return false
+        }
+        if let old = oldItem {
+            _ = link.send(["type": "conversation.item.delete", "item_id": old, "event_id": "delete-\(old)"])
+        }
+        screenItem = id
+        if pendingObservationEvents.count > 32 { pendingObservationEvents.removeAll() }
+        pendingObservationEvents[eventID] = (callID: call.id, itemID: id)
+        latestShownObservation = (sequence: call.sequence, generation: call.deviceGeneration, sourceAt: call.evidenceSourceAt)
+        calls[index].observationDelivery = .delivered
+        logObservationCorrelation(calls[index], note: "obs_sent")
+        return true
+    }
+
+    private func scheduleObservationRetry(for callID: String, session number: Int) {
+        observationRetries[callID]?.cancel()
+        keepOpen()
+        observationRetries[callID] = Task { [weak self, time] in
+            await time.sleep(Self.observationRetryDelay)
+            guard let self, !Task.isCancelled else { return }
+            self.observationRetries.removeValue(forKey: callID)
+            guard self.session == number, self.ready, self.link != nil,
+                  let index = self.calls.firstIndex(where: { $0.id == callID }),
+                  !self.calls[index].delivered else { return }
+            self.deliver(index)
+        }
+    }
+
+    private func cancelObservationRetry(for callID: String) {
+        observationRetries.removeValue(forKey: callID)?.cancel()
+    }
+
+    private func cancelAllObservationRetries() {
+        for task in observationRetries.values { task.cancel() }
+        observationRetries.removeAll()
+    }
+
+    private func isSupersededByNewerObservation(_ call: VoiceCall) -> Bool {
+        guard let latest = latestShownObservation else { return false }
+        if call.deviceGeneration < latest.generation { return true }
+        if call.deviceGeneration == latest.generation, call.sequence < latest.sequence { return true }
+        if let callAt = call.evidenceSourceAt, let latestAt = latest.sourceAt, callAt < latestAt { return true }
+        return false
+    }
+
+    private func wireOutput(for call: VoiceCall) -> String {
+        guard let footer = call.result?.wireFooter else { return call.output }
+        return call.output + "\n" + footer
+    }
+
+    private func logObservationCorrelation(_ call: VoiceCall, note: String) {
+        let actionAt = call.actionFinishedAt.map { Self.isoTimestamp($0) } ?? "none"
+        let evidenceAt = call.evidenceSourceAt.map { Self.isoTimestamp($0) } ?? "none"
+        let status = call.result?.status.rawValue ?? "pending"
+        let evidence = call.result?.evidenceID ?? call.pendingEvidenceID ?? "none"
+        log.add("voice", "delivery(\(note)) session=\(session) call=\(call.id) goal=\(call.goalID) gen=\(call.deviceGeneration) actionAt=\(actionAt) evidenceAt=\(evidenceAt) req=\(call.observationRequirement.rawValue) toolDelivery=\(call.toolDelivery.logTag) obsDelivery=\(call.observationDelivery.logTag) status=\(status) evidence=\(evidence)")
+    }
+
+    private static func isStaleFromTimestamps(_ result: VoicePhoneResult, against referenceFinishedAt: Date? = nil) -> Bool {
+        guard let finishedAt = referenceFinishedAt ?? result.actionFinishedAt,
+              let sourceAt = result.evidenceSourceAt else { return false }
+        return sourceAt.timeIntervalSince(finishedAt) < -0.05
+    }
+
+    private static func classifyStepResult(
+        call: VoiceCall,
+        state: VoiceCall.State,
+        rawToolOutput: String,
+        waitingForOwner: Bool,
+        localPhoneTool: Bool,
+        live: Bool,
+        observationRequirement: VoiceObservationRequirement,
+        observationDelivery: VoiceDeliveryStatus,
+        screenOutcome: ScreenAttachmentOutcome,
+        pendingEvidenceID: String?
+    ) -> VoiceStepResult {
+        let summary = sanitizeLogText(rawToolOutput, limit: 160)
+        if waitingForOwner {
+            return VoiceStepResult.make(goalID: call.goalID, status: .needsOwnerInput, message: summary, evidenceID: pendingEvidenceID)
+        }
+        if state == .failed {
+            return VoiceStepResult.make(goalID: call.goalID, status: .blocked, message: summary, evidenceID: nil)
+        }
+        if case .failed(let reason, _) = observationDelivery {
+            return VoiceStepResult.make(goalID: call.goalID, status: .blocked, message: reason, evidenceID: nil)
+        }
+        let hasUnconfirmedEffect = rawToolOutput.contains("send check: not confirmed")
+            || rawToolOutput.contains("touch effect: unconfirmed")
+            || rawToolOutput.contains("may have been delivered")
+            || rawToolOutput.contains("screenshot omitted:")
+        if hasUnconfirmedEffect {
+            return VoiceStepResult.make(goalID: call.goalID, status: .incomplete, message: summary, evidenceID: nil)
+        }
+        if observationRequirement == .visualConfirmation {
+            if live {
+                if case .liveDescribed = screenOutcome {
+                    return VoiceStepResult.make(goalID: call.goalID, status: .verifiedCompleted, message: summary, evidenceID: pendingEvidenceID ?? "desc-\(call.id)")
+                }
+                return VoiceStepResult.make(goalID: call.goalID, status: .incomplete, message: summary, evidenceID: nil)
+            }
+            let delivered = observationDelivery == .delivered
+            return VoiceStepResult.make(goalID: call.goalID, status: delivered ? .verifiedCompleted : .incomplete,
+                                        message: summary, evidenceID: delivered ? pendingEvidenceID : nil)
+        }
+        if localPhoneTool && isMutatingAction(call.name, arguments: call.arguments) {
+            return VoiceStepResult.make(goalID: call.goalID, status: .incomplete, message: summary, evidenceID: nil)
+        }
+        return VoiceStepResult.make(goalID: call.goalID, status: .verifiedCompleted, message: summary, evidenceID: pendingEvidenceID ?? "struct-\(call.id)")
+    }
+
+    private static func isMutatingAction(_ name: String, arguments: String) -> Bool {
+        switch name {
+        case "look", "read_screen", "get_ios_version", VoiceDirect.cancelCurrentTask:
+            return false
+        case "open_app", "open_settings", "tap_text", "go_home":
+            return true
+        case "do":
+            guard let data = arguments.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return true
+            }
+            if let actions = object["actions"] as? [Any], !actions.isEmpty { return true }
+            return object["finish"] as? Bool == true
+        default:
+            return true
+        }
+    }
+
+    private static func canonicalArguments(_ raw: String) -> String {
+        guard let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              JSONSerialization.isValidJSONObject(object),
+              let sorted = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else {
+            return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(decoding: sorted, as: UTF8.self)
+    }
+
+    private static func parseReadTimestamp(in output: String) -> Date? {
+        guard let range = output.range(of: #"read:\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"#, options: .regularExpression) else {
+            return nil
+        }
+        let token = output[range].replacingOccurrences(of: #"^read:\s*"#, with: "", options: .regularExpression)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: token) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: token)
+    }
+
+    private static func isoTimestamp(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
     }
 
     /// A new session after a drop: say what already ran, so the model reports it instead of asking again.
