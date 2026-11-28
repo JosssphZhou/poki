@@ -3167,6 +3167,8 @@ final class ChatHarnessTests: XCTestCase {
         // Even before a new message is sent, ChatTranscript without waitingQuestion must render the
         // stale question bubble text while hiding every option button and Other answer.
         do {
+            let prepared = await Task.detached { PKInProcess.shared().prepare() }.value
+            XCTAssertEqual(prepared["ok"] as? Bool, true, "the native accessibility session must be readable: \(prepared)")
             let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
             let covered = scene.windows.filter { !$0.accessibilityElementsHidden }
             covered.forEach { $0.accessibilityElementsHidden = true }
