@@ -170,19 +170,21 @@ final class ModelSessionMetadataTests: XCTestCase {
     }
 
     func testAuxiliaryChatNamingSendsTheSameSessionToModel() async throws {
-        let server = try FakeCompletions(replies: [FakeCompletions.text("Sydney trip")])
-        let chatID = "naming-MixedCase-\(UUID().uuidString)"
-        let model = Model(id: "short-title", name: "Short title", api: .openAICompletions,
-                          provider: "opencode-go", baseUrl: "http://127.0.0.1:\(server.port)/v1",
-                          reasoning: false, input: [.text],
-                          cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
-                          contextWindow: 1_000, maxTokens: 100)
-        let title = await SessionNamer.name(for: "Plan a Sydney trip", provider: .custom,
-                                           model: model, sessionID: chatID)
-        // The 0.4.3 fake server replies to naming calls independently of chat scripts.
-        XCTAssertEqual(title, "Test conversation")
-        XCTAssertEqual(server.requestHeaders.first?["x-opencode-session"], chatID)
-        XCTAssertEqual(server.requestHeaders.count, 1)
+        for responses in [false, true] {
+            let server = try FakeCompletions(replies: [FakeCompletions.text("Sydney trip")])
+            let chatID = "naming-MixedCase-\(UUID().uuidString)"
+            let model = Model(id: "short-title", name: "Short title",
+                              api: responses ? .openAIResponses : .openAICompletions,
+                              provider: "opencode-go", baseUrl: "http://127.0.0.1:\(server.port)/v1",
+                              reasoning: false, input: [.text],
+                              cost: ModelCost(input: 0, output: 0, cacheRead: 0, cacheWrite: 0),
+                              contextWindow: 1_000, maxTokens: 100)
+            let title = await SessionNamer.name(for: "Plan a Sydney trip", provider: .custom,
+                                               model: model, sessionID: chatID)
+            XCTAssertEqual(title, "Test conversation", "Responses protocol: \(responses)")
+            XCTAssertEqual(server.requestHeaders.first?["x-opencode-session"], chatID)
+            XCTAssertEqual(server.requestHeaders.count, 1)
+        }
     }
 
     /// Paired loopback measurements isolate the cost of routing metadata from the
