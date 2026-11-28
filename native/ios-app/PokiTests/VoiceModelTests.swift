@@ -4353,8 +4353,8 @@ extension VoiceModelTests {
         )
     }
 
-    /// The screenshot behind a step reaches the model as an image right after the step's output and before
-    /// the answer is asked for (a function_call_output carries text only); the next step's replaces it.
+    /// The screenshot reaches the model before the step's completion receipt and response request;
+    /// the next step replaces it.
     func testWhatAStepSawReachesTheModelAsAnImage() async {
         let h = Harness(phoneTool: { _, arguments in ("app: Photos", false, Data(arguments.utf8)) })
         await h.talk()
@@ -4378,8 +4378,8 @@ extension VoiceModelTests {
         let asks = sent.indices.filter { sent[$0]["type"] as? String == "response.create" }
         XCTAssertEqual(images.map(\.url), ["data:image/jpeg;base64,e30=", "data:image/jpeg;base64,eyJmdWxsIjp0cnVlfQ=="])
         guard images.count == 2, asks.count == 2 else { return XCTFail("two screenshots and two answers asked for, got \(images.count) and \(asks.count)") }
-        XCTAssertTrue(output("c1") < images[0].index && images[0].index < asks[0])
-        XCTAssertTrue(output("c2") < images[1].index && images[1].index < asks[1])
+        XCTAssertTrue(images[0].index < output("c1") && output("c1") < asks[0])
+        XCTAssertTrue(images[1].index < output("c2") && output("c2") < asks[1])
         let deleted = sent.filter { $0["type"] as? String == "conversation.item.delete" }.compactMap { $0["item_id"] as? String }
         XCTAssertEqual(deleted, [images[0].id], "the earlier screenshot leaves the conversation")
     }
