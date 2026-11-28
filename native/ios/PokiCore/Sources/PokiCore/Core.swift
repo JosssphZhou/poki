@@ -458,6 +458,9 @@ public final class PokiCore: @unchecked Sendable {
     }
     private let clock: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f }()
 
+    /// Poki came to the front: a relay connection that no longer answers is dialled again.
+    public func checkRelay() { relay?.checkAlive() }
+
     /// The connector secrets changed: tell the relay the new list.
     public func accessChanged() { relay?.sendAccess() }
 

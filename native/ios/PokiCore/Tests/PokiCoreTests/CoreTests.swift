@@ -1929,6 +1929,71 @@ final class RelayTests: XCTestCase {
         core.stop()
     }
 
+    private func readyRelay(_ core: PokiCore, _ sockets: FakeSockets, at index: Int = 0) async -> FakeSocket? {
+        guard await eventually(3, { sockets.sockets.value.count > index }) else { return nil }
+        let socket = sockets.sockets.value[index]
+        socket.push((["t": "challenge", "nonce": .string(Data(repeating: 7, count: 32).base64EncodedString())] as JSON).serialized())
+        guard await eventually(3, { socket.sent.contains { $0.contains("\"t\":\"hello\"") } }) else { return nil }
+        socket.push((["t": "ready", "max_body": 4_194_304] as JSON).serialized())
+        guard await eventually(3, { core.relay?.stateDescription.hasPrefix("ready") == true }) else { return nil }
+        return socket
+    }
+
+    /// Issue 621: the relay dropped the phone's connection, the close never reached the phone, and Poki
+    /// still read ready while the relay answered 503. Coming to the front pings it, and with no pong the
+    /// phone dials again without waiting for the keepalive's silent limit.
+    func testComingToTheFrontRedialsAConnectionThatNoLongerAnswers() async throws {
+        let (core, _, _) = makeCore()
+        let sockets = FakeSockets()
+        core.start(relay: testRelay, socketFactory: sockets)
+        core.relay?.pingEvery = 1000
+        core.relay?.probeWait = 0.2
+        core.relay?.maxBackoff = 0.05
+        let ready = await readyRelay(core, sockets)
+        let first = try XCTUnwrap(ready)
+        core.checkRelay()
+        do { let ok = await eventually { first.sent.contains("ping") }; XCTAssertTrue(ok) }
+        let redialled = await eventually(3) { sockets.sockets.value.count == 2 }
+        XCTAssertTrue(redialled, "no pong: the half-open connection is dropped and the phone dials again")
+        XCTAssertTrue(first.closed)
+        let second = await readyRelay(core, sockets, at: 1)
+        XCTAssertNotNil(second, "the new connection comes up ready")
+        core.stop()
+    }
+
+    /// A connection that answers the ping is kept, with the calls on it.
+    func testComingToTheFrontKeepsAConnectionThatAnswers() async throws {
+        let (core, _, _) = makeCore()
+        let sockets = FakeSockets()
+        core.start(relay: testRelay, socketFactory: sockets)
+        core.relay?.pingEvery = 1000
+        core.relay?.probeWait = 0.2
+        let ready = await readyRelay(core, sockets)
+        let socket = try XCTUnwrap(ready)
+        core.checkRelay()
+        do { let ok = await eventually { socket.sent.contains("ping") }; XCTAssertTrue(ok) }
+        socket.push("pong")
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertFalse(socket.closed)
+        XCTAssertEqual(sockets.sockets.value.count, 1)
+        XCTAssertTrue(core.relay?.stateDescription.hasPrefix("ready") == true)
+        core.stop()
+    }
+
+    /// Offline and waiting to dial again: coming to the front dials at once instead of after the backoff.
+    func testComingToTheFrontCutsTheBackoffShort() async throws {
+        let (core, _, _) = makeCore()
+        let sockets = FakeSockets()
+        core.start(relay: testRelay, socketFactory: sockets)
+        do { let ok = await eventually { !sockets.sockets.value.isEmpty }; XCTAssertTrue(ok) }
+        sockets.sockets.value[0].push((["t": "close", "reason": "test"] as JSON).serialized())
+        do { let ok = await eventually { core.relay?.stateDescription.hasPrefix("offline") == true }; XCTAssertTrue(ok) }
+        // The first backoff is at least 0.7 s; a new dial within 0.5 s is the one checkRelay started.
+        let dialled = await eventually(0.5) { core.checkRelay(); return sockets.sockets.value.count == 2 }
+        XCTAssertTrue(dialled)
+        core.stop()
+    }
+
     func testTheRelayAddressThePersonEntersDecidesWhereThePhoneDials() {
         let entered: [(String, String?, String?)] = [
             ("poki-relay.you.workers.dev", "wss://poki-relay.you.workers.dev/v1", "https://poki-relay.you.workers.dev/v1"),

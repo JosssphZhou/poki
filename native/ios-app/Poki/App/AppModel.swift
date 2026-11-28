@@ -909,6 +909,8 @@ final class AppModel {
             }
         }
         loopback.resume()
+        // A relay connection that looks ready may have died while Poki was away (issue 621).
+        if sessionOn, activeRelay != nil { core.checkRelay() }
         // Swiped away, ended by iOS, or Poki turned on from the background (where iOS starts none):
         // the Live Activity comes back while Poki is on, so the next thing that needs the owner pops up.
         if sessionOn, !activity.isRunning {

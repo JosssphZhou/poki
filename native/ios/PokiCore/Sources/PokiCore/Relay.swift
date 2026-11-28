@@ -102,8 +102,10 @@ final class RelayClient: @unchecked Sendable {
     var pingEvery = 25.0
     var silentLimit = 60.0
     var maxBackoff = 30.0
+    /// How long `checkAlive` waits for the relay's pong before it gives the connection up.
+    var probeWait = 8.0
 
-    private let state = LockedBox<(running: Bool, socket: WebSocketConnection?, lastHeard: Double, describe: String, maxBody: Int, requestTimeout: Double?, inflight: [String: Task<Void, Never>])>((false, nil, 0, "not started", 4 << 20, nil, [:]))
+    private let state = LockedBox<(running: Bool, socket: WebSocketConnection?, ready: Bool, lastHeard: Double, describe: String, maxBody: Int, requestTimeout: Double?, inflight: [String: Task<Void, Never>], backoff: Task<Void, Never>?)>((false, nil, false, 0, "not started", 4 << 20, nil, [:], nil))
     private var loop: Task<Void, Never>?
 
     init(baseURL: URL, host: CoreHost, factory: WebSocketFactory, handler: @escaping @Sendable (RelayRequest) async -> RelayResponse, emit: @escaping @Sendable (RelayState) -> Void) {
@@ -142,7 +144,10 @@ final class RelayClient: @unchecked Sendable {
                 attempt += 1
                 // 1, 2, 4 … 30 s, jittered, so phones do not dial again in step.
                 let delay = min(self.maxBackoff, pow(2, Double(min(attempt - 1, 5))))
-                await sleep(seconds: delay * Double.random(in: 0.7...1.3))
+                let pause = Task { await sleep(seconds: delay * Double.random(in: 0.7...1.3)) }
+                self.state.update { $0.backoff = pause }
+                await pause.value
+                self.state.update { $0.backoff = nil }
             }
         }
     }
@@ -152,13 +157,37 @@ final class RelayClient: @unchecked Sendable {
             s.running = false
             let r = (s.socket, Array(s.inflight.values))
             s.socket = nil
+            s.ready = false
             s.inflight = [:]
+            s.backoff?.cancel()
             return r
         }
         inflight.forEach { $0.cancel() }
         socket?.close(code: 1000, reason: "stopped")
         loop?.cancel()
         set("stopped", .offline("stopped"))
+    }
+
+    /// Poki came back to the front (issue 621). A connection that looks ready may be half-open: the
+    /// relay dropped it, the close never reached the phone, and the relay answers 503 until the
+    /// keepalive notices, which can take minutes on a phone that slept. A ping with no pong within
+    /// `probeWait` closes it, so the loop dials again; a live one, and the calls on it, are kept. A
+    /// loop waiting out its backoff dials at once.
+    func checkAlive() {
+        let s = state.value
+        guard s.running else { return }
+        if let pause = s.backoff { pause.cancel(); return }
+        guard s.ready, let socket = s.socket else { return }
+        let asked = now(), wait = probeWait
+        Task { [weak self] in
+            try? await socket.send("ping")
+            await sleep(seconds: wait)
+            guard let self else { return }
+            let s = self.state.value
+            guard s.socket as AnyObject === socket as AnyObject, s.lastHeard < asked else { return }
+            self.set("no pong after coming to the front", .connecting)
+            socket.close(code: 4408, reason: "no pong")
+        }
     }
 
     func sendAccess() {
@@ -185,7 +214,7 @@ final class RelayClient: @unchecked Sendable {
             // `undelivered` with the next call, instead of being cut short with the connection.
             state.update { s in
                 s.inflight = [:]
-                if s.socket as AnyObject === socket as AnyObject { s.socket = nil }
+                if s.socket as AnyObject === socket as AnyObject { s.socket = nil; s.ready = false }
             }
             socket.close(code: 1000, reason: "")
         }
@@ -205,6 +234,7 @@ final class RelayClient: @unchecked Sendable {
             $0.maxBody = ready["max_body"]?.int ?? (4 << 20)
             $0.requestTimeout = ready["req_timeout_ms"]?.double.map { $0 / 1000 }
             $0.lastHeard = now()
+            $0.ready = true
         }
         onReady()
         set("ready as \(label)", .ready(url: "\(baseURL.absoluteString)/\(label)"))
