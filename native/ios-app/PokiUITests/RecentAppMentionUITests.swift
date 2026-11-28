@@ -8,6 +8,17 @@ final class RecentAppMentionUITests: XCTestCase {
                     "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchArguments = base
         app.launch()
+        // Establish nonempty real history through an ordinary composer selection, not fixture writes.
+        let ordinary = app.textViews["capsule.field"]
+        XCTAssertTrue(ordinary.waitForExistence(timeout: 20))
+        ordinary.tap()
+        ordinary.typeText("@Note")
+        let ordinaryNotes = app.buttons["mention.com.apple.mobilenotes"]
+        XCTAssertTrue(ordinaryNotes.waitForExistence(timeout: 5))
+        ordinaryNotes.tap()
+        XCTAssertTrue((ordinary.value as? String)?.contains("Notes") == true)
+        app.terminate()
+        app.launch()
         let fingerprint = app.staticTexts["fixture.recents.fingerprint"]
         XCTAssertTrue(fingerprint.waitForExistence(timeout: 20))
         let original = fingerprint.label
