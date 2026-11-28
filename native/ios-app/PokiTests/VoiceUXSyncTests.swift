@@ -237,6 +237,68 @@ final class VoiceUXSyncTests: XCTestCase {
 
     // MARK: - Bug 2: Multi-step long-silence factual progress sync
 
+    func testPriorTurnToolsDoNotTriggerOrCountTowardCurrentProgress() async throws {
+        for oldFinishesFirst in [false, true] {
+            let chatGPT = try makeChatGPTStorage()
+            defer { try? chatGPT.tearDown() }
+            let clock = FakeTime()
+            let codex = SyncFakeCodexVoice()
+            var finishOld: CheckedContinuation<PhoneAnswer, Never>?
+            let (voice, _) = makeVoice(time: clock, codex: codex, storage: chatGPT.storage) { _, arguments in
+                if arguments == "old" {
+                    return await withCheckedContinuation { finishOld = $0 }
+                }
+                return ("app: Settings\nChecked current step", false, nil)
+            }
+            defer { voice.stop() }
+            await voice.start()
+            codex.notify("poki/backend/turnStarted", [:])
+            let old = Task { await codex.callTool("look", "old") }
+            await clock.settle()
+            let release = try XCTUnwrap(finishOld, "Previous turn's tool must actually be suspended")
+            var released = false
+            defer {
+                if !released { release.resume(returning: ("app: OldApp\nOld step", false, nil)) }
+                old.cancel()
+            }
+
+            codex.notify("thread/realtime/transcript/done", ["role": "user", "text": "Check Settings instead"])
+            codex.notify("poki/backend/turnStarted", [:])
+            await clock.advance(22)
+
+            if oldFinishesFirst {
+                release.resume(returning: ("app: OldApp\nOld step", false, nil))
+                released = true
+                let returnedOld = await old.value
+                let oldAnswer = try XCTUnwrap(returnedOld)
+                XCTAssertFalse(oldAnswer.text.contains("[Poki progress sync]"))
+            }
+            let first = await codex.callTool("look", "current-1")
+            let firstAnswer = try XCTUnwrap(first)
+            XCTAssertFalse(firstAnswer.text.contains("[Poki progress sync]"),
+                           "A prior turn's result cannot count as the first current step")
+            let second = await codex.callTool("look", "current-2")
+            let secondAnswer = try XCTUnwrap(second)
+
+            if oldFinishesFirst {
+                XCTAssertTrue(secondAnswer.text.hasPrefix("[Poki progress sync]"),
+                              "Two current steps with no pending tools must report progress")
+            } else {
+                XCTAssertFalse(secondAnswer.text.contains("[Poki progress sync]"),
+                               "An old tool is still running when the current turn finishes two steps")
+                release.resume(returning: ("app: OldApp\nOld step", false, nil))
+                released = true
+                let returnedOld = await old.value
+                let oldAnswer = try XCTUnwrap(returnedOld)
+                XCTAssertFalse(oldAnswer.text.contains("[Poki progress sync]"),
+                               "An old result must not describe a current progress milestone")
+                let third = await codex.callTool("look", "current-3")
+                XCTAssertTrue(try XCTUnwrap(third).text.hasPrefix("[Poki progress sync]"),
+                              "Current progress becomes eligible once every older tool has finished")
+            }
+        }
+    }
+
     func testMultiStepLiveAndCodexOperationsEmitFactualProgressUpdateAfterSilenceInterval() async throws {
         // 1. OpenAI Live path: single quick step stays silent, multi-step across silence threshold sends factual commentary.
         do {
