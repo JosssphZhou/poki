@@ -291,12 +291,6 @@ final class VoiceLink: NSObject, VoiceConnection, RTCPeerConnectionDelegate, RTC
         }
     }
 
-    /// Immediately silences remote WebRTC playback and asks the server to clear queued output audio.
-    func clearRemotePlayback() {
-        setRemoteVolume(0)
-        _ = send(["type": "output_audio_buffer.clear"])
-    }
-
     @MainActor
     func close() {
         lock.withLock { closing = true }

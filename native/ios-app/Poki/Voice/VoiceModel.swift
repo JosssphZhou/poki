@@ -438,7 +438,9 @@ final class VoiceModel {
     var onAwaitingLiveClose: (@MainActor () -> Void)?
     private var liveUsageSeconds: Double?
     private var liveSpeechStopped = false
-    private var bargeInMuted = false
+    private enum PlaybackInterruption { case none, tentative, confirmed }
+    private var playbackInterruption = PlaybackInterruption.none
+    private var bargeInMuted: Bool { playbackInterruption != .none }
     private var liveRemoteAudible = false
     private var codexUserTranscript = ""
     private var progressSync = VoiceProgressSync()
@@ -1370,7 +1372,7 @@ final class VoiceModel {
         loggedLiveInputDuringPlayback = false
         liveCaptions.removeAll()
         liveSpeechStopped = false
-        bargeInMuted = false
+        playbackInterruption = .none
         liveRemoteAudible = false
         codexUserTranscript = ""
         progressSync.reset()
@@ -1551,7 +1553,7 @@ final class VoiceModel {
                             }
                             quiet = 0
                             suppressedWhileHearing = 0
-                            if bargeInMuted, !usesCodexLive || phase != .hearing {
+                            if playbackInterruption == .confirmed, !usesCodexLive || phase != .hearing {
                                 clearBargeInMute(on: link)
                             }
                             if phase == .speaking {
@@ -1719,24 +1721,42 @@ final class VoiceModel {
     }
 
     private func interruptPlaybackForBargeIn(on link: VoiceConnection) {
-        bargeInMuted = true
+        playbackInterruption = .confirmed
         liveAwaitingPlayback = false
         markInterrupted()
         link.clearRemotePlayback()
         phase = .hearing
     }
 
+    private func mutePlaybackPendingTranscript(on link: VoiceConnection) {
+        playbackInterruption = .tentative
+        syncRemoteVolume(on: link)
+        phase = .hearing
+    }
+
+    private func resolveBargeInTranscript(_ text: String, on link: VoiceConnection) {
+        guard playbackInterruption == .tentative else { return }
+        switch VoiceBargeInPolicy.classify(text) {
+        case .empty, .backchannel:
+            clearBargeInMute(on: link)
+            if !usesLive { awaitingAnswer = false }
+            phase = .speaking
+        case .stopCommand, .substantive:
+            interruptPlaybackForBargeIn(on: link)
+        }
+    }
+
     private func clearBargeInMute(on target: VoiceConnection? = nil) {
         guard bargeInMuted else { return }
-        bargeInMuted = false
+        playbackInterruption = .none
         syncRemoteVolume(on: target)
     }
 
     private func stopLivePlayback(on link: VoiceConnection, note message: String) {
         guard !liveSpeechStopped else { return }
-        if phase == .speaking { markInterrupted() }
+        if phase == .speaking || bargeInMuted { markInterrupted() }
         liveSpeechStopped = true
-        bargeInMuted = false
+        playbackInterruption = .none
         liveAwaitingPlayback = false
         for index in calls.indices where !calls[index].delivered { calls[index].silentResult = true }
         link.clearRemotePlayback()
@@ -1989,15 +2009,13 @@ final class VoiceModel {
                     return
                 }
                 appendLiveSpeech(text, audio: audio, itemID: itemID)
+                resolveBargeInTranscript(liveCallerSpeech.text, on: link)
                 let utterance = Self.liveSpeechParts(liveCallerSpeech.text).filter { !Self.liveBackchannels.contains($0) }
                 if !liveCallerSpeech.alreadyHandled, Self.liveRequestsStop(utterance) {
                     trace("reply stop requested by recognized voice command")
                     if appAudio == nil { cancelLiveTask() }
                     let stopped = appAudio == nil ? "The user stopped the reply and cancelled the phone task." : "The user stopped the reply."
                     stopLivePlayback(on: link, note: stopped + " Drop the reply and stay silent until a new request.")
-                } else if !liveCallerSpeech.alreadyHandled, bargeInMuted,
-                          VoiceBargeInPolicy.classify(liveCallerSpeech.text) == .backchannel {
-                    clearBargeInMute(on: link)
                 } else if !liveCallerSpeech.alreadyHandled, !utterance.isEmpty {
                     if phase == .speaking && !bargeInMuted {
                         interruptPlaybackForBargeIn(on: link)
@@ -2091,16 +2109,15 @@ final class VoiceModel {
                 liveCallerSpeech.recordInput(id: itemID ?? eventID)
                 liveCallerSpeech.begin(itemID: itemID)
                 if phase == .speaking {
-                    interruptPlaybackForBargeIn(on: link)
+                    mutePlaybackPendingTranscript(on: link)
                 } else {
                     phase = .hearing
                 }
                 endIfDone()
                 return
             }
-            // Spoken over Poki's answer: mute residual playout and clear buffered audio at once.
             if phase == .speaking {
-                interruptPlaybackForBargeIn(on: link)
+                mutePlaybackPendingTranscript(on: link)
             } else {
                 phase = .hearing
             }
@@ -2129,6 +2146,7 @@ final class VoiceModel {
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
+            resolveBargeInTranscript(event["transcript"] as? String ?? "", on: link)
             if let text = event["transcript"] as? String, !text.isEmpty {
                 lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
