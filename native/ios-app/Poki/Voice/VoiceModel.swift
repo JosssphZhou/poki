@@ -2092,6 +2092,8 @@ final class VoiceModel {
                 liveCallerSpeech.begin(itemID: itemID)
                 if phase == .speaking {
                     interruptPlaybackForBargeIn(on: link)
+                } else {
+                    phase = .hearing
                 }
                 endIfDone()
                 return
