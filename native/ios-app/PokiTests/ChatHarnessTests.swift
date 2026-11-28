@@ -2993,13 +2993,12 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(Self.toolNames(task1Requests[3]).contains("finish_task"), "other tools must remain available")
         XCTAssertFalse(Self.toolNames(task1Requests[4]).contains("ask_user"))
 
-        let askCalls = chat.savedCalls.filter { $0.name == "ask_user" }
-        XCTAssertEqual(askCalls.count, 4)
-        XCTAssertFalse(askCalls[0].ok)
-        XCTAssertTrue(askCalls[1].ok)
-        XCTAssertFalse(askCalls[2].ok)
-        XCTAssertTrue(askCalls[2].answer.lowercased().contains("handoff"), askCalls[2].answer)
-        XCTAssertFalse(askCalls[3].ok, "forced ask_user call after disable must still be rejected")
+        let secondRefusal = Self.toolAnswer(task1Requests[3])
+        XCTAssertTrue(secondRefusal.contains("disabled for this task"), secondRefusal)
+        XCTAssertTrue(secondRefusal.contains("handoff"), secondRefusal)
+        let forcedCallAnswer = Self.toolAnswer(task1Requests[4])
+        XCTAssertTrue(forcedCallAnswer.contains("Tool ask_user not found"),
+                      "the model must receive an unavailable-tool error for its forced call: \(forcedCallAnswer)")
         XCTAssertFalse(chat.entries.contains {
             if case .question(let q) = $0.kind { return q.text == "Apply the promo code or skip it?" }
             return false
@@ -3009,7 +3008,8 @@ final class ChatHarnessTests: XCTestCase {
         let beforeTask2 = server.requests.count
         chat.send("Book a ticket to Shanghai")
         try await until(10) { chat.waitingQuestion != nil || !chat.running }
-        XCTAssertTrue(Self.toolNames(server.requests[beforeTask2]).contains("ask_user"),
+        let task2Request = try XCTUnwrap(server.requests.dropFirst(beforeTask2).first, "a new task must reach the model")
+        XCTAssertTrue(Self.toolNames(task2Request).contains("ask_user"),
                       "a new typed task in the same conversation must regain ask_user")
         let task2Question = try XCTUnwrap(chat.waitingQuestion)
         XCTAssertEqual(task2Question.text, "A train ticket, or a flight?")
