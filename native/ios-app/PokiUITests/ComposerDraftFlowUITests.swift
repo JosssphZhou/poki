@@ -6,6 +6,8 @@ final class ComposerDraftFlowUITests: XCTestCase {
         app.launchArguments = ["-pokiScreen", "chat", "-pokiUITestComposerDraft",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
+        let wifiOnly = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["仅限无线局域网"]
+        if wifiOnly.waitForExistence(timeout: 3) { wifiOnly.tap() }
         let field = app.textViews["capsule.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.tap()
