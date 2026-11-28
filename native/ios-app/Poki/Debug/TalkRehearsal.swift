@@ -14,16 +14,83 @@ import Foundation
 /// for a screenshot of it.
 final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     static var asked: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") != nil }
-    private static var loses: Bool { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") == "lost" }
+    private static var mode: String { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") ?? "" }
+    private static var loses: Bool { mode == "lost" }
+    private static var revisesNotes: Bool { mode == "revise-notes" }
     static var hold: TalkState? { UserDefaults.standard.string(forKey: "pokiTalkHold").flatMap(TalkState.named) }
+
+    @MainActor
+    struct NotesDraftState: Equatable {
+        var opened = 0
+        var drafts: [String] = []
+        var sent = 0
+
+        func screenText() -> String {
+            var lines = [
+                "app: 备忘录   read: 2026-11-27T00:00:00Z (12 ms)",
+                "elements (\(drafts.isEmpty ? 1 : 3)):",
+                #" 1 Button "新建备忘录" [340,800,44,44]"#,
+            ]
+            if let latest = drafts.last {
+                lines.append(#" 2 TextView "\#(latest)" [16,120,360,400]"#)
+                lines.append(#" 3 Button "发送" [330,60,50,34]"#)
+            }
+            return lines.joined(separator: "\n")
+        }
+    }
+
+    @MainActor private(set) static var notesState = NotesDraftState()
+
+    @MainActor
+    static func resetNotesState() {
+        notesState = NotesDraftState()
+    }
 
     /// The stand-in for the key exchange, which a rehearsal skips. `do` is on the phone's list, so the
     /// step goes to `step()` below instead of a voice bridge.
-    static let token = VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: ["do"])
+    static var token: VoiceBridge.Token {
+        revisesNotes
+            ? VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: ["get_ios_version", "look", "open_app", "do"])
+            : VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: ["do"])
+    }
 
     /// The step on the phone: it waits as long as a short one takes and says it went well. Held for a
     /// screenshot, it does not come back.
-    static func step() async -> PhoneAnswer {
+    @MainActor
+    static func step(name: String = "do", arguments: String = "{}") async -> PhoneAnswer {
+        if revisesNotes {
+            try? await Task.sleep(for: .milliseconds(250))
+            let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
+            switch name {
+            case "open_app":
+                notesState.opened += 1
+            case "look":
+                break
+            case "do":
+                for action in args["actions"] as? [[String: Any]] ?? [] {
+                    if action["launch"] != nil { notesState.opened += 1 }
+                    if let ref = action["tap"] as? Int {
+                        if ref == 1 { notesState.drafts.append("") }
+                        else if ref == 3 { notesState.sent += 1 }
+                    }
+                    if let text = action["type"] as? String {
+                        let clear = action["clear"] as? Bool ?? false
+                        if notesState.drafts.isEmpty {
+                            notesState.drafts.append(text)
+                        } else if clear {
+                            notesState.drafts[notesState.drafts.count - 1] = text
+                        } else {
+                            notesState.drafts[notesState.drafts.count - 1] += text
+                        }
+                    }
+                }
+            default:
+                break
+            }
+            let screen = notesState.screenText()
+            AppLog.shared.add("voice", "rehearsal-notes \(name): opened=\(notesState.opened) drafts=\(notesState.drafts.count) sent=\(notesState.sent)")
+            return (screen, false, nil)
+        }
         try? await Task.sleep(for: .seconds(hold == .acting ? 3600 : 3.2))
         return ("done", false, nil)
     }
@@ -38,6 +105,10 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     }
 
     func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws {
+        if Self.revisesNotes {
+            try await connectNotesRevision()
+            return
+        }
         try await Task.sleep(for: .milliseconds(Self.hold == .connecting ? 3_600_000 : 900))
         let zh = AppLocalization.language.hasPrefix("zh")
         let asks = zh ? "打开设置，把屏幕调亮一点" : "Open Settings and turn the brightness up a little"
@@ -86,6 +157,58 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
             onClosed("rehearsal")
+        }
+    }
+
+    @MainActor
+    private func connectNotesRevision() async throws {
+        Self.notesState = NotesDraftState()
+        try await Task.sleep(for: .milliseconds(300))
+        let turn: [(Double, [String: Any])] = [
+            (0.2, ["type": "session.created"]),
+            (0.6, ["type": "input_audio_buffer.speech_started", "item_id": "notes-u1"]),
+            (1.0, ["type": "input_audio_buffer.speech_stopped", "item_id": "notes-u1"]),
+            (1.05, ["type": "input_audio_buffer.committed", "item_id": "notes-u1"]),
+            (1.1, ["type": "conversation.item.input_audio_transcription.completed", "item_id": "notes-u1", "source": "silent_test", "transcript": "打开备忘录，写周五"]),
+            (1.2, ["type": "response.created", "response": ["id": "notes-r1"]]),
+            (1.3, ["type": "response.output_item.done", "response_id": "notes-r1",
+                   "item": ["type": "function_call", "call_id": "notes-open-1", "name": "open_app", "arguments": #"{"app":"备忘录"}"#]]),
+            (1.9, ["type": "response.output_item.done", "response_id": "notes-r1",
+                   "item": ["type": "function_call", "call_id": "notes-draft-1", "name": "do", "arguments": #"{"actions":[{"tap":1},{"type":"周五"}]}"#]]),
+            (2.5, ["type": "response.done", "response": ["id": "notes-r1"]]),
+            (2.9, ["type": "input_audio_buffer.speech_started", "item_id": "notes-u2"]),
+            (3.4, ["type": "input_audio_buffer.speech_stopped", "item_id": "notes-u2"]),
+            (3.45, ["type": "input_audio_buffer.committed", "item_id": "notes-u2"]),
+            (3.5, ["type": "conversation.item.input_audio_transcription.completed", "item_id": "notes-u2", "source": "silent_test", "transcript": "改成周六，先别发送"]),
+            (3.6, ["type": "response.created", "response": ["id": "notes-r2"]]),
+            (3.7, ["type": "response.output_item.done", "response_id": "notes-r2",
+                   "item": ["type": "function_call", "call_id": "notes-open-2", "name": "open_app", "arguments": #"{"app":"备忘录"}"#]]),
+            (3.9, ["type": "response.output_item.done", "response_id": "notes-r2",
+                   "item": ["type": "function_call", "call_id": "notes-draft-2", "name": "do", "arguments": #"{"actions":[{"tap":1},{"type":"周六"}]}"#]]),
+            (4.1, ["type": "response.output_item.done", "response_id": "notes-r2",
+                   "item": ["type": "function_call", "call_id": "notes-send-2", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#]]),
+            (4.3, ["type": "response.output_item.done", "response_id": "notes-r2",
+                   "item": ["type": "function_call", "call_id": "notes-look-2", "name": "look", "arguments": "{}"]]),
+            (4.9, ["type": "response.output_item.done", "response_id": "notes-r2",
+                   "item": ["type": "function_call", "call_id": "notes-edit-2", "name": "do", "arguments": #"{"actions":[{"tap":2},{"type":"周六","clear":true}]}"#]]),
+            (5.5, ["type": "response.done", "response": ["id": "notes-r2"]]),
+            (5.7, ["type": "response.created", "response": ["id": "notes-r3"]]),
+            (5.8, ["type": "output_audio_buffer.started"]),
+            (5.9, ["type": "response.output_audio_transcript.done", "transcript": "备忘录已改为周六，共 1 份草稿，未发送。"]),
+            (6.4, ["type": "response.done", "response": ["id": "notes-r3"]]),
+            (6.5, ["type": "output_audio_buffer.stopped"]),
+        ]
+        let onEvent = self.onEvent
+        script = Task { @MainActor in
+            var clock = 0.0
+            for (at, event) in turn {
+                try? await Task.sleep(for: .seconds(at - clock))
+                guard !Task.isCancelled else { return }
+                clock = at
+                onEvent(event)
+            }
+            let summary = Self.notesState
+            AppLog.shared.add("voice", "rehearsal-notes final: opened=\(summary.opened) drafts=\(summary.drafts.count) hasSaturday=\(summary.drafts == ["周六"]) sent=\(summary.sent)")
         }
     }
 

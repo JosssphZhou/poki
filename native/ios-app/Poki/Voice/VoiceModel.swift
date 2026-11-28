@@ -229,6 +229,11 @@ struct VoiceCall: Identifiable, Equatable {
     /// The connection that asked for it. Only that connection can take a function_call_output for it.
     let session: Int
     var delegation: String? = nil
+    var speechItem: String? = nil
+    var goalID: VoiceGoalID? = nil
+    var goalRevision: Int? = nil
+    var utteranceSource: VoiceUtteranceSource? = nil
+    var outcomeUnknown = false
     var state = State.running
     var output = ""
     /// The encoded screen when the call finished (look, do, open_app): Realtime sends it next to the output.
@@ -404,6 +409,7 @@ final class VoiceModel {
     private var codexHandoffPending = false
     private var codexHandoffTimeout: Task<Void, Never>?
     private var activeCodexTools = 0
+    private var nextCodexCallNumber = 0
     private final class LiveCloseWaiters: @unchecked Sendable {
         private let lock = NSLock()
         private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
@@ -474,6 +480,7 @@ final class VoiceModel {
         var text = ""
         var end = 0
         var itemID: String?
+        var source: VoiceUtteranceSource?
         var lastStartEvent: String?
         var hasSpeechStartEvents = false
         var handledItems: Set<String> = []
@@ -487,6 +494,7 @@ final class VoiceModel {
         mutating func begin(itemID: String?) {
             self.itemID = itemID
             text = ""
+            source = nil
             pending = nil
             replayWithoutPendingSpeech = false
         }
@@ -635,6 +643,8 @@ final class VoiceModel {
     private let codex: any SubscriptionVoice
     private let hasSubscriptionBridge: Bool
     private let storage: PokiStorage
+    private(set) var goalTracker = VoiceGoalTracker()
+    private var deferredTranscriptResponse = false
 
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String, PhoneOperationCancellation?) async -> PhoneAnswer,
@@ -918,14 +928,46 @@ final class VoiceModel {
                         return (Self.mediaToolRefusal, true, nil)
                     }
                     guard Self.phoneTools.contains(name) else {
+                        if goalTracker.activeGoal?.stopped == true {
+                            return ("Blocked: goal was stopped by the user. Do not continue.", true, nil)
+                        }
                         return (Self.localTool(name), false, nil)
                     }
+                    nextCodexCallNumber += 1
+                    let callID = "codex-\(number)-\(nextCodexCallNumber)"
+                    let binding = goalTracker.resolveBinding(
+                        delegationID: nil,
+                        responseID: nil,
+                        speechItemID: nil,
+                        defaultSource: defaultUtteranceSource
+                    )
+                    let syntheticCall = VoiceCall(
+                        id: callID, name: name, arguments: arguments, session: number,
+                        goalID: binding.goalID, goalRevision: binding.revision, utteranceSource: binding.source
+                    )
+                    let proposal = VoiceToolProposal(
+                        call: syntheticCall,
+                        goalID: binding.goalID,
+                        goalRevision: binding.revision,
+                        source: binding.source,
+                        awaitingUtteranceTranscript: binding.awaitingTranscript
+                    )
+                    switch goalTracker.admit(proposal, session: number) {
+                    case .allow:
+                        break
+                    case .deny(let reason, let code, let goalID, let revision):
+                        log.add("voice", "goal gate denied codex \(name) (\(callID), goal \(goalID?.rawValue ?? "none") r\(revision ?? 0)): \(code.rawValue)")
+                        return (reason, true, nil)
+                    }
                     openingCapture?.audio.markPhoneActionStarted(session: number)
+                    let operation = PhoneOperationCancellation()
+                    livePhoneOperations[callID] = operation
                     activeCodexTools += 1
                     lastActivity = time.now()
                     keepOpen()
                     if phase != .speaking && phase != .hearing { phase = .thinking }
                     defer {
+                        livePhoneOperations.removeValue(forKey: callID)
                         if number == session {
                             activeCodexTools = max(0, activeCodexTools - 1)
                             lastActivity = time.now()
@@ -933,7 +975,10 @@ final class VoiceModel {
                             endIfDone()
                         }
                     }
-                    return await runPhoneTool(name, arguments: arguments, cancellation: nil)
+                    let answer = await runPhoneTool(name, arguments: arguments, cancellation: operation)
+                    let stepState: VoiceCall.State = answer.failed ? .failed : .done
+                    _ = goalTracker.recordStepFinished(callID: callID, state: stepState, output: answer.text)
+                    return answer
                 })
                 return VoiceBridge.Token(value: nil, model: CodexVoice.model, local_tools: [], live: true)
             }
@@ -1320,6 +1365,7 @@ final class VoiceModel {
 
     private func finishStop() {
         endSession()
+        goalTracker.conversationStopped()
         // A start still connecting sees this and stops where it is.
         session += 1
         phase = .off
@@ -1392,6 +1438,8 @@ final class VoiceModel {
         manualRealtimeTurns = false
         pendingRealtimeTurns = 0
         committedRealtimeItems.removeAll()
+        goalTracker.sessionEnded()
+        deferredTranscriptResponse = false
         awaitingAnswer = false
         requestedAnswer = nil
     }
@@ -1836,6 +1884,7 @@ final class VoiceModel {
                     return
                 }
                 lines.append(VoiceLine(role: .you, text: text))
+                recordCodexUtterance(text)
                 awaitingAnswer = true
                 phase = .thinking
                 watchForStall(session: number)
@@ -1911,8 +1960,12 @@ final class VoiceModel {
                     return
                 }
                 appendLiveSpeech(text, audio: audio, itemID: itemID)
+                if let rawSource = event["source"] as? String {
+                    liveCallerSpeech.source = VoiceUtteranceSource.parse(rawSource, fallback: defaultUtteranceSource)
+                }
                 let utterance = Self.liveSpeechParts(liveCallerSpeech.text).filter { !Self.liveBackchannels.contains($0) }
-                if !liveCallerSpeech.alreadyHandled, Self.liveRequestsStop(utterance) {
+                if !liveCallerSpeech.alreadyHandled,
+                   Self.liveRequestsStop(utterance) || VoiceTaskRelationClassifier.isStopUtterance(liveCallerSpeech.text) {
                     trace("reply stop requested by recognized voice command")
                     if appAudio == nil { cancelLiveTask() }
                     let stopped = appAudio == nil ? "The user stopped the reply and cancelled the phone task." : "The user stopped the reply."
@@ -1938,17 +1991,22 @@ final class VoiceModel {
                     log.add("voice", "delegation \(id) ignored (duplicate)")
                     return
                 }
-                let parts = Self.liveSpeechParts(liveCallerSpeech.text)
+                let utteranceText = liveCallerSpeech.text
+                let utteranceSourceOverride = liveCallerSpeech.source
+                let itemID = liveCallerSpeech.itemID
+                let parts = Self.liveSpeechParts(utteranceText)
                 let audio = liveCallerSpeech.pending?.audio
                 let fallback = liveCallerSpeech.pendingTextReceipt
                 liveCallerSpeech.markHandled()
+                let source = utteranceSource(from: event, fallback: utteranceSourceOverride ?? defaultUtteranceSource)
                 if !parts.isEmpty, parts.allSatisfy(Self.liveBackchannels.contains) {
                     liveDelegations[id] = .acknowledgment
+                    recordCompleteUtterance(utteranceText, itemID: itemID, delegationID: id, source: source, on: link)
                     log.add("voice", "delegation \(id) ignored (acknowledgment)")
                     return
                 }
                 let request = parts.filter { !Self.liveBackchannels.contains($0) }
-                let newRequest = !request.isEmpty && !Self.liveRequestsStop(request)
+                let newRequest = !request.isEmpty && !Self.liveRequestsStop(request) && !VoiceTaskRelationClassifier.isStopUtterance(utteranceText)
                 if liveHasCancellation && !newRequest {
                     liveDelegations[id] = .cancelled
                     log.add("voice", "delegation \(id) ignored (cancelled)")
@@ -1959,6 +2017,7 @@ final class VoiceModel {
                     liveDelegations[id] = .active
                     log.add("voice", "delegation \(id) created")
                 }
+                recordCompleteUtterance(utteranceText, itemID: itemID, delegationID: id, source: source, on: link)
             }
             link.send(["type": "session.thinking.append", "event_id": UUID().uuidString, "delegation_id": NSNull(), "content": ""])
         case "session.commentary.appended":
@@ -2018,20 +2077,43 @@ final class VoiceModel {
                 liveCallerSpeech.recordInput(id: (event["item_id"] as? String) ?? (event["event_id"] as? String))
                 return
             }
-            guard manualRealtimeTurns, let item = event["item_id"] as? String, !item.isEmpty,
+            let committedItem = event["item_id"] as? String
+            if appAudio == nil, let committedItem, !committedItem.isEmpty {
+                goalTracker.noteCommittedUtterance(itemID: committedItem)
+            }
+            guard manualRealtimeTurns, let item = committedItem, !item.isEmpty,
                   committedRealtimeItems.insert(item).inserted else { return }
             pendingRealtimeTurns += 1
             flush()
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
-            if let text = event["transcript"] as? String, !text.isEmpty {
-                lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
+            let itemID = event["item_id"] as? String
+            if let text = event["transcript"] as? String {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    lines.append(VoiceLine(role: .you, text: trimmed))
+                    recordCompleteUtterance(trimmed, itemID: itemID, delegationID: nil, source: utteranceSource(from: event), on: link)
+                } else if appAudio == nil {
+                    goalTracker.clearPendingUtterance(itemID: itemID)
+                    resumeDeferredTranscriptResponseIfNeeded()
+                }
+            } else if appAudio == nil {
+                goalTracker.clearPendingUtterance(itemID: itemID)
+                resumeDeferredTranscriptResponseIfNeeded()
+            }
+        case "conversation.item.input_audio_transcription.failed":
+            if appAudio == nil {
+                goalTracker.clearPendingUtterance(itemID: event["item_id"] as? String)
+                resumeDeferredTranscriptResponseIfNeeded()
             }
         case "response.created":
             guard !usesLive || !liveSpeechStopped else { return }
             let id = (event["response"] as? [String: Any])?["id"] as? String
             if usesLive, awaitingAnswer, let id, id == liveContinuationAfter { return }
+            if !usesLive, appAudio == nil, let id {
+                goalTracker.bindResponse(id, itemID: nil)
+            }
             activeResponse = id
             keepOpen()
             awaitingAnswer = false
@@ -2077,8 +2159,23 @@ final class VoiceModel {
         case "response.output_item.done":
             guard let item = event["item"] as? [String: Any], item["type"] as? String == "function_call",
                   let id = item["call_id"] as? String, let name = item["name"] as? String else { return }
+            let delegation = event["delegation_id"] as? String
+            if appAudio != nil {
+                run(VoiceCall(id: id, name: name, arguments: item["arguments"] as? String ?? "{}", session: number,
+                              delegation: delegation))
+                return
+            }
+            let responseID = (event["response_id"] as? String) ?? activeResponse
+            let binding = goalTracker.resolveBinding(
+                delegationID: delegation,
+                responseID: responseID,
+                speechItemID: nil,
+                defaultSource: defaultUtteranceSource
+            )
             run(VoiceCall(id: id, name: name, arguments: item["arguments"] as? String ?? "{}", session: number,
-                          delegation: event["delegation_id"] as? String))
+                          delegation: delegation, goalID: binding.goalID, goalRevision: binding.revision,
+                          utteranceSource: binding.source),
+                awaitingUtteranceTranscript: binding.awaitingTranscript)
         case "error":
             let message = ((event["error"] as? [String: Any])?["message"] as? String) ?? "unknown error"
             log.add("voice", "realtime error: \(message)")
@@ -2126,6 +2223,7 @@ final class VoiceModel {
     private func stopped(_ call: VoiceCall) -> Bool {
         if abortedOpeningCallIDs.contains(call.id) { return true }
         if livePhoneOperations[call.id]?.isCancelled == true { return true }
+        if let goalID = call.goalID, goalTracker.goal(for: goalID)?.stopped == true { return true }
         guard usesLive, call.session == session else { return false }
         // After cancellation, only a tool tied to a new delegation can start.
         guard let id = call.delegation, let state = liveDelegations[id] else { return liveHasCancellation }
@@ -2143,7 +2241,8 @@ final class VoiceModel {
             let preceding = Self.liveSpeechParts(liveCallerSpeech.text)
             let joined = Self.liveSpeechParts(liveCallerSpeech.text + text)
             let afterAcknowledgment = preceding.allSatisfy(Self.liveBackchannels.contains) && !joined.allSatisfy(Self.liveBackchannels.contains)
-            let afterStop = Self.liveRequestsStop(preceding) && !Self.liveRequestsStop(joined)
+            let afterStop = (Self.liveRequestsStop(preceding) || VoiceTaskRelationClassifier.isStopUtterance(liveCallerSpeech.text))
+                && !Self.liveRequestsStop(joined) && !VoiceTaskRelationClassifier.isStopUtterance(liveCallerSpeech.text + text)
             if preceding.isEmpty || afterAcknowledgment || afterStop || audio.lowerBound - liveCallerSpeech.end >= 600 {
                 liveCallerSpeech.begin(itemID: nil)
             }
@@ -2166,6 +2265,7 @@ final class VoiceModel {
     private func cancelLiveTask() {
         liveDelegations = liveDelegations.mapValues { $0.canRunTools ? .cancelled : $0 }
         liveHasCancellation = true
+        goalTracker.markActiveGoalStopped()
         for operation in livePhoneOperations.values { operation.cancel() }
         activeResponse = nil
         wantsResponse = false
@@ -2200,11 +2300,13 @@ final class VoiceModel {
     }
 
     private func completeLiveControl(_ call: VoiceCall, state: VoiceCall.State, output: String) {
+        if state == .failed { goalTracker.recordStepCancelled(callID: call.id) }
         var result = call
         result.state = state
         result.output = output
         result.finished = Date()
-        result.delivered = ready && link?.send(["type": "response.item.create", "item": [
+        let itemEvent = usesLive ? "response.item.create" : "conversation.item.create"
+        result.delivered = ready && link?.send(["type": itemEvent, "item": [
             "type": "function_call_output", "call_id": call.id, "output": output,
         ]]) == true
         if let index = calls.firstIndex(where: { $0.id == call.id }) { calls[index] = result }
@@ -2223,7 +2325,7 @@ final class VoiceModel {
     }
 
     /// Runs a call once. The same call_id again (a repeated event) is ignored.
-    private func run(_ call: VoiceCall) {
+    private func run(_ call: VoiceCall, awaitingUtteranceTranscript: Bool = false) {
         guard !calls.contains(where: { $0.id == call.id }) else { return }
         if appAudio != nil {
             refuseMediaTool(call)
@@ -2244,13 +2346,38 @@ final class VoiceModel {
             return
         }
         var call = call
+        let proposal = VoiceToolProposal(
+            call: call,
+            goalID: call.goalID,
+            goalRevision: call.goalRevision,
+            source: call.utteranceSource ?? defaultUtteranceSource,
+            awaitingUtteranceTranscript: awaitingUtteranceTranscript
+        )
+        switch goalTracker.admit(proposal, session: session) {
+        case .allow(let goalID, let revision):
+            call.goalID = goalID
+            call.goalRevision = revision
+        case .deny(let reason, let code, let goalID, let revision):
+            log.add("voice", "goal gate denied \(call.name) (\(call.id), goal \(goalID?.rawValue ?? "none") r\(revision ?? 0)): \(code.rawValue)")
+            completeLiveControl(call, state: .failed, output: reason)
+            if code == .awaitingUtteranceTranscript, !usesLive {
+                deferredTranscriptResponse = true
+            }
+            if code != .goalStopped, code != .unauthorizedSource, code != .awaitingUtteranceTranscript,
+               (!usesLive || !liveSpeechStopped) {
+                wantsResponse = true
+                flush()
+            }
+            return
+        }
         call.silentResult = usesLive && liveSpeechStopped
         calls.append(call)
         clock.call = clock.call ?? Date()
         clock.callNames.append(call.name)
         phase = .thinking
         lines.append(VoiceLine(role: .tool, text: Self.describe(call)))
-        log.add("voice", "tool \(call.name) \(call.arguments)")
+        let goalTag = call.goalID.map { " [goal \($0) r\(call.goalRevision ?? 1)]" } ?? ""
+        log.add("voice", "tool \(call.name)\(goalTag) \(call.arguments)")
         let local = localTools.contains(call.name)
         let bridge = bridge
         let live = usesLive
@@ -2276,7 +2403,7 @@ final class VoiceModel {
                     return
                 }
             }
-            let operation = live ? PhoneOperationCancellation() : nil
+            let operation = PhoneOperationCancellation()
             livePhoneOperations[call.id] = operation
             defer { livePhoneOperations.removeValue(forKey: call.id) }
             startedCallIDs.insert(call.id)
@@ -2423,7 +2550,9 @@ final class VoiceModel {
     private func finish(_ id: String, state: VoiceCall.State, output: String, rawToolOutput: String? = nil,
                         screenDataURL: String? = nil, screenBytes: Int? = nil, screenOutcome: ScreenAttachmentOutcome = .none) {
         guard let index = calls.firstIndex(where: { $0.id == id }) else { return }
+        let outcome = goalTracker.recordStepFinished(callID: id, state: state, output: rawToolOutput ?? output)
         calls[index].state = state
+        calls[index].outcomeUnknown = outcome == .unknown
         calls[index].output = output
         calls[index].screenDataURL = screenDataURL
         calls[index].finished = Date()
@@ -2431,7 +2560,8 @@ final class VoiceModel {
         let summary = Self.summarizeToolOutput(tool: calls[index].name, rawOutput: rawToolOutput ?? output,
                                                outputChars: output.count, state: state,
                                                screenBytes: screenBytes, screenOutcome: screenOutcome)
-        log.add("voice", "tool \(calls[index].name) \(state == .done ? "done" : "failed") | \(summary)")
+        let label = outcome == .unknown ? "unknown" : (state == .done ? "done" : "failed")
+        log.add("voice", "tool \(calls[index].name) \(label) | \(summary)")
         if calls[index].silentResult {
             if phase == .thinking, !answerDue { phase = .listening }
             endIfDone()
@@ -2554,7 +2684,8 @@ final class VoiceModel {
             return
         }
         let itemEvent = usesLive ? "response.item.create" : "conversation.item.create"
-        let reconnect = "While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(call.output)"
+        let stepState = call.outcomeUnknown ? "has an unknown outcome" : (call.state == .done ? "finished" : "failed")
+        let reconnect = "While the connection was down, \(call.name) \(call.arguments) \(stepState). It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(call.output)"
         let sent = sameSession
             ? link.send(["type": itemEvent, "item": ["type": "function_call_output", "call_id": call.id, "output": call.output]])
             : link.send(note(reconnect, spoken: true))
@@ -2564,7 +2695,7 @@ final class VoiceModel {
         calls[index].delivered = true
         lastActivity = time.now()
         clock.delivered = Date()
-        if usesLive, stopped(call) {
+        if stopped(call) {
             endIfDone()
             return
         }
@@ -2578,7 +2709,7 @@ final class VoiceModel {
         let raw = call.output.utf8
         let result = raw.count <= 360 ? call.output
             : String(decoding: raw.prefix(176), as: UTF8.self) + " … " + String(decoding: raw.suffix(176), as: UTF8.self)
-        let status = call.state == .done ? "finished" : "failed"
+        let status = call.outcomeUnknown ? "has an unknown outcome" : (call.state == .done ? "finished" : "failed")
         var event = note("A previous \(call.name) step \(status). Do not repeat it. Report this result in one sentence: \(result)", spoken: true)
         event["event_id"] = id
         guard link.send(event) else { return }
@@ -2599,6 +2730,9 @@ final class VoiceModel {
 
     /// A new session after a drop: say what already ran, so the model reports it instead of asking again.
     private func catchUp(_ link: VoiceConnection) {
+        if let recovery = goalTracker.recoveryNote(forSession: session) {
+            link.send(note(recovery, spoken: false))
+        }
         let running = calls.filter { $0.state == .running && !$0.silentResult }
         if !running.isEmpty {
             let steps = running.map { usesLive ? $0.name : "\($0.name) \($0.arguments)" }
@@ -2746,6 +2880,80 @@ final class VoiceModel {
             return #"{"model":"\#(machine)","ios_version":"\#(UIDevice.current.systemVersion)"}"#
         default:
             return "error: \(name) is not a phone tool"
+        }
+    }
+
+    private var defaultUtteranceSource: VoiceUtteranceSource {
+        rehearsing ? .silentTest : .ownerMicrophone
+    }
+
+    private func utteranceSource(from event: [String: Any], fallback: VoiceUtteranceSource? = nil) -> VoiceUtteranceSource {
+        VoiceUtteranceSource.parse(event["source"] as? String, fallback: fallback ?? defaultUtteranceSource)
+    }
+
+    private func recordCompleteUtterance(
+        _ text: String,
+        itemID: String?,
+        delegationID: String?,
+        source: VoiceUtteranceSource,
+        on link: VoiceConnection
+    ) {
+        guard appAudio == nil else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let record = goalTracker.ingestCompleteUtterance(
+            text: trimmed,
+            itemID: itemID,
+            delegationID: delegationID,
+            source: source,
+            at: time.now()
+        )
+        let goalLabel = record.goalID.map { "\($0) r\(record.revision ?? 1)" } ?? "none"
+        log.add("voice", "utterance [\(record.source.rawValue)] relation=\(record.relation.rawValue) goal=\(goalLabel) scope=\(record.replacementScope.rawValue) fresh=\(record.needsFreshEvidence)")
+        if record.relation == .stop {
+            if usesLive {
+                cancelLiveTask()
+            } else {
+                for operation in livePhoneOperations.values { operation.cancel() }
+                wantsResponse = false
+                if activeResponse != nil { link.send(["type": "response.cancel"]) }
+                link.send(["type": "output_audio_buffer.clear"])
+            }
+        }
+        if let update = goalTracker.revisionNote(for: record) {
+            link.send(note(update, spoken: false))
+        }
+        if !usesLive, deferredTranscriptResponse {
+            deferredTranscriptResponse = false
+            if record.relation != .stop, record.source.authorizesDeviceWork {
+                wantsResponse = true
+                flush()
+            }
+        }
+    }
+
+    private func resumeDeferredTranscriptResponseIfNeeded() {
+        guard !usesLive, deferredTranscriptResponse else { return }
+        deferredTranscriptResponse = false
+        wantsResponse = true
+        flush()
+    }
+
+    private func recordCodexUtterance(_ text: String) {
+        guard appAudio == nil else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let record = goalTracker.ingestCompleteUtterance(
+            text: trimmed,
+            itemID: nil,
+            delegationID: nil,
+            source: defaultUtteranceSource,
+            at: time.now()
+        )
+        let goalLabel = record.goalID.map { "\($0) r\(record.revision ?? 1)" } ?? "none"
+        log.add("voice", "utterance [\(record.source.rawValue)] relation=\(record.relation.rawValue) goal=\(goalLabel) scope=\(record.replacementScope.rawValue) fresh=\(record.needsFreshEvidence)")
+        if record.relation == .stop {
+            for operation in livePhoneOperations.values { operation.cancel() }
         }
     }
 }

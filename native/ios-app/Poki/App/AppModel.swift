@@ -402,7 +402,7 @@ final class AppModel {
         voice = VoiceModel(clearTap: { text, bundle, name in await core.clearTap(on: text, inApp: bundle, named: name, waiting: VoiceModel.approvalWait) },
                            phoneTool: { name, arguments, cancellation in
                                #if DEBUG && targetEnvironment(simulator)
-                               if TalkRehearsal.asked { return await TalkRehearsal.step() }
+                               if TalkRehearsal.asked { return await TalkRehearsal.step(name: name, arguments: arguments) }
                                #endif
                                return await PhoneOperationCancellation.$current.withValue(cancellation) {
                                    let tool = { (name: String, arguments: String) async -> PhoneAnswer in
