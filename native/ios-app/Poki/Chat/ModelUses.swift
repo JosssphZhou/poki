@@ -384,35 +384,79 @@ enum ModelPicks {
         let pick = current(use)
         return groups(use).flatMap(\.items).first { $0.pick == pick }?.name
     }
+
+    /// The collapsed picker text for a use: the selected model's short name, appending its
+    /// provider's name only when another provider in the same picker offers an item with the same
+    /// short name.
+    @MainActor static func closedLabel(_ use: ModelUse, in groups: [ModelGroup]? = nil) -> (text: String, ambiguous: Bool)? {
+        let groups = groups ?? self.groups(use)
+        let pick = current(use)
+        guard let match = groups.lazy.compactMap({ group in
+            group.items.first(where: { $0.pick == pick }).map { (group: group, item: $0) }
+        }).first else { return nil }
+        let needle = match.item.name.lowercased()
+        let ambiguous = groups.contains { other in
+            other.id != match.group.id && other.items.contains { $0.name.lowercased() == needle }
+        }
+        let disambiguated = ambiguous && !match.group.name.isEmpty
+        return (disambiguated ? "\(match.item.name) (\(match.group.name))" : match.item.name, disambiguated)
+    }
 }
 
 /// A use's picker on the Models page: Off (where a use can be off) and each provider's ticked models
-/// in a section of its own.
+/// in a section of its own. Closed rows append the account name when another provider in the same
+/// picker offers a model with the same short name; opened sections stay bare under their headers.
 struct ModelUsePicker: View {
     var use: ModelUse
     /// The page's count of changes: a new pick or tick redraws the picker.
     var version: Int
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let _ = version
         let groups = ModelPicks.groups(use)
-        Picker(selection: Binding(get: { ModelPicks.current(use) }, set: { ModelPicks.pick($0, for: use) })) {
-            if use != .chat || groups.isEmpty {
-                Text(use == .chat ? LocalizedStringKey("No Model") : LocalizedStringKey("Off")).tag(ModelPick.off)
-            }
-            ForEach(groups) { group in
-                Section {
-                    ForEach(group.items) { Text(verbatim: $0.name).tag($0.pick) }
-                } header: {
-                    Group {
+        let selection = Binding(get: { ModelPicks.current(use) }, set: { ModelPicks.pick($0, for: use) })
+        let fallback = AppLocalization.text(use == .chat ? LocalizedStringResource("No Model") : LocalizedStringResource("Off"))
+        let resolved = ModelPicks.closedLabel(use, in: groups)
+        let closedTitle = resolved?.text ?? fallback
+        Menu {
+            Picker(selection: selection) {
+                if use != .chat || groups.isEmpty {
+                    Text(use == .chat ? LocalizedStringKey("No Model") : LocalizedStringKey("Off")).tag(ModelPick.off)
+                }
+                ForEach(groups) { group in
+                    Section {
+                        ForEach(group.items) { Text(verbatim: $0.name).tag($0.pick) }
+                    } header: {
                         Text(verbatim: group.name)
                     }
-                    .settingsHeader()
                 }
+            } label: {
+                EmptyView()
             }
+            .pickerStyle(.inline)
         } label: {
-            SettingsLabel(use.title, systemImage: use.symbol)
+            LabeledContent {
+                HStack(spacing: 4) {
+                    Text(verbatim: closedTitle)
+                        .lineLimit(1)
+                        .truncationMode(resolved?.ambiguous == true ? .middle : .tail)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(.tint)
+            } label: {
+                SettingsLabel(use.title, systemImage: use.symbol)
+                    .foregroundStyle(Color(.label))
+                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: false)
+            }
+            .contentShape(.rect)
         }
-        .pickerStyle(.menu)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: use.name))
+        .accessibilityValue(Text(verbatim: closedTitle))
         .accessibilityIdentifier("models.use.\(use.rawValue)")
     }
 }
