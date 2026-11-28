@@ -464,7 +464,7 @@ final class VoiceUXSyncTests: XCTestCase {
             await clock.advance(0.2)
             XCTAssertEqual(voice.phase, .speaking)
 
-            for noise in ["", "   ", "...", "，。"] {
+            for noise in ["", "   ", "...", "，。", "：", "“”", "「」", "——", "（）", "---"] {
                 codex.notify("thread/realtime/transcript/delta", ["role": "user", "delta": noise])
                 XCTAssertEqual(voice.phase, .speaking, "Noise transcript '\(noise)' must not interrupt speaking")
                 XCTAssertEqual(link.remoteVolume, 1, "Noise transcript '\(noise)' must not mute playback")
