@@ -99,7 +99,7 @@ final class SelfSigner {
     /// The phone's own services (10.7.0.1 and the pairing file), when the loopback answers.
     var phone: () -> [String: Any]? = { nil }
     var ensurePhoneConnection: ((Bool) async -> Bool)?
-    var handlesLoopbackFailure: () -> Bool = { false }
+    var loopbackRecoveryAttempted: () -> Bool = { false }
     private var checkingPhoneConnection = false
     /// Why `phone()` has nothing (ESP-448).
     var whyUnreachable: () -> Unreachable = { .loopback }
@@ -543,10 +543,7 @@ final class SelfSigner {
     func prepare(kind: String, automatic: Bool = false) async {
         guard installFinish == .idle, working == nil, !checkingPhoneConnection else { return }
         let account = status?.apple_id
-        guard var request = await connectedPhone(automatic: automatic) else {
-            if !automatic, !handlesLoopbackFailure() || whyUnreachable() == .unpaired { lastError = unreachable }
-            return
-        }
+        guard var request = await connectedPhone(automatic: automatic) else { return }
         guard installFinish == .idle, working == nil, status?.apple_id == account, !needsCode, !rateLimited else { return }
         request["op"] = "prepare"
         request["kind"] = kind
@@ -584,7 +581,6 @@ final class SelfSigner {
         log.add("signing", "install tapped: \(p.kind) \(p.version) (\(p.build))")
         guard canInstallNow() else { return }
         guard var request = await connectedPhone(automatic: false) else {
-            if !handlesLoopbackFailure() || whyUnreachable() == .unpaired { lastError = unreachable }
             log.add("signing", "install: no loopback or pairing file")
             return
         }
@@ -650,10 +646,20 @@ final class SelfSigner {
 
     private func connectedPhone(automatic: Bool) async -> [String: Any]? {
         guard !Task.isCancelled else { return nil }
+        let retryingOutage = loopbackRecoveryAttempted()
         checkingPhoneConnection = true
         defer { checkingPhoneConnection = false }
-        if let ensurePhoneConnection, !(await ensurePhoneConnection(automatic)) { return nil }
-        return Task.isCancelled ? nil : phone()
+        let connected = await ensurePhoneConnection?(automatic) ?? true
+        guard !Task.isCancelled else { return nil }
+        if connected, let request = phone() { return request }
+        if !automatic {
+            if whyUnreachable() == .unpaired || !loopbackRecoveryAttempted() {
+                lastError = unreachable
+            } else if retryingOutage {
+                lastError = LoopbackRecovery.retryHelp
+            }
+        }
+        return nil
     }
 
     private var unreachable: String {

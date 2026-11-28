@@ -6,6 +6,10 @@ final class LoopbackRecovery {
         case screenHistory, automation, pairing, automaticSigning, signing
     }
 
+    static var retryHelp: String {
+        AppLocalization.text(LocalizedStringResource("Run the Poki Loopback shortcut or reconnect your VPN, then try again."))
+    }
+
     private(set) var failurePending = false
     private var attempt: Task<Bool, Never>?
     private var demands: Set<Demand> = []

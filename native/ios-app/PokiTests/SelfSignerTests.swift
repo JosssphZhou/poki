@@ -162,6 +162,58 @@ final class SelfSignerTests: XCTestCase {
         XCTAssertEqual(signer.installFinish, .idle)
     }
 
+    func testRenewalRetriesExplainTheSameOutageWithoutRelaunchingRecovery() async {
+        let fake = FakeSignerTransport(latestVersion: "99.0.0", latestBuild: "999")
+        let signer = SelfSigner(transport: { req, prog in try await fake.send(req, prog) })
+        signer.phone = { ["host": "10.7.0.1"] }
+        signer.isIdle = { true }
+        await signer.prepare(kind: "refresh")
+        XCTAssertEqual(signer.next?.kind, "refresh")
+        signer.phone = { nil }
+        signer.whyUnreachable = { .cellular }
+
+        var startedAt: Date?
+        var launches = 0
+        var alerts = 0
+        let recovery = LoopbackRecovery(
+            timeout: .milliseconds(25), interval: .milliseconds(2), active: { true },
+            canRun: { true }, canInterrupt: { _ in true }, stillNeeded: { _ in true },
+            status: { (false, startedAt) }, check: { startedAt = Date() },
+            launch: { launches += 1; return {} }, onFailure: { alerts += 1 }
+        )
+        signer.ensurePhoneConnection = { automatic in
+            await recovery.restore(for: automatic ? .automaticSigning : .signing)
+        }
+        signer.loopbackRecoveryAttempted = { recovery.attemptedDuringOutage }
+
+        await signer.prepare(kind: "refresh")
+        XCTAssertNil(signer.lastError, "The first timeout is reported by the recovery alert")
+        XCTAssertTrue(recovery.failurePending)
+        recovery.dismissFailure()
+        await signer.prepare(kind: "refresh", automatic: true)
+        XCTAssertNil(signer.lastError, "Automatic retries stay quiet")
+
+        await signer.prepare(kind: "refresh")
+        XCTAssertEqual(signer.shownError, LoopbackRecovery.retryHelp, "Prepare Renewal Now explains the blocked retry inline")
+
+        let installSigner = SelfSigner(transport: { req, prog in try await fake.send(req, prog) })
+        installSigner.phone = { ["host": "10.7.0.1"] }
+        installSigner.isIdle = { true }
+        await installSigner.prepare(kind: "refresh")
+        installSigner.phone = { nil }
+        installSigner.whyUnreachable = signer.whyUnreachable
+        installSigner.ensurePhoneConnection = signer.ensurePhoneConnection
+        installSigner.loopbackRecoveryAttempted = signer.loopbackRecoveryAttempted
+
+        await installSigner.install()
+        XCTAssertEqual(installSigner.shownError, LoopbackRecovery.retryHelp, "Install Renewal explains the blocked retry inline")
+        XCTAssertEqual(fake.ops.filter { $0 == "prepare" }.count, 2, "The only prepares were the two cached fixtures")
+        XCTAssertFalse(fake.ops.contains("install"))
+        XCTAssertEqual(launches, 1)
+        XCTAssertEqual(alerts, 1)
+        XCTAssertFalse(recovery.failurePending)
+    }
+
     func testMaintainThrottlesChannelChecksEvenWhenSignedInWithLoopback() async {
         let fake = FakeSignerTransport(signedIn: true, needsCode: false, latestVersion: "0.0.1", latestBuild: "1")
         let signer = SelfSigner(transport: { req, prog in try await fake.send(req, prog) })

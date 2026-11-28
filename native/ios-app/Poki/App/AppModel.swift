@@ -314,7 +314,7 @@ final class AppModel {
             if Self.onSimulator { return self.loopback.isWorking }
             return await self.loopbackRecovery.restore(for: automatic ? .automaticSigning : .signing)
         }
-        signer.handlesLoopbackFailure = { [weak self] in self?.loopbackRecovery.attemptedDuringOutage == true }
+        signer.loopbackRecoveryAttempted = { [weak self] in self?.loopbackRecovery.attemptedDuringOutage == true }
         InstalledApps.shared.phone = signer.phone
         signer.isIdle = { [weak self] in self?.signingIdle ?? false }
         signer.whyUnreachable = { [weak self] in self?.signerUnreachable ?? .loopback }
@@ -363,16 +363,12 @@ final class AppModel {
         guard !(presenter is UIAlertController), !presenter.isBeingDismissed else { return }
         let alert = UIAlertController(
             title: AppLocalization.text(LocalizedStringResource("Local Connection Not Restored")),
-            message: Self.loopbackRecoveryHelp,
+            message: LoopbackRecovery.retryHelp,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: AppLocalization.text(LocalizedStringResource("OK")), style: .default))
         presenter.present(alert, animated: true)
         loopbackRecovery.dismissFailure()
-    }
-
-    private static var loopbackRecoveryHelp: String {
-        AppLocalization.text(LocalizedStringResource("Run the Poki Loopback shortcut or reconnect your VPN, then try again."))
     }
 
     /// look, do or status run here as a relay call would be (the Debug probe's end-to-end check).
@@ -2873,7 +2869,7 @@ final class AppModel {
             pairingRecovery = nil
             guard connected else {
                 if retriedAfterFailure {
-                    pairing = .failed(Self.loopbackRecoveryHelp)
+                    pairing = .failed(LoopbackRecovery.retryHelp)
                 } else if !loopbackRecovery.attemptedDuringOutage {
                     pairing = .failed(AppLocalization.text(LocalizedStringResource("Enable a local connection in Setup and wait for the connection check to pass, then try pairing again.")))
                 }
