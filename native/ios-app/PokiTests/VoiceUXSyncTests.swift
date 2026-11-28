@@ -88,6 +88,61 @@ final class VoiceUXSyncTests: XCTestCase {
 
     // MARK: - Bug 1: Dynamic Island / Live Activity immediate reset on voice follow-up
 
+    func testLiveSpeechStartClearsFinishedActivityBeforeNextBackendEvent() async throws {
+        let clock = FakeTime()
+        let activity = ActivityController()
+        activity.foldAfter = .seconds(30)
+        let (voice, currentLink) = makeVoice(time: clock) { _, _ in
+            activity.update { $0.phase = .working; $0.headline = "Check Settings" }
+            activity.record(step: "Check Settings", ok: true)
+            return ("app: Settings\nChecked Settings", false, nil)
+        }
+        let watcher = TalkActivity(voice: voice, activity: activity, deviceName: { "Test iPhone" }, keepsActivity: { false })
+        defer {
+            voice.stop()
+            activity.end(dismissalPolicy: .immediate)
+            withExtendedLifetime(watcher) {}
+        }
+        _ = voice.setBridge(BridgeStub.liveAddress)
+        await voice.start()
+        let link = currentLink()
+        link.play(["type": "session.started"],
+                  ["type": "session.input_transcript.delta", "delta": "Check Settings", "start_ms": 0, "end_ms": 400],
+                  ["type": "session.delegation.created", "delegation": ["id": "d1"]])
+        link.call("check-settings", "look")
+        await clock.settle()
+        link.backend("response.created", ["response": ["id": "reply-1"]])
+        link.play(["type": "session.output_transcript.delta", "delta": "Settings checked."])
+        link.backend("response.completed", ["response": ["id": "reply-1"]])
+        link.remoteSpeech = true
+        await clock.advance(0.2)
+        link.remoteSpeech = false
+        for _ in 0..<3 { await clock.advance(0.2) }
+        await clock.settle()
+
+        XCTAssertEqual(voice.phase, .listening)
+        XCTAssertFalse(voice.midTurn)
+        XCTAssertEqual(activity.state.phase, .done)
+        XCTAssertEqual(activity.state.face.compact, .symbol("checkmark", .accent))
+        print("Live follow-up before: voice=\(voice.phase), midTurn=\(voice.midTurn), activity=\(activity.state.phase)")
+
+        link.play(["type": "input_audio_buffer.speech_started", "event_id": "follow-up-1", "item_id": "user-2"])
+        await clock.settle()
+
+        print("Live follow-up after speech_started only: voice=\(voice.phase), midTurn=\(voice.midTurn), activity=\(activity.state.phase)")
+        XCTAssertEqual(activity.state.phase, .idle, "Speech start must clear the previous outcome before the next backend event")
+        XCTAssertEqual(activity.state.face.compact, .symbol("waveform", .accent))
+        XCTAssertNil(activity.state.result)
+        XCTAssertEqual(activity.state.stepCount, 0)
+
+        activity.update { $0.phase = .working; $0.headline = "Current step" }
+        activity.record(step: "Current step", ok: true)
+        link.play(["type": "input_audio_buffer.speech_started", "event_id": "follow-up-2", "item_id": "user-3"])
+        await clock.settle()
+        XCTAssertEqual(activity.state.phase, .working)
+        XCTAssertEqual(activity.state.stepCount, 1)
+    }
+
     func testFollowUpVoiceTurnImmediatelyClearsPreviousDoneOutcomeOnLiveActivity() async throws {
         let chatGPT = try makeChatGPTStorage()
         defer { try? chatGPT.tearDown() }
