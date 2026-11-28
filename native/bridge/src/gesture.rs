@@ -1,3 +1,4 @@
+use crate::humanize::{self, Humanize};
 use crate::{Result, Touch};
 use idevice::core_device::hid::{
     TOUCHSCREEN_STATE_CONTACT, TOUCHSCREEN_STATE_RELEASE, TouchscreenContact,
@@ -26,13 +27,14 @@ pub(crate) struct Drag {
     pub y1: u16,
     pub x2: u16,
     pub y2: u16,
-    pub duration_ms: u64,
+    /// An explicit duration is sent exactly; `None` lets shaping choose one.
+    pub duration_ms: Option<u64>,
     pub hold_ms: u64,
     pub end_hold_ms: u64,
 }
 
 impl Drag {
-    pub(crate) async fn send(&self, hid: &mut impl TouchSender) -> Result<()> {
+    pub(crate) async fn send(&self, hid: &mut impl TouchSender, h: &mut Humanize) -> Result<()> {
         let Self {
             x1,
             y1,
@@ -42,27 +44,56 @@ impl Drag {
             hold_ms,
             end_hold_ms,
         } = *self;
-        hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x1, y1)
+        if !h.enabled() {
+            let distance = (f64::from(x2) - f64::from(x1)).hypot(f64::from(y2) - f64::from(y1));
+            let duration_ms = duration_ms.unwrap_or_else(|| humanize::drag_nominal_ms(distance));
+            hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x1, y1)
+                .await?;
+            tokio::time::sleep(Duration::from_millis(hold_ms)).await;
+            let steps = duration_ms.div_ceil(16).max(1) as u32;
+            let start = Instant::now();
+            let duration = Duration::from_millis(duration_ms);
+            let outcome: Result<()> = async {
+                for step in 1..=steps {
+                    let t = step as f64 / steps as f64;
+                    let x = (x1 as f64 + (x2 as f64 - x1 as f64) * t).round() as u16;
+                    let y = (y1 as f64 + (y2 as f64 - y1 as f64) * t).round() as u16;
+                    sleep_until(start + duration * step / steps).await;
+                    hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y)
+                        .await?;
+                }
+                tokio::time::sleep(Duration::from_millis(end_hold_ms)).await;
+                Ok(())
+            }
+            .await;
+            let release = hid
+                .send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x2, y2)
+                .await;
+            outcome?;
+            release?;
+            return Ok(());
+        }
+        let plan = humanize::drag_plan(h, x1, y1, x2, y2, duration_ms, hold_ms, end_hold_ms);
+        hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, plan.contact.0, plan.contact.1)
             .await?;
-        tokio::time::sleep(Duration::from_millis(hold_ms)).await;
-        let steps = duration_ms.div_ceil(16).max(1) as u32;
+        tokio::time::sleep(Duration::from_millis(plan.hold_ms)).await;
         let start = Instant::now();
-        let duration = Duration::from_millis(duration_ms);
         let outcome: Result<()> = async {
-            for step in 1..=steps {
-                let t = step as f64 / steps as f64;
-                let x = (x1 as f64 + (x2 as f64 - x1 as f64) * t).round() as u16;
-                let y = (y1 as f64 + (y2 as f64 - y1 as f64) * t).round() as u16;
-                sleep_until(start + duration * step / steps).await;
-                hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y)
+            let mut last_at_ms = 0;
+            for (x, y, at_ms) in &plan.frames {
+                if *at_ms > last_at_ms {
+                    sleep_until(start + Duration::from_millis(*at_ms)).await;
+                    last_at_ms = *at_ms;
+                }
+                hid.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, *x, *y)
                     .await?;
             }
-            tokio::time::sleep(Duration::from_millis(end_hold_ms)).await;
+            tokio::time::sleep(Duration::from_millis(plan.end_hold_ms)).await;
             Ok(())
         }
         .await;
         let release = hid
-            .send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x2, y2)
+            .send_touchscreen(TOUCHSCREEN_STATE_RELEASE, plan.release.0, plan.release.1)
             .await;
         outcome?;
         release?;
@@ -146,11 +177,11 @@ pub(crate) struct Pinch {
     pub start_distance: f64,
     pub end_distance: f64,
     pub angle: f64,
-    pub duration_ms: u64,
+    pub duration_ms: Option<u64>,
 }
 
 impl Pinch {
-    pub(crate) async fn send(&self, hid: &mut impl TouchSender) -> Result<()> {
+    pub(crate) async fn send(&self, hid: &mut impl TouchSender, h: &mut Humanize) -> Result<()> {
         let Self {
             x,
             y,
@@ -159,23 +190,62 @@ impl Pinch {
             angle,
             duration_ms,
         } = *self;
-        let steps = duration_ms.div_ceil(16).max(1) as u32;
+        if !h.enabled() {
+            let duration_ms = duration_ms.unwrap_or(500);
+            let steps = duration_ms.div_ceil(16).max(1) as u32;
+            let start = Instant::now();
+            let duration = Duration::from_millis(duration_ms);
+            let outcome: Result<()> = async {
+                for step in 0..=steps {
+                    sleep_until(start + duration * step / steps).await;
+                    let distance =
+                        start_distance + (end_distance - start_distance) * step as f64 / steps as f64;
+                    hid.send_multitouch(&pinch_contacts(x, y, distance, angle, true)?)
+                        .await?;
+                }
+                Ok(())
+            }
+            .await;
+            let release = hid
+                .send_multitouch(&pinch_contacts(x, y, end_distance, angle, false)?)
+                .await;
+            outcome?;
+            release?;
+            return Ok(());
+        }
+        let plan = humanize::pinch_plan(h, start_distance, end_distance, duration_ms);
         let start = Instant::now();
-        let duration = Duration::from_millis(duration_ms);
         let outcome: Result<()> = async {
-            for step in 0..=steps {
-                sleep_until(start + duration * step / steps).await;
-                let distance =
-                    start_distance + (end_distance - start_distance) * step as f64 / steps as f64;
-                hid.send_multitouch(&pinch_contacts(x, y, distance, angle, true)?)
-                    .await?;
+            let mut last_at_ms = 0;
+            for (distance, at_ms) in &plan.frames {
+                if *at_ms > last_at_ms {
+                    sleep_until(start + Duration::from_millis(*at_ms)).await;
+                    last_at_ms = *at_ms;
+                }
+                let mut contacts = pinch_contacts(x, y, *distance, angle, true)?;
+                for contact in &mut contacts {
+                    let (jx, jy) =
+                        humanize::pinch_contact_jitter(h, contact.x, contact.y);
+                    contact.x = jx;
+                    contact.y = jy;
+                }
+                hid.send_multitouch(&contacts).await?;
             }
             Ok(())
         }
         .await;
-        let release = hid
-            .send_multitouch(&pinch_contacts(x, y, end_distance, angle, false)?)
-            .await;
+        let final_contacts = plan
+            .frames
+            .last()
+            .map(|&(distance, _)| distance)
+            .unwrap_or(end_distance);
+        let mut release_contacts = pinch_contacts(x, y, final_contacts, angle, false)?;
+        for contact in &mut release_contacts {
+            let (jx, jy) = humanize::pinch_contact_jitter(h, contact.x, contact.y);
+            contact.x = jx;
+            contact.y = jy;
+        }
+        let release = hid.send_multitouch(&release_contacts).await;
         outcome?;
         release?;
         Ok(())
@@ -219,6 +289,7 @@ pub(crate) fn pinch_contacts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::humanize::Humanize;
     use serde_json::json;
     use tokio::time::{Instant, advance};
 
@@ -337,9 +408,9 @@ mod tests {
                             start_distance: 200.0,
                             end_distance: 600.0,
                             angle: 0.0,
-                            duration_ms,
+                            duration_ms: Some(duration_ms),
                         }
-                        .send(&mut transport)
+                        .send(&mut transport, &mut Humanize::off())
                         .await
                     } else {
                         Drag {
@@ -347,11 +418,11 @@ mod tests {
                             y1: 500,
                             x2: 500,
                             y2: 500,
-                            duration_ms,
+                            duration_ms: Some(duration_ms),
                             hold_ms: 20,
                             end_hold_ms: 30,
                         }
-                        .send(&mut transport)
+                        .send(&mut transport, &mut Humanize::off())
                         .await
                     };
                     if fail_at.is_some() {
@@ -546,5 +617,52 @@ mod tests {
         }
         assert!(timing_errors.is_empty(), "{}", timing_errors.join("\n"));
         assert!(!transport.transmissions[120].contacts[0].touching);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn humanized_drag_sends_scattered_s_curve_and_release() {
+        // The humanized path keeps the transmission contract: contact first,
+        // moving contacts, then exactly one release, always on screen.
+        let mut transport = Transport::new(5, None);
+        let mut h = Humanize::seeded(101);
+        Drag {
+            x1: 1000,
+            y1: 5000,
+            x2: 30000,
+            y2: 5000,
+            duration_ms: Some(800),
+            hold_ms: 20,
+            end_hold_ms: 30,
+        }
+        .send(&mut transport, &mut h)
+        .await
+        .unwrap();
+        let transmissions = &transport.transmissions;
+        assert!((transmissions.len() as i64 - 51).abs() <= 12, "unexpected frame count {}", transmissions.len());
+        let first = &transmissions[0].contacts[0];
+        assert!(first.touching);
+        let last = transmissions.last().unwrap();
+        assert_eq!(last.contacts.len(), 1);
+        assert!(!last.contacts[0].touching, "last transmission must be the release");
+        // Contact lands near the requested start, release near the requested end.
+        assert!((f64::from(first.x) - 1000.0).abs() <= 500.0, "start scatter too far: {}", first.x);
+        assert!((f64::from(last.contacts[0].x) - 30000.0).abs() <= 600.0, "release scatter too far: {}", last.contacts[0].x);
+        // Coordinates stay on screen; deadlines strictly increase.
+        let mut last_at: Option<Duration> = None;
+        for transmission in transmissions {
+            for contact in &transmission.contacts {
+                assert!(contact.x <= 65535 && contact.y <= 65535);
+            }
+            if transmission.contacts[0].touching {
+                if let Some(previous) = last_at {
+                    assert!(transmission.at > previous, "touch deadlines must advance");
+                }
+                last_at = Some(transmission.at);
+            }
+        }
+        // The mid-frame arrives roughly halfway through the movement window.
+        let mid = &transmissions[transmissions.len() / 2];
+        let mid_ms = mid.at.as_secs_f64() * 1000.0;
+        assert!((250.0..750.0).contains(&mid_ms), "mid frame at {mid_ms} ms");
     }
 }
