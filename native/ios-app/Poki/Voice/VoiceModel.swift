@@ -35,12 +35,20 @@ struct VoiceBridge: Equatable {
         storage.defaults.set(bridge?.base.absoluteString, forKey: "voiceBridge")
     }
 
+    static let templateHeader = "X-Poki-Voice-Template"
+
     struct Token: Decodable {
         let value: String?
         let model: String
         let local_tools: [String]
         var live: Bool? = nil
         var base: String? = nil
+        var templateVersion: String? = nil
+
+        enum CodingKeys: String, CodingKey {
+            case value, model, local_tools, live, base
+            case templateVersion = "template_version"
+        }
     }
     private struct SDPAnswer: Decodable { let sdp: String }
     private struct ScreenDescription: Decodable { let text: String }
@@ -75,10 +83,12 @@ struct VoiceBridge: Equatable {
         ])
         let (data, response) = try await URLSession.shared.data(from: url)
         try Self.check(response, data)
-        return try JSONDecoder().decode(Token.self, from: data)
+        var token = try JSONDecoder().decode(Token.self, from: data)
+        if let header = Self.templateVersion(from: response) { token.templateVersion = header }
+        return token
     }
 
-    func exchangeLiveOffer(_ sdp: String) async throws -> String {
+    func exchangeLiveOffer(_ sdp: String) async throws -> (sdp: String, templateVersion: String?) {
         let url = base.appending(path: "session").appending(queryItems: [URLQueryItem(name: "language", value: AppLocalization.language)])
         var request = URLRequest(url: url, timeoutInterval: 25)
         request.httpMethod = "POST"
@@ -86,7 +96,15 @@ struct VoiceBridge: Equatable {
         request.httpBody = try JSONEncoder().encode(["sdp": sdp])
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.check(response, data)
-        return try JSONDecoder().decode(SDPAnswer.self, from: data).sdp
+        let answer = try JSONDecoder().decode(SDPAnswer.self, from: data).sdp
+        return (answer, Self.templateVersion(from: response))
+    }
+
+    private static func templateVersion(from response: URLResponse) -> String? {
+        guard let raw = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: templateHeader)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        return raw
     }
 
     var liveScreenReader: ((String) async throws -> String)? {
@@ -330,6 +348,8 @@ final class VoiceModel {
     private(set) var clock = TurnClock()
 
     private var link: VoiceConnection?
+    private var startupMode: VoiceStartupMode?
+    private var startupTemplateVersion: String?
     private var connectionOpen = false
     private var openingCapture: OpeningVoiceCapture?
     private var openingSpeechAuthorized = false
@@ -947,6 +967,26 @@ final class VoiceModel {
             guard let bridge else { throw VoiceError.noBridge }
             return try await bridge.token(preferLive: microphone)
         }
+        func resolveStartupMode(for token: VoiceBridge.Token?) -> VoiceStartupMode {
+            if rehearsing { return .rehearsal }
+            if subscription { return .codexLive }
+            if let account, key != nil {
+                let live = token?.live ?? (microphone && account == .openai && ModelCatalog.voiceModelID(for: account, storage: storage).hasPrefix("gpt-live-"))
+                return live ? .liveDirect : .realtimeDirect
+            }
+            return token?.live == true ? .liveBridge : .realtimeBridge
+        }
+        func resolveStartupTemplateVersion(for mode: VoiceStartupMode, token: VoiceBridge.Token?) -> String {
+            switch mode {
+            case .realtimeDirect, .liveDirect, .codexLive, .rehearsal, .dictation:
+                return VoiceBehaviorSpec.version
+            case .realtimeBridge, .liveBridge:
+                return token?.templateVersion ?? "unknown"
+            }
+        }
+        let initialMode = resolveStartupMode(for: nil)
+        startupMode = initialMode
+        startupTemplateVersion = resolveStartupTemplateVersion(for: initialMode, token: nil)
         func makeLink(attempt: Int, direct: Bool) -> VoiceConnection {
             connectionAttempt = attempt
             let link = connection({ [weak self] event in
@@ -966,6 +1006,11 @@ final class VoiceModel {
         func connect(_ link: VoiceConnection, _ token: VoiceBridge.Token, direct: Bool) async throws {
             usesLive = token.live == true
             localTools = Set(token.local_tools)
+            let mode = resolveStartupMode(for: token)
+            let templateVersion = resolveStartupTemplateVersion(for: mode, token: token)
+            startupMode = mode
+            startupTemplateVersion = templateVersion
+            log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: templateVersion, mode: mode, commitState: rehearsing ? .queued : .submitted))
             if subscription {
                 try await link.connectLive(microphone: microphone, direct: direct) { sdp in
                     try await codex.start(offer: sdp)
@@ -976,7 +1021,11 @@ final class VoiceModel {
                 try await link.connectLive(microphone: microphone, direct: direct) { sdp in
                     if let key { return try await VoiceDirect.exchangeLiveOffer(sdp, model: token.model, apiKey: key) }
                     guard let bridge else { throw VoiceError.noBridge }
-                    return try await bridge.exchangeLiveOffer(sdp)
+                    let answer = try await bridge.exchangeLiveOffer(sdp)
+                    if let reported = answer.templateVersion {
+                        self.startupTemplateVersion = reported
+                    }
+                    return answer.sdp
                 }
             } else {
                 guard let secret = token.value else { throw VoiceError.noBridge }
@@ -1042,6 +1091,9 @@ final class VoiceModel {
             trace("connection open")
             let wasConnecting = !ready
             if subscription {
+                if !ready, let mode = startupMode {
+                    log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: startupTemplateVersion ?? "unknown", mode: mode, commitState: .confirmed))
+                }
                 ready = true
                 phase = .listening
             }
@@ -1068,7 +1120,13 @@ final class VoiceModel {
                 stop(ifOwningSession: number)
                 return nil
             }
-            log.add("voice", "could not connect: \(error.localizedDescription)")
+            let errorCode = Self.startupErrorCode(for: error)
+            if let mode = startupMode, !ready {
+                log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: startupTemplateVersion ?? "unknown", mode: mode, commitState: .failed, errorCode: errorCode))
+            }
+            startupMode = nil
+            startupTemplateVersion = nil
+            log.add("voice", "could not connect: \(errorCode)")
             if startOpeningDictation() {
                 // Return control to Shortcuts so the owner can run Poki Anytime again.
                 if !waitsForOpeningDictation { await openingDictation?.value }
@@ -1383,6 +1441,8 @@ final class VoiceModel {
         liveCloseTimeout = nil
         liveCloseWaiters.resumeAll()
         closeConnection("session ended")
+        startupMode = nil
+        startupTemplateVersion = nil
         usesLive = false
         appAudio = nil
         screenItem = nil
@@ -1647,10 +1707,12 @@ final class VoiceModel {
         do {
             try listen()
             phase = .hearing
+            log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: VoiceBehaviorSpec.version, mode: .dictation, commitState: .confirmed))
             log.add("voice", "dictation to the chat (no Realtime key or bridge)")
         } catch {
             self.dictation = nil
             holdingMicrophone = false
+            log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: VoiceBehaviorSpec.version, mode: .dictation, commitState: .failed, errorCode: Self.startupErrorCode(for: error)))
             setLost(VoiceError.reason(for: error), session: number ?? session)
         }
     }
@@ -1721,6 +1783,11 @@ final class VoiceModel {
         if liveCloseTimeout != nil {
             finishLiveClose(reason, confirmed: confirmed)
             return
+        }
+        if !ready, let mode = startupMode {
+            log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: startupTemplateVersion ?? "unknown", mode: mode, commitState: .failed, errorCode: "connection_closed"))
+            startupMode = nil
+            startupTemplateVersion = nil
         }
         if !confirmed, startOpeningDictation() { return }
         if usesLive && ready { logLiveClose(reason, confirmed: confirmed) }
@@ -1867,6 +1934,9 @@ final class VoiceModel {
                 let audio = (event["session"] as? [String: Any])?["audio"] as? [String: Any]
                 let detection = (audio?["input"] as? [String: Any])?["turn_detection"] as? [String: Any]
                 manualRealtimeTurns = detection?["create_response"] as? Bool == false
+            }
+            if !ready, let mode = startupMode {
+                log.add("voice", VoiceBehaviorSpec.startupLogLine(templateVersion: startupTemplateVersion ?? "unknown", mode: mode, commitState: .confirmed))
             }
             trace("model session ready")
             let wasConnecting = !ready
@@ -2438,6 +2508,51 @@ final class VoiceModel {
             return
         }
         deliver(index)
+    }
+
+    private static func startupErrorCode(for error: Error) -> String {
+        if let voiceError = error as? VoiceError {
+            switch voiceError {
+            case .realtime(let code, _):
+                switch code {
+                case 400: return "upstream_bad_request"
+                case 401, 403: return "upstream_auth"
+                case 429: return "upstream_rate_limit"
+                case 500...: return "upstream_server_error"
+                case 400..<500: return "upstream_client_error"
+                default: return "upstream_error"
+                }
+            case .bridge(let code, _):
+                switch code {
+                case 404: return "bridge_not_found"
+                case 400: return "bridge_bad_request"
+                case 401, 403: return "bridge_auth"
+                case 429: return "bridge_rate_limit"
+                case 500...: return "bridge_server_error"
+                case 400..<500: return "bridge_client_error"
+                default: return "bridge_error"
+                }
+            case .noBridge: return "no_bridge"
+            case .appAudioNeedsKeyOrBridge: return "app_audio_needs_key_or_bridge"
+            case .timeout: return "timeout"
+            case .noPath: return "no_path"
+            case .noWebRTC: return "no_webrtc"
+            case .noOffer: return "no_offer"
+            }
+        }
+        if let codexError = error as? CodexVoice.Failure {
+            switch codexError {
+            case .unavailable: return "codex_unavailable"
+            case .signIn: return "codex_sign_in"
+            case .ended: return "codex_ended"
+            case .timedOut: return "codex_timed_out"
+            case .backendFailed: return "codex_backend_failed"
+            }
+        }
+        if let urlError = error as? URLError {
+            return urlError.code == .timedOut ? "timeout" : "network_error"
+        }
+        return "startup_error"
     }
 
     private static func sanitizeLogText(_ text: String, limit: Int) -> String {

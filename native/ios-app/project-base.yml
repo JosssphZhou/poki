@@ -53,6 +53,8 @@ targets:
       # The gym scorecard (native/ios-gym/check), run in-process by the Debug probe's `gym` mode.
       - path: ../ios-gym/check/GymScorecard.swift
         group: Poki/Debug
+      - path: ../../src/data/voice-behavior-spec.json
+        buildPhase: resources
     info:
       path: Poki/Info.plist
       properties:

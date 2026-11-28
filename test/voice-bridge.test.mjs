@@ -1,17 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
-import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fixture } from './fixture.mjs';
 import { root } from '../src/config.mjs';
+import { VOICE_SPEC_VERSION } from '../src/voice-behavior-spec.mjs';
 
-async function sessionBridge(t, { screenError, screenThrows, extraArgs = [] } = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'poki-voice-token-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+async function sessionBridge(t, { screenError, screenThrows, extraArgs = [], extraEnv = {}, failUpstream = false, upstreamErrorMessage = 'upstream failed', fixtureEnv = null, bridgeScript = join(root, 'bin/voice-bridge.mjs') } = {}) {
+  const dir = fixtureEnv ? fixtureEnv.POKI_MCP_STATE_DIR : await mkdtemp(join(tmpdir(), 'poki-voice-token-'));
+  if (!fixtureEnv) t.after(() => rm(dir, { recursive: true, force: true }));
   const screenAction = screenThrows
     ? `(() => { throw new Error(${JSON.stringify(screenThrows)}); })()`
     : screenError
@@ -22,23 +24,53 @@ async function sessionBridge(t, { screenError, screenThrows, extraArgs = [] } = 
     import { join } from 'node:path';
     globalThis.fetch = async (url, options) => {
       await writeFile(join(process.env.POKI_MCP_STATE_DIR, 'request.json'), JSON.stringify({ url, body: JSON.parse(options.body) }));
+      if (${JSON.stringify(failUpstream)}) return Response.json({ error: { message: ${JSON.stringify(upstreamErrorMessage)} } }, { status: 502 });
       if (url === 'https://api.openai.com/v1/realtime/client_secrets') return Response.json({ value: 'ek_test' });
       if (url === 'https://api.openai.com/v1/live/sessions') return Response.json({ transport: { sdp: 'sdp-answer' } }, { status: 201 });
       if (url === 'https://api.openai.com/v1/responses') return ${screenAction};
       throw new Error('Unexpected upstream URL');
     };
   `;
-  const child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, join(root, 'bin/voice-bridge.mjs'), '--port', '0', '--host', '127.0.0.1', ...extraArgs], {
-    env: { ...process.env, POKI_MCP_STATE_DIR: dir, POKI_VOICE_MODEL: '', OPENAI_API_KEY: 'unused' }, stdio: ['ignore', 'pipe', 'inherit'],
+  const child = spawn(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, bridgeScript, '--port', '0', '--host', '127.0.0.1', ...extraArgs], {
+    env: { ...(fixtureEnv ?? process.env), POKI_MCP_STATE_DIR: dir, POKI_VOICE_MODEL: '', OPENAI_API_KEY: 'unused', ...extraEnv }, stdio: ['ignore', 'pipe', 'inherit'],
   });
   const exited = once(child, 'exit');
   t.after(async () => { child.kill(); await exited; });
   const lines = createInterface({ input: child.stdout });
+  const events = [];
+  const waiters = [];
   const [line] = await Promise.race([once(lines, 'line'), exited.then(() => { throw new Error('Voice bridge exited before it was ready'); })]);
+  lines.on('line', entry => {
+    try {
+      const parsed = JSON.parse(entry);
+      events.push(parsed);
+      for (let i = waiters.length - 1; i >= 0; i -= 1) {
+        if (waiters[i].predicate(parsed)) {
+          waiters[i].resolve(parsed);
+          waiters.splice(i, 1);
+        }
+      }
+    } catch {}
+  });
+  const waitForEvent = (predicate, timeoutMs = 2000) => {
+    const existing = events.find(predicate);
+    if (existing) return Promise.resolve(existing);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const index = waiters.findIndex(w => w.resolve === onMatch);
+        if (index >= 0) waiters.splice(index, 1);
+        reject(new Error('Timed out waiting for voice bridge event'));
+      }, timeoutMs);
+      const onMatch = event => { clearTimeout(timer); resolve(event); };
+      waiters.push({ predicate, resolve: onMatch });
+    });
+  };
   const { port } = JSON.parse(line);
   const { secret } = JSON.parse(await readFile(join(dir, 'voice-bridge.json'), 'utf8'));
   return {
     base: `http://127.0.0.1:${port}/voice/${secret}`,
+    events,
+    waitForEvent,
     request: async () => JSON.parse(await readFile(join(dir, 'request.json'), 'utf8')),
   };
 }
@@ -282,4 +314,323 @@ test('a voice tap_text on an element known only by its identifier shows the phon
   assert.equal(check.state, 'check', JSON.stringify(check));
   assert.match(check.target.says, /\bSend\b/);
   assert.equal((await f.events()).filter(e => e.op === 'tap').length, 0);
+});
+
+const extractHeadings = prompt => prompt.split('\n').filter(line => line.startsWith('# ')).map(line => line.slice(2));
+
+test('voice bridge emits all stable sections, reports template header, and stays within main prompt budget', async t => {
+  const { base, request } = await sessionBridge(t);
+  const expectedAll = ['Executor', 'Language', 'Brevity', 'Capabilities', 'Evidence', 'Interruption', 'Recovery'];
+  const expectedLiveVoice = ['Executor', 'Language', 'Brevity', 'Evidence', 'Interruption', 'Recovery'];
+  const budgets = {
+    'zh-Hans': { languageName: 'Chinese, Simplified', realtime: 2984, liveVoice: 1481, liveExecutor: 3056 },
+    en: { languageName: 'English', realtime: 2973, liveVoice: 1470, liveExecutor: 3045 },
+    'zh-Hant': { languageName: 'Chinese, Traditional', realtime: 2985, liveVoice: 1482, liveExecutor: 3057 },
+  };
+
+  const liveToken = await fetch(`${base}/token?transport=live`);
+  assert.equal(liveToken.status, 200);
+  assert.equal(liveToken.headers.get('x-poki-voice-template'), VOICE_SPEC_VERSION);
+
+  for (const [language, spec] of Object.entries(budgets)) {
+    const rtRes = await fetch(`${base}/token?language=${language}`);
+    assert.equal(rtRes.status, 200);
+    assert.equal(rtRes.headers.get('x-poki-voice-template'), VOICE_SPEC_VERSION);
+    const realtime = (await request()).body.session;
+    assert.deepEqual(extractHeadings(realtime.instructions), expectedAll);
+    assert.ok(realtime.instructions.includes(`Speak ${spec.languageName}, the language of Poki's interface, from your first sentence on.`));
+    assert.ok(realtime.instructions.includes('Before using tools for a new task, say one short sentence about what you will do.'));
+    assert.ok(realtime.instructions.includes('Automatic Unlock setting'));
+    assert.ok(realtime.instructions.includes('Never repeat an action already finished'));
+    assert.ok(realtime.instructions.length <= spec.realtime, `${language} realtime ${realtime.instructions.length} > ${spec.realtime}`);
+    assert.equal(realtime.tools.reduce((sum, tool) => sum + tool.description.length, 0), 1133);
+
+    const lvRes = await fetch(`${base}/session?language=${language}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+    });
+    assert.equal(lvRes.status, 200);
+    assert.equal(lvRes.headers.get('x-poki-voice-template'), VOICE_SPEC_VERSION);
+    const live = (await request()).body.session;
+    assert.deepEqual(extractHeadings(live.instructions), expectedLiveVoice);
+    assert.deepEqual(extractHeadings(live.delegation.responses.instructions), expectedAll);
+    assert.ok(live.instructions.includes(`Speak ${spec.languageName}.`));
+    assert.ok(live.delegation.responses.instructions.includes('Start promptly.'));
+    assert.ok(live.instructions.length <= spec.liveVoice, `${language} live voice ${live.instructions.length} > ${spec.liveVoice}`);
+    assert.ok(live.delegation.responses.instructions.length <= spec.liveExecutor, `${language} live executor ${live.delegation.responses.instructions.length} > ${spec.liveExecutor}`);
+    assert.equal(live.delegation.responses.tools.reduce((sum, tool) => sum + tool.description.length, 0), 1327);
+  }
+});
+
+test('hiding tools removes their promises from voice bridge prompts, including cancel-only and tap-only sets', async t => {
+  const withoutOpenApp = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'open_app' } });
+  assert.equal((await fetch(`${withoutOpenApp.base}/token?language=zh-Hans`)).status, 200);
+  const rtNoOpen = (await withoutOpenApp.request()).body.session;
+  assert.ok(!rtNoOpen.tools.some(tool => tool.name === 'open_app'));
+  assert.ok(!rtNoOpen.instructions.includes('open_app'));
+  assert.ok(!rtNoOpen.instructions.includes('Settings page'));
+
+  const withoutDo = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'do' } });
+  assert.equal((await fetch(`${withoutDo.base}/token?language=en`)).status, 200);
+  const rtNoDo = (await withoutDo.request()).body.session;
+  assert.ok(!rtNoDo.tools.some(tool => tool.name === 'do'));
+  assert.ok(!rtNoDo.instructions.includes('one do'));
+  assert.ok(!rtNoDo.instructions.includes('button: "home"'));
+  assert.ok(!rtNoDo.instructions.includes('Taps that send'));
+
+  const withoutLook = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'look' } });
+  assert.equal((await fetch(`${withoutLook.base}/token?language=en`)).status, 200);
+  const rtNoLook = (await withoutLook.request()).body.session;
+  assert.ok(!rtNoLook.tools.some(tool => tool.name === 'look'));
+  assert.ok(!rtNoLook.instructions.includes('Call look first'));
+  assert.ok(!rtNoLook.instructions.includes('latest look'));
+
+  const withoutCancel = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'cancel_current_task' } });
+  assert.equal((await fetch(`${withoutCancel.base}/session?language=zh-Hans`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  })).status, 200);
+  const liveNoCancel = (await withoutCancel.request()).body.session;
+  assert.ok(!liveNoCancel.delegation.responses.tools.some(tool => tool.name === 'cancel_current_task'));
+  assert.ok(!liveNoCancel.instructions.includes('cancel_current_task'));
+  assert.ok(!liveNoCancel.delegation.responses.instructions.includes('cancel_current_task'));
+
+  const cancelOnly = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'get_ios_version,open_app,do,look' } });
+  assert.equal((await fetch(`${cancelOnly.base}/session?language=zh-Hans`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  })).status, 200);
+  const liveCancelOnly = (await cancelOnly.request()).body.session;
+  assert.deepEqual(liveCancelOnly.delegation.responses.tools.map(tool => tool.name), ['cancel_current_task']);
+  for (const prompt of [liveCancelOnly.instructions, liveCancelOnly.delegation.responses.instructions]) {
+    assert.ok(prompt.includes('cancel_current_task'));
+    for (const forbidden of [
+      '把停字发过去',
+      '在备忘录输入停',
+      'normal phone tools',
+      'Before delegating a new task',
+      'Start promptly.',
+      'Use tools only',
+      'reads and operates the iPhone',
+      "operates the user's iPhone with tools",
+    ]) {
+      assert.ok(!prompt.includes(forbidden), `unexpected promise ${JSON.stringify(forbidden)} in cancel-only prompt`);
+    }
+  }
+
+  const f = await fixture(t);
+  await copyFile(join(root, 'bin/voice-bridge.mjs'), join(f.dir, 'bin/voice-bridge.mjs'));
+  const tapAndCancelMac = await sessionBridge(t, {
+    extraArgs: ['--mac-tools'],
+    extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'get_ios_version,open_settings,read_screen,open_app,go_home' },
+    fixtureEnv: f.env,
+    bridgeScript: join(f.dir, 'bin/voice-bridge.mjs'),
+  });
+  assert.equal((await fetch(`${tapAndCancelMac.base}/session?language=zh-Hans`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  })).status, 200);
+  const macTapOnly = (await tapAndCancelMac.request()).body.session;
+  assert.deepEqual(macTapOnly.delegation.responses.tools.map(tool => tool.name), ['tap_text', 'cancel_current_task']);
+  for (const prompt of [macTapOnly.instructions, macTapOnly.delegation.responses.instructions]) {
+    assert.ok(prompt.includes('cancel_current_task'));
+    for (const forbidden of [
+      '在备忘录输入停',
+      '把停字发过去',
+      'reads and operates the iPhone',
+      'read_screen',
+      'open_app',
+      'open_settings',
+      'go_home',
+    ]) {
+      assert.ok(!prompt.includes(forbidden), `unexpected promise ${JSON.stringify(forbidden)} when only tap_text and cancel_current_task are exposed`);
+    }
+  }
+});
+
+test('voice bridge startup logs record version, mode, and controlled error codes without upstream text or query params', async t => {
+  const okBridge = await sessionBridge(t);
+  assert.equal((await fetch(`${okBridge.base}/token?language=zh-Hans&voice=QUERY_SENTINEL_OK`)).status, 200);
+  const rtEvent = await okBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'realtime' && e.commit_state === 'confirmed');
+  assert.equal(rtEvent.template_version, VOICE_SPEC_VERSION);
+  assert.equal(rtEvent.options, undefined);
+  assert.ok(!JSON.stringify(okBridge.events).includes('QUERY_SENTINEL_OK'));
+
+  assert.equal((await fetch(`${okBridge.base}/token?transport=live`)).status, 200);
+  const queuedEvent = await okBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'queued');
+  assert.equal(queuedEvent.template_version, VOICE_SPEC_VERSION);
+
+  assert.equal((await fetch(`${okBridge.base}/session?language=zh-Hans&voice=QUERY_SENTINEL_LIVE`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  })).status, 200);
+  const liveEvent = await okBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'confirmed');
+  assert.equal(liveEvent.template_version, VOICE_SPEC_VERSION);
+  assert.equal(liveEvent.options, undefined);
+  assert.ok(!JSON.stringify(okBridge.events).includes('QUERY_SENTINEL_LIVE'));
+
+  const failingBridge = await sessionBridge(t, { failUpstream: true, upstreamErrorMessage: 'UPSTREAM_SENTINEL_SECRET_9911' });
+  const rtFailRes = await fetch(`${failingBridge.base}/token?language=en&voice=QUERY_SENTINEL_FAIL`);
+  assert.equal(rtFailRes.status, 502);
+  const rtFailBody = await rtFailRes.json();
+  assert.equal(rtFailBody.error, 'upstream_server_error');
+  assert.ok(!JSON.stringify(rtFailBody).includes('UPSTREAM_SENTINEL_SECRET_9911'));
+  const rtFailed = await failingBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'realtime' && e.commit_state === 'failed');
+  const rtErrorEvent = await failingBridge.waitForEvent(e => e.event === 'error' && e.action === 'token');
+  assert.equal(rtFailed.template_version, VOICE_SPEC_VERSION);
+  assert.equal(rtFailed.error_code, 'upstream_server_error');
+  assert.equal(rtFailed.status, 502);
+  assert.equal(rtFailed.message, undefined);
+  assert.equal(rtFailed.options, undefined);
+  assert.equal(rtErrorEvent.error_code, 'upstream_server_error');
+  assert.equal(rtErrorEvent.message, undefined);
+
+  const lvFailRes = await fetch(`${failingBridge.base}/session?language=zh-Hans&voice=QUERY_SENTINEL_LIVE_FAIL`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  });
+  assert.equal(lvFailRes.status, 502);
+  const lvFailBody = await lvFailRes.json();
+  assert.equal(lvFailBody.error, 'upstream_server_error');
+  assert.ok(!JSON.stringify(lvFailBody).includes('UPSTREAM_SENTINEL_SECRET_9911'));
+  const liveFailed = await failingBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'failed');
+  const lvErrorEvent = await failingBridge.waitForEvent(e => e.event === 'error' && e.action === 'session');
+  assert.equal(liveFailed.template_version, VOICE_SPEC_VERSION);
+  assert.equal(liveFailed.error_code, 'upstream_server_error');
+  assert.equal(liveFailed.status, 502);
+  assert.equal(liveFailed.message, undefined);
+  assert.equal(liveFailed.options, undefined);
+  assert.equal(lvErrorEvent.error_code, 'upstream_server_error');
+  assert.equal(lvErrorEvent.message, undefined);
+
+  const allFailLogs = JSON.stringify(failingBridge.events);
+  assert.ok(!allFailLogs.includes('UPSTREAM_SENTINEL_SECRET_9911'));
+  assert.ok(!allFailLogs.includes('QUERY_SENTINEL_FAIL'));
+  assert.ok(!allFailLogs.includes('QUERY_SENTINEL_LIVE_FAIL'));
+
+  const validationBridge = await sessionBridge(t);
+  assert.equal((await fetch(`${validationBridge.base}/token?transport=live`)).status, 200);
+  await validationBridge.waitForEvent(e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'queued');
+
+  const missingSdpRes = await fetch(`${validationBridge.base}/session?language=zh-Hans&voice=QUERY_SENTINEL_MISSING_SDP`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}),
+  });
+  assert.equal(missingSdpRes.status, 400);
+  const missingSdpBody = await missingSdpRes.json();
+  assert.equal(missingSdpBody.error, 'invalid_sdp');
+  const missingSdpEvent = await validationBridge.waitForEvent(
+    e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'failed' && e.error_code === 'invalid_sdp',
+  );
+  assert.equal(missingSdpEvent.template_version, VOICE_SPEC_VERSION);
+  assert.equal(missingSdpEvent.status, 400);
+  assert.equal(missingSdpEvent.message, undefined);
+  const missingSdpError = await validationBridge.waitForEvent(e => e.event === 'error' && e.action === 'session' && e.error_code === 'invalid_sdp');
+  assert.equal(missingSdpError.status, 400);
+  assert.equal(missingSdpError.message, undefined);
+
+  const badJsonRes = await fetch(`${validationBridge.base}/session?language=zh-Hans&voice=QUERY_SENTINEL_BAD_JSON`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{bad-json-BODY_SENTINEL_8822',
+  });
+  assert.equal(badJsonRes.status, 400);
+  const badJsonBody = await badJsonRes.json();
+  assert.equal(badJsonBody.error, 'bad_request');
+  const badJsonEvent = await validationBridge.waitForEvent(
+    e => e.event === 'voice_startup' && e.mode === 'live' && e.commit_state === 'failed' && e.error_code === 'bad_request',
+  );
+  assert.equal(badJsonEvent.template_version, VOICE_SPEC_VERSION);
+  assert.equal(badJsonEvent.status, 400);
+  assert.equal(badJsonEvent.message, undefined);
+  const badJsonError = await validationBridge.waitForEvent(e => e.event === 'error' && e.action === 'session' && e.error_code === 'bad_request');
+  assert.equal(badJsonError.status, 400);
+  assert.equal(badJsonError.message, undefined);
+
+  const allValidationLogs = JSON.stringify(validationBridge.events);
+  assert.ok(!allValidationLogs.includes('QUERY_SENTINEL_MISSING_SDP'));
+  assert.ok(!allValidationLogs.includes('QUERY_SENTINEL_BAD_JSON'));
+  assert.ok(!allValidationLogs.includes('BODY_SENTINEL_8822'));
+});
+
+test('phone direct Swift renderer and live Node voice bridge produce identical prompts', async t => {
+  if (process.platform !== 'darwin') {
+    t.skip('Swift parity check runs on macOS');
+    return;
+  }
+  const execFileAsync = promisify(execFile);
+  const dir = await mkdtemp(join(tmpdir(), 'poki-voice-parity-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+
+  const defaultBridge = await sessionBridge(t);
+  const noOpenBridge = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'open_app' } });
+  const cancelOnlyBridge = await sessionBridge(t, { extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'get_ios_version,open_app,do,look' } });
+  const f = await fixture(t);
+  await copyFile(join(root, 'bin/voice-bridge.mjs'), join(f.dir, 'bin/voice-bridge.mjs'));
+  const macTapOnlyBridge = await sessionBridge(t, {
+    extraArgs: ['--mac-tools'],
+    extraEnv: { POKI_VOICE_HIDDEN_TOOLS: 'get_ios_version,open_settings,read_screen,open_app,go_home' },
+    fixtureEnv: f.env,
+    bridgeScript: join(f.dir, 'bin/voice-bridge.mjs'),
+  });
+
+  const captureRealtime = async (bridgeServer, language) => {
+    assert.equal((await fetch(`${bridgeServer.base}/token?language=${language}`)).status, 200);
+    const { session } = (await bridgeServer.request()).body;
+    return { tools: session.tools.map(tool => tool.name), text: session.instructions };
+  };
+  const captureLive = async (bridgeServer, language) => {
+    assert.equal((await fetch(`${bridgeServer.base}/session?language=${language}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+    })).status, 200);
+    const { session } = (await bridgeServer.request()).body;
+    const tools = session.delegation.responses.tools.map(tool => tool.name);
+    return {
+      voice: { tools, text: session.instructions },
+      executor: { tools, text: session.delegation.responses.instructions },
+    };
+  };
+
+  const rtZh = await captureRealtime(defaultBridge, 'zh-Hans');
+  const rtEn = await captureRealtime(defaultBridge, 'en');
+  const rtHant = await captureRealtime(defaultBridge, 'zh-Hant');
+  const lvZh = await captureLive(defaultBridge, 'zh-Hans');
+  const rtNoOpen = await captureRealtime(noOpenBridge, 'zh-Hans');
+  const lvCancelOnly = await captureLive(cancelOnlyBridge, 'zh-Hans');
+  const lvMacTapOnly = await captureLive(macTapOnlyBridge, 'zh-Hans');
+
+  const cases = [
+    { role: 'realtime', language: 'zh-Hans', tools: rtZh.tools, host: 'phone', bridgeText: rtZh.text },
+    { role: 'realtime', language: 'en', tools: rtEn.tools, host: 'phone', bridgeText: rtEn.text },
+    { role: 'realtime', language: 'zh-Hant', tools: rtHant.tools, host: 'phone', bridgeText: rtHant.text },
+    { role: 'live_voice', language: 'zh-Hans', tools: lvZh.voice.tools, host: 'phone', bridgeText: lvZh.voice.text },
+    { role: 'live_executor', language: 'zh-Hans', tools: lvZh.executor.tools, host: 'phone', bridgeText: lvZh.executor.text },
+    { role: 'realtime', language: 'zh-Hans', tools: rtNoOpen.tools, host: 'phone', bridgeText: rtNoOpen.text },
+    { role: 'live_voice', language: 'zh-Hans', tools: lvCancelOnly.voice.tools, host: 'phone', bridgeText: lvCancelOnly.voice.text },
+    { role: 'live_executor', language: 'zh-Hans', tools: lvCancelOnly.executor.tools, host: 'phone', bridgeText: lvCancelOnly.executor.text },
+    { role: 'live_voice', language: 'zh-Hans', tools: lvMacTapOnly.voice.tools, host: 'mac', bridgeText: lvMacTapOnly.voice.text },
+    { role: 'live_executor', language: 'zh-Hans', tools: lvMacTapOnly.executor.tools, host: 'mac', bridgeText: lvMacTapOnly.executor.text },
+  ];
+
+  const inputPath = join(dir, 'cases.json');
+  const mainPath = join(dir, 'main.swift');
+  const binPath = join(dir, 'parity');
+  await writeFile(inputPath, JSON.stringify(cases.map(({ role, language, tools, host }) => ({ role, language, tools, host }))));
+  await writeFile(mainPath, `
+import Foundation
+struct CaseInput: Decodable { let role: String; let language: String; let tools: [String]; let host: String }
+struct CaseOutput: Encodable { let templateVersion: String; let sectionIds: [String]; let text: String }
+let data = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
+let inputs = try JSONDecoder().decode([CaseInput].self, from: data)
+let outputs = inputs.map { item -> CaseOutput in
+    let built = VoiceBehaviorSpec.shared.build(
+        role: VoicePromptRole(rawValue: item.role)!,
+        language: item.language,
+        tools: item.tools,
+        host: VoicePromptHost(rawValue: item.host)!
+    )
+    return CaseOutput(templateVersion: built.templateVersion, sectionIds: built.sectionIds, text: built.text)
+}
+let encoded = try JSONEncoder().encode(outputs)
+FileHandle.standardOutput.write(encoded)
+`);
+  await execFileAsync('swiftc', ['-DDEBUG', join(root, 'native/ios-app/Poki/Voice/VoiceBehaviorSpec.swift'), mainPath, '-o', binPath]);
+  const { stdout } = await execFileAsync(binPath, [inputPath]);
+  const swiftResults = JSON.parse(stdout);
+  assert.equal(swiftResults.length, cases.length);
+  for (let i = 0; i < cases.length; i += 1) {
+    assert.equal(swiftResults[i].templateVersion, VOICE_SPEC_VERSION);
+    assert.equal(swiftResults[i].text, cases[i].bridgeText, `mismatch for case ${i} (${cases[i].role}/${cases[i].language})`);
+  }
 });
