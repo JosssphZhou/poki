@@ -283,3 +283,228 @@ test('a voice tap_text on an element known only by its identifier shows the phon
   assert.match(check.target.says, /\bSend\b/);
   assert.equal((await f.events()).filter(e => e.op === 'tap').length, 0);
 });
+
+async function annotatedMacBridge(t, f) {
+  await copyFile(join(root, 'bin/voice-bridge.mjs'), join(f.dir, 'bin/voice-bridge.mjs'));
+  const child = spawn(process.execPath, [join(f.dir, 'bin/voice-bridge.mjs'), '--port', '0', '--host', '127.0.0.1', '--mac-tools', '--test-dir', f.dir], {
+    env: { ...f.env, OPENAI_API_KEY: 'unused' }, stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  const exited = once(child, 'exit');
+  t.after(async () => { child.kill(); await exited; });
+  const events = [];
+  const lines = createInterface({ input: child.stdout });
+  lines.on('line', line => { try { events.push(JSON.parse(line)); } catch {} });
+  const ready = await new Promise((resolve, reject) => {
+    const checkReady = line => {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.event === 'ready') { lines.off('line', checkReady); resolve(parsed); }
+      } catch {}
+    };
+    lines.on('line', checkReady);
+    exited.then(() => reject(new Error('bridge exited before ready')));
+  });
+  const { secret } = JSON.parse(await readFile(join(f.env.POKI_MCP_STATE_DIR, 'voice-bridge.json'), 'utf8'));
+  const base = `http://127.0.0.1:${ready.port}/voice/${secret}`;
+  return {
+    ready,
+    base,
+    events,
+    callTool: body => fetch(`${base}/tool`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
+  };
+}
+
+test('Mac bridge rejects unconfirmed touches and wrong Calculator readback, and confirms only matching post-action state', async t => {
+  const f = await fixture(t);
+  const target7 = { kind: 'screen_text', expected: '7', app: 'Calculator' };
+  const wrongElements = [
+    { role: 'StaticText', label: '9', frame: { x: 10, y: 10, width: 80, height: 30 } },
+    { role: 'Button', label: '7', frame: { x: 10, y: 80, width: 40, height: 40 } },
+  ];
+  await f.set({ bundleId: 'com.apple.calculator', appName: 'Calculator', elements: wrongElements });
+  const { ready, callTool } = await annotatedMacBridge(t, f);
+  assert.equal(ready.voice_host, 'voice_bridge');
+  assert.equal(ready.action_host, 'mac_tools');
+
+  const preRead = await callTool({ call_id: 'r-pre', name: 'read_screen', arguments: {}, target_condition: target7, after_action: false });
+  assert.equal(preRead.state, 'done', JSON.stringify(preRead));
+  assert.equal(preRead.action_host, 'mac_tools');
+  assert.equal(preRead.observation_source, 'mac_mcp_accessibility');
+  assert.equal(preRead.effective_action, false);
+  assert.equal(preRead.target_confirmed, false, 'pre-action read showing 9 must not confirm target 7');
+
+  const checkUnchanged = await callTool({ call_id: 't-unchanged', name: 'tap_text', arguments: { text: '7' }, target_condition: target7 });
+  assert.equal(checkUnchanged.state, 'check', JSON.stringify(checkUnchanged));
+  assert.equal(checkUnchanged.effective_action, false);
+  assert.equal(checkUnchanged.target_confirmed, false);
+
+  const unchangedTap = await callTool({
+    call_id: 't-unchanged', name: 'tap_text', arguments: { text: '7' },
+    checked: { app: checkUnchanged.app.bundle_id, text: checkUnchanged.target.text },
+    target_condition: target7,
+  });
+  assert.equal(unchangedTap.state, 'done', JSON.stringify(unchangedTap));
+  assert.equal(unchangedTap.action_host, 'mac_tools');
+  assert.equal(unchangedTap.effective_action, false, 'unchanged tap must not count as an effective action');
+  assert.equal(unchangedTap.target_confirmed, false, 'unchanged tap must not confirm the target');
+
+  const afterFailedRead = await callTool({ call_id: 'r-after-fail', name: 'read_screen', arguments: {}, target_condition: target7, after_action: false });
+  assert.equal(afterFailedRead.target_confirmed, false, 'read showing 9 after an ineffective tap must not confirm target 7');
+
+  await f.set({
+    bundleId: 'com.apple.calculator',
+    appName: 'Calculator',
+    elements: wrongElements,
+    afterInput: {
+      elements: [
+        { role: 'StaticText', label: '9', frame: { x: 10, y: 10, width: 80, height: 30 } },
+        { role: 'StaticText', label: 'Error', frame: { x: 10, y: 45, width: 80, height: 20 } },
+        { role: 'Button', label: '7', frame: { x: 10, y: 80, width: 40, height: 40 } },
+      ],
+    },
+  });
+  const checkWrongChange = await callTool({ call_id: 't-wrong', name: 'tap_text', arguments: { text: '7' }, target_condition: target7 });
+  assert.equal(checkWrongChange.state, 'check');
+  const wrongChangeTap = await callTool({
+    call_id: 't-wrong', name: 'tap_text', arguments: { text: '7' },
+    checked: { app: checkWrongChange.app.bundle_id, text: checkWrongChange.target.text },
+    target_condition: target7,
+  });
+  assert.equal(wrongChangeTap.state, 'done', JSON.stringify(wrongChangeTap));
+  assert.equal(wrongChangeTap.effective_action, true, 'verified screen change counts as an effective action');
+  assert.equal(wrongChangeTap.target_confirmed, false, 'screen showing 9 alongside keypad button 7 must not confirm target 7');
+
+  const postActionWrongRead = await callTool({ call_id: 'r-wrong-post', name: 'read_screen', arguments: {}, target_condition: target7, after_action: true });
+  assert.equal(postActionWrongRead.target_confirmed, false, 'post-action read showing 9 must not confirm target 7');
+
+  await f.set({
+    bundleId: 'com.apple.calculator',
+    appName: 'Calculator',
+    elements: wrongElements,
+    afterInput: {
+      elements: [
+        { role: 'StaticText', label: '7', frame: { x: 10, y: 10, width: 80, height: 30 } },
+        { role: 'Button', label: '7', frame: { x: 10, y: 80, width: 40, height: 40 } },
+      ],
+    },
+  });
+  const checkRightChange = await callTool({ call_id: 't-right', name: 'tap_text', arguments: { text: '7' }, target_condition: target7 });
+  assert.equal(checkRightChange.state, 'check');
+  const rightTap = await callTool({
+    call_id: 't-right', name: 'tap_text', arguments: { text: '7' },
+    checked: { app: checkRightChange.app.bundle_id, text: checkRightChange.target.text },
+    target_condition: target7,
+  });
+  assert.equal(rightTap.state, 'done', JSON.stringify(rightTap));
+  assert.equal(rightTap.action_host, 'mac_tools');
+  assert.equal(rightTap.observation_source, 'mac_mcp_action_readback');
+  assert.equal(rightTap.effective_action, true);
+  assert.equal(rightTap.target_confirmed, true, 'verified screen showing display 7 confirms target 7');
+
+  const postActionRightRead = await callTool({ call_id: 'r-right-post', name: 'read_screen', arguments: {}, target_condition: target7, after_action: true });
+  assert.equal(postActionRightRead.effective_action, false);
+  assert.equal(postActionRightRead.observation_source, 'mac_mcp_accessibility');
+  assert.equal(postActionRightRead.target_confirmed, true, 'independent post-action read showing display 7 confirms target 7');
+
+  const preActionSkip = await callTool({ call_id: 'r-pre-even-if-7', name: 'read_screen', arguments: {}, target_condition: target7, after_action: false });
+  assert.equal(preActionSkip.target_confirmed, false, 'pre-action read must not confirm an action target');
+});
+
+test('Mac bridge fails closed without a target condition, preserves ledger privacy, and logs timeline reports', async t => {
+  const f = await fixture(t);
+  await f.set({ label: 'Send', afterInput: { label: 'Sent' } });
+  const { base, events, callTool } = await annotatedMacBridge(t, f);
+
+  const untargetedRead = await callTool({ call_id: 'r-none', name: 'read_screen', arguments: {} });
+  assert.equal(untargetedRead.state, 'done');
+  assert.equal(untargetedRead.effective_action, false);
+  assert.equal(untargetedRead.target_confirmed, false, 'read_screen without a screen_read target fails closed');
+
+  const screenReadTarget = await callTool({ call_id: 'r-screen', name: 'read_screen', arguments: {}, target_condition: { kind: 'screen_read' } });
+  assert.equal(screenReadTarget.state, 'done');
+  assert.equal(screenReadTarget.effective_action, false);
+  assert.equal(screenReadTarget.target_confirmed, true);
+
+  const check = await callTool({ call_id: 't-untargeted', name: 'tap_text', arguments: { text: 'Send' } });
+  assert.equal(check.state, 'check');
+  const untargetedTap = await callTool({
+    call_id: 't-untargeted', name: 'tap_text', arguments: { text: 'Send' },
+    checked: { app: check.app.bundle_id, text: check.target.text },
+  });
+  assert.equal(untargetedTap.state, 'done');
+  assert.equal(untargetedTap.effective_action, true);
+  assert.equal(untargetedTap.target_confirmed, false, 'tap_text without target_condition fails closed');
+
+  await f.set({ label: 'Send', afterInput: { label: 'Sent' } });
+  const checkSent = await callTool({ call_id: 't-sent', name: 'tap_text', arguments: { text: 'Send' } });
+  const sentTap = await callTool({
+    call_id: 't-sent', name: 'tap_text', arguments: { text: 'Send' },
+    checked: { app: checkSent.app.bundle_id, text: checkSent.target.text },
+    target_condition: { kind: 'screen_text', expected: 'Sent' },
+  });
+  assert.equal(sentTap.state, 'done');
+  assert.equal(sentTap.effective_action, true);
+  assert.equal(sentTap.target_confirmed, true);
+  assert.equal(sentTap.observation_source, 'mac_mcp_action_readback');
+
+  await f.set({ bundleId: 'com.apple.Preferences', appName: 'Settings' });
+  const opened = await callTool({ call_id: 'o-settings', name: 'open_app', arguments: { name: 'Settings' } });
+  assert.equal(opened.state, 'done', JSON.stringify(opened));
+  assert.equal(opened.effective_action, true);
+  assert.equal(opened.target_confirmed, true);
+
+  const ledgerLines = (await readFile(join(f.env.POKI_MCP_STATE_DIR, 'voice-ledger.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+  const tapLedger = ledgerLines.find(entry => entry.call_id === 't-sent');
+  assert.equal(tapLedger.voice_host, 'voice_bridge');
+  assert.equal(tapLedger.action_host, 'mac_tools');
+  assert.equal(tapLedger.effective_action, true);
+  assert.equal(tapLedger.target_confirmed, true);
+  assert.equal(typeof tapLedger.ms, 'number');
+  assert.equal(typeof tapLedger.output_chars, 'number');
+  assert.equal(tapLedger.args, undefined, 'ledger must not persist raw tool arguments');
+  assert.equal(tapLedger.output, undefined, 'ledger must not persist raw tool outputs');
+
+  const reportPayload = {
+    n: 1,
+    ok: true,
+    entry_route: 'voice_bridge',
+    voice_host: 'voice_bridge',
+    action_host: 'mac_tools',
+    observation_source: 'mac_mcp_action_readback',
+    host_ms: { phone_local: 0, mac_tools: sentTap.ms, mac_tools_roundtrip: sentTap.ms + 12 },
+    calls: ['tap_text'],
+    ms: { said: 0, heard: 20, call: 60, first_effective_action: 80, toolDone: 180, target_confirmed: 180, delivered: 185, spoken: 240 },
+  };
+  const reportRes = await fetch(`${base}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(reportPayload) });
+  assert.equal(reportRes.status, 200);
+  const reported = JSON.parse((await readFile(join(f.env.POKI_MCP_STATE_DIR, 'voice-test-report.jsonl'), 'utf8')).trim().split('\n').at(-1));
+  assert.equal(reported.entry_route, 'voice_bridge');
+  assert.equal(reported.voice_host, 'voice_bridge');
+  assert.equal(reported.action_host, 'mac_tools');
+  assert.equal(reported.observation_source, 'mac_mcp_action_readback');
+  assert.equal(reported.host_ms.phone_local, 0);
+  assert.equal(reported.host_ms.mac_tools, sentTap.ms);
+  assert.equal(reported.host_ms.mac_tools_roundtrip, sentTap.ms + 12);
+  assert.equal(reported.ms.first_effective_action, 80);
+  assert.equal(reported.ms.target_confirmed, 180);
+  assert.ok(events.some(event => event.event === 'tool' && event.call_id === 't-sent' && event.action_host === 'mac_tools' && event.voice_host === 'voice_bridge'));
+  assert.ok(events.some(event => event.event === 'test-turn' && event.action_host === 'mac_tools' && event.ms?.target_confirmed === 180));
+});
+
+test('voice bridge timing annotations keep Live and Realtime prompts and tool schemas unchanged in size', async t => {
+  const { base, request } = await sessionBridge(t);
+  assert.equal((await fetch(`${base}/token?language=en`)).status, 200);
+  const rt = (await request()).body.session;
+  assert.equal(rt.instructions.length, 2973);
+  assert.equal(JSON.stringify(rt.tools).length, 2116);
+  assert.ok(!/first_effective_action|target_confirmed|voice_host|action_host|observation_source/i.test(rt.instructions));
+
+  assert.equal((await fetch(`${base}/session?language=en`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sdp: 'sdp-offer' }),
+  })).status, 200);
+  const live = (await request()).body.session;
+  assert.equal(live.instructions.length, 1470);
+  assert.equal(live.delegation.responses.instructions.length, 3045);
+  assert.equal(JSON.stringify(live.delegation.responses.tools).length, 2527);
+  assert.ok(!/first_effective_action|target_confirmed|voice_host|action_host|observation_source/i.test(live.instructions + live.delegation.responses.instructions));
+});

@@ -325,7 +325,7 @@ final class FakeTime {
     private var waiting: [(until: Date, done: CheckedContinuation<Void, Never>)] = []
 
     var clock: VoiceClock {
-        VoiceClock(now: { self.now }, sleep: { duration in
+        VoiceClock(now: { self.now }, uptimeMS: { UInt64(max(1, Int64((self.now.timeIntervalSince1970 * 1000).rounded()))) }, sleep: { duration in
             let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
             let until = self.now.addingTimeInterval(seconds)
             await withCheckedContinuation { self.waiting.append((until, $0)) }

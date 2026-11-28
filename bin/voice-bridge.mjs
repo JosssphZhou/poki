@@ -170,15 +170,15 @@ Keep speaking through brief acknowledgments (“嗯”, “好的”), leaving t
 const text = result => result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
 const clip = (s, n = 1800) => s.length > n ? `${s.slice(0, n)}…` : s;
 
-// Voice tool → Poki MCP call. Each returns the string the model reads.
+// Voice tool → Poki MCP call. Each returns the raw string; runTool classifies metadata before clipping for the model.
 const runners = {
   async get_ios_version(mcp) {
     const info = JSON.parse(text(await mcp.call('get_device_info', {})));
     return JSON.stringify({ model: info.model, ios_version: info.osVersion });
   },
-  open_settings: async (mcp, a) => clip(text(await mcp.call('open_settings', a.page ? { page: a.page } : {}))),
-  read_screen: async mcp => clip(text(await mcp.call('list_elements', { max_elements: 60 }))),
-  open_app: async (mcp, a) => clip(text(await mcp.call('launch_app', { name: a.name }))),
+  open_settings: async (mcp, a) => text(await mcp.call('open_settings', a.page ? { page: a.page } : {})),
+  read_screen: async mcp => text(await mcp.call('list_elements', { max_elements: 60 })),
+  open_app: async (mcp, a) => text(await mcp.call('launch_app', { name: a.name })),
   // Only with `checked`, the app and element text the phone cleared (see runTool).
   async tap_text(mcp, a, checked) {
     if (isPoki(checked.app)) throw new Error(ownAppRefusal);
@@ -187,10 +187,319 @@ const runners = {
     // The owner may have opened Poki to allow it; the tap belongs to the app that was checked.
     if (checked.app && front?.bundle_id !== checked.app) await mcp.call('launch_app', { bundle_id: checked.app });
     else if (!checked.app && isPoki(front?.bundle_id)) throw new Error(ownAppRefusal);
-    return clip(text(await mcp.call('tap_text', { text: checked.text, exact: true })));
+    return text(await mcp.call('tap_text', { text: checked.text, exact: true }));
   },
-  go_home: async mcp => clip(text(await mcp.call('press_button', { button: 'home' }))),
+  go_home: async mcp => text(await mcp.call('press_button', { button: 'home' })),
 };
+
+const defaultActionHost = macTools ? 'mac_tools' : 'phone_local';
+const cjkRange = '\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff';
+const betweenCjk = new RegExp(`(?<=[${cjkRange}])\\s+(?=[${cjkRange}])`, 'gu');
+const buttonRolePattern = /^(?:AX|XCUIElementType)?(?:Button|Key|KeyboardKey)$/i;
+const numericValuePattern = /^[+-]?\d+(?:[.,]\d+)?%?$/;
+const timestampPattern = /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}(?::\d{2})?\b/;
+const appAliasGroups = [
+  ['com.apple.calculator', 'calculator', '计算器', '計算機'],
+  ['com.apple.preferences', 'settings', 'preferences', '设置', '設定'],
+  ['com.apple.springboard', 'springboard', 'home screen', '主屏幕', '主畫面'],
+  ['com.apple.weather', 'weather', '天气', '天氣'],
+  ['com.apple.mobiletimer', 'clock', '时钟', '時鐘'],
+  ['com.apple.mobilecal', 'calendar', '日历', '行事曆'],
+  ['com.apple.mobilenotes', 'notes', '备忘录', '備忘錄'],
+  ['com.apple.mobilesms', 'messages', '信息', '訊息'],
+  ['com.apple.mobilesafari', 'safari'],
+  ['com.apple.mobileslideshow', 'photos', '照片'],
+  ['com.apple.camera', 'camera', '相机', '相機'],
+  ['com.apple.maps', 'maps', '地图', '地圖'],
+  ['com.apple.music', 'music', '音乐', '音樂'],
+  ['com.apple.mobilemail', 'mail', '邮件', '郵件'],
+  ['com.apple.reminders', 'reminders', '提醒事项', '提醒事項'],
+  ['com.apple.mobilephone', 'phone', '电话', '電話'],
+  ['com.tencent.xin', 'wechat', '微信'],
+];
+const settingsPageAliases = {
+  about: ['about', '关于本机', '關於本機'],
+  accessibility: ['accessibility', '辅助功能', '輔助使用'],
+  battery: ['battery', '电池', '電池'],
+  bluetooth: ['bluetooth', '蓝牙', '藍牙'],
+  camera: ['camera', '相机', '相機'],
+  cellular: ['cellular', '蜂窝网络', '行動服務'],
+  control_center: ['control center', '控制中心'],
+  date_time: ['date & time', 'date and time', '日期与时间', '日期與時間'],
+  display: ['display & brightness', 'display', '显示与亮度', '螢幕顯示與亮度'],
+  focus: ['focus', '专注模式', '專注模式'],
+  general: ['general', '通用', '一般'],
+  keyboard: ['keyboard', '键盘', '鍵盤'],
+  language_region: ['language & region', '语言与地区', '語言與地區'],
+  location: ['location services', 'location', '定位服务', '定位服務'],
+  notifications: ['notifications', '通知'],
+  personal_hotspot: ['personal hotspot', '个人热点', '個人熱點'],
+  privacy: ['privacy & security', 'privacy', '隐私与安全性', '隱私權與安全性'],
+  safari: ['safari'],
+  screen_time: ['screen time', '屏幕使用时间', '螢幕使用時間'],
+  siri: ['siri'],
+  software_update: ['software update', '软件更新', '軟體更新'],
+  sounds: ['sounds & haptics', 'sounds', '声音与触感', '聲音與觸覺回饋'],
+  vpn: ['vpn'],
+  wallpaper: ['wallpaper', '墙纸', '背景圖片'],
+  wifi: ['wi-fi', 'wifi', 'wlan', '无线局域网'],
+};
+
+function normalizeObservationText(value) {
+  if (typeof value !== 'string') return '';
+  return value.normalize('NFKC').toLocaleLowerCase().trim().replace(/\s+/g, ' ').replace(betweenCjk, '');
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseJSONObject(raw) {
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function aliasGroupFor(value) {
+  const norm = normalizeObservationText(value);
+  if (!norm) return null;
+  return appAliasGroups.find(group => group.includes(norm)) ?? null;
+}
+
+function appMatches(observedValues, expectedValues) {
+  const observed = observedValues.map(normalizeObservationText).filter(Boolean);
+  const expected = expectedValues.map(normalizeObservationText).filter(Boolean);
+  if (!observed.length || !expected.length) return false;
+  for (const exp of expected) {
+    const expGroup = aliasGroupFor(exp);
+    for (const obs of observed) {
+      if (obs === exp) return true;
+      if (expGroup && expGroup.includes(obs)) return true;
+      if (obs.includes('.') && exp.length >= 3 && obs.split('.').includes(exp)) return true;
+    }
+  }
+  return false;
+}
+
+function parseDescribedScreenLine(line) {
+  if (typeof line !== 'string') return null;
+  const cleaned = line.replace(/\s*\(focused\)\s*$/, '').trim();
+  const colon = cleaned.indexOf(': ');
+  const role = colon > 0 ? cleaned.slice(0, colon).trim() : 'Element';
+  const rest = colon > 0 ? cleaned.slice(colon + 2).trim() : cleaned;
+  if (!rest) return null;
+  const texts = rest.split(' = ').map(part => part.trim()).filter(part => part && !part.startsWith('(empty, placeholder '));
+  return texts.length ? { role, texts } : null;
+}
+
+function extractElementItems(elements) {
+  if (!Array.isArray(elements)) return [];
+  const items = [];
+  for (const element of elements) {
+    if (!element || typeof element !== 'object') continue;
+    if (element.visible === false) continue;
+    const role = String(element.type ?? element.role ?? 'Element');
+    if (/^(?:AX|XCUIElementType)?Application$/i.test(role)) continue;
+    const texts = [element.label, element.text, element.value, element.placeholder]
+      .filter(part => typeof part === 'string' && part.trim().length > 0);
+    if (texts.length) items.push({ role, texts });
+  }
+  return items;
+}
+
+function extractForeground(parsed) {
+  const bundles = [];
+  const names = [];
+  const add = value => {
+    if (!value) return;
+    if (typeof value === 'string') {
+      if (value.includes('.')) bundles.push(value);
+      else names.push(value);
+    } else if (typeof value === 'object') {
+      if (typeof value.bundle_id === 'string' && value.bundle_id.trim()) bundles.push(value.bundle_id);
+      if (typeof value.name === 'string' && value.name.trim()) names.push(value.name);
+    }
+  };
+  add(parsed?.post_action_observation?.foreground);
+  add(parsed?.foreground_after);
+  add(parsed?.foreground);
+  add(parsed?.screen?.foreground);
+  if (parsed?.foreground_verified === true) {
+    if (typeof parsed.bundle_id === 'string' && parsed.bundle_id.trim()) bundles.push(parsed.bundle_id);
+    if (typeof parsed.name === 'string' && parsed.name.trim()) names.push(parsed.name);
+  }
+  return {
+    bundle: bundles[0] ?? null,
+    name: names[0] ?? null,
+    all: [...new Set([...bundles, ...names])],
+  };
+}
+
+function extractObservedScreen(parsed) {
+  if (!parsed || parsed.screen?.unavailable || parsed.screen?.stale === true) {
+    return { readable: false, foreground: { bundle: null, name: null, all: [] }, items: [] };
+  }
+  const foreground = extractForeground(parsed);
+  let items = extractElementItems(parsed.post_action_observation?.elements);
+  if (!items.length) items = extractElementItems(parsed.elements);
+  if (!items.length && Array.isArray(parsed.screen?.text)) {
+    items = parsed.screen.text.map(parseDescribedScreenLine).filter(Boolean);
+  }
+  if (typeof parsed.page_title === 'string' && parsed.page_title.trim()) {
+    items.push({ role: 'Heading', texts: [parsed.page_title.trim()] });
+  }
+  const readable = items.length > 0 || foreground.all.length > 0 || Boolean(parsed.screen && !parsed.screen.unavailable);
+  return { readable, foreground, items };
+}
+
+function matchesExpectedText(items, expected) {
+  const normExpected = normalizeObservationText(expected);
+  if (!normExpected || !items.length) return false;
+  const numeric = numericValuePattern.test(normExpected);
+  const nonButtons = items.filter(item => !buttonRolePattern.test(item.role));
+  const pool = numeric ? nonButtons : items;
+  if (!pool.length) return false;
+  const escaped = escapeRegExp(normExpected);
+  const numericToken = new RegExp(`(?:^|[\\s=:：])${escaped}(?=$|[\\s.,!?;。！？])`);
+  const asciiWord = /^[a-z0-9]+$/.test(normExpected)
+    ? new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`)
+    : null;
+  for (const item of pool) {
+    for (const rawText of item.texts) {
+      const normText = normalizeObservationText(rawText);
+      if (!normText) continue;
+      if (normText === normExpected) return true;
+      if (numeric) {
+        if (timestampPattern.test(normText)) continue;
+        if (numericToken.test(normText)) return true;
+      } else if (normExpected.length >= 2) {
+        if (asciiWord ? asciiWord.test(normText) : normText.includes(normExpected)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function normalizeTargetCondition(targetCondition) {
+  if (!targetCondition || typeof targetCondition !== 'object' || typeof targetCondition.kind !== 'string') return null;
+  switch (targetCondition.kind) {
+    case 'screen_text': {
+      const expected = typeof targetCondition.expected === 'string' ? targetCondition.expected.trim() : '';
+      if (!expected) return null;
+      const app = typeof targetCondition.app === 'string' && targetCondition.app.trim() ? targetCondition.app.trim() : null;
+      return { kind: 'screen_text', expected, app };
+    }
+    case 'app_foreground': {
+      const name = typeof targetCondition.name === 'string' && targetCondition.name.trim() ? targetCondition.name.trim() : null;
+      const bundle_id = typeof targetCondition.bundle_id === 'string' && targetCondition.bundle_id.trim() ? targetCondition.bundle_id.trim() : null;
+      return name || bundle_id ? { kind: 'app_foreground', name, bundle_id } : null;
+    }
+    case 'settings_page': {
+      const page = typeof targetCondition.page === 'string' ? targetCondition.page.trim() : '';
+      return page ? { kind: 'settings_page', page } : null;
+    }
+    case 'home_screen':
+    case 'screen_read':
+    case 'device_info':
+      return { kind: targetCondition.kind };
+    default:
+      return null;
+  }
+}
+
+function inferTargetCondition(name, args) {
+  if (name === 'open_app' && typeof args?.name === 'string' && args.name.trim()) {
+    return { kind: 'app_foreground', name: args.name.trim(), bundle_id: null };
+  }
+  if (name === 'open_settings') {
+    if (typeof args?.page === 'string' && args.page.trim()) {
+      return { kind: 'settings_page', page: args.page.trim() };
+    }
+    return { kind: 'app_foreground', name: 'Settings', bundle_id: 'com.apple.Preferences' };
+  }
+  if (name === 'go_home') return { kind: 'home_screen' };
+  return null;
+}
+
+function classifyMacTool(name, args, raw, state, { targetCondition, afterAction = false } = {}) {
+  const parsed = parseJSONObject(raw);
+  const observed = extractObservedScreen(parsed);
+  let observation_source = 'none';
+  if (state === 'done' && !parsed?.screen?.unavailable && parsed?.screen?.stale !== true) {
+    const directSource = parsed?.post_action_observation?.source ?? parsed?.source;
+    const screenSource = parsed?.screen?.source;
+    if (name === 'get_ios_version') observation_source = 'mac_mcp_device_info';
+    else if (directSource === 'ocr' || screenSource === 'ocr') observation_source = 'mac_mcp_ocr';
+    else if (directSource === 'accessibility') observation_source = 'mac_mcp_accessibility';
+    else if (parsed?.screen_change_verified === true || parsed?.foreground_verified === true || parsed?.page_verified === true || screenSource === 'accessibility') {
+      observation_source = 'mac_mcp_action_readback';
+    } else if (name === 'read_screen' && Array.isArray(parsed?.elements)) {
+      observation_source = 'mac_mcp_accessibility';
+    } else {
+      observation_source = 'mac_mcp_action';
+    }
+  }
+
+  const readOnly = name === 'read_screen' || name === 'get_ios_version';
+  const blocked = parsed?.isError === true || parsed?.outcome === 'not_sent' || parsed?.launched === false || parsed?.sent === false || parsed?.stopped === true;
+  let effective_action = false;
+  if (state === 'done' && !readOnly && !blocked) {
+    if (name === 'tap_text') {
+      effective_action = parsed?.screen_change === 'changed' && parsed?.screen_change_verified === true;
+    } else if (name === 'go_home') {
+      effective_action = (parsed?.screen_change === 'changed' && parsed?.screen_change_verified === true)
+        || (parsed?.screen_change !== 'unchanged' && appMatches(observed.foreground.all, ['com.apple.springboard']));
+    } else if (name === 'open_app') {
+      effective_action = parsed?.foreground_verified === true;
+    } else if (name === 'open_settings') {
+      effective_action = parsed?.page_verified === true
+        || parsed?.foreground_verified === true
+        || (parsed?.screen_change === 'changed' && parsed?.screen_change_verified === true);
+    }
+  }
+
+  const target = normalizeTargetCondition(targetCondition) ?? inferTargetCondition(name, args);
+  let target_confirmed = false;
+  if (state === 'done' && observation_source !== 'none' && target) {
+    const hasActionEvidence = effective_action || afterAction === true;
+    switch (target.kind) {
+      case 'screen_read':
+        target_confirmed = observed.readable && (observed.items.length > 0 || observed.foreground.all.length > 0);
+        break;
+      case 'device_info':
+        target_confirmed = name === 'get_ios_version' && Boolean(parsed?.ios_version || parsed?.model);
+        break;
+      case 'home_screen':
+        target_confirmed = hasActionEvidence && appMatches(observed.foreground.all, ['com.apple.springboard']);
+        break;
+      case 'app_foreground':
+        target_confirmed = hasActionEvidence && appMatches(observed.foreground.all, [target.bundle_id, target.name]);
+        break;
+      case 'settings_page':
+        if (hasActionEvidence) {
+          if (parsed?.page_verified === true) {
+            target_confirmed = !parsed.requested_page || normalizeObservationText(parsed.requested_page) === normalizeObservationText(target.page);
+          } else if (appMatches(observed.foreground.all, ['com.apple.Preferences'])) {
+            const pageKey = normalizeObservationText(target.page).replace(/\s+/g, '_');
+            const expectedTitles = settingsPageAliases[pageKey] ?? [target.page];
+            target_confirmed = expectedTitles.some(title => matchesExpectedText(observed.items, title));
+          }
+        }
+        break;
+      case 'screen_text':
+        if (hasActionEvidence && observed.readable) {
+          const appOk = !target.app || !observed.foreground.all.length || appMatches(observed.foreground.all, [target.app]);
+          target_confirmed = appOk && matchesExpectedText(observed.items, target.expected);
+        }
+        break;
+    }
+  }
+
+  return { action_host: 'mac_tools', observation_source, effective_action, target_confirmed };
+}
 
 class Mcp {
   async connect() {
@@ -224,7 +533,11 @@ async function tapTarget(mcp, wanted) {
   if (!found.length) throw new Error(`nothing on screen reads ${JSON.stringify(wanted)}; nothing was tapped. Read the screen first.`);
   if (found.length > 1) throw new Error(`${found.length} elements match ${JSON.stringify(wanted)}: ${found.map(e => JSON.stringify(names(e)[0] ?? '')).join(', ')}; nothing was tapped. Name one exactly.`);
   const [first, ...rest] = names(found[0]);
-  return { app: { bundle_id: screen.foreground?.bundle_id ?? null, name: screen.foreground?.name ?? null }, target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = ') } };
+  return {
+    app: { bundle_id: screen.foreground?.bundle_id ?? null, name: screen.foreground?.name ?? null },
+    target: { text: first ?? wanted, says: [first, ...rest].filter(Boolean).join(' = ') },
+    observation_source: screen.source === 'ocr' ? 'mac_mcp_ocr' : 'mac_mcp_accessibility',
+  };
 }
 
 async function bridgeSecret() {
@@ -241,29 +554,64 @@ async function bridgeSecret() {
 const ledgerFile = join(stateDir, 'voice-ledger.jsonl');
 const ledger = new Map();   // call_id → { entry, done: Promise }
 
-async function runTool(mcp, { call_id, name, arguments: args = {}, checked }) {
+async function runTool(mcp, { call_id, name, arguments: args = {}, checked, target_condition, after_action }) {
   const seen = ledger.get(call_id);
   if (seen) { await seen.done; return { ...seen.entry, replayed: true }; }
   // A tap the phone has not checked yet: say what it would tap. Nothing runs, so it is not in the ledger.
   if (name === 'tap_text' && !(typeof checked?.text === 'string' && checked.text)) {
     const started = Date.now();
-    try { return { state: 'check', ...await tapTarget(mcp, args.text), started, finished: Date.now() }; }
-    catch (error) { return { state: 'failed', output: `error: ${error.message}`, started, finished: Date.now() }; }
+    try {
+      const preview = await tapTarget(mcp, args.text);
+      return {
+        state: 'check',
+        app: preview.app,
+        target: preview.target,
+        action_host: 'mac_tools',
+        observation_source: preview.observation_source,
+        effective_action: false,
+        target_confirmed: false,
+        started,
+        finished: Date.now(),
+      };
+    } catch (error) {
+      return {
+        state: 'failed',
+        output: `error: ${error.message}`,
+        action_host: 'mac_tools',
+        observation_source: 'none',
+        effective_action: false,
+        target_confirmed: false,
+        started,
+        finished: Date.now(),
+      };
+    }
   }
   const entry = { call_id, name, args, ...(checked ? { checked } : {}), state: 'running', started: Date.now() };
   const done = (async () => {
     const runner = runners[name];
+    let raw = '';
     try {
       if (!runner) throw new Error(`unknown voice tool ${name}`);
-      entry.output = await runner(mcp, args, checked);
+      raw = await runner(mcp, args, checked);
+      entry.output = clip(raw);
       entry.state = 'done';
     } catch (error) {
       entry.output = `error: ${error.message}`;
       entry.state = 'failed';
     }
+    Object.assign(entry, classifyMacTool(name, args, raw, entry.state, {
+      targetCondition: target_condition,
+      afterAction: after_action === true,
+    }));
     entry.finished = Date.now();
     await appendFile(ledgerFile, JSON.stringify({
       call_id, name, state: entry.state, started: entry.started, finished: entry.finished,
+      ms: entry.finished - entry.started,
+      voice_host: 'voice_bridge',
+      action_host: entry.action_host,
+      observation_source: entry.observation_source,
+      effective_action: entry.effective_action,
+      target_confirmed: entry.target_confirmed,
       output_chars: entry.output.length,
       ...(entry.state === 'failed' ? { error: clip(scrubSecrets(entry.output), 160) } : {}),
     }) + '\n', { mode: 0o600 });
@@ -379,19 +727,25 @@ const server = http.createServer(async (req, res) => {
   if (!ok) return reply(404, { error: 'not found' });
   try {
     if (req.method === 'GET' && action === 'token') {
-      if (usesLive && url.searchParams.get('transport') === 'live') return reply(200, { model, live: true, local_tools: localTools });
+      if (usesLive && url.searchParams.get('transport') === 'live') {
+        console.log(JSON.stringify({ event: 'token', ms: 0, entry_route: 'voice_bridge', voice_host: 'voice_bridge', action_host: defaultActionHost, transport: 'live' }));
+        return reply(200, { model, live: true, local_tools: localTools });
+      }
       const options = Object.fromEntries(['effort', 'vad', 'voice', 'language'].map(k => [k, url.searchParams.get(k) ?? undefined]).filter(([, v]) => v));
       options.manualTurns = url.searchParams.get('turns') === 'committed';
       const started = Date.now();
       const token = await mintToken(options);
-      console.log(JSON.stringify({ event: 'token', ms: Date.now() - started, options }));
+      console.log(JSON.stringify({ event: 'token', ms: Date.now() - started, entry_route: 'voice_bridge', voice_host: 'voice_bridge', action_host: defaultActionHost, transport: 'realtime', options }));
       return reply(200, token);
     }
     if (req.method === 'POST' && action === 'session' && usesLive) {
       const { sdp } = await readJSON(req) ?? {};
       if (typeof sdp !== 'string' || !sdp.trim()) return reply(400, { error: 'SDP offer is required' });
       const options = Object.fromEntries(['effort', 'voice', 'language'].map(key => [key, url.searchParams.get(key) || undefined]));
-      return reply(200, await exchangeOffer(sdp, options));
+      const started = Date.now();
+      const answer = await exchangeOffer(sdp, options);
+      console.log(JSON.stringify({ event: 'session', ms: Date.now() - started, entry_route: 'voice_bridge', voice_host: 'voice_bridge', action_host: defaultActionHost, transport: 'live', options }));
+      return reply(200, answer);
     }
     if (req.method === 'POST' && action === 'screen' && usesLive) {
       const { image } = await readJSON(req) ?? {};
@@ -407,8 +761,19 @@ const server = http.createServer(async (req, res) => {
       const call = await readJSON(req);
       if (typeof call.call_id !== 'string' || typeof call.name !== 'string') return reply(400, { error: 'call_id and name are required' });
       const entry = await runTool(mcp, call);
-      console.log(JSON.stringify({ event: 'tool', call_id: call.call_id, name: call.name, state: entry.state, ms: entry.finished - entry.started, replayed: !!entry.replayed }));
-      return reply(200, { call_id: call.call_id, state: entry.state, output: entry.output, ...(entry.state === 'check' ? { app: entry.app, target: entry.target } : {}), ms: entry.finished - entry.started, replayed: !!entry.replayed });
+      const ms = entry.finished - entry.started;
+      console.log(JSON.stringify({
+        event: 'tool', call_id: call.call_id, name: call.name, state: entry.state, ms,
+        voice_host: 'voice_bridge', action_host: entry.action_host, observation_source: entry.observation_source,
+        effective_action: entry.effective_action, target_confirmed: entry.target_confirmed, replayed: !!entry.replayed,
+      }));
+      return reply(200, {
+        call_id: call.call_id, state: entry.state, output: entry.output,
+        ...(entry.state === 'check' ? { app: entry.app, target: entry.target } : {}),
+        ms, action_host: entry.action_host, observation_source: entry.observation_source,
+        effective_action: entry.effective_action, target_confirmed: entry.target_confirmed,
+        replayed: !!entry.replayed,
+      });
     }
     if (testDir && req.method === 'GET' && action === 'utterance') {
       const n = url.searchParams.get('n') ?? '';
@@ -420,7 +785,12 @@ const server = http.createServer(async (req, res) => {
     if (testDir && req.method === 'POST' && action === 'report') {
       const turn = await readJSON(req);
       await appendFile(join(stateDir, 'voice-test-report.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...turn }) + '\n', { mode: 0o600 });
-      console.log(JSON.stringify({ event: 'test-turn', n: turn.n, ok: turn.ok, calls: turn.calls, ms: turn.ms }));
+      console.log(JSON.stringify({
+        event: 'test-turn', n: turn.n, ok: turn.ok, entry_route: turn.entry_route ?? null,
+        voice_host: turn.voice_host ?? null, action_host: turn.action_host ?? null,
+        observation_source: turn.observation_source ?? null, host_ms: turn.host_ms ?? null,
+        calls: turn.calls, ms: turn.ms,
+      }));
       return reply(200, {});
     }
     return reply(404, { error: 'not found' });
@@ -435,5 +805,5 @@ const server = http.createServer(async (req, res) => {
 });
 server.listen(port, host, () => {
   const addresses = Object.values(networkInterfaces()).flat().filter(a => a.family === 'IPv4' && !a.internal).map(a => a.address);
-  console.log(JSON.stringify({ event: 'ready', port: server.address().port, addresses, model, secretFile: file, device: device ?? null }));
+  console.log(JSON.stringify({ event: 'ready', port: server.address().port, addresses, model, voice_host: 'voice_bridge', action_host: defaultActionHost, secretFile: file, device: device ?? null }));
 });
