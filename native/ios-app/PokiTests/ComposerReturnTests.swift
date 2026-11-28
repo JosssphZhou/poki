@@ -30,12 +30,26 @@ final class ComposerReturnTests: XCTestCase {
         let (field, draft) = try composer()
         type("Open Settings", into: field)
         settle { draft.text == "Open Settings" }
+        if ProcessInfo.processInfo.arguments.contains("-pokiComposerEchoRecording") {
+            try await Task.sleep(for: .seconds(1))
+        }
         XCTAssertFalse(try pressReturn(field))
         settle { field.plainText.isEmpty }
         draft.conversationID = "next-conversation"
         try await Task.sleep(for: .milliseconds(30))
         draft.text = "Open Settings"
         try await Task.sleep(for: .milliseconds(250))
+        if ProcessInfo.processInfo.arguments.contains("-pokiComposerEchoRecording") {
+            try await Task.sleep(for: .seconds(2))
+        }
+        let window = try XCTUnwrap(self.window)
+        let rendered = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let image = XCTAttachment(image: rendered)
+        image.name = "New conversation draft after earlier send"
+        image.lifetime = .keepAlways
+        add(image)
         XCTAssertEqual(draft.text, "Open Settings")
         XCTAssertEqual(draft.sent, ["Open Settings"])
     }
@@ -144,7 +158,8 @@ final class ComposerReturnTests: XCTestCase {
         let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 393, height: 200)
+        window.frame = ProcessInfo.processInfo.arguments.contains("-pokiComposerEchoRecording")
+            ? scene.screen.bounds : CGRect(x: 0, y: 0, width: 393, height: 200)
         window.rootViewController = UIHostingController(rootView: Host(draft: draft).environment(app))
         window.makeKeyAndVisible()
         self.window = window
@@ -178,6 +193,20 @@ final class ComposerReturnTests: XCTestCase {
     private struct Host: View {
         @ObservedObject var draft: Draft
         var body: some View {
+            if ProcessInfo.processInfo.arguments.contains("-pokiComposerEchoRecording") {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Composer draft regression").font(.title2.bold())
+                    Text("Conversation: " + draft.conversationID)
+                    ForEach(Array(draft.sent.enumerated()), id: \.offset) { _, text in Text("Sent: " + text) }
+                    Spacer()
+                    composer
+                }
+                .padding().background(Color(.systemBackground))
+            } else {
+                composer
+            }
+        }
+        private var composer: some View {
             ComposerInputView(input: $draft.text, focused: $draft.focused, adding: .constant(false),
                               settingsPresented: .constant(false), running: false, conversationID: draft.conversationID,
                               send: { text, _ in draft.sent.append(text) }, stop: {}, openVoice: {})
