@@ -752,6 +752,15 @@ final class LiveActivityTests: XCTestCase {
     private func movePokiToBackground(_ app: AppModel) async throws {
         app.wentToBackground()
         if UIApplication.shared.applicationState == .active {
+            let bundle = try XCTUnwrap(Bundle.main.bundleIdentifier)
+            addTeardownBlock { @MainActor in
+                let activationError = await Task.detached { PKInProcess.shared().app(bundle, action: "activate") }.value
+                XCTAssertNil(activationError, "Restore Poki after testing background notifications")
+                let active = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    UIApplication.shared.applicationState == .active
+                }, object: nil)
+                await self.fulfillment(of: [active], timeout: 5)
+            }
             UIApplication.shared.perform(NSSelectorFromString("suspend"))
             for _ in 0..<150 where UIApplication.shared.applicationState == .active {
                 try await Task.sleep(for: .milliseconds(20))
