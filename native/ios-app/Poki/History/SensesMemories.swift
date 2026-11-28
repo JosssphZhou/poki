@@ -100,6 +100,8 @@ final class SensesMemories: ObservableObject {
     private static let forgetFor: TimeInterval = 30 * 86_400
     private let file: URL
     private let learning: @MainActor () -> Bool
+    private let modelAvailable: @MainActor () -> Bool
+    private let readSightings: (Date) async -> [SensesSighting]
     private let readTopics: (Date, Date) async -> [(start: Double, note: BacktapeNote)]
     private let ask: (String, String) async -> String?
 
@@ -107,11 +109,15 @@ final class SensesMemories: ObservableObject {
         file: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("History", isDirectory: true).appendingPathComponent("senses-memories.json"),
         learning: @escaping @MainActor () -> Bool = { SensesUse.shared.learning },
+        modelAvailable: @escaping @MainActor () -> Bool = { SensesModel.available },
+        readSightings: @escaping (Date) async -> [SensesSighting] = { await HistoryStore.shared.sightings(since: $0) },
         readTopics: @escaping (Date, Date) async -> [(start: Double, note: BacktapeNote)] = { await HistoryStore.shared.notes(from: $0, to: $1) },
         ask: @escaping (String, String) async -> String? = { await SensesModel.ask($0, instructions: $1) }
     ) {
         self.file = file
         self.learning = learning
+        self.modelAvailable = modelAvailable
+        self.readSightings = readSightings
         self.readTopics = readTopics
         self.ask = ask
         load()
@@ -147,11 +153,13 @@ final class SensesMemories: ObservableObject {
         }
         // The file is unreadable while the iPhone is locked; nothing is counted then.
         let now = Date()
+        let requested = epoch
         if force || now.timeIntervalSince(countedAt) > Self.countEvery {
             countedAt = now
             await count(now: now)
         }
-        if SensesModel.available, !learningTopics, now.timeIntervalSince(saved.topicsAt ?? .distantPast) > Self.topicsEvery {
+        guard epoch == requested, learning(), !Task.isCancelled else { return }
+        if modelAvailable(), !learningTopics, now.timeIntervalSince(saved.topicsAt ?? .distantPast) > Self.topicsEvery {
             await learnTopics(now: now)
         }
     }
@@ -160,7 +168,7 @@ final class SensesMemories: ObservableObject {
         let requested = epoch
         let capture = HistoryCapture.shared
         let since = max(now.addingTimeInterval(-SensesHabits.twoWeeks), saved.floor ?? .distantPast)
-        let sightings = await HistoryStore.shared.sightings(since: since)
+        let sightings = await readSightings(since)
         // Poki's own steps and outside agents' steps, from the Activity Log: an app an agent worked in
         // is not the owner's use of it.
         let log = ActionLog.shared

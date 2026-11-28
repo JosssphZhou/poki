@@ -1,8 +1,47 @@
 import XCTest
+import PokiCore
 @testable import Poki
 
 @MainActor
 final class SensesMemoryCancellationTests: XCTestCase {
+    func testClearDuringHabitReadInvalidatesWholeRefreshAndAllowsFreshLearning() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("memories.json")
+        let started = expectation(description: "Older refresh reading habits")
+        var suspended: CheckedContinuation<[SensesSighting], Never>?
+        var hold = false
+        var requests = 0
+        let memories = SensesMemories(file: file, learning: { true }, modelAvailable: { true },
+                                     readSightings: { _ in
+            if hold {
+                return await withCheckedContinuation { suspended = $0; started.fulfill() }
+            }
+            return []
+        }, readTopics: { _, _ in
+            (0..<4).map { (Double($0), BacktapeNote(title: "Gardening", body: "Tomatoes")) }
+        }, ask: { _, _ in
+            requests += 1
+            return requests == 1 ? "You grow tomatoes | Gardening on several days" : "You grow roses | Fresh gardening notes"
+        })
+        await memories.refresh(force: true)
+        XCTAssertEqual(memories.topics.map(\.text), ["You grow tomatoes"])
+        hold = true
+        let older = Task { await memories.refresh(force: true) }
+        await fulfillment(of: [started], timeout: 5)
+        memories.historyCleared(everything: true)
+        let cleared = try Data(contentsOf: file)
+        hold = false
+        suspended?.resume(returning: [])
+        await older.value
+        XCTAssertTrue(memories.topics.isEmpty)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(try Data(contentsOf: file), cleared)
+        await memories.refresh(force: true)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(memories.topics.map(\.text), ["You grow roses"])
+    }
+
     func testClearDuringReadDoesNotAskModelOrRewriteClearedFile() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
