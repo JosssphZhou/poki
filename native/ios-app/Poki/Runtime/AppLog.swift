@@ -13,6 +13,7 @@ final class AppLog {
 
     private(set) var lines: [String] = []
     private let limit = 600
+    private let snapshots = AppLogSnapshots()
     private let file: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("poki-log.txt")
     private let stamp: DateFormatter = {
         let f = DateFormatter()
@@ -61,7 +62,7 @@ final class AppLog {
             self.pending = false
             let text = self.lines.joined(separator: "\n")
             guard let file = self.file else { return }
-            DispatchQueue.global(qos: .utility).async { try? text.write(to: file, atomically: true, encoding: .utf8) }
+            self.snapshots.save(text, to: file)
         }
     }
 }
