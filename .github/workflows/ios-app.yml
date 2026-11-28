@@ -525,7 +525,7 @@ jobs:
       - name: App unit tests (simulator)
         timeout-minutes: 30
         run: |
-          set -o pipefail
+          set -euo pipefail
           trap 'xcrun simctl shutdown "$UDID" || true; xcrun simctl delete "$UDID" || true' EXIT
           X="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer"
           APP="$PWD/build/sim/Build/Products/Debug-iphonesimulator/Poki.app"
@@ -536,6 +536,10 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           # Setup's last item needs location; PokiTests check a simulator with every item done (app-tests.sh).
           xcrun simctl privacy "$UDID" grant location-always nz.zheha.poki
+          # Session and dictation tests must not leave system permission alerts over later UI tests.
+          # simctl privacy cannot set notification or speech-recognition permission.
+          command -v applesimutils >/dev/null || brew install wix/brew/applesimutils
+          applesimutils --byId "$UDID" --bundle nz.zheha.poki --setPermissions "notifications=YES,speech=NO"
           launch_status=0
           SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$X/usr/lib/libXCTestBundleInject.dylib" \
           SIMCTL_CHILD_XCTestBundlePath="$APP/PlugIns/PokiTests.xctest" \
