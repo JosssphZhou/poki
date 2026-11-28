@@ -75,6 +75,9 @@ struct RelayView: View {
                 if let error = onboarding.error, !steps.contains(where: { $0.state == .failed && $0.detail == error.text }) {
                     Text(error.text).foregroundStyle(.red).font(.callout).fixedSize(horizontal: false, vertical: true)
                 }
+                if onboarding.error?.needsManualDeploy == true, let w = worker, let url = URL(string: w.guideUrl) {
+                    Link(localized("Open Manual Deployment Guide"), destination: url)
+                }
             } header: {
                 Text(model.relay == nil ? localized("Deploy") : localized("Redeploy"))
             } footer: {

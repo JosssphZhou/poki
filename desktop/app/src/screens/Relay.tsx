@@ -10,6 +10,7 @@ const cloudflareErrors: Record<string, string> = {
   cloudflare_free_limit: "This account has reached a Workers limit or its plan doesn't support this deployment. Check your usage and plan in Cloudflare, then retry.",
   cloudflare_network: "Poki Setup couldn't reach Cloudflare. Check your connection and try again.",
   cloudflare_not_ready: "The Worker was uploaded but the relay didn't answer yet. Wait a minute, then retry Deploy.",
+  cloudflare_unsupported_migration: "This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually.",
   cloudflare_invalid_token: "Cloudflare rejected the API token. Create a new token or check that you copied it correctly.",
   cloudflare_api: "Cloudflare couldn't complete the request. Try again or check the Cloudflare dashboard.",
 };
@@ -21,6 +22,11 @@ async function open(url: string) {
 
 function looksLikeToken(value: string): boolean {
   return /^[A-Za-z0-9_-]{20,256}$/.test(value);
+}
+
+function cloudflareErrorKind(error: unknown): string {
+  const kind = failureKind(error);
+  return Object.hasOwn(cloudflareErrors, kind) ? kind : "cloudflare_api";
 }
 
 export default function Relay() {
@@ -80,14 +86,14 @@ export default function Relay() {
     try {
       const available = await api.relayAccounts(candidate);
       if (available.length === 0) {
-        setError(cloudflareErrors.cloudflare_no_accounts);
+        setError("cloudflare_no_accounts");
         return;
       }
       token.current = candidate;
       setAccounts(available);
       setAccountId(available.length === 1 ? available[0].id : available.find((account) => account.id === relay?.account_id)?.id ?? "");
     } catch (e) {
-      setError(cloudflareErrors[failureKind(e)] ?? cloudflareErrors.cloudflare_api);
+      setError(cloudflareErrorKind(e));
     }
   };
   const useSaved = async () => {
@@ -153,7 +159,6 @@ export default function Relay() {
     setBusy("deploy");
     setError(null);
     reset();
-    apply({ job: "relay", kind: "step", id: "relay", title: "Deploy" });
     try {
       const deployed = await api.relayDeploy(token.current, accountId);
       token.current = "";
@@ -171,7 +176,7 @@ export default function Relay() {
       if (tokenSaved === null) setNotice("Poki Setup couldn't check whether a Cloudflare token is saved.");
     } catch (e) {
       fail("");
-      setError(cloudflareErrors[failureKind(e)] ?? cloudflareErrors.cloudflare_api);
+      setError(cloudflareErrorKind(e));
     } finally {
       setBusy(null);
     }
@@ -207,7 +212,10 @@ export default function Relay() {
       <Card>
         <h2>{t("Deploy to my Cloudflare account")}</h2>
         <div className="stack">
-          {error && <div role="alert"><ErrorBox error={error} /></div>}
+          {error && <div role="alert"><ErrorBox error={cloudflareErrors[error] ?? error} /></div>}
+          {error === "cloudflare_unsupported_migration" && worker && (
+            <div><Capsule kind="ghost" onClick={() => open(worker.guide_url)}>{t("Open manual deployment guide")}</Capsule></div>
+          )}
           {accounts.length > 0 ? (
             <>
               {accounts.length === 1 ? (

@@ -10,7 +10,7 @@ final class RelayOnboarding: ObservableObject {
     @Published var manualToken = ""
     @Published private(set) var tokenSaved: Bool?
     @Published private(set) var status: SetupMessage?
-    @Published private(set) var error: SetupMessage?
+    @Published private(set) var error: RelayFailure?
     @Published private(set) var working = false
 
     private var token: String?
@@ -109,7 +109,7 @@ final class RelayOnboarding: ObservableObject {
             }
             return deployed
         } catch {
-            self.error = ((error as? RelayFailure) ?? RelayFailure(error)).message
+            self.error = (error as? RelayFailure) ?? RelayFailure(error)
             return nil
         }
     }
@@ -118,7 +118,7 @@ final class RelayOnboarding: ObservableObject {
         status = nil
         error = nil
         if let token, token.range(of: #"^[A-Za-z0-9_-]{20,256}$"#, options: .regularExpression) == nil {
-            error = RelayFailure(CoreError(kind: "cloudflare_invalid_token", message: "")).message
+            error = RelayFailure(CoreError(kind: "cloudflare_invalid_token", message: ""))
             return
         }
         working = true
@@ -139,7 +139,7 @@ final class RelayOnboarding: ObservableObject {
             manualToken = ""
             accounts = eligible
         } catch {
-            self.error = RelayFailure(error).message
+            self.error = RelayFailure(error)
         }
     }
 
@@ -152,12 +152,25 @@ final class RelayOnboarding: ObservableObject {
     }
 }
 
-private struct RelayFailure: LocalizedError {
+struct RelayFailure: LocalizedError {
     let message: SetupMessage
-    var errorDescription: String? { message.text }
+    let needsManualDeploy: Bool
+    var text: String { message.text }
+    var errorDescription: String? { text }
+
+    static func copy(_ text: String.LocalizationValue) -> Self {
+        Self(message: .copy(text), needsManualDeploy: false)
+    }
+
+    private init(message: SetupMessage, needsManualDeploy: Bool) {
+        self.message = message
+        self.needsManualDeploy = needsManualDeploy
+    }
 
     init(_ error: Error) {
-        switch (error as? CoreError)?.kind {
+        let kind = (error as? CoreError)?.kind
+        needsManualDeploy = kind == "cloudflare_unsupported_migration"
+        switch kind {
         case "cloudflare_permission":
             message = .copy("Check that the token is active and grants Workers Scripts Edit and Account Settings Read for your account.")
         case "cloudflare_no_accounts":
@@ -170,6 +183,8 @@ private struct RelayFailure: LocalizedError {
             message = .copy("Could not reach Cloudflare. Check your connection and try again.")
         case "cloudflare_not_ready":
             message = .copy("The relay isn't answering yet. Wait a minute and try again.")
+        case "cloudflare_unsupported_migration":
+            message = .copy("This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually.")
         case "cloudflare_invalid_token":
             message = .copy("Cloudflare couldn't use this token. Copy the API token again or create a new one.")
         case "cloudflare_api":

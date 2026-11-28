@@ -159,6 +159,8 @@ const zh: Record<string, string> = {
   "This account has reached a Workers limit or its plan doesn't support this deployment. Check your usage and plan in Cloudflare, then retry.": "此账号已达到 Workers 使用限制，或当前套餐不支持此次部署。请在 Cloudflare 中检查用量和套餐，然后重试。",
   "Poki Setup couldn't reach Cloudflare. Check your connection and try again.": "Poki Setup 无法连接 Cloudflare。请检查网络连接后重试。",
   "The Worker was uploaded but the relay didn't answer yet. Wait a minute, then retry Deploy.": "Worker 已上传，但远程连接服务暂未响应。请稍候片刻，然后重新部署。",
+  "This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually.": "此版本的 Poki Setup 无法更新现有 Worker 的迁移。请使用兼容的远程连接服务版本，运行 deploy/cf-relay/deploy.sh 手动部署。",
+  "Open manual deployment guide": "打开手动部署指南",
   "Cloudflare rejected the API token. Create a new token or check that you copied it correctly.": "Cloudflare 拒绝了 API 令牌。请创建新令牌，或确认复制的令牌是否正确。",
   "Cloudflare couldn't complete the request. Try again or check the Cloudflare dashboard.": "Cloudflare 无法完成请求。请重试，或查看 Cloudflare 控制台。",
   "Deploy": "部署",

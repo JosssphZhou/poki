@@ -1,7 +1,7 @@
 //! Deploys Poki's relay Worker (`deploy/cf-relay/worker.js`, bundled into this binary) to the
 //! person's own Cloudflare account through the API, the same upload DEPLOY.md documents.
 //! The API token is kept in the system keychain, so the relay can be updated without pasting it.
-use crate::{Error, Result, Reporter};
+use crate::{Reporter, Result};
 use reqwest::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -10,6 +10,7 @@ pub const WORKER_JS: &str = include_str!("../../../deploy/cf-relay/worker.js");
 pub const SCRIPT_NAME: &str = "poki-relay";
 pub const COMPATIBILITY_DATE: &str = "2025-10-01";
 const API: &str = "https://api.cloudflare.com/client/v4";
+const MANUAL_DEPLOY_PATH: &str = "deploy/cf-relay/DEPLOY.md#deploy-with-the-script";
 
 pub fn token_setup_url() -> String {
     let permissions = serde_json::json!([
@@ -109,8 +110,8 @@ pub struct WorkerStatus {
 pub async fn worker_status() -> Result<WorkerStatus> {
     let (code, source, download_url) = worker_code_and_link().await;
     let sha256 = sha256_hex(&code);
-    let at = if source == "built in" { "standalone" } else { source.as_str() };
-    let guide_url = format!("https://github.com/{}/blob/{at}/deploy/cf-relay/DEPLOY.md", crate::release::repo());
+    let at = if source == "built in" { "main" } else { source.as_str() };
+    let guide_url = format!("https://github.com/{}/blob/{at}/{MANUAL_DEPLOY_PATH}", crate::release::repo());
     let deployed_sha256 = remembered()?.and_then(|d| d.worker_sha256);
     // A relay deployed before Poki Setup recorded hashes counts as older.
     let update_available = remembered()?.is_some() && deployed_sha256.as_deref() != Some(sha256.as_str());
@@ -157,6 +158,8 @@ pub enum CloudflareError {
     Network,
     #[error("The relay was uploaded but is not answering yet. Wait a minute and try again.")]
     NotReady,
+    #[error("This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually.")]
+    UnsupportedMigration,
     #[error("Cloudflare could not complete the request. Try again later.")]
     Api,
 }
@@ -171,6 +174,7 @@ impl CloudflareError {
             Self::PlanLimit => "cloudflare_free_limit",
             Self::Network => "cloudflare_network",
             Self::NotReady => "cloudflare_not_ready",
+            Self::UnsupportedMigration => "cloudflare_unsupported_migration",
             Self::Api => "cloudflare_api",
         }
     }
@@ -339,6 +343,7 @@ impl Cloudflare {
         if account.id.len() != 32 || !account.id.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(CloudflareError::NoAccounts.into());
         }
+        reporter.step("relay", "Deploy");
         reporter.part("relay", 0.1, Some("Checking the account".into()));
         let existing_secret = self.has_secret(&account.id).await?;
         let tag = self.migration_tag(&account.id).await?;
@@ -367,7 +372,7 @@ impl Cloudflare {
         match tag.as_deref() {
             None | Some("") => metadata["migrations"] = serde_json::json!({"new_tag": "v1", "new_sqlite_classes": ["DeviceRelay", "Budget"]}),
             Some("v1") => {}
-            Some(other) => return Err(Error::msg(format!("The Worker {SCRIPT_NAME} in this account has migration tag {other}, which this version does not know. Deploy it with ./deploy.sh instead."))),
+            Some(_) => return Err(CloudflareError::UnsupportedMigration.into()),
         }
         reporter.part("relay", 0.2, Some("Setting up the workers.dev address".into()));
         let sub = self.ensure_subdomain(&account.id).await?;
@@ -437,6 +442,7 @@ pub fn remember(d: &Deployed) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
     use serde_json::{Value, json};
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
@@ -597,6 +603,40 @@ mod tests {
         drop(listener);
         let cf = Cloudflare::with_api(TOKEN, &url).unwrap();
         assert_eq!(cf.accounts().await.unwrap_err().kind(), "cloudflare_network");
+    }
+
+    #[tokio::test]
+    async fn deploy_reports_actionable_failures_after_starting_the_progress_step() {
+        let script = format!("/accounts/{ACCOUNT}/workers/scripts/{SCRIPT_NAME}");
+        let account = Account { id: ACCOUNT.into(), name: "Fixture".into() };
+        let secrets = format!("GET {script}/secrets");
+        let cases = [
+            (vec![failure(&secrets, "403 Forbidden", 9109)], "cloudflare_permission"),
+            (vec![
+                ok(&secrets, json!([{"name": "TOKEN_SECRET"}])),
+                ok(format!("GET /accounts/{ACCOUNT}/workers/services/{SCRIPT_NAME}"),
+                    json!({"default_environment": {"script": {"migration_tag": "future"}}})),
+            ], "cloudflare_unsupported_migration"),
+        ];
+        for (routes, kind) in cases {
+            let (url, server) = mock(routes).await;
+            let cf = Cloudflare::with_api(TOKEN, &url).unwrap();
+            let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let captured = events.clone();
+            let reporter = Reporter::new(move |event| captured.lock().unwrap().push(serde_json::to_value(event).unwrap()));
+            let error = cf.deploy_with(&account, &reporter, async || panic!("must not fetch a Worker"), async |_| {
+                panic!("must not verify a relay")
+            }).await.unwrap_err();
+            assert_eq!(error.kind(), kind);
+            if kind == "cloudflare_unsupported_migration" {
+                assert!(error.to_string().contains("deploy/cf-relay/deploy.sh"));
+            }
+            assert_eq!(*events.lock().unwrap(), [
+                json!({"kind": "step", "id": "relay", "title": "Deploy"}),
+                json!({"kind": "part", "id": "relay", "fraction": 0.1, "detail": "Checking the account"}),
+            ]);
+            server.await.unwrap();
+        }
     }
 
     #[tokio::test]

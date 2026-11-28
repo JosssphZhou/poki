@@ -318,6 +318,8 @@
 "No token could be read from the clipboard. Copy the token in Cloudflare and try again, or enter it manually." = "未能从剪贴板读取令牌。请在 Cloudflare 中复制令牌后重试，或手动输入。";
 "Poki Setup couldn't complete the Cloudflare request. Try again." = "Poki Setup 无法完成 Cloudflare 请求。请重试。";
 "The relay isn't answering yet. Wait a minute and try again." = "远程连接服务尚未响应。请稍等片刻再试。";
+"This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually." = "此版本的 Poki Setup 无法更新现有 Worker 的迁移。请使用兼容的远程连接服务版本，运行 deploy/cf-relay/deploy.sh 手动部署。";
+"Open Manual Deployment Guide" = "打开手动部署指南";
 "The relay was deployed, but no token was saved in Keychain. You'll need a token to update it." = "远程连接服务已部署，但钥匙串中没有保存令牌。更新服务时需要令牌。";
 "The relay was deployed, but Poki Setup couldn't verify whether a token is saved in Keychain." = "远程连接服务已部署，但 Poki Setup 无法确认钥匙串中是否保存了令牌。";
 "This account reached a Workers limit or its plan doesn't allow this deployment. Check your Workers usage and plan, or choose a different account." = "此账户已达到 Workers 使用上限，或当前套餐不支持此次部署。请查看 Workers 用量和套餐，或选择其他账户。";

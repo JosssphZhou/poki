@@ -86,19 +86,19 @@ final class AppModel: ObservableObject {
     /// The one model, for the CI snapshot walk.
     static weak var current: AppModel?
 
-    init(bridge injectedBridge: Bridge? = nil) {
-        bridge = injectedBridge ?? .shared
+    init(bridge: Bridge? = nil) {
+        self.bridge = bridge ?? .shared
         AppModel.current = self
-        bridge.onProgress = { [weak self] e in self?.apply(e) }
-        bridge.onLogLines = { [weak self] lines in
+        self.bridge.onProgress = { [weak self] e in self?.apply(e) }
+        self.bridge.onLogLines = { [weak self] lines in
             guard let self else { return }
             self.logLines.append(contentsOf: lines)
             if self.logLines.count > 5000 { self.logLines.removeFirst(self.logLines.count - 5000) }
         }
-        bridge.onNeedsCode = { [weak self] in
+        self.bridge.onNeedsCode = { [weak self] in
             Task { @MainActor in await self?.promptForCode() }
         }
-        bridge.onAccountChanged = { [weak self] in
+        self.bridge.onAccountChanged = { [weak self] in
             Task { @MainActor in await self?.accountChanged() }
         }
     }

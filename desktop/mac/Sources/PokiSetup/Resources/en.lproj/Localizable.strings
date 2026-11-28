@@ -318,6 +318,8 @@
 "No token could be read from the clipboard. Copy the token in Cloudflare and try again, or enter it manually." = "No token could be read from the clipboard. Copy the token in Cloudflare and try again, or enter it manually.";
 "Poki Setup couldn't complete the Cloudflare request. Try again." = "Poki Setup couldn't complete the Cloudflare request. Try again.";
 "The relay isn't answering yet. Wait a minute and try again." = "The relay isn't answering yet. Wait a minute and try again.";
+"This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually." = "This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually.";
+"Open Manual Deployment Guide" = "Open Manual Deployment Guide";
 "The relay was deployed, but no token was saved in Keychain. You'll need a token to update it." = "The relay was deployed, but no token was saved in Keychain. You'll need a token to update it.";
 "The relay was deployed, but Poki Setup couldn't verify whether a token is saved in Keychain." = "The relay was deployed, but Poki Setup couldn't verify whether a token is saved in Keychain.";
 "This account reached a Workers limit or its plan doesn't allow this deployment. Check your Workers usage and plan, or choose a different account." = "This account reached a Workers limit or its plan doesn't allow this deployment. Check your Workers usage and plan, or choose a different account.";

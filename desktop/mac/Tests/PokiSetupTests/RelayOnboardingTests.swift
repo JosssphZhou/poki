@@ -94,7 +94,7 @@ final class RelayOnboardingTests: XCTestCase {
         }
     }
 
-    func testManualTokenSelectsSingleAccountAndDoesNotEchoProviderErrors() async throws {
+    func testDeployPermissionFailureUsesLocalizedProgressInsteadOfProviderBody() async throws {
         try await withFixture("permission") { model, commands in
             let onboarding = RelayOnboarding()
             onboarding.enterManually()
@@ -107,8 +107,45 @@ final class RelayOnboardingTests: XCTestCase {
             let expected = localized("Check that the token is active and grants Workers Scripts Edit and Account Settings Read for your account.")
             XCTAssertNil(deployed)
             XCTAssertEqual(onboarding.error?.text, expected)
+            XCTAssertEqual(onboarding.error?.needsManualDeploy, false)
             XCTAssertEqual(model.steps["relay"]?.last?.state, .failed)
             XCTAssertEqual(model.steps["relay"]?.last?.detail, expected)
+            XCTAssertEqual(model.steps["relay"]?.last?.fraction, 0.1)
+            XCTAssertEqual(commands(), ["relay_accounts", "relay_deploy"])
+        }
+    }
+
+    func testUnsupportedMigrationOffersManualDeploymentAndLeavesTheRelayIntact() async throws {
+        try await withFixture("unsupportedMigration") { model, commands in
+            let onboarding = RelayOnboarding()
+            let previous = deployed(accountID: "first")
+            model.relay = previous
+            onboarding.enterManually()
+            onboarding.manualToken = "sample_fixture_token_42"
+            await onboarding.useManualToken(using: model)
+            let result = await onboarding.deploy(using: model)
+            let expected = localized("This version of Poki Setup can't update the existing Worker's migration. Use a compatible relay release and run deploy/cf-relay/deploy.sh to deploy manually.")
+            XCTAssertNil(result)
+            XCTAssertEqual(model.relay, previous)
+            XCTAssertEqual(onboarding.error?.text, expected)
+            XCTAssertEqual(onboarding.error?.needsManualDeploy, true)
+            XCTAssertEqual(model.steps["relay"]?.last?.detail, expected)
+            XCTAssertEqual(commands(), ["relay_accounts", "relay_deploy"])
+            onboarding.cancel()
+            XCTAssertNil(onboarding.error)
+        }
+    }
+
+    func testPermissionFailureBeforeProgressStillShowsTheError() async throws {
+        try await withFixture("permissionBeforeProgress") { model, commands in
+            let onboarding = RelayOnboarding()
+            onboarding.enterManually()
+            onboarding.manualToken = "sample_fixture_token_42"
+            await onboarding.useManualToken(using: model)
+            let result = await onboarding.deploy(using: model)
+            XCTAssertNil(result)
+            XCTAssertEqual(onboarding.error?.text, localized("Check that the token is active and grants Workers Scripts Edit and Account Settings Read for your account."))
+            XCTAssertEqual(model.steps["relay"]?.isEmpty, true)
             XCTAssertEqual(commands(), ["relay_accounts", "relay_deploy"])
         }
     }
@@ -147,14 +184,19 @@ final class RelayOnboardingTests: XCTestCase {
                     reply["err"] = {"kind": "fixture", "message": "Unexpected argument"}
                 elif command == "relay_accounts":
                     reply["ok"] = [{"id": "first", "name": "First"}]
-                    if scenario != "permission":
+                    if scenario not in ["permission", "permissionBeforeProgress", "unsupportedMigration"]:
                         reply["ok"].append({"id": "second", "name": "Second"})
                 else:
-                    print(json.dumps({"event": "progress", "data": {
-                        "job": "relay", "kind": "step", "id": "relay", "title": "Deploying"
-                    }}), flush=True)
-                    if scenario == "permission":
+                    if scenario != "permissionBeforeProgress":
+                        for progress in [
+                            {"kind": "step", "title": "Deploy"},
+                            {"kind": "part", "fraction": 0.1, "detail": "Checking the account"},
+                        ]:
+                            print(json.dumps({"event": "progress", "data": {"job": "relay", "id": "relay", **progress}}), flush=True)
+                    if scenario in ["permission", "permissionBeforeProgress"]:
                         reply["err"] = {"kind": "cloudflare_permission", "message": "Untrusted provider body"}
+                    elif scenario == "unsupportedMigration":
+                        reply["err"] = {"kind": "cloudflare_unsupported_migration", "message": "Untrusted provider body"}
                     else:
                         reply["ok"] = {
                             "account_id": args["account_id"], "account_name": "Fixture",
