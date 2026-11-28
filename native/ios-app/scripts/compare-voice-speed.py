@@ -890,12 +890,15 @@ def summarize_records(records: list[dict[str, Any]], primary_metric: str) -> dic
     }
 
 
-def _count_by_sample(records: list[dict[str, Any]]) -> dict[str, int]:
-    counts: dict[str, int] = {}
+def _rounds_by_sample(records: list[dict[str, Any]]) -> dict[str, set[int]]:
+    rounds: dict[str, set[int]] = {}
     for r in records:
         sid = str(r.get("sample_id") or "")
-        counts[sid] = counts.get(sid, 0) + 1
-    return counts
+        sample_rounds = rounds.setdefault(sid, set())
+        rnd = r.get("round")
+        if isinstance(rnd, int):
+            sample_rounds.add(rnd)
+    return rounds
 
 
 def _is_interleaved(records: list[dict[str, Any]]) -> bool:
@@ -1037,11 +1040,13 @@ def judge_host_comparison(
             "attribution_violations": [],
         }
 
-    b_counts = _count_by_sample(baseline)
-    c_counts = _count_by_sample(candidate)
-    if b_counts != c_counts:
+    b_rounds = _rounds_by_sample(baseline)
+    c_rounds = _rounds_by_sample(candidate)
+    b_counts = {sid: len(rounds) for sid, rounds in b_rounds.items()}
+    c_counts = {sid: len(rounds) for sid, rounds in c_rounds.items()}
+    if b_rounds != c_rounds:
         inconclusive = True
-        reasons.append(f"unmatched_sample_set: baseline={b_counts} candidate={c_counts}")
+        reasons.append(f"unmatched_sample_set: baseline rounds={b_rounds} candidate rounds={c_rounds}")
 
     changed_vars = {str(r.get("changed_variable") or "").strip() for r in records} - {""}
     if len(changed_vars) != 1:
@@ -2039,7 +2044,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    records = load_measurements_jsonl([Path(p) for p in args.input])
+    unique_records = {
+        json.dumps(r, sort_keys=True): r
+        for r in load_measurements_jsonl([Path(p) for p in args.input])
+    }
+    records = list(unique_records.values())
     allow_diff = {k.strip() for k in (args.allow_config_diff or "").split(",") if k.strip()}
     evaluation = evaluate_comparison(
         records,
