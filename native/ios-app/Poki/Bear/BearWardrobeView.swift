@@ -181,31 +181,36 @@ struct BearCustomizationView: View {
         categoryPicker
     }
 
-    private var categoryPicker: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                Picker("Outfit categories", selection: Binding(
-                    get: { tab },
-                    set: { next in
-                        if reduceMotion { tab = next }
-                        else { withAnimation { tab = next } }
-                    }
-                )) {
-                    ForEach(BearWardrobeTab.allCases, id: \.self) { category in
-                        Text(category.name).tag(category)
-                    }
-                }
+    @ViewBuilder private var categoryPicker: some View {
+        if typeSize.isAccessibilitySize {
+            categorySelection
                 .pickerStyle(.menu)
                 .font(.allo(.body))
                 .frame(maxWidth: 520, minHeight: 44, alignment: .leading)
                 .padding(.horizontal, 16)
-                .accessibilityIdentifier("wardrobe.pieces")
-            } else {
-                BearWardrobeTabs(selection: $tab)
-                    .frame(maxWidth: 520)
-                    .padding(.horizontal, 16)
+        } else {
+            categorySelection
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 520, minHeight: 44)
+                .padding(.horizontal, 16)
+        }
+    }
+
+    private var categorySelection: some View {
+        Picker("Outfit categories", selection: Binding(
+            get: { tab },
+            set: { next in
+                if reduceMotion { tab = next }
+                else { withAnimation { tab = next } }
+            }
+        )) {
+            ForEach(BearWardrobeTab.allCases, id: \.self) { category in
+                Text(category.name)
+                    .tag(category)
+                    .accessibilityIdentifier("wardrobe.tab.\(category.identifier)")
             }
         }
+        .accessibilityIdentifier("wardrobe.pieces")
     }
 
     @ViewBuilder private var equippedItems: some View {
@@ -262,57 +267,6 @@ struct BearCustomizationView: View {
         .accessibilityIdentifier("wardrobe.equipped.\(slot.rawValue)")
     }
 
-}
-
-private struct BearWardrobeTabs: View {
-    @Binding var selection: BearWardrobeTab
-    @Environment(\.layoutDirection) private var layoutDirection
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = 32
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(BearWardrobeTab.allCases, id: \.self) { tab in
-                segment(tab)
-            }
-        }
-        .frame(height: height)
-        .background {
-            GeometryReader { geometry in
-                let count = BearWardrobeTab.allCases.count
-                let width = geometry.size.width / CGFloat(count)
-                let column = layoutDirection == .leftToRight ? selection.rawValue : count - 1 - selection.rawValue
-                Color.clear
-                    .frame(width: max(0, width - 8), height: max(0, geometry.size.height - 8))
-                    .glassSurface(in: Capsule())
-                    .position(x: width * (CGFloat(column) + 0.5), y: geometry.size.height / 2)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: selection)
-            }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-        .background(.fill.tertiary, in: Capsule())
-        .clipShape(Capsule())
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Outfit categories"))
-        .accessibilityIdentifier("wardrobe.pieces")
-    }
-
-    private func segment(_ tab: BearWardrobeTab) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { selection = tab }
-        } label: {
-            Text(tab.name)
-                .font(.footnote.weight(selection == tab ? .semibold : .regular))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selection == tab ? .isSelected : [])
-        .accessibilityIdentifier("wardrobe.tab.\(tab.identifier)")
-    }
 }
 
 private struct BearWardrobeGridPage: View {
