@@ -12,7 +12,9 @@ function makeFixtureRepo(t) {
   const root = mkdtempSync(join(tmpdir(), 'poki-codex-voice-build-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
 
-  const binDir = join(root, 'bin');
+  const home = join(root, 'empty-home');
+  // build.sh prepends this directory before Homebrew and the inherited PATH.
+  const binDir = join(home, '.cargo', 'bin');
   const adapterDir = join(root, 'native', 'codex-voice');
   const adapterSrc = join(adapterDir, 'src');
   mkdirSync(binDir, { recursive: true });
@@ -103,14 +105,14 @@ function makeFixtureRepo(t) {
     'printf "fake-archive" > "$out/libpoki_codex_voice.a"',
   ].join('\n'), { mode: 0o755 });
 
-  return { root, binDir, adapterDir, adapterSrc, cargoLog, workspace };
+  return { root, home, binDir, adapterDir, adapterSrc, cargoLog, workspace };
 }
 
 test('codex-voice build.sh disables cross-crate ThinLTO by default and skips rebuilds on matching stamp', t => {
-  const { root, binDir, adapterDir, adapterSrc, cargoLog, workspace } = makeFixtureRepo(t);
+  const { home, binDir, adapterDir, adapterSrc, cargoLog, workspace } = makeFixtureRepo(t);
   const env = {
     PATH: `${binDir}:/usr/bin:/bin`,
-    HOME: join(root, 'empty-home'),
+    HOME: home,
   };
   mkdirSync(env.HOME, { recursive: true });
 
