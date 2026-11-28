@@ -152,7 +152,7 @@ enum QuestionNotice {
     @MainActor static func schedule(text: String) {
         let content = UNMutableNotificationContent()
         content.title = StatusWord.needsAnswer.text
-        content.body = text
+        content.body = String(text.prefix(160))
         content.sound = .default
         content.interruptionLevel = .timeSensitive
         let center = UNUserNotificationCenter.current()
