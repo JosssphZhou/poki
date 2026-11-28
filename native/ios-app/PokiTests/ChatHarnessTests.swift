@@ -2859,7 +2859,7 @@ final class ChatHarnessTests: XCTestCase {
             window.overrideUserInterfaceStyle = style
             window.rootViewController = UIHostingController(rootView: NavigationStack {
                 ChatView(openVoice: {}, openSetup: {}, openModel: {}, openThreads: {})
-            }.environment(model).environment(chat).environment(\.accessibilityReduceMotion, true))
+            }.environment(model).environment(chat))
             window.makeKeyAndVisible()
             defer {
                 if chat.running { chat.stop() }
