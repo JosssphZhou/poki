@@ -34,15 +34,7 @@ struct PokiApp: App {
         // Only a dedicated UI-test launch flag installs the disposable Memory
         // source records; production launches never write synthetic conversations.
         MemorySourceUITestFixture.installIfRequested()
-        if ProcessInfo.processInfo.arguments.contains("-pokiUITestDuplicateRecentApps") {
-            // Process-local preferences for typing regressions; never overwrite the owner's stored recents.
-            let defaults = UserDefaults.standard
-            var arguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
-            let recent = ["com.apple.mobilenotes", "COM.APPLE.MOBILENOTES", "com.apple.mobilenotes"]
-            arguments[RecentAppsStore.defaultsKey] = recent
-            arguments["mentions.recent"] = recent
-            defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
-        }
+        RecentAppPreferences.cleanFixtureIfRequested()
         #endif
         // Whether this phone gets the first run: not when an earlier version was used here. Read before
         // anything this version writes, like the line above.
@@ -84,6 +76,12 @@ struct PokiApp: App {
                 // Body text in Allo wherever a view does not choose a font of its own.
                 .font(.allo(.body))
                 #if DEBUG
+                .overlay(alignment: .top) {
+                    if ProcessInfo.processInfo.arguments.contains("-pokiUITestRecentsFingerprint") {
+                        Text(RecentAppPreferences.persistedFingerprint)
+                            .font(.caption2).accessibilityIdentifier("fixture.recents.fingerprint")
+                    }
+                }
                 .overlay { if UserDefaults.standard.string(forKey: "pokiScreen") == "fonts" { FontCompare().background(Color(.systemBackground)) } }
                 .overlay { if UserDefaults.standard.string(forKey: "pokiScreen") == "bear" { BearStage() } }
                 #endif

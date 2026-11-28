@@ -127,7 +127,7 @@ struct AppPickerIndexTarget: Identifiable, Equatable {
 
 /// Persists recently selected app bundle IDs so `+` quick picks and B1 "Recent" adapt over time.
 final class RecentAppsStore {
-    static let shared = RecentAppsStore()
+    static let shared = RecentAppsStore(defaults: RecentAppPreferences.defaults)
     static let defaultsKey = "poki.appPicker.recentIDs"
     private let defaults: UserDefaults
     private let maxCount = 12

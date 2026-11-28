@@ -185,14 +185,14 @@ enum MentionRecents {
     private static let key = "mentions.recent"
     static let most = 12
 
-    static var ids: [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
+    static var ids: [String] { RecentAppPreferences.defaults.stringArray(forKey: key) ?? [] }
 
     static func rank(_ id: String) -> Int? { ids.firstIndex { $0.caseInsensitiveCompare(id) == .orderedSame } }
 
     static func used(_ id: String) {
         var list = ids.filter { $0.caseInsensitiveCompare(id) != .orderedSame }
         list.insert(id, at: 0)
-        UserDefaults.standard.set(Array(list.prefix(most)), forKey: key)
+        RecentAppPreferences.defaults.set(Array(list.prefix(most)), forKey: key)
     }
 
     /// Every app a sent message names.
