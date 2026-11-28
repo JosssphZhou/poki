@@ -599,7 +599,7 @@ enum BundledModelSetups {
     }
 
     static let all: [String: Setup] = [
-        // pi-ai 1.5.0 lists gpt-6.1-terra with the same API and inputs as gpt-6.1-sol.
+        // The pi catalog lists gpt-6.1-terra with the same API and inputs as gpt-6.1-sol.
         "gpt-6.1-terra": Setup(template: "gpt-6.1-sol", name: "GPT-6.1 Terra"),
         // GPT-6.2 Sol keeps GPT-6.1 Sol's prices and windows.
         "gpt-6.2-sol": Setup(template: "gpt-6.1-sol", name: "GPT-6.2 Sol", onGateways: true),

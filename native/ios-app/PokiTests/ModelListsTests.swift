@@ -24,7 +24,9 @@ final class ModelListsTests: XCTestCase {
             XCTAssertTrue(ids.contains("gpt-6.2-astra"), "\(provider)")
             XCTAssertTrue(ModelCatalog.available(provider, storage: storage).map(\.id).contains("gpt-6.2-sol"), "\(provider)")
         }
-        XCTAssertTrue(ModelCatalog.all(.openrouter, storage: storage).map(\.id).contains("openai/gpt-6.2-sol"))
+        let openRouter = ModelCatalog.all(.openrouter, storage: storage).map(\.id)
+        XCTAssertTrue(openRouter.contains("openai/gpt-6.2-sol"))
+        XCTAssertTrue(openRouter.contains("openai/gpt-6.2-astra"))
     }
 
     func testPiSwiftsCatalogListsGPT62() {

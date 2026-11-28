@@ -119,6 +119,7 @@ enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
             ChatModelChoice(id: "anthropic/claude-sonnet-5.5", name: "Claude Sonnet 5.5 (OpenRouter)"),
             ChatModelChoice(id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5 (OpenRouter)"),
             ChatModelChoice(id: "openai/gpt-6.2-sol", name: "GPT-6.2 Sol (OpenRouter)"),
+            ChatModelChoice(id: "openai/gpt-6.2-astra", name: "GPT-6.2 Astra (OpenRouter)"),
             ChatModelChoice(id: "openai/gpt-6.1-sol", name: "GPT-6.1 Sol (OpenRouter)"),
             ChatModelChoice(id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash (OpenRouter)"),
         ]
