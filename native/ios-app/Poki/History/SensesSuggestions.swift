@@ -59,7 +59,7 @@ final class SensesSuggestions {
         }
         let requested = epoch
         running = true
-        defer { running = false }
+        defer { if epoch == requested { running = false } }
         last = Date()
         lastPart = part
         let pills: [HomeShortcut]
@@ -84,6 +84,7 @@ final class SensesSuggestions {
 
     func clear() {
         epoch = UUID()
+        running = false
         last = .distantPast
         lastPart = nil
         kept = []

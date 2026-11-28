@@ -28,12 +28,13 @@ final class SensesSuggestionCancellationTests: XCTestCase {
         await capture.clearEverything()
         let remaining = await history.recent()
         XCTAssertTrue(remaining.isEmpty)
+        // A new Home refresh must be able to finish before the old model request returns.
+        await suggestions.refresh()
+        XCTAssertEqual(displayed, [fresh])
         finish?.resume(returning: [HomeShortcut(key: "old", app: "com.apple.mobilenotes", appName: "Notes",
                                                text: "Old suggestion", prompt: "Old suggestion")])
         await old.value
-        XCTAssertTrue(displayed.isEmpty)
-        await suggestions.refresh()
-        XCTAssertEqual(displayed, [fresh])
+        XCTAssertEqual(displayed, [fresh], "The late old request must not replace the fresh Home suggestion")
         XCTAssertEqual(requests, 2)
     }
 
