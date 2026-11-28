@@ -4,7 +4,6 @@ final class SensesHomeClearUITests: XCTestCase {
     func testFreshHomeSuggestionSurvivesLateOldResult() {
         let app = XCUIApplication()
         app.launchArguments = ["-pokiScreen", "chat", "-pokiUITestSensesHome",
-                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityM",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         let wifiOnly = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["仅限无线局域网"]
@@ -17,11 +16,6 @@ final class SensesHomeClearUITests: XCTestCase {
         confirm.tap()
         let fresh = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Fresh suggestion")).firstMatch
         XCTAssertTrue(fresh.waitForExistence(timeout: 10))
-        for _ in 0..<12 where !fresh.isHittable {
-            let dy: CGFloat = fresh.frame.minY < 150 ? 120 : -120
-            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: dy)))
-        }
         XCTAssertTrue(fresh.isHittable, "The fresh suggestion must actually be visible on Home")
         app.buttons["fixture.history.release"].tap()
         XCTAssertTrue(app.buttons["Old result released"].waitForExistence(timeout: 5))

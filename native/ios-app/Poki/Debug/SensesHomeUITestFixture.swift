@@ -10,6 +10,8 @@ enum SensesHomeUITestFixture {
         SensesSuggestions(enabled: { true }, produce: {
             requests += 1
             if requests == 1 { return await withCheckedContinuation { pending = $0 } }
+            // Keep the independent test Home deterministic without unrelated example pills.
+            for existing in HomeShortcutStore.shared.shortcuts { HomeShortcutStore.shared.forget(existing) }
             return [pill("Fresh suggestion")]
         })
     }
