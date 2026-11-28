@@ -730,6 +730,9 @@ private struct Control: View {
                     .background(palette.buttonFill, in: .capsule)
             }
             .transition(.activityRow)
+        case .retryTalk:
+            RetryTalkButton()
+                .transition(.activityRow)
         case .segments(let number, let count):
             SegmentLine(step: number, total: count, palette: palette)
                 .transition(.activityRow)
@@ -979,6 +982,23 @@ struct EndTalkButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(String(activity: "End talk")))
+    }
+}
+
+struct RetryTalkButton: View {
+    private let theme = ActivityTheme.current
+    var body: some View {
+        Button(intent: RetryTalkIntent()) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .bold)).foregroundStyle(ActivityTheme.current.island.accent)
+                Text(String(activity: "Try Again")).font(theme.button).foregroundStyle(Color(hex: 0x111111))
+            }
+            .padding(.horizontal, 14)
+            .frame(height: ActivityMetrics.stopCapsule)
+            .background(.white, in: .capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(String(activity: "Try Again")))
     }
 }
 

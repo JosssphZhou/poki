@@ -107,6 +107,7 @@ struct ActivityFace: Hashable {
         case handoff(id: String)
         /// Open Poki to fix a stopped runner or pairing error.
         case openPoki
+        case retryTalk
         /// The setup steps: done, the current one, the rest.
         case segments(number: Int, count: Int)
     }
@@ -254,8 +255,8 @@ extension PokiState {
         // During a talk the card and the island carry End, while Poki listens, speaks or works on a step
         // of the talk. Anything that needs the person (an approval, a hand-off) or tells of a problem
         // keeps them to itself.
-        face.endsTalk = voice != nil && (phase == .idle || phase == .working) && !stale
-        face.talkGlow = voice != nil && !stale
+        face.endsTalk = voice != nil && voice != .failed && (phase == .idle || phase == .working) && !stale
+        face.talkGlow = voice != nil && voice != .failed && !stale
         face.shieldsTaps = !stale && ([.working, .approval, .deciding, .handoff].contains(phase) || voice != nil)
         if face.shieldsTaps, face.link == ActivityLink.chat { face.link = ActivityLink.activity }
         // A fresh event ("Started", "Denied") shows beside the app's name for a few seconds. An app
@@ -388,22 +389,33 @@ extension PokiState {
                 compact: .symbol("hand.tap.fill", .accent))
         case .idle:
             if let voice {
-                let (line, hint, bear, symbol): (String, String, ActivityBear, String) = switch voice {
-                case .connecting: (StatusWord.starting.text, ActivityWords.local("Connecting"), .ready, "antenna.radiowaves.left.and.right")
-                case .listening: (StatusWord.listening.text, String(activity: "Talk with Poki"), .ready, "waveform")
-                case .finishingOpening: (StatusWord.listening.text, String(activity: "Run Poki Anytime again to send as text."), .ready, "waveform")
-                case .thinking: (StatusWord.thinking.text, String(activity: "Working out the next step."), .thinking, "waveform")
-                case .speaking: (StatusWord.speaking.text, String(activity: "Talk with Poki"), .ready, "waveform")
+                if voice == .failed {
+                    return ActivityFace(
+                        symbol: "exclamationmark.triangle.fill",
+                        bear: .tripped, size: .tall,
+                        meta: .symbol("exclamationmark.circle.fill", .problem), lockMeta: ActivityFace.Meta.none,
+                        content: StatusWord.connectionFailed.text,
+                        subtitle: String(activity: "Check the network, then try again."),
+                        bottom: .retryTalk,
+                        compact: .symbol("exclamationmark.circle.fill", .problem))
+                }
+                let (line, hint, bear, tone): (String, String, ActivityBear, ActivityTone) = switch voice {
+                case .connecting: (StatusWord.connecting.text, String(activity: "Talk with Poki"), .thinking, .quiet)
+                case .listening: (StatusWord.listening.text, String(activity: "Talk with Poki"), .ready, .accent)
+                case .finishingOpening: (StatusWord.listening.text, String(activity: "Run Poki Anytime again to send as text."), .ready, .accent)
+                case .thinking: (StatusWord.thinking.text, String(activity: "Working out the next step."), .thinking, .accent)
+                case .speaking: (StatusWord.speaking.text, String(activity: "Talk with Poki"), .ready, .accent)
+                case .failed: (StatusWord.connectionFailed.text, String(activity: "Check the network, then try again."), .tripped, .problem)
                 }
                 return ActivityFace(
-                    symbol: symbol,
+                    symbol: "waveform",
                     bear: bear, size: .working,
                     meta: .none,
                     content: line,
                     subtitle: hint,
                     subtitleLines: voice == .finishingOpening ? 2 : 1,
                     bottom: .none,
-                    compact: .symbol(symbol, .accent))
+                    compact: .symbol("waveform", tone))
             }
             return quietFace
         }

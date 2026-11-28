@@ -97,7 +97,8 @@ struct PokiStatus: Equatable {
         // flat listening and speaking faces carry sound waves the model does not have.
         if voice.isOn, let talk = voice.talkState {
             switch talk {
-            case .connecting, .failed: break
+            case .connecting: return PokiStatus(.thinking, word: talk.word)
+            case .failed: break
             case .thinking: return PokiStatus(.thinking)
             case .acting: return PokiStatus(.onYourPhone)
             case .listening, .hearing, .speaking, .interrupted: return PokiStatus(.ready, word: talk.word)
