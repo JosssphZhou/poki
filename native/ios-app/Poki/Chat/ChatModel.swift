@@ -1321,7 +1321,12 @@ final class ChatModel {
         // any private text. A valid answer may have become stale on the way back from Core.
         let answer = call.name == "screen_history"
             ? HistoryCapture.validateAgentAnswer(rawAnswer, revision: historyRevision) : rawAnswer
-        let record = CallRecord(name: call.name, arguments: call.arguments, answer: String(answer.text.prefix(2000)), ms: Int(Date().timeIntervalSince(started) * 1000), ok: !answer.isError)
+        // Native answers can hold clipboard text. The model sees them, but the saved conversation keeps
+        // only the fact that the tool ran.
+        let savedAnswer = NativeTools.names.contains(call.name)
+            ? "[\(call.name): result withheld from the saved conversation]"
+            : String(answer.text.prefix(2000))
+        let record = CallRecord(name: call.name, arguments: call.arguments, answer: savedAnswer, ms: Int(Date().timeIntervalSince(started) * 1000), ok: !answer.isError)
         taskCalls.append(record)
         guard sessionID == session else {
             store.appendCall(record, to: session)
@@ -1384,6 +1389,7 @@ final class ChatModel {
                     return splitViewRefusal("Keep both apps in place. Do not launch apps, use hardware buttons, or run skills. Finish with finish_task.")
                 }
             case "report_plan", "finish_task", "count_messages", Harness.countedScrollReplyTool, "status", SensesContext.name: break
+            case let name where NativeTools.names.contains(name): break
             default:
                 return splitViewRefusal("Use the two visible apps with look and do for this task.")
             }
@@ -1441,6 +1447,14 @@ final class ChatModel {
             return PokiCore.ToolAnswer(text: Harness.recorded(result, cardShown: card != nil), jpeg: nil, isError: false)
         case SensesContext.name:
             return await personalContext(args)
+        case let name where NativeTools.names.contains(name):
+            // The iPhone's own abilities run here without opening an automation session: they never
+            // read or act on the screen, and asking for the battery or the clipboard must work while
+            // Poki is otherwise idle.
+            guard !Task.isCancelled else {
+                return PokiCore.ToolAnswer(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)
+            }
+            return await NativeTools.perform(name, arguments: call.arguments)
         case let name where WebTools.names.contains(name):
             if let refusal = selectRoute(.web) { return refusal }
             let ids = args["used_memory_ids"] as? [String] ?? []
