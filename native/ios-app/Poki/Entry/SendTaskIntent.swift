@@ -90,6 +90,9 @@ struct PokiShortcuts: AppShortcutsProvider {
         AppShortcut(intent: TalkHereIntent(),
                     phrases: ["\(.applicationName) Anytime", "Talk to \(.applicationName) without leaving this app"],
                     shortTitle: LocalizedStringResource("Poki Anytime", table: "Entry"), systemImageName: "waveform.badge.mic")
+        AppShortcut(intent: ToggleMicrophoneMuteIntent(),
+                    phrases: ["Toggle microphone mute in \(.applicationName)"],
+                    shortTitle: LocalizedStringResource("Toggle Mic Mute", table: "Entry"), systemImageName: "mic.slash")
         AppShortcut(intent: SendTaskToPokiIntent(),
                     phrases: ["Send a task to \(.applicationName)", "Give \(.applicationName) a task"],
                     shortTitle: LocalizedStringResource("Send Task", table: "Entry"), systemImageName: "paperplane")

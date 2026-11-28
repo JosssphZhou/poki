@@ -94,6 +94,7 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
         throw VoiceError.noBridge
     }
     func hasRemoteSpeech() async -> Bool { false }
+    @MainActor func setMicrophoneMuted(_ muted: Bool) {}
     func setRemoteVolume(_ value: Double) {}
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
     func close() { script?.cancel() }

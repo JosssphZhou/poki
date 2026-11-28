@@ -630,6 +630,102 @@
           }
         }
       }
+    },
+    "Toggle Microphone Mute" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换麦克风静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換麥克風靜音"
+          }
+        }
+      }
+    },
+    "Toggle Mic Mute" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换麦克风静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切換麥克風靜音"
+          }
+        }
+      }
+    },
+    "Mutes or unmutes your microphone in the current Poki call." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在当前 Poki 通话中将麦克风静音或取消静音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在目前的 Poki 通話中將麥克風靜音或取消靜音。"
+          }
+        }
+      }
+    },
+    "Microphone muted." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风已静音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風已靜音。"
+          }
+        }
+      }
+    },
+    "Microphone unmuted." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风已取消静音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風已取消靜音。"
+          }
+        }
+      }
+    },
+    "There is no active call." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有进行中的通话。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有進行中的通話。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

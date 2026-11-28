@@ -19,6 +19,8 @@ struct TalkBar: View {
     var since: Date?
     var muted: Bool
     var toggleMute: () -> Void
+    var microphoneMuted: Bool?
+    var toggleMicrophoneMute: () -> Void
     var interrupt: () -> Void
     var end: () -> Void
     var retry: () -> Void
@@ -43,6 +45,7 @@ struct TalkBar: View {
         }
         .frame(minHeight: 48)
         .animation(TalkMotion.state, value: state)
+        .animation(TalkMotion.state, value: microphoneMuted)
         // A tap you feel where the talk turns: it starts to listen, it is cut off, it breaks.
         .sensoryFeedback(trigger: state) { old, new -> SensoryFeedback? in
             switch new {
@@ -55,14 +58,31 @@ struct TalkBar: View {
     }
 
     private var row: some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 10))
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 8))
         return layout {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 TalkOrb(state: state).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: state.word).font(.allo(.body, .semibold)).foregroundStyle(Color(.label))
-                        .fixedSize(horizontal: false, vertical: true).contentTransition(.interpolate)
-                    if let since, !state.isFailed {
+                    if microphoneMuted == true, state == .listening {
+                        Text("Microphone muted")
+                            .font(.allo(.subheadline, .semibold)).foregroundStyle(Color(.label))
+                            .allowsTightening(true)
+                            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                            .minimumScaleFactor(0.7)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .contentTransition(.interpolate)
+                    } else {
+                        Text(verbatim: state.word).font(.allo(.body, .semibold)).foregroundStyle(Color(.label))
+                            .fixedSize(horizontal: false, vertical: true).contentTransition(.interpolate)
+                    }
+                    if microphoneMuted == true, state != .listening, !state.isFailed {
+                        Text("Microphone muted")
+                            .font(.allo(.footnote)).foregroundStyle(Color(.secondaryLabel))
+                            .allowsTightening(true)
+                            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                            .minimumScaleFactor(0.72)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if let since, !state.isFailed {
                         Text(since, style: .timer).font(.allo(.footnote)).monospacedDigit().foregroundStyle(Color(.secondaryLabel))
                     }
                 }
@@ -70,7 +90,7 @@ struct TalkBar: View {
                 Spacer(minLength: 0)
             }
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) { controls }
+                HStack(spacing: 6) { controls }
                 VStack(alignment: .leading, spacing: 8) { controls }
             }
             .layoutPriority(1)
@@ -87,6 +107,10 @@ struct TalkBar: View {
                 round("hand.raised.fill", label: "Interrupt", identifier: "composer.talk.interrupt", action: interrupt)
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
             }
+            if let microphoneMuted {
+                round(microphoneMuted ? "mic.slash.fill" : "mic.fill", label: microphoneMuted ? "Unmute Microphone" : "Mute Microphone",
+                      identifier: "composer.talk.microphone", active: microphoneMuted, weight: .semibold, action: toggleMicrophoneMute)
+            }
             round(muted ? "speaker.slash.fill" : "speaker.wave.2.fill", label: muted ? "Unmute Poki’s Voice" : "Mute Poki’s Voice",
                   identifier: "composer.talk.mute", action: toggleMute)
             // The send button's blue, in light and dark (the owner, 2026-11-13: not white on black).
@@ -95,14 +119,16 @@ struct TalkBar: View {
         }
     }
 
-    private func round(_ symbol: String, label: LocalizedStringKey, identifier: String, action: @escaping () -> Void) -> some View {
+    private func round(_ symbol: String, label: LocalizedStringKey, identifier: String,
+                       active: Bool = false, weight: Font.Weight = .medium, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.allo(.body, .medium)).foregroundStyle(Color(.label))
+                .font(.allo(.body, weight))
+                .foregroundStyle(active ? Color(.systemBackground) : Color(.label))
                 .contentTransition(.symbolEffect(.replace))
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .frame(width: controlSize.side, height: controlSize.side)
-                .background(Color(.label).opacity(scheme == .dark ? 0.16 : 0.1), in: .circle)
+                .background(active ? Color(.label) : Color(.label).opacity(scheme == .dark ? 0.16 : 0.1), in: .circle)
                 .contentShape(.circle)
         }
         .buttonStyle(.plain)
@@ -117,7 +143,7 @@ struct TalkBar: View {
         Button(action: action) {
             Text(title).font(.allo(.body, .semibold)).foregroundStyle(ink)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 20).padding(.vertical, 10).frame(minHeight: 48)
+                .padding(.horizontal, 18).padding(.vertical, 10).frame(minHeight: 48)
                 .background(fill, in: .capsule)
                 .contentShape(.capsule)
         }

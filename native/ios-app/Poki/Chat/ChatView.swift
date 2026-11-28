@@ -1521,6 +1521,7 @@ struct ComposerInputView: View {
                     ScrollView {
                         Group {
                             TalkBar(state: talk, since: talkStarted, muted: voice.muted, toggleMute: { voice.muted.toggle() },
+                                    microphoneMuted: voice.microphone?.isMuted, toggleMicrophoneMute: { voice.toggleMicrophoneMute() },
                                     interrupt: voice.stopTalking, end: voice.stop,
                                     retry: {
                                         let needsSignIn = voice.needsChatGPTSignIn

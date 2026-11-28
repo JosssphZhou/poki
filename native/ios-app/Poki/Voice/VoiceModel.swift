@@ -307,6 +307,11 @@ struct VoiceClock {
 @MainActor
 @Observable
 final class VoiceModel {
+    struct CallMicrophone {
+        let callID = UUID()
+        var isMuted = false
+    }
+
     private(set) var bridge: VoiceBridge?
     private(set) var phase = VoicePhase.off
     private(set) var needsChatGPTSignIn = false
@@ -324,6 +329,28 @@ final class VoiceModel {
     #endif
     /// Model audio off: for silent test runs. Speech is still transcribed into `lines`.
     var muted = false { didSet { link?.setRemoteVolume(muted || liveSpeechStopped || liveCloseTimeout != nil ? 0 : 1) } }
+    private(set) var microphone: CallMicrophone?
+
+    @discardableResult
+    func setMicrophoneMuted(_ muted: Bool, callID: UUID) -> Bool {
+        guard let microphone, microphone.callID == callID else {
+            log.add("voice", "Ignored microphone mute for call \(callID): the call is no longer active")
+            return false
+        }
+        guard microphone.isMuted != muted else { return true }
+        self.microphone?.isMuted = muted
+        link?.setMicrophoneMuted(muted)
+        log.add("voice", "Microphone \(muted ? "muted" : "unmuted") for call \(callID), session \(session)")
+        return true
+    }
+
+    @discardableResult
+    func toggleMicrophoneMute() -> Bool? {
+        guard let microphone else { return nil }
+        let muted = !microphone.isMuted
+        setMicrophoneMuted(muted, callID: microphone.callID)
+        return muted
+    }
     /// The last measured turn: from the end of speech to the first audio of the answer that carries a tool result.
     private(set) var lastTurnMS: Int?
     /// Timestamps of the current turn, from the end of the person's speech.
@@ -902,6 +929,7 @@ final class VoiceModel {
             }
             return number
         }
+        self.microphone = microphone ? CallMicrophone() : nil
         let bridge = self.bridge
         func configuration() async throws -> VoiceBridge.Token {
             if rehearsing { return Self.rehearsalToken }
@@ -964,6 +992,7 @@ final class VoiceModel {
             return link
         }
         func connect(_ link: VoiceConnection, _ token: VoiceBridge.Token, direct: Bool) async throws {
+            link.setMicrophoneMuted(self.microphone?.isMuted ?? false)
             usesLive = token.live == true
             localTools = Set(token.local_tools)
             if subscription {
@@ -1076,6 +1105,7 @@ final class VoiceModel {
             }
             transcript = nil
             appAudio = nil
+            self.microphone = nil
             _ = releaseOpeningCapture(session: number)
             if subscription {
                 endSession()
@@ -1283,6 +1313,7 @@ final class VoiceModel {
     /// Ends the conversation. Calls already running keep running; the next session hears how they ended.
     func stop() {
         guard liveCloseTimeout == nil else { return }
+        microphone = nil
         releaseOpeningCapture(session: session)
         if let dictation {
             dictation.cancel()
@@ -1343,6 +1374,7 @@ final class VoiceModel {
     }
 
     private func endVoiceConnection() {
+        microphone = nil
         if usesCodexLive {
             codex.stop()
             usesCodexLive = false
