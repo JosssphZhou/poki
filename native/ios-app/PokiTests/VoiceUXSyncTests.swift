@@ -337,7 +337,7 @@ final class VoiceUXSyncTests: XCTestCase {
 
     // MARK: - Bug 3: Immediate barge-in interruption during long playback
 
-    func testBargeInDuringLongPlaybackImmediatelyMutesClearsBufferAndSwitchesToHearing() async throws {
+    func testBargeInMutesImmediatelyButOnlyClearsConfirmedInterruptions() async throws {
         // 1. ChatGPT / Codex path: substantive barge-in mutes immediately and stays muted while draining.
         do {
             let chatGPT = try makeChatGPTStorage()
@@ -381,54 +381,67 @@ final class VoiceUXSyncTests: XCTestCase {
             XCTAssertEqual(link.remoteVolume, 1, "Remote volume must restore after barge-in completes so the new reply is audible")
         }
 
-        // 2. OpenAI Live path: input_audio_buffer.speech_started during .speaking immediately mutes, clears buffer, and enters .hearing.
-        do {
+        for live in [true, false] {
             let clock = FakeTime()
             let (voice, currentLink) = makeVoice(time: clock)
             defer { voice.stop() }
-            _ = voice.setBridge(BridgeStub.liveAddress)
+            if live { _ = voice.setBridge(BridgeStub.liveAddress) }
             await voice.start()
             let link = currentLink()
-            link.play(["type": "session.started"])
-            link.remoteSpeech = true
-            await clock.advance(0.2)
+            if live {
+                link.play(["type": "session.started"])
+                link.remoteSpeech = true
+                await clock.advance(0.2)
+            } else {
+                link.play(["type": "session.created"],
+                          ["type": "response.created", "response": ["id": "r1"]],
+                          ["type": "output_audio_buffer.started"])
+            }
             XCTAssertEqual(voice.phase, .speaking)
             XCTAssertEqual(link.remoteVolume, 1)
 
-            link.play(["type": "input_audio_buffer.speech_started", "item_id": "barge-1"])
-            XCTAssertEqual(link.remoteVolume, 0, "Live speech_started during playback must immediately mute remote audio")
+            link.play(["type": "input_audio_buffer.speech_started", "item_id": "ack-1"])
+            XCTAssertEqual(link.remoteVolume, 0, "Speech detection must mute immediately, live=\(live)")
+            XCTAssertFalse(link.sent.contains { $0["type"] as? String == "output_audio_buffer.clear" },
+                           "Detection alone must preserve the buffered reply, live=\(live)")
+            XCTAssertEqual(voice.phase, .hearing)
+            link.play(["type": "input_audio_buffer.speech_stopped"])
+            if live {
+                link.play(["type": "session.input_transcript.delta", "item_id": "ack-1", "delta": "嗯", "start_ms": 0, "end_ms": 400])
+            } else {
+                link.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "ack-1", "transcript": "嗯"])
+            }
+            await clock.settle()
+            XCTAssertEqual(link.remoteVolume, 1, "A backchannel must restore the existing reply, live=\(live)")
+            XCTAssertFalse(link.sent.contains { $0["type"] as? String == "output_audio_buffer.clear" },
+                           "A backchannel cannot recover audio after a clear, live=\(live)")
+            XCTAssertEqual(voice.phase, .speaking)
+            XCTAssertFalse(voice.interrupted, "A backchannel must not mark the old reply interrupted, live=\(live)")
+
+            link.play(["type": "input_audio_buffer.speech_started", "item_id": "barge-2"])
+            XCTAssertEqual(link.remoteVolume, 0)
+            if live {
+                link.play(["type": "session.input_transcript.delta", "item_id": "barge-2", "delta": "Check the weather instead", "start_ms": 1000, "end_ms": 1600])
+            } else {
+                link.play(["type": "input_audio_buffer.speech_stopped"],
+                          ["type": "conversation.item.input_audio_transcription.completed", "item_id": "barge-2", "transcript": "Check the weather instead"])
+            }
+            XCTAssertEqual(link.remoteVolume, 0, "Confirmed interruption must stay muted, live=\(live)")
             XCTAssertTrue(link.sent.contains { $0["type"] as? String == "output_audio_buffer.clear" },
-                          "Live speech_started during playback must clear output audio buffer")
+                          "A substantive transcript must clear the old reply, live=\(live)")
             XCTAssertEqual(voice.phase, .hearing)
             XCTAssertTrue(voice.interrupted)
 
-            // Once old playback finishes draining, remote audio restores for the next reply.
-            link.remoteSpeech = false
-            for _ in 0..<3 { await clock.advance(0.2) }
-            XCTAssertEqual(link.remoteVolume, 1, "Live remote volume must restore once interrupted playback has drained")
-        }
-
-        // 3. Standard Realtime path: input_audio_buffer.speech_started during .speaking immediately mutes and clears output buffer.
-        do {
-            let clock = FakeTime()
-            let (voice, currentLink) = makeVoice(time: clock)
-            defer { voice.stop() }
-            await voice.start()
-            let link = currentLink()
-            link.play(["type": "session.created"],
-                      ["type": "response.created", "response": ["id": "r1"]],
-                      ["type": "output_audio_buffer.started"])
-            XCTAssertEqual(voice.phase, .speaking)
-            XCTAssertEqual(link.remoteVolume, 1)
-
-            link.play(["type": "input_audio_buffer.speech_started"])
-            XCTAssertEqual(link.remoteVolume, 0, "Realtime barge-in must immediately mute residual remote audio")
-            XCTAssertTrue(link.sent.contains { $0["type"] as? String == "output_audio_buffer.clear" })
-            XCTAssertEqual(voice.phase, .hearing)
-            XCTAssertTrue(voice.interrupted)
-
-            link.play(["type": "output_audio_buffer.cleared"])
-            XCTAssertEqual(link.remoteVolume, 1, "Realtime remote volume must restore once output buffer clears")
+            if live {
+                for _ in 0..<8 { await clock.advance(0.2) }
+                XCTAssertEqual(link.remoteVolume, 0)
+                XCTAssertEqual(voice.phase, .hearing)
+                link.remoteSpeech = false
+                for _ in 0..<3 { await clock.advance(0.2) }
+            } else {
+                link.play(["type": "output_audio_buffer.cleared"])
+            }
+            XCTAssertEqual(link.remoteVolume, 1, "Audio must recover once the interrupted reply drains, live=\(live)")
         }
     }
 
