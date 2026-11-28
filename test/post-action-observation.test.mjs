@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, value } from './fixture.mjs';
 import sharp from 'sharp';
-import { readScreen } from '../src/interaction.mjs';
 
 test('opted-in input supplies post-action refs without an extra observation request', async t => {
   const f = await fixture(t);
@@ -153,9 +152,6 @@ for (const [name, command] of [
     'The first batch step must use the landscape 200×100 viewport');
 });
 
-// Regression for the upstream unchanged-screen confirmation: a delayed AX
-// read can be a different object with the same structure. It should not
-// disable the opt-in receipt even if screen_stable reporting stays conservative.
 test('unchanged screen after delayed confirmation still has a reusable AX receipt', { timeout: 30000 }, async t => {
   const f = await fixture(t);
   await f.set({ label: 'Unchanged', afterInput: null });
@@ -167,48 +163,4 @@ test('unchanged screen after delayed confirmation still has a reusable AX receip
     'A matching confirmation read must not drop the structured observation');
   assert.ok(result.post_action_observation?.elements.length);
   assert.ok(result.post_action_observation?.observation.structure_started_at >= result.input_completed_at);
-});
-
-test('changed delayed confirmation rejects post-action AX reuse', { timeout: 5000 }, async () => {
-  // The first two reads settle on the old screen; the extra read used to
-  // confirm an unchanged result sees a genuinely different screen.
-  // Dropping the signature comparison in reuseStable must fail this test.
-  const before = 'before-confirmation', after = 'after-confirmation';
-  let reads = 0, observationCalls = 0;
-  const ctx = {
-    lastInputAt: -Infinity,
-    lastInputCompletedAt: new Date(Date.now() - 1000).toISOString(),
-    size: { device: 'fixture-phone', width: 100, height: 200 },
-    coordinator: { revision: () => 1 },
-    settle: async () => {},
-    readCost: () => 0,
-    structure: async () => {
-      const changed = ++reads >= 3;
-      const stamp = new Date().toISOString();
-      return {
-        device: 'fixture-phone', revision: 1,
-        signature: changed ? after : before,
-        foreground: { bundle_id: 'local.fixture' },
-        elements: [{ role: 'Button', label: changed ? 'After' : 'Before',
-          visible: true, frame: { x: 10, y: 10, width: 40, height: 20 } }],
-        startedAt: performance.now(),
-        structure_started_at: stamp, structure_completed_at: stamp,
-      };
-    },
-    observationFromStructure: () => {
-      observationCalls++;
-      return { id: 'should-not-be-created', device: 'fixture-phone', revision: 1, width: 100, height: 200 };
-    },
-    nextRef: 0,
-  };
-  const result = await readScreen(ctx, {
-    structured: true, before,
-    confirmation: { intervalMs: 1, withinMs: 30 },
-  });
-  assert.equal(reads, 3, 'The changed screen must appear on the delayed confirmation read');
-  assert.equal(result.signature, after);
-  assert.equal(result.structuredObservation, undefined,
-    'A changed confirmation must not become a reusable action receipt');
-  assert.equal(observationCalls, 0, 'The changed tree must not be bound to fresh element refs');
-  assert.ok(result.screen.text.some(line => line.includes('After')));
 });

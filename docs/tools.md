@@ -16,7 +16,7 @@ The default `tools/list` response contains the tools for phone tasks. Tool names
 | Use | Default tools |
 | --- | --- |
 | Service and devices | `poki_mcp_status`, `list_devices`, `select_device` |
-| Read the screen | `list_elements`, `take_screenshot`, `get_foreground_app` |
+| Read the screen | `list_elements`, `take_screenshot`, `save_screenshot`, `get_foreground_app` |
 | Apps and URLs | `list_apps`, `launch_app`, `terminate_app`, `open_url` |
 | Touch and input | `tap`, `tap_text`, `long_press`, `double_tap`, `drag`, `pinch`, `fill`, `type_text`, `scroll`, `scroll_to`, `swipe`, `press_key`, `go_back`, `hide_keyboard`, `press_button`, `get_clipboard` |
 | Wait, prompts, and batches | `wait_for`, `handle_alert`, `batch_commands` |
@@ -123,7 +123,7 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 | Coordination | `release_device` | Release this session’s device lease after cancelling accepted work and awaiting recording/location cleanup. |
 | Coordination | `cancel_device` | Stop all previously accepted work and background recording/location in this MCP session, including calls without a lease. |
 | Screen | `observe_device` | Capture one image with its structured observation, non-reused element references and prompt check. |
-| Screen | `take_screenshot` | Capture the current display and return a JPEG image with screen dimensions and a prompt warning check. |
+| Screen | `take_screenshot` | Capture the current display. Attach an image, save it on the MCP host, or do both. |
 | Screen | `save_screenshot` | Save a full-resolution screenshot to an absolute PNG or JPEG path or directory. |
 | Screen | `start_recording` | Start recording the selected device display to an H.264 movie. |
 | Screen | `stop_recording` | Finalize the session recording and inspect the saved movie before returning its path and media details. |
@@ -181,8 +181,9 @@ Accessibility can miss changes that affect only pixels, such as Calculator's dis
 ## Coordinates, Screenshots, and Recordings
 
 - All coordinates and element frames use **logical screen points**.
-- `take_screenshot` returns JPEG data. Passing `max_width` scales the returned image without changing logical interaction coordinates.
-- `save_screenshot` writes a full-resolution PNG or JPEG based on the file extension.
+- `take_screenshot` attaches a JPEG by default. Set `max_width` to resize it, or set `full_resolution:true` to attach the original PNG. Interaction coordinates use logical points in either mode.
+- Pass `path` to save the capture on the MCP host and receive the path and byte count. Set `include_image:true` to also attach an image from the same capture. These arguments work in `batch_commands`.
+- `save_screenshot` writes a full-resolution PNG or JPEG based on the file extension. Both tools require `overwrite:true` to replace an existing file.
 - The `lossless` parameter does not alter either screenshot rule.
 - On a simulator, the screen's rounded corners and Dynamic Island area are black in screenshots. Without this mask, that area differs between frames of a still screen, which would expire element refs.
 - Default output directories:
@@ -215,7 +216,11 @@ This arbitration exists only in **one shared Poki daemon**. Different daemon ins
 
 `observe_device` returns structured elements and a prompt check, plus a PNG by default. `include_image:false` omits the PNG attachment but still captures a frame and checks OCR. For selected single actions, `return_observation:true` reuses the stable **post-input** AX tree with short-lived element refs and an AX-based prompt check; it does **not** add a screenshot or image OCR by default. Fast routes additionally request `post_action_ocr:true`, which captures an image **after** AX stabilization and performs OCR prompt checking. The sources remain non-atomic and their original timestamps are preserved. Each action-bound observation must pass receipt, device/revision, time, foreground, completeness and prompt checks; otherwise Agent and routes fall back to a new `list_elements`/`observe_device` call. AX-only refs are bound to the most recently measured viewport and expire after known input, explicit later capture, session/display changes or 30 seconds. The Agent sends the model **one trimmed element list**, not both the full nested receipt and a duplicate list; full evidence remains in the verification trace. No observed state or `sent:true` alone proves task success or permits retrying uncertain input. Existing tools and callers retain their default behavior.
 
-`wait_for` uses a monotonic deadline covering capture, AX, OCR and polling. It starts no new read after that deadline, aborts in-flight external work and waits for owned processes to close. Consequently response delivery can include bounded process termination time after the deadline; the deadline is not a claim that the HTTP response arrives at the exact requested millisecond.
+`wait_for` checks accessibility before looking for image text. A tree match returns visible elements with refs for `tap` and a structure observation. The accessibility check uses the current viewport and excludes controls covered by reported overlays. Poki may capture a frame to measure the viewport. Set `include_image:true` to attach a screenshot. An OCR match includes its image unless `include_image:false`. Disappearance requires the requested text to stay absent across two reads of both sources. Other content can change during the wait. An empty successful OCR read can confirm absence. On timeout, the reply includes the last similar text from each source and time spent on accessibility, capture, OCR and polling. The deadline covers all four stages. Owned processes are stopped before the result returns, which can add time to the response.
+
+After input, Poki samples the accessibility tree and uses image comparisons when the tree is empty or unreadable. It requires at least 500 ms since input and 250 ms without a detected change. An active loading indicator or busy state restarts the quiet period. It allows up to 1.4 seconds for a change to appear on the previous screen, or 2.5 seconds when an app is expected to come forward. The stability window is 3 seconds by default and can expand for two measured slow reads, within the readback deadline. A recent stable tree can serve one later read on the same device and revision.
+
+A tap using a ref from `wait_for` or a post-action accessibility observation measures the viewport again and locates the same control on a fresh tree. If the tree still describes the old orientation, Poki retries the lookup once. A missing or ambiguous match stops before input.
 
 Input receipts retain `sent`, `text_verified`, `submit_sent` and other confirmed facts when recording recovery fails. The separate `recording` object reports recovery failure. Unconfirmed delivery remains `outcome: "unknown"`; it is never automatically replayed. Automatic recovery is suspended while native input intentionally interrupts the media stream. Normal reconnection after an explicit input is counted as `input_reconnects` and does not consume the automatic retry budget, so healthy multi-step recording is not limited to three inputs. Only background recovery from unexpected stream disconnects consumes `automatic_retries`, at most three per recording lifetime. Each reconnect still has a five-second first-frame deadline. `reconnects` is the total of these two counters. A failed reconnect leaves an explicit error; stop/start a recording to begin a new automatic budget. Stop, release, cancellation and session cleanup disable retries and await owned recording processes, and cleanup reports finalization errors separately.
 
