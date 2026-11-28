@@ -26,14 +26,14 @@ final class VoiceLaunchTests: XCTestCase {
 
         voice.stop()
         _ = try await intent.perform()
-        XCTAssertEqual(linesAfter(mark).filter { $0.contains("stage=receipt") }.count, 1,
+        XCTAssertEqual(timingLinesAfter(mark).filter { field("event", in: $0) == "launch_receipt" }.count, 1,
                        "Redelivering the same intent must not issue another voice request after End")
         XCTAssertFalse(voice.isOn)
 
         let restarted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in voice.phase == .listening }, object: nil)
         _ = try await TalkToPokiIntent().perform()
         await fulfillment(of: [restarted], timeout: 8)
-        XCTAssertEqual(linesAfter(mark).filter { $0.contains("result=started") }.count, 2)
+        XCTAssertEqual(linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=started") }.count, 2)
         #endif
     }
 
@@ -73,15 +73,21 @@ final class VoiceLaunchTests: XCTestCase {
         let rejectedIDs = Set(rejected.compactMap { field("request", in: $0) })
         XCTAssertEqual(rejectedIDs.count, 2)
         for request in rejectedIDs {
-            XCTAssertEqual(stages(for: request).compactMap { field("stage", in: $0) }, ["receipt"])
+            XCTAssertEqual(stages(for: request).compactMap { field("event", in: $0) }, ["launch_receipt"])
+            let timingOutcome = try XCTUnwrap(outcomeTiming(for: request))
+            XCTAssertEqual(field("session", in: timingOutcome), "none")
+            XCTAssertEqual(field("flow", in: timingOutcome), "voice")
+            XCTAssertEqual(field("turn", in: timingOutcome), "0")
+            XCTAssertEqual(field("result", in: timingOutcome), "invalidated")
+            XCTAssertEqual(field("reason", in: timingOutcome), "voice_epoch_changed")
         }
-        XCTAssertEqual(linesAfter(mark).filter { $0.contains("result=started") }.count, 1)
+        XCTAssertEqual(linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=started") }.count, 1)
         XCTAssertFalse(voice.isOn)
 
         let restarted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in voice.phase == .listening }, object: nil)
         _ = try await TalkToPokiIntent().perform()
         await fulfillment(of: [restarted], timeout: 8)
-        XCTAssertEqual(linesAfter(mark).filter { $0.contains("result=started") }.count, 2)
+        XCTAssertEqual(linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=started") }.count, 2)
         #endif
     }
 
@@ -116,8 +122,12 @@ final class VoiceLaunchTests: XCTestCase {
 
         let outcome = try XCTUnwrap(linesAfter(mark).first { $0.contains("result=shown reason=expired") })
         let request = try XCTUnwrap(field("request", in: outcome))
-        XCTAssertEqual(stages(for: request).compactMap { field("stage", in: $0) }, ["receipt", "pageShown"])
-        XCTAssertEqual(linesAfter(mark).filter { $0.contains("result=started") }.count, 0)
+        XCTAssertEqual(stages(for: request).compactMap { field("event", in: $0) }, ["launch_receipt", "launch_page_shown"])
+        let timingOutcome = try XCTUnwrap(outcomeTiming(for: request))
+        XCTAssertEqual(field("session", in: timingOutcome), "none")
+        XCTAssertEqual(field("result", in: timingOutcome), "shown")
+        XCTAssertEqual(field("reason", in: timingOutcome), "expired")
+        XCTAssertEqual(linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=started") }.count, 0)
         XCTAssertFalse(voice.isOn)
         #endif
     }
@@ -145,28 +155,31 @@ final class VoiceLaunchTests: XCTestCase {
 
         let log = linesAfter(mark)
         let started = try XCTUnwrap(log.first { line in
-            line.contains("result=started") && line.range(of: #"request=[0-9A-Fa-f-]{36}"#, options: .regularExpression) != nil
+            line.contains("launch request=") && line.contains("result=started") && line.range(of: #"request=[0-9A-Fa-f-]{36}"#, options: .regularExpression) != nil
         }, "The activity log must record the request that started the talk")
-        let session = String(try XCTUnwrap(started.split(separator: " ").last))
-        XCTAssertTrue(session.hasPrefix("session="))
+        let session = try XCTUnwrap(field("session", in: started))
         voice.muted = true
         let returned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.linesAfter(mark).filter { $0.contains("result=returned") }.count == 2
+            self.linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=returned") }.count == 2
         }, object: nil)
 
         _ = try await TalkToPokiIntent().perform()
         _ = try await TalkToPokiIntent(fromControl: true).perform()
         await fulfillment(of: [returned], timeout: 3)
 
-        let returns = linesAfter(mark).filter { $0.contains("result=returned") }
-        XCTAssertTrue(returns.allSatisfy { $0.hasSuffix(session) })
+        let returns = linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=returned") }
+        XCTAssertTrue(returns.allSatisfy { field("session", in: $0) == session })
         XCTAssertTrue(returns.contains { $0.contains("source=appShortcut") })
         XCTAssertTrue(returns.contains { $0.contains("source=control") })
         for outcome in returns {
             let request = try XCTUnwrap(field("request", in: outcome))
-            XCTAssertEqual(stages(for: request).compactMap { field("stage", in: $0) }, ["receipt", "pageShown"])
+            XCTAssertEqual(stages(for: request).compactMap { field("event", in: $0) }, ["launch_receipt", "launch_page_shown"])
+            let timingOutcome = try XCTUnwrap(outcomeTiming(for: request))
+            XCTAssertEqual(field("session", in: timingOutcome), session)
+            XCTAssertEqual(field("result", in: timingOutcome), "returned")
+            XCTAssertEqual(field("reason", in: timingOutcome), "active_talk")
         }
-        XCTAssertEqual(linesAfter(mark).filter { $0.contains("result=started") }.count, 1)
+        XCTAssertEqual(linesAfter(mark).filter { $0.contains("launch request=") && $0.contains("result=started") }.count, 1)
         XCTAssertTrue(voice.muted)
         XCTAssertTrue(voice.isOn)
         #endif
@@ -203,10 +216,10 @@ final class VoiceLaunchTests: XCTestCase {
         entry.ask(expired)
         await fulfillment(of: [shown], timeout: 3)
 
-        let results = AppLog.shared.lines.filter { $0.contains("request=\(pending.id)") && $0.contains("result=") }
+        let results = AppLog.shared.lines.filter { $0.contains("launch request=\(pending.id)") && $0.contains("result=") }
         XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(stages(for: pending.id.uuidString).compactMap { field("stage", in: $0) }, ["receipt"])
-        XCTAssertEqual(stages(for: expired.id.uuidString).compactMap { field("stage", in: $0) }, ["receipt", "pageShown"])
+        XCTAssertEqual(stages(for: pending.id.uuidString).compactMap { field("event", in: $0) }, ["launch_receipt"])
+        XCTAssertEqual(stages(for: expired.id.uuidString).compactMap { field("event", in: $0) }, ["launch_receipt", "launch_page_shown"])
         XCTAssertFalse(voice.isOn)
         #endif
     }
@@ -226,22 +239,40 @@ final class VoiceLaunchTests: XCTestCase {
         }
         let mark = markLog()
         let utterance = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.linesAfter(mark).contains { $0.contains("stage=firstUtterance") }
+            self.timingLinesAfter(mark).contains { self.field("event", in: $0) == "launch_first_utterance" }
         }, object: nil)
 
         _ = try await TalkToPokiIntent().perform()
         await fulfillment(of: [utterance], timeout: 12)
 
-        let started = try XCTUnwrap(linesAfter(mark).first { $0.contains("result=started") })
+        let started = try XCTUnwrap(linesAfter(mark).first { $0.contains("launch request=") && $0.contains("result=started") })
         let request = try XCTUnwrap(field("request", in: started))
         let session = try XCTUnwrap(field("session", in: started))
         let timing = stages(for: request)
-        XCTAssertEqual(timing.compactMap { field("stage", in: $0) }, ["receipt", "pageShown", "transportConnected", "firstUtterance"])
-        XCTAssertEqual(timing.compactMap { field("session", in: $0) }, [session, session])
-        let elapsed = timing.compactMap { field("elapsedMS", in: $0).flatMap(Int.init) }
+        XCTAssertEqual(timing.compactMap { field("event", in: $0) }, [
+            "launch_receipt",
+            "launch_page_shown",
+            "launch_transport_connected",
+            "launch_first_utterance",
+        ])
+        XCTAssertEqual(timing.compactMap { field("session", in: $0) }, ["none", "none", session, session])
+        XCTAssertTrue(timing.allSatisfy {
+            field("flow", in: $0) == "voice" && field("turn", in: $0) == "0" && field("source", in: $0) == "app_shortcut"
+        })
+        let timestamps = timing.compactMap { field("t_ms", in: $0).flatMap(UInt64.init) }
+        let elapsed = timing.compactMap { field("since_receipt_ms", in: $0).flatMap(Int.init) }
+        XCTAssertEqual(timestamps.count, 4)
+        XCTAssertEqual(timestamps, timestamps.sorted())
         XCTAssertEqual(elapsed.count, 4)
         XCTAssertEqual(elapsed.first, 0)
         XCTAssertEqual(elapsed, elapsed.sorted())
+        let baseTimestamp = try XCTUnwrap(timestamps.first)
+        XCTAssertEqual(elapsed, timestamps.map { Int($0 - baseTimestamp) })
+        let timingOutcome = try XCTUnwrap(outcomeTiming(for: request))
+        XCTAssertEqual(field("session", in: timingOutcome), session)
+        XCTAssertEqual(field("result", in: timingOutcome), "started")
+        XCTAssertEqual(field("reason", in: timingOutcome), "new_talk")
+        XCTAssertFalse(linesAfter(mark).contains { $0.contains("request=\(request)") && $0.contains("stage=") })
         #endif
     }
 
@@ -276,7 +307,11 @@ final class VoiceLaunchTests: XCTestCase {
         XCTAssertTrue(linkLines.contains { $0.contains("[app] opened by link poki://voice") })
         let linkOutcome = try XCTUnwrap(linkLines.first { $0.contains("source=link result=shown reason=link") })
         let linkRequest = try XCTUnwrap(field("request", in: linkOutcome))
-        XCTAssertEqual(stages(for: linkRequest).compactMap { field("stage", in: $0) }, ["receipt", "pageShown"])
+        XCTAssertEqual(stages(for: linkRequest).compactMap { field("event", in: $0) }, ["launch_receipt", "launch_page_shown"])
+        let linkTimingOutcome = try XCTUnwrap(outcomeTiming(for: linkRequest))
+        XCTAssertEqual(field("source", in: linkTimingOutcome), "link")
+        XCTAssertEqual(field("result", in: linkTimingOutcome), "shown")
+        XCTAssertEqual(field("reason", in: linkTimingOutcome), "link")
         XCTAssertFalse(voice.isOn)
 
         let blockedMark = markLog()
@@ -290,7 +325,10 @@ final class VoiceLaunchTests: XCTestCase {
             $0.contains("source=appShortcut result=blocked reason=voiceNotConfigured")
         })
         let blockedRequest = try XCTUnwrap(field("request", in: blockedOutcome))
-        XCTAssertEqual(stages(for: blockedRequest).compactMap { field("stage", in: $0) }, ["receipt", "pageShown"])
+        XCTAssertEqual(stages(for: blockedRequest).compactMap { field("event", in: $0) }, ["launch_receipt", "launch_page_shown"])
+        let blockedTimingOutcome = try XCTUnwrap(outcomeTiming(for: blockedRequest))
+        XCTAssertEqual(field("result", in: blockedTimingOutcome), "blocked")
+        XCTAssertEqual(field("reason", in: blockedTimingOutcome), "voice_not_configured")
         XCTAssertFalse(voice.isOn)
         #endif
     }
@@ -322,7 +360,10 @@ final class VoiceLaunchTests: XCTestCase {
         let added = linesAfter(mark)
         let blockedOutcome = try XCTUnwrap(added.first { $0.contains("source=appShortcut result=blocked reason=taskRunning") })
         let blockedRequest = try XCTUnwrap(field("request", in: blockedOutcome))
-        XCTAssertEqual(stages(for: blockedRequest).compactMap { field("stage", in: $0) }, ["receipt", "pageShown"])
+        XCTAssertEqual(stages(for: blockedRequest).compactMap { field("event", in: $0) }, ["launch_receipt", "launch_page_shown"])
+        let blockedTimingOutcome = try XCTUnwrap(outcomeTiming(for: blockedRequest))
+        XCTAssertEqual(field("result", in: blockedTimingOutcome), "blocked")
+        XCTAssertEqual(field("reason", in: blockedTimingOutcome), "task_running")
         XCTAssertFalse(added.contains { $0.contains("result=started") })
         XCTAssertFalse(voice.isOn)
         #endif
@@ -340,8 +381,31 @@ final class VoiceLaunchTests: XCTestCase {
         return Array(lines.dropFirst(index + 1))
     }
 
+    private func timingLinesAfter(_ marker: String) -> [String] {
+        linesAfter(marker).filter { $0.contains("[voice-timing]") }
+    }
+
     private func stages(for request: String) -> [String] {
-        AppLog.shared.lines.filter { field("request", in: $0) == request && field("stage", in: $0) != nil }
+        let stageEvents: Set<String> = [
+            "launch_receipt",
+            "launch_page_shown",
+            "launch_transport_connected",
+            "launch_input_ready",
+            "launch_first_utterance",
+        ]
+        return AppLog.shared.lines.filter {
+            $0.contains("[voice-timing]")
+                && field("request_id", in: $0) == request
+                && field("event", in: $0).map(stageEvents.contains) == true
+        }
+    }
+
+    private func outcomeTiming(for request: String) -> String? {
+        AppLog.shared.lines.last {
+            $0.contains("[voice-timing]")
+                && field("request_id", in: $0) == request
+                && field("event", in: $0) == "launch_outcome"
+        }
     }
 
     private func field(_ name: String, in line: String) -> String? {

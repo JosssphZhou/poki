@@ -16,7 +16,7 @@ final class PokiEntry {
         let id: UUID
         let destination: Destination
         let issuedAt: Date
-        let receivedAt = ContinuousClock.now
+        let receivedUptimeMS: UInt64 = DispatchTime.now().uptimeNanoseconds / 1_000_000
         let source: Source
         let epoch: Int
 
