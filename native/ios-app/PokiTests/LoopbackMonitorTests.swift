@@ -54,6 +54,22 @@ final class LoopbackMonitorTests: XCTestCase {
         for _ in 0..<500 where !condition() { await Task.yield() }
     }
 
+    func testAnInFlightProbeDoesNotBecomeFreshJustBecauseItCompletesLate() async throws {
+        let held = HeldProbe()
+        let monitor = LoopbackMonitor(probe: { _, port, _ in await held.answer(port: port) }, observeNetwork: false)
+        monitor.check()
+        await yield { held.isWaiting }
+        let requested = Date()
+        monitor.check()
+        held.release()
+        await yield { held.calls == 2 && held.isWaiting }
+        defer { held.release() }
+
+        XCTAssertTrue(monitor.isWorking)
+        XCTAssertLessThan(try XCTUnwrap(monitor.probeStartedAt), requested)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(monitor.checkedAt), requested)
+    }
+
     func testOldProbeDoesNotStartLockdownCheckAfterNetworkChanges() async {
         var ports: [UInt16] = []
         var first: CheckedContinuation<Void, Never>?

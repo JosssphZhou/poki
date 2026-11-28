@@ -160,6 +160,28 @@ final class HistoryCapture: ObservableObject {
     private(set) var lastFailure: String?
     /// When the launcher last opened a tunnel, as its own line says: a new tunnel, not a held one.
     private(set) var lastOpenedAt: Date?
+    private var loopbackBlocked = false
+
+    var needsLoopbackRecovery: Bool { enabled && loopbackBlocked && !lockedOrDark }
+
+    func recoverLoopbackIfNeeded(_ model: AppModel) {
+        guard needsLoopbackRecovery, !model.hasOpenInProcessSession, !model.loopback.isWorking else { return }
+        Task {
+            if await model.loopbackRecovery.restore(for: .screenHistory) { HistoryBridge.hurry(30) }
+        }
+    }
+
+    func observeLoopback(connected: Bool, model: AppModel) {
+        if connected {
+            guard loopbackBlocked else { return }
+            loopbackBlocked = false
+            model.loopbackRecovery.connectionRestored(for: .screenHistory)
+            return
+        }
+        guard !loopbackBlocked else { return }
+        loopbackBlocked = true
+        recoverLoopbackIfNeeded(model)
+    }
 
     /// What the launcher says of its tunnel when asked.
     enum Tunnel: Equatable {
@@ -610,10 +632,11 @@ final class HistoryCapture: ObservableObject {
             HistoryStore.shared.note(why.rawValue)
             AppLog.shared.add("history", "run waits: \(why.rawValue)")
         }
+        if why == .noConnection, let model { observeLoopback(connected: false, model: model) }
         if status != .waiting { status = .waiting }
         // An agent's task is no accident, and neither is being on cellular, where iOS refuses the
         // local connection for as long as it lasts: nothing to turn back on.
-        if why == .noConnection, let model, !model.loopback.cellularRefused { failing() } else { failingSince = nil }
+        if why == .noConnection, let model, tracksDisconnect(model) { failing() } else { failingSince = nil }
     }
 
     /// Reads go on.
@@ -631,6 +654,16 @@ final class HistoryCapture: ObservableObject {
     /// How long reads must have failed before the owner is told. A try to open the local
     /// connection takes up to 20 seconds, so this is about three in a row.
     private static let confirmAfter: TimeInterval = 60
+
+    static func tracksDisconnect(cellularRefused: Bool, recoveryConfigured: Bool, inForeground: Bool) -> Bool {
+        !cellularRefused && (!recoveryConfigured || !inForeground)
+    }
+
+    private func tracksDisconnect(_ model: AppModel) -> Bool {
+        Self.tracksDisconnect(cellularRefused: model.loopback.cellularRefused,
+                              recoveryConfigured: loopbackBlocked && model.canAutoRecoverLoopback,
+                              inForeground: UIApplication.shared.applicationState == .active)
+    }
 
     private func failing() {
         guard !once else { return }
@@ -681,6 +714,7 @@ final class HistoryCapture: ObservableObject {
         set(why)
         ends = nil
         held = nil
+        loopbackBlocked = false
         failingSince = nil
         sayCount()
         sayTally()
@@ -797,10 +831,17 @@ final class HistoryCapture: ObservableObject {
         let line = read.line
         if let event = line["event"] as? String {
             tunnelSaid(event, line)
+            if event == "open" || event == "alive" { observeLoopback(connected: true, model: model) }
+            if event == "lost" { observeLoopback(connected: false, model: model) }
             return
         }
         // The tunnel is open: a read came through, or a held run says so.
-        if line["ok"] as? Bool == true || line["tunnel"] as? Bool == true { lastTunnelAt = Date() }
+        if line["ok"] as? Bool == true || line["tunnel"] as? Bool == true {
+            lastTunnelAt = Date()
+            observeLoopback(connected: true, model: model)
+        } else if line["tunnel"] as? Bool == false {
+            observeLoopback(connected: false, model: model)
+        }
         if let error = line["error"] as? String { lastFailure = error }
         if paused {
             // The launcher sends one line a round while it is held: the moment to look again.
@@ -841,7 +882,7 @@ final class HistoryCapture: ObservableObject {
             // The same reason is said once and counted, whatever the network: a try with no
             // tunnel comes five times a second around a change of network.
             say((line["tunnel"] as? Bool == false ? "no tunnel: " : "read failed: ") + Self.brief(error))
-            if !model.loopback.cellularRefused { failing() }
+            if tracksDisconnect(model) { failing() }
         }
         if keep(read), once { end(me, .finished) }
     }

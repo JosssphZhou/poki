@@ -566,8 +566,9 @@ private struct PairingPage: View {
     }
 
     @MainActor static func pair(_ model: AppModel) {
-        model.startPairing()
-        openSettings(model, for: .pairing)
+        Task {
+            if await model.startPairing() { openSettings(model, for: .pairing) }
+        }
     }
 
     var body: some View {
@@ -1019,4 +1020,3 @@ struct SetupStepPage: View {
         }
     }
 }
-

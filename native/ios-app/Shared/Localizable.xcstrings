@@ -42032,6 +42032,38 @@
         }
       }
     },
+    "Local Connection Not Restored" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能恢复本地连接"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未能恢復本機連線"
+          }
+        }
+      }
+    },
+    "Run the Poki Loopback shortcut or reconnect your VPN, then try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行 Poki Loopback 快捷指令，或重新连接 VPN，然后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "執行 Poki Loopback 捷徑，或重新連線 VPN，然後再試一次。"
+          }
+        }
+      }
+    },
     "Did Not Connect" : {
       "localizations" : {
         "zh-Hans" : {

@@ -6,6 +6,19 @@ import Foundation
 typealias LoopbackShortcut = HistoryReconnect
 
 extension HistoryReconnect {
+    static let recoveryReturn = URL(string: "poki://loopback-recovery")!
+
+    static var recoveryRun: URL {
+        var components = URLComponents(string: "shortcuts://x-callback-url/run-shortcut")!
+        components.queryItems = [
+            URLQueryItem(name: "name", value: "Poki Loopback"),
+            URLQueryItem(name: "x-success", value: recoveryReturn.absoluteString),
+            URLQueryItem(name: "x-cancel", value: recoveryReturn.absoluteString),
+            URLQueryItem(name: "x-error", value: recoveryReturn.absoluteString),
+        ]
+        return components.url!
+    }
+
     /// The link to open for the shortcut, noted as shown and as the owner's.
     func take(model: AppModel) -> URL {
         let link = take()

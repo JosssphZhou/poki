@@ -17,6 +17,11 @@ import UIKit
 @MainActor
 final class HistoryCollector {
     static let shared = HistoryCollector()
+    private let noteReconnect: @MainActor (Bool) -> Void
+
+    init(noteReconnect: @escaping @MainActor (Bool) -> Void = { HistoryReconnect.shared.note(worked: $0) }) {
+        self.noteReconnect = noteReconnect
+    }
 
     /// Whether Poki keeps running in the background now, so a run can outlive iOS's background time.
     var staysUp: @MainActor (AppModel) -> Bool = { $0.background.isOn }
@@ -165,37 +170,53 @@ final class HistoryCollector {
         if self.model == nil { self.model = model }
         let asked = Date()
         let capture = HistoryCapture.shared
-        guard capture.enabled else {
+        let recovery = model.loopbackRecovery
+        if !capture.enabled, !recovery.shortcutNeedsFreshConnection {
             // Nothing to keep open. The shortcut ran, which is what Setup waits for.
             AppLog.shared.add("loopback", "ready asked by \(source): Screen History is off, nothing to do")
-            HistoryReconnect.shared.note(worked: true)
+            noteReconnect(true)
             return true
         }
         answering = true
         defer { answering = false }
-        HistoryBridge.hurry(Self.catchFor)
-        ownerStopped = false
-        if !capture.isRunning {
-            startedAt = .distantPast
-            evaluate("a shortcut asked")
-        }
-        let found = await capture.tunnel(replace: false, within: 4)
-        if case .some(.alive(let ms)) = found {
-            AppLog.shared.add("loopback", "ready asked by \(source): the tunnel answers (\(ms) ms), nothing to do")
-            HistoryReconnect.shared.note(worked: true)
-            return true
-        }
-        // With Wi-Fi up iOS takes a new connection as it is.
-        if model.loopback.wifiUp {
-            if case .some(.dead) = found { _ = capture.askTunnel(replace: true) }
-            var opened = false
-            while !opened, Date().timeIntervalSince(asked) < Self.holdFor {
-                try? await Task.sleep(for: .milliseconds(100))
-                opened = capture.lastOpenedAt.map { $0 > asked } ?? false
+        if capture.enabled {
+            HistoryBridge.hurry(Self.catchFor)
+            ownerStopped = false
+            if !capture.isRunning {
+                startedAt = .distantPast
+                evaluate("a shortcut asked")
             }
-            AppLog.shared.add("loopback", "ready asked by \(source): on Wi-Fi, \(opened ? "a tunnel opened" : "no tunnel yet"), Cellular Data stays as it is")
-            HistoryReconnect.shared.note(worked: opened)
-            return true
+        }
+
+        if !recovery.shortcutNeedsFreshConnection {
+            let found = await capture.tunnel(replace: false, within: 4)
+            if !recovery.shortcutNeedsFreshConnection, case .some(.alive(let ms)) = found {
+                AppLog.shared.add("loopback", "ready asked by \(source): the tunnel answers (\(ms) ms), nothing to do")
+                noteReconnect(true)
+                return true
+            }
+            if !recovery.shortcutNeedsFreshConnection, model.loopback.wifiUp {
+                if case .some(.dead) = found { _ = capture.askTunnel(replace: true) }
+                var opened = false
+                while !opened, !recovery.shortcutNeedsFreshConnection, Date().timeIntervalSince(asked) < Self.holdFor {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    opened = capture.lastOpenedAt.map { $0 > asked } ?? false
+                }
+                if !recovery.shortcutNeedsFreshConnection {
+                    AppLog.shared.add("loopback", "ready asked by \(source): on Wi-Fi, \(opened ? "a tunnel opened" : "no tunnel yet"), Cellular Data stays as it is")
+                    noteReconnect(opened)
+                    return true
+                }
+            }
+        }
+        if recovery.shortcutNeedsFreshConnection {
+            let worked = await recovery.checkFreshConnection(within: .seconds(6))
+            AppLog.shared.add("loopback", "ready asked by \(source): a new connection \(worked ? "answers" : "does not answer")")
+            if worked {
+                noteReconnect(true)
+                return true
+            }
+            if model.loopback.wifiUp { return false }
         }
         var steady = false
         while !steady, Date().timeIntervalSince(asked) < Self.readyWithin {
@@ -214,6 +235,10 @@ final class HistoryCollector {
     func reconnectSoon(_ model: AppModel, by source: String) async -> Bool {
         if self.model == nil { self.model = model }
         let capture = HistoryCapture.shared
+        if model.loopbackRecovery.shortcutNeedsFreshConnection {
+            if capture.enabled { HistoryBridge.hurry(Self.catchFor) }
+            return await reconnectFresh(model, by: source)
+        }
         guard capture.enabled else { return await reconnect(model, by: source) }
         let asked = Date()
         answering = true
@@ -230,16 +255,19 @@ final class HistoryCollector {
         var restarted = false
         var looks = 0
         while Date().timeIntervalSince(asked) < Self.holdFor {
+            if model.loopbackRecovery.shortcutNeedsFreshConnection {
+                return await reconnectFresh(model, by: source)
+            }
             if let open = capture.lastOpenedAt, open > asked {
                 AppLog.shared.add("loopback", "reconnect asked by \(source): \(found.isEmpty ? "a tunnel" : found + ", a new one") opened after \(String(format: "%.1f", Date().timeIntervalSince(asked))) s (\(before))")
-                HistoryReconnect.shared.note(worked: true)
+                noteReconnect(true)
                 return true
             }
             if found.isEmpty, let check, let answer = capture.answer(to: check) {
                 switch answer {
                 case .alive(let ms):
                     AppLog.shared.add("loopback", "reconnect asked by \(source): the tunnel answers (\(ms) ms), kept (\(before))")
-                    HistoryReconnect.shared.note(worked: true)
+                    noteReconnect(true)
                     return true
                 case .dead(let why, let givenUp):
                     found = "the old tunnel did not answer (\(why))"
@@ -265,7 +293,7 @@ final class HistoryCollector {
             try? await Task.sleep(for: .milliseconds(100))
         }
         AppLog.shared.add("loopback", "reconnect asked by \(source): \(found.isEmpty ? "no answer" : found), none opened in \(Int(Self.holdFor)) s (\(before), now \(network(model))), last reason: \(HistoryCapture.brief(capture.lastFailure ?? "none given"))")
-        HistoryReconnect.shared.note(worked: false)
+        noteReconnect(false)
         return false
     }
 
@@ -275,15 +303,13 @@ final class HistoryCollector {
     func reconnect(_ model: AppModel, by source: String) async -> Bool {
         if self.model == nil { self.model = model }
         guard !HistoryCapture.shared.enabled else { return await reconnectSoon(model, by: source) }
-        let asked = Date()
-        model.loopback.check()
-        while Date().timeIntervalSince(asked) < 6 {
-            try? await Task.sleep(for: .milliseconds(300))
-            if let checked = model.loopback.checkedAt, checked > asked { break }
-        }
-        let worked = model.loopback.isWorking
-        AppLog.shared.add("loopback", "reconnect asked by \(source): Screen History is off, the local connection \(worked ? "answers" : "does not answer")")
-        HistoryReconnect.shared.note(worked: worked)
+        return await reconnectFresh(model, by: source)
+    }
+
+    private func reconnectFresh(_ model: AppModel, by source: String) async -> Bool {
+        let worked = await model.loopbackRecovery.checkFreshConnection(within: .seconds(6))
+        AppLog.shared.add("loopback", "reconnect asked by \(source): a new connection \(worked ? "answers" : "does not answer")")
+        noteReconnect(worked)
         return worked
     }
 
@@ -300,6 +326,7 @@ final class HistoryCollector {
         // shortcut's action), and the silent audio mixes with other sound, so it may start there.
         hold(model, capture.enabled)
         model.background.ensure(reason)
+        if !ownerStopped { capture.recoverLoopbackIfNeeded(model) }
         guard !capture.isRunning else { idle = ""; return }
         let why: String? =
             !capture.enabled ? "Screen History is off"
