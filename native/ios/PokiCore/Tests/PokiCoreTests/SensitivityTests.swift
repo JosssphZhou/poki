@@ -527,4 +527,55 @@ final class SensitivityTests: XCTestCase {
             "deleting (\"删除\")"
         )
     }
+
+    func testVoiceStepReasonMatchesApprovalsRulesWithoutDuplicatingWordLists() {
+        let rules = SensitivityRules()
+        XCTAssertTrue(rules.isGuardedApp("com.apple.passbook"))
+        XCTAssertTrue(rules.isCallingApp("com.apple.MOBILEPHONE"))
+        XCTAssertTrue(rules.isMessagingApp("com.apple.mobilesms"))
+        XCTAssertFalse(rules.isGuardedApp("com.apple.mobilenotes"))
+
+        XCTAssertEqual(
+            rules.voiceStepReason(label: "发送", appBundleID: "com.tencent.xin"),
+            "sending a message (\"发送\")"
+        )
+        XCTAssertEqual(
+            rules.voiceStepReason(label: "Send", appBundleID: "com.apple.mobilesms"),
+            "sending a message (\"send\")"
+        )
+        XCTAssertNotNil(
+            rules.voiceStepReason(label: nil, typing: true, typedText: "hello\n", appBundleID: "com.tencent.xin")
+        )
+        XCTAssertNotNil(
+            rules.voiceStepReason(label: nil, key: "return", appBundleID: "com.tencent.xin")
+        )
+        XCTAssertNil(
+            rules.voiceStepReason(label: nil, elementType: "SearchField", key: "return", appBundleID: "com.tencent.xin")
+        )
+        XCTAssertEqual(
+            rules.voiceStepReason(label: "确认支付", appBundleID: "com.apple.mobilenotes"),
+            "a payment (\"支付\")"
+        )
+        XCTAssertEqual(
+            rules.voiceStepReason(label: "删除", appBundleID: "com.apple.mobilenotes"),
+            "deleting (\"删除\")"
+        )
+        XCTAssertNotNil(
+            rules.voiceStepReason(label: "Open", appBundleID: "com.apple.passbook")
+        )
+        XCTAssertNotNil(
+            rules.voiceStepReason(label: "Alice", appBundleID: "com.apple.mobilephone")
+        )
+        XCTAssertEqual(
+            rules.voiceStepReason(label: nil, typing: true, typedText: "secret", secureField: true),
+            "typing into a password field"
+        )
+        XCTAssertEqual(
+            rules.voiceStepReason(label: nil, key: "return", secureOnScreen: true),
+            "submitting a password field"
+        )
+        XCTAssertNil(
+            rules.voiceStepReason(label: "小王", appBundleID: "com.tencent.xin")
+        )
+    }
 }

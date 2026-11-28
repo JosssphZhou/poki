@@ -4,9 +4,10 @@ import PokiCore
 
 /// Agents › Approvals. A step PokiCore's rules hold back (a payment, a message, a delete) is answered
 /// one of three ways, by the two selectors there:
-/// - Sensitivity Permissive, Balanced or Strict: in Poki's own chat and live call the chat model checks
-///   the step against what the owner said, and allows it or not (auto-approval). The chat shows the
-///   decision on a card and the Activity Log keeps it.
+/// - Sensitivity Permissive, Balanced or Strict: in Poki's own typed chat the chat model checks
+///   the step against what the owner said, and allows it or not (auto-approval). Voice sessions
+///   (including dictation) never auto-approve and always wait for the owner's on-device confirmation.
+///   The chat shows the decision on a card and the Activity Log keeps it.
 /// - A step the model did not allow, and every step at Ask All, is the owner's: With Message
 ///   Reply, the step is refused and the agent asks in words, and the owner's yes in the chat (or in the
 ///   notification's reply field) lets the next try through; With Confirmation, an Allow / Don't Allow
@@ -69,6 +70,16 @@ enum ApprovalClassifier {
         var belongsToOwner: Bool {
             switch self { case .chat, .voice: true; case .outsideAgent, .unknown: false }
         }
+        var isVoice: Bool {
+            if case .voice = self { return true }
+            return false
+        }
+        /// Only typed chat sessions may use model auto-approval. Voice sessions (including
+        /// dictation) always require the owner's on-device confirmation.
+        var allowsModelApproval: Bool {
+            if case .chat = self { return true }
+            return false
+        }
         var routingSessionID: String? {
             switch self { case .chat(let id), .voice(let id): id; case .outsideAgent, .unknown: nil }
         }
@@ -77,20 +88,21 @@ enum ApprovalClassifier {
     static func origin(voiceOn: Bool, outsideSession: String?) -> Origin {
         if let outsideSession { return .outsideAgent(outsideSession) }
         if let delegatedID = AskPoki.liveSessionID { return .outsideAgent(delegatedID) }
+        if voiceOn { return .voice(AskPoki.chat?.sessionID ?? "voice") }
         if let chat = AskPoki.chat, chat.running { return .chat(chat.sessionID) }
-        if voiceOn, let chat = AskPoki.chat { return .voice(chat.sessionID) }
         return .unknown
     }
 
     static func route(_ approval: PendingApproval, voiceOn: Bool, origin suppliedOrigin: Origin? = nil, storage: PokiStorage = .live) -> Route {
         if let known = routes[approval.id] { return known }
         let mode = Self.mode(in: storage)
-        let own = (suppliedOrigin ?? origin(voiceOn: voiceOn, outsideSession: approval.sourceSession)).belongsToOwner
-        let reply = mode == .reply && own
+        let resolvedOrigin = suppliedOrigin ?? origin(voiceOn: voiceOn, outsideSession: approval.sourceSession)
+        let canUseModel = resolvedOrigin.allowsModelApproval && !voiceOn
+        let reply = mode == .reply && canUseModel
         let route: Route
         if requiresOwner(approval) { route = .owner }
         else if mode == .off { route = .allow }
-        else if own, hasModel(in: storage), reply || Level.saved(in: storage) != .everything { route = .model(reply: reply) }
+        else if canUseModel, hasModel(in: storage), reply || Level.saved(in: storage) != .everything { route = .model(reply: reply) }
         else { route = .owner }
         if routes.count > 200 { routes.removeAll(); handed.removeAll() }
         routes[approval.id] = route
@@ -173,20 +185,20 @@ enum ApprovalClassifier {
     }
 
     private static func ask(_ approval: PendingApproval, level: Level, voice: [VoiceLine], origin: Origin, storage: PokiStorage = .live) async -> Verdict {
-        guard origin.belongsToOwner else { return Verdict(allowed: false, reason: "outside approvals require owner confirmation") }
+        guard origin.allowsModelApproval else {
+            return Verdict(
+                allowed: false,
+                reason: origin.isVoice
+                    ? "spoken confirmations cannot approve sensitive steps"
+                    : "outside approvals require owner confirmation"
+            )
+        }
         let provider = ModelKeys.selectedProvider(in: storage)
         guard ModelKeys.hasUsableKey(in: storage),
               let model = provider.piModel(ModelKeys.selectedModel(in: storage), storage: storage) else {
             return Verdict(allowed: false, reason: "no chat model to ask")
         }
-        var said = origin.routingSessionID == AskPoki.chat?.sessionID ? (AskPoki.chat?.ownerContext ?? []) : []
-        for line in voice.suffix(12) {
-            switch line.role {
-            case .you: said.append(.init(text: "Owner (live call): \(line.text)"))
-            case .poki: said.append(.init(text: "Assistant (live call): \(line.text)"))
-            default: break
-            }
-        }
+        let said = origin.routingSessionID == AskPoki.chat?.sessionID ? (AskPoki.chat?.ownerContext ?? []) : []
         let context = boundedContext(said)
         let instructions = """
         You decide, fast, whether an AI agent driving the owner's iPhone may do one sensitive step. \

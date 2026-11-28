@@ -449,4 +449,602 @@ final class VoiceUtteranceGoalTests: XCTestCase {
         voice.stop()
     }
     #endif
+
+    func testVoiceOriginNeverAutoApprovesSensitiveStepsEvenWithSpokenAffirmation() async throws {
+        try ModelKeys.save("sk-test-approval-boundary", for: .openai, storage: storage.storage)
+        ModelKeys.setSelectedProvider(.openai, in: storage.storage)
+        ModelKeys.setSelectedModel("gpt-6.1-terra", in: storage.storage)
+        XCTAssertTrue(ApprovalClassifier.hasModel(in: storage.storage), "Test fixture must have a usable approval classifier model.")
+        storage.storage.defaults.set(ApprovalClassifier.Level.permissive.rawValue, forKey: ApprovalClassifier.levelKey)
+
+        let sendApproval = PendingApproval(
+            id: "voice-send-\(UUID().uuidString)",
+            app: "WeChat",
+            summary: "Tap “发送”",
+            reason: "sending a message (\"发送\")",
+            expires: Date().addingTimeInterval(60)
+        )
+        for mode in [ApprovalClassifier.Mode.confirm, ApprovalClassifier.Mode.reply] {
+            storage.storage.defaults.set(mode.rawValue, forKey: ApprovalClassifier.modeKey)
+            let approval = PendingApproval(
+                id: "voice-\(mode.rawValue)-\(UUID().uuidString)",
+                app: sendApproval.app,
+                summary: sendApproval.summary,
+                reason: sendApproval.reason,
+                expires: sendApproval.expires
+            )
+            XCTAssertEqual(
+                ApprovalClassifier.route(approval, voiceOn: true, origin: .voice("voice-session"), storage: storage.storage),
+                .owner,
+                "Voice sessions must always route optional sensitive steps to on-device owner confirmation under \(mode.rawValue)."
+            )
+            XCTAssertEqual(
+                ApprovalClassifier.route(approval, voiceOn: true, origin: .chat("dictation-chat"), storage: storage.storage),
+                .owner,
+                "Active voice/dictation must not allow auto-approval even when origin is chat under \(mode.rawValue)."
+            )
+        }
+
+        let verdict = await ApprovalClassifier.decide(
+            sendApproval,
+            level: .permissive,
+            voice: [
+                VoiceLine(role: .you, text: "给小王发消息说我晚点到"),
+                VoiceLine(role: .poki, text: "要发送吗？"),
+                VoiceLine(role: .you, text: "好的"),
+                VoiceLine(role: .you, text: "确认"),
+            ],
+            origin: .voice("voice-session"),
+            storage: storage.storage
+        )
+        XCTAssertFalse(verdict.allowed, "Spoken 好的/确认 must never auto-approve a sensitive step.")
+        XCTAssertEqual(verdict.reason, "spoken confirmations cannot approve sensitive steps")
+
+        let originalApp = AskPoki.app
+        let originalChat = AskPoki.chat
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage.storage)
+        let chat = ChatModel(app: app)
+        AskPoki.install(app: app, chat: chat)
+        defer {
+            if let originalApp, let originalChat { AskPoki.install(app: originalApp, chat: originalChat) }
+        }
+        XCTAssertEqual(
+            ApprovalClassifier.origin(voiceOn: true, outsideSession: nil),
+            .voice(chat.sessionID),
+            "Active voice (including dictation) must resolve to .voice origin."
+        )
+    }
+
+    func testPartialAndSegmentedUtteranceRunsOnlyLowRiskPrepAndBlocksSendAcrossVoicePaths() async throws {
+        URLProtocol.registerClass(BridgeStub.self)
+        defer { URLProtocol.unregisterClass(BridgeStub.self) }
+
+        let chatScreen = """
+        app: 微信 (com.tencent.xin)   read: 2026-11-27T01:00:00Z (12 ms)
+        elements (3):
+         1 Cell "小王" [16,120,358,64]
+         2 TextField "发消息" [16,760,290,40]
+         3 Button "发送" [320,760,60,40]
+        """
+
+        // 1. Realtime streaming partial delta + segmented turn ("给小王发消息说" -> "我晚点到")
+        do {
+            let time = FakeTime()
+            var links: [FakeConnection] = []
+            var opened = 0
+            var typed: [String] = []
+            var sent = 0
+            let voice = VoiceModel(
+                clearTap: { _, _, _ in .clear },
+                phoneTool: { name, arguments, _ in
+                    let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
+                    switch name {
+                    case "open_app":
+                        opened += 1
+                        return (chatScreen, false, nil)
+                    case "look":
+                        return (chatScreen, false, nil)
+                    case "do":
+                        for action in args["actions"] as? [[String: Any]] ?? [] {
+                            if action["launch"] != nil { opened += 1 }
+                            if (action["tap"] as? Int) == 3 { sent += 1 }
+                            if let text = action["type"] as? String { typed.append(text) }
+                        }
+                        return (chatScreen, false, nil)
+                    default:
+                        return ("ok", false, nil)
+                    }
+                },
+                connection: { onEvent, onClosed in
+                    let link = FakeConnection()
+                    link.onEvent = onEvent
+                    link.onClosed = onClosed
+                    links.append(link)
+                    return link
+                },
+                time: time.clock,
+                storage: storage.storage
+            )
+            XCTAssertTrue(voice.setBridge(BridgeStub.address))
+            voice.onConversationEnded = { _, _ in }
+            await voice.start()
+            links.last?.play(["type": "session.created"],
+                             ["type": "input_audio_buffer.speech_started", "item_id": "rt-u1"],
+                             ["type": "conversation.item.input_audio_transcription.delta", "item_id": "rt-u1", "delta": "给小王发消息说"],
+                             ["type": "response.created", "response": ["id": "rt-r1"]],
+                             ["type": "response.output_item.done", "response_id": "rt-r1",
+                              "item": ["type": "function_call", "call_id": "rt-open", "name": "do", "arguments": #"{"actions":[{"launch":"com.tencent.xin"}]}"#]],
+                             ["type": "response.output_item.done", "response_id": "rt-r1",
+                              "item": ["type": "function_call", "call_id": "rt-type-early", "name": "do", "arguments": #"{"actions":[{"tap":2},{"type":"我晚点到"}]}"#]],
+                             ["type": "response.output_item.done", "response_id": "rt-r1",
+                              "item": ["type": "function_call", "call_id": "rt-send-early", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#]],
+                             ["type": "response.done", "response": ["id": "rt-r1"]])
+            await time.settle()
+
+            XCTAssertEqual(opened, 1, "Low-risk preparation (open_app for messaging app) must run during partial utterance.")
+            XCTAssertTrue(typed.isEmpty, "Message typing must wait until the partial utterance completes.")
+            XCTAssertEqual(sent, 0, "Sending must never execute while the utterance is still partial.")
+
+            // VAD commits halfway ("给小王发消息说"): still incomplete -> sending/typing stay blocked.
+            links.last?.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "rt-u1", "transcript": "给小王发消息说"],
+                             ["type": "response.created", "response": ["id": "rt-r2"]],
+                             ["type": "response.output_item.done", "response_id": "rt-r2",
+                              "item": ["type": "function_call", "call_id": "rt-send-half", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#]],
+                             ["type": "response.done", "response": ["id": "rt-r2"]])
+            await time.settle()
+            XCTAssertEqual(sent, 0, "Segmented incomplete utterance must still block sending.")
+
+            // Spoken affirmation alone ("好的" / "确认") must NOT complete the unfinished message!
+            links.last?.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "rt-u1-ack", "transcript": "确认"],
+                             ["type": "response.created", "response": ["id": "rt-r2b"]],
+                             ["type": "response.output_item.done", "response_id": "rt-r2b",
+                              "item": ["type": "function_call", "call_id": "rt-send-ack", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#]],
+                             ["type": "response.done", "response": ["id": "rt-r2b"]])
+            await time.settle()
+            XCTAssertEqual(sent, 0, "Spoken 确认 must not complete a partial utterance or trigger sending.")
+
+            // Second segment arrives ("我晚点到") -> completes the same goal without reopening WeChat.
+            links.last?.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "rt-u2", "transcript": "我晚点到"],
+                             ["type": "response.created", "response": ["id": "rt-r3"]],
+                             ["type": "response.output_item.done", "response_id": "rt-r3",
+                              "item": ["type": "function_call", "call_id": "rt-reopen", "name": "do", "arguments": #"{"actions":[{"launch":"com.tencent.xin"}]}"#]],
+                             ["type": "response.output_item.done", "response_id": "rt-r3",
+                              "item": ["type": "function_call", "call_id": "rt-type-full", "name": "do", "arguments": #"{"actions":[{"tap":2},{"type":"我晚点到"}]}"#]],
+                             ["type": "response.done", "response": ["id": "rt-r3"]])
+            await time.settle()
+            XCTAssertEqual(opened, 1, "Completing the segmented goal must reuse the already-opened chat app.")
+            XCTAssertEqual(typed, ["我晚点到"], "Typing must proceed once the utterance is complete.")
+            voice.stop()
+        }
+
+        // 2. Live segmented turn ("给小王发消息说" -> "我晚点到")
+        do {
+            let time = FakeTime()
+            var links: [FakeConnection] = []
+            var opened = 0
+            var sent = 0
+            let voice = VoiceModel(
+                clearTap: { _, _, _ in .clear },
+                phoneTool: { name, arguments, _ in
+                    let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
+                    if name == "open_app" { opened += 1; return (chatScreen, false, nil) }
+                    if name == "do" {
+                        for action in args["actions"] as? [[String: Any]] ?? [] where (action["tap"] as? Int) == 3 { sent += 1 }
+                    }
+                    return (chatScreen, false, nil)
+                },
+                connection: { onEvent, onClosed in
+                    let link = FakeConnection()
+                    link.onEvent = onEvent
+                    link.onClosed = onClosed
+                    links.append(link)
+                    return link
+                },
+                time: time.clock,
+                storage: storage.storage
+            )
+            XCTAssertTrue(voice.setBridge(BridgeStub.liveAddress))
+            voice.onConversationEnded = { _, _ in }
+            await voice.start()
+            links.last?.play(["type": "session.started"],
+                             ["type": "session.input_transcript.delta", "delta": "给小王发消息说", "start_ms": 0, "end_ms": 600],
+                             ["type": "session.delegation.created", "delegation": ["id": "live-d1"]])
+            links.last?.call("live-open", "open_app", arguments: #"{"app":"微信"}"#, delegation: "live-d1")
+            links.last?.call("live-send-half", "do", arguments: #"{"actions":[{"tap":3}]}"#, delegation: "live-d1")
+            await time.settle()
+            XCTAssertEqual(opened, 1, "Live must allow low-risk open_app while utterance is incomplete.")
+            XCTAssertEqual(sent, 0, "Live must block sending while utterance is incomplete.")
+            voice.stop()
+        }
+
+        // 3. ChatGPT subscription voice (CodexVoice) partial delta + segmented turn
+        do {
+            let codexStorage = try IsolatedTestStorage(prefix: "voice-goal-codex")
+            defer { try? codexStorage.tearDown() }
+            VoiceDirect.setEnabled(false, in: codexStorage.storage)
+            try codexStorage.seedCodexCredential(accessToken: "fixture-codex-partial-token")
+            ModelKeys.setSelectedProvider(.chatgpt, in: codexStorage.storage)
+
+            let codex = GoalTestSubscriptionVoice()
+            let time = FakeTime()
+            var links: [FakeConnection] = []
+            var opened = 0
+            var typed: [String] = []
+            var sent = 0
+            let voice = VoiceModel(
+                clearTap: { _, _, _ in .clear },
+                phoneTool: { name, arguments, _ in
+                    let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
+                    if name == "open_app" { opened += 1; return (chatScreen, false, nil) }
+                    if name == "do" {
+                        for action in args["actions"] as? [[String: Any]] ?? [] {
+                            if (action["tap"] as? Int) == 3 { sent += 1 }
+                            if let text = action["type"] as? String { typed.append(text) }
+                        }
+                    }
+                    return (chatScreen, false, nil)
+                },
+                connection: { onEvent, onClosed in
+                    let link = FakeConnection()
+                    link.onEvent = onEvent
+                    link.onClosed = onClosed
+                    links.append(link)
+                    return link
+                },
+                time: time.clock,
+                codex: codex,
+                storage: codexStorage.storage
+            )
+            voice.onConversationEnded = { _, _ in }
+            await voice.start()
+
+            codex.notify("thread/realtime/transcript/delta", ["role": "user", "delta": "给小王发消息说"])
+            let openPrep = await codex.callTool("open_app", #"{"app":"微信"}"#)
+            XCTAssertEqual(openPrep?.failed, false, "Codex voice must allow low-risk open_app during partial delta.")
+            let earlySend = await codex.callTool("do", #"{"actions":[{"tap":3}]}"#)
+            XCTAssertEqual(earlySend?.failed, true, "Codex voice must block sending during partial delta.")
+
+            codex.notify("thread/realtime/transcript/done", ["role": "user", "text": "给小王发消息说"])
+            let halfSend = await codex.callTool("do", #"{"actions":[{"tap":3}]}"#)
+            XCTAssertEqual(halfSend?.failed, true, "Codex voice must block sending on segmented incomplete utterance.")
+
+            codex.notify("thread/realtime/transcript/done", ["role": "user", "text": "确认"])
+            let ackSend = await codex.callTool("do", #"{"actions":[{"tap":3}]}"#)
+            XCTAssertEqual(ackSend?.failed, true, "Spoken 确认 in Codex voice must not complete the utterance or allow sending.")
+
+            codex.notify("thread/realtime/transcript/done", ["role": "user", "text": "我晚点到"])
+            let fullType = await codex.callTool("do", #"{"actions":[{"tap":2},{"type":"我晚点到"}]}"#)
+            XCTAssertEqual(fullType?.failed, false, "Codex voice must allow typing after the utterance completes.")
+            XCTAssertEqual(opened, 1)
+            XCTAssertEqual(typed, ["我晚点到"])
+            XCTAssertEqual(sent, 0)
+            voice.stop()
+        }
+    }
+
+    func testSpokenConfirmationNeverApprovesWaitingSensitiveStepOrCreatesNewTask() async throws {
+        URLProtocol.registerClass(BridgeStub.self)
+        defer { URLProtocol.unregisterClass(BridgeStub.self) }
+
+        var tracker = VoiceGoalTracker()
+        let t0 = Date(timeIntervalSince1970: 5_000)
+        let u1 = tracker.ingestCompleteUtterance(text: "打开微信给小王写我晚点到，先别发送", itemID: "u1", delegationID: "d1", source: .ownerMicrophone, at: t0)
+        for spoken in ["好的", "确认", "确定", "同意", "批准", "yes", "confirm", "approve", "好的，确认"] {
+            let record = tracker.ingestCompleteUtterance(text: spoken, itemID: "ack-\(spoken)", delegationID: nil, source: .ownerMicrophone, at: t0.addingTimeInterval(1))
+            XCTAssertEqual(record.relation, .chitchat, "Spoken affirmation \(spoken) must stay chitchat/call-control, never a new task or send clearance.")
+            XCTAssertEqual(tracker.activeGoal?.id, u1.goalID, spoken)
+            XCTAssertEqual(tracker.activeGoal?.forbidsSend, true, "Spoken affirmation \(spoken) must never lift forbidsSend.")
+        }
+
+        // Live: spoken "确认" must be rejected as acknowledgment, never creating a new active task.
+        let time = FakeTime()
+        var links: [FakeConnection] = []
+        var liveToolRuns: [String] = []
+        let voice = VoiceModel(
+            clearTap: { _, _, _ in .clear },
+            phoneTool: { name, _, _ in
+                liveToolRuns.append(name)
+                return ("ok", false, nil)
+            },
+            connection: { onEvent, onClosed in
+                let link = FakeConnection()
+                link.onEvent = onEvent
+                link.onClosed = onClosed
+                links.append(link)
+                return link
+            },
+            time: time.clock,
+            storage: storage.storage
+        )
+        XCTAssertTrue(voice.setBridge(BridgeStub.liveAddress))
+        voice.onConversationEnded = { _, _ in }
+        await voice.start()
+        links.last?.play(["type": "session.started"],
+                         ["type": "session.input_transcript.delta", "delta": "打开微信给小王写我晚点到，先别发", "start_ms": 0, "end_ms": 800],
+                         ["type": "session.delegation.created", "delegation": ["id": "d1"]])
+        links.last?.call("c-open", "open_app", arguments: #"{"app":"微信"}"#, delegation: "d1")
+        await time.settle()
+        links.last?.play(["type": "session.input_transcript.delta", "delta": "确认", "start_ms": 1200, "end_ms": 1500],
+                         ["type": "session.delegation.created", "delegation": ["id": "d-confirm"]])
+        links.last?.call("c-confirm-send", "do", arguments: #"{"actions":[{"tap":"发送"}]}"#, delegation: "d-confirm")
+        await time.settle()
+        XCTAssertEqual(liveToolRuns, ["open_app"], "Live delegation for spoken 确认 must not run sensitive device actions.")
+        voice.stop()
+    }
+
+    func testGuardedCallingPokiAndUngroundedAppsAreBlockedDuringPartialUtterance() {
+        XCTAssertEqual(
+            VoiceAppIdentity.detectApp(in: "打开备忘录记一下电话号码"),
+            "com.apple.mobilenotes",
+            "Ordinary mention of phone number in Notes must not resolve to Phone app."
+        )
+        XCTAssertEqual(VoiceAppIdentity.canonical("钱包"), "com.apple.passbook")
+        XCTAssertEqual(VoiceAppIdentity.canonical("电话"), "com.apple.mobilephone")
+        XCTAssertTrue(VoiceAppIdentity.isPoki("nz.zheha.poki"))
+
+        var tracker = VoiceGoalTracker()
+        tracker.ingestPartialUtterance(text: "给小王发消息说", itemID: "p1", source: .ownerMicrophone, replace: false)
+        let binding = tracker.resolveBinding(delegationID: nil, responseID: nil, speechItemID: "p1", defaultSource: .ownerMicrophone)
+        XCTAssertTrue(binding.awaitingTranscript)
+
+        for (id, appName) in [("c-wallet", "钱包"), ("c-phone", "电话"), ("c-facetime", "FaceTime"), ("c-poki", "Poki"), ("c-notes", "备忘录")] {
+            let proposal = VoiceToolProposal(
+                call: VoiceCall(id: id, name: "open_app", arguments: #"{"app":"\#(appName)"}"#, session: 1, speechItem: "p1"),
+                goalID: binding.goalID, goalRevision: binding.revision, source: binding.source,
+                awaitingUtteranceTranscript: true
+            )
+            if case .deny(_, let code, _, _) = tracker.admit(proposal, session: 1) {
+                XCTAssertEqual(code, .partialUtteranceRequiresCompletion, "\(appName) must be blocked during messaging partial utterance.")
+            } else {
+                XCTFail("Expected partial denial for \(appName).")
+            }
+        }
+
+        for (id, tool, args) in [
+            ("c-look", "look", "{}"),
+            ("c-home", "go_home", "{}"),
+            ("c-wait", "do", #"{"actions":[{"wait":300}]}"#),
+            ("c-wechat", "open_app", #"{"app":"微信"}"#),
+        ] {
+            let proposal = VoiceToolProposal(
+                call: VoiceCall(id: id, name: tool, arguments: args, session: 1, speechItem: "p1"),
+                goalID: binding.goalID, goalRevision: binding.revision, source: binding.source,
+                awaitingUtteranceTranscript: true
+            )
+            guard case .allow = tracker.admit(proposal, session: 1) else {
+                return XCTFail("Low-risk preparation \(tool) \(args) must be allowed during partial utterance.")
+            }
+        }
+    }
+
+    func testBridgedTapAwaitingOnDeviceApprovalBlocksSpokenConfirmationAndRetryUntilOwnerResolves() async throws {
+        URLProtocol.registerClass(BridgedTapCheckStub.self)
+        defer {
+            BridgedTapCheckStub.reset()
+            URLProtocol.unregisterClass(BridgedTapCheckStub.self)
+        }
+        BridgedTapCheckStub.reset()
+
+        let time = FakeTime()
+        var links: [FakeConnection] = []
+        var tapContinuation: CheckedContinuation<TapClearance, Never>?
+        let tapWaiting = expectation(description: "bridged tap suspended on clearTap")
+
+        let voice = VoiceModel(
+            clearTap: { _, _, _ in
+                await withCheckedContinuation { continuation in
+                    tapContinuation = continuation
+                    tapWaiting.fulfill()
+                }
+            },
+            phoneTool: { _, _, _ in ("ok", false, nil) },
+            connection: { onEvent, onClosed in
+                let link = FakeConnection()
+                link.onEvent = onEvent
+                link.onClosed = onClosed
+                links.append(link)
+                return link
+            },
+            time: time.clock,
+            storage: storage.storage
+        )
+        XCTAssertTrue(voice.setBridge(BridgedTapCheckStub.address))
+        voice.onConversationEnded = { _, _ in }
+        await voice.start()
+
+        links.last?.play(["type": "session.created"],
+                         ["type": "conversation.item.input_audio_transcription.completed", "item_id": "u-send", "transcript": "给小王发消息说我晚点到"],
+                         ["type": "response.created", "response": ["id": "r-send"]],
+                         ["type": "response.output_item.done", "response_id": "r-send",
+                          "item": ["type": "function_call", "call_id": "c-tap-send", "name": "tap_text", "arguments": #"{"text":"发送"}"#]],
+                         ["type": "response.done", "response": ["id": "r-send"]])
+        await fulfillment(of: [tapWaiting], timeout: 3.0)
+        XCTAssertTrue(voice.hasPendingOnDeviceApproval, "Sensitive bridged tap must mark an on-device approval as pending while waiting for owner.")
+
+        // Owner speaks "好的" and "确认", and the model tries to re-invoke tap_text / do -> must be denied.
+        links.last?.play(["type": "conversation.item.input_audio_transcription.completed", "item_id": "u-ok", "transcript": "好的"],
+                         ["type": "conversation.item.input_audio_transcription.completed", "item_id": "u-confirm", "transcript": "确认"],
+                         ["type": "response.created", "response": ["id": "r-retry"]],
+                         ["type": "response.output_item.done", "response_id": "r-retry",
+                          "item": ["type": "function_call", "call_id": "c-tap-retry", "name": "tap_text", "arguments": #"{"text":"发送"}"#]],
+                         ["type": "response.done", "response": ["id": "r-retry"]])
+        await time.settle()
+
+        let retryCall = try XCTUnwrap(voice.calls.first(where: { $0.id == "c-tap-retry" }))
+        XCTAssertEqual(retryCall.state, .failed)
+        XCTAssertTrue(retryCall.output.contains("on-device confirmation"), retryCall.output)
+        XCTAssertEqual(BridgedTapCheckStub.checkedTaps, 0, "Spoken confirmation must never release or execute the waiting tap.")
+        XCTAssertTrue(voice.hasPendingOnDeviceApproval)
+
+        // Only the owner resolving the on-device card completes the waiting call.
+        tapContinuation?.resume(returning: .declined("sending a message (\"发送\")"))
+        tapContinuation = nil
+        await time.settle()
+        XCTAssertFalse(voice.hasPendingOnDeviceApproval)
+        XCTAssertEqual(BridgedTapCheckStub.checkedTaps, 0)
+        voice.stop()
+    }
+
+    func testAppModelOnDeviceApprovalLifecycleBlocksSpokenConfirmationAcrossVoiceAndDictationPaths() async throws {
+        let originalApp = AskPoki.app
+        let originalChat = AskPoki.chat
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage.storage)
+        let chat = ChatModel(app: app)
+        AskPoki.install(app: app, chat: chat)
+        defer {
+            if let originalApp, let originalChat { AskPoki.install(app: originalApp, chat: originalChat) }
+        }
+        app.approvalMode = .confirm
+
+        async let connectorResult = app.clearConnectorStep(connector: "WeChat", summary: "Tap “发送”", always: true)
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !app.approvals.isEmpty }, object: nil)], timeout: 2.0)
+        let pending = try XCTUnwrap(app.approvals.first)
+        XCTAssertTrue(app.voice.hasPendingOnDeviceApproval, "AppModel.askOwner must sync pending on-device approval state to VoiceModel.")
+
+        // 1. Dictation path refuses spoken "好的" / "确认" without sending to chat or clearing approval.
+        let entriesBeforeDictation = chat.entries.count
+        let dictation = Dictation()
+        app.voice.activateDictation(dictation, listen: {})
+        await app.voice.finishDictation(dictation, read: { "好的" }).value
+        await app.voice.finishDictation(dictation, read: { "确认" }).value
+        XCTAssertTrue(app.approvals.contains(where: { $0.id == pending.id }), "Dictated 好的/确认 must leave on-device approval pending.")
+        XCTAssertEqual(chat.entries.count, entriesBeforeDictation, "Dictated 好的/确认 while approval waits must not forward a chat turn.")
+        XCTAssertFalse(chat.entries.contains { if case .you = $0.kind { return true }; return false })
+        XCTAssertTrue(app.voice.lines.contains(where: { $0.role == .note }), "Dictation must inform the owner that an approval is waiting on device.")
+
+        // 2. Execution gate denies mutating steps while on-device approval waits.
+        var tracker = app.voice.goalTracker
+        let goalRecord = tracker.ingestCompleteUtterance(text: "给小王发消息说我晚点到", itemID: "u-live-wait", delegationID: "d-wait", source: .ownerMicrophone, at: Date())
+        let sendProposal = VoiceToolProposal(
+            call: VoiceCall(id: "c-send-wait", name: "do", arguments: #"{"actions":[{"tap":"发送"}]}"#, session: 1),
+            goalID: goalRecord.goalID, goalRevision: goalRecord.revision, source: .ownerMicrophone
+        )
+        if case .deny(_, let code, _, _) = tracker.admit(sendProposal, session: 1) {
+            XCTAssertEqual(code, .awaitingOnDeviceApproval)
+        } else {
+            XCTFail("Expected .awaitingOnDeviceApproval while AppModel holds a pending on-device approval.")
+        }
+
+        // 3. On-device owner resolution clears both AppModel and VoiceModel pending state.
+        app.resolve(pending, approved: false)
+        let allowed = await connectorResult
+        XCTAssertFalse(allowed)
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !app.voice.hasPendingOnDeviceApproval }, object: nil)], timeout: 2.0)
+        XCTAssertTrue(app.approvals.isEmpty)
+        app.voice.stop()
+    }
+
+    #if DEBUG && targetEnvironment(simulator)
+    func testSimulatorPartialPrepRehearsalOpensChatAppWithoutSendingOrAcceptingSpokenApproval() async throws {
+        UserDefaults.standard.set("partial-prep", forKey: "pokiTalkRehearsal")
+        defer { UserDefaults.standard.removeObject(forKey: "pokiTalkRehearsal") }
+        TalkRehearsal.resetPartialPrepState()
+
+        let voice = VoiceModel(
+            clearTap: { _, _, _ in .clear },
+            phoneTool: { name, arguments, _ in await TalkRehearsal.step(name: name, arguments: arguments) },
+            connection: VoiceModel.connection,
+            storage: storage.storage
+        )
+        voice.onConversationEnded = { _, _ in }
+        await voice.start(microphone: false)
+        let draftReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                voice.lines.contains { $0.role == .poki && $0.text.contains("未发送") }
+            },
+            object: nil
+        )
+        await fulfillment(of: [draftReady], timeout: 8)
+
+        XCTAssertEqual(TalkRehearsal.partialPrepState.opened, 1, "Partial utterance rehearsal must open the chat app once.")
+        XCTAssertEqual(TalkRehearsal.partialPrepState.typed, ["我晚点到"], "Message typing must run only after the second segment completes.")
+        XCTAssertEqual(TalkRehearsal.partialPrepState.sent, 0, "Partial prep rehearsal must never send.")
+        XCTAssertEqual(TalkRehearsal.partialPrepState.callLog.count, 2, "Only open_app and final type do should execute: \(TalkRehearsal.partialPrepState.callLog)")
+        XCTAssertTrue(TalkRehearsal.partialPrepState.callLog.first?.hasPrefix("open_app:") == true)
+
+        voice.setPendingOnDeviceApproval(id: "sim-approval-1", reason: "sending a message (\"发送\")")
+        let goal = try XCTUnwrap(voice.goalTracker.activeGoal)
+        let decision = VoiceExecutionGate.evaluate(
+            proposal: VoiceToolProposal(
+                call: VoiceCall(id: "sim-send", name: "do", arguments: #"{"actions":[{"tap":3}]}"#, session: 1),
+                goalID: goal.id, goalRevision: goal.revision, source: .silentTest
+            ),
+            goal: goal,
+            currentSession: 1,
+            pendingApprovalReason: voice.goalTracker.pendingOnDeviceApprovalReason
+        )
+        if case .deny(_, let code, _, _) = decision {
+            XCTAssertEqual(code, .awaitingOnDeviceApproval)
+        } else {
+            XCTFail("Expected pending on-device approval to block send step in rehearsal.")
+        }
+        voice.clearPendingOnDeviceApproval(id: "sim-approval-1")
+        voice.stop()
+    }
+    #endif
+}
+
+private final class BridgedTapCheckStub: URLProtocol {
+    static let address = "http://voice-bridge-check.test/voice/0123456789abcdef"
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _checkedTaps = 0
+    static var checkedTaps: Int { lock.withLock { _checkedTaps } }
+    static func reset() { lock.withLock { _checkedTaps = 0 } }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host() == "voice-bridge-check.test"
+    }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let body: String
+        if request.url?.lastPathComponent == "tool" {
+            let data = readRequestBody(request)
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            if json?["checked"] != nil {
+                Self.lock.withLock { Self._checkedTaps += 1 }
+                body = #"{"state":"done","output":"tapped 发送"}"#
+            } else {
+                body = #"{"state":"check","app":{"bundle_id":"com.tencent.xin","name":"WeChat"},"target":{"text":"发送","says":"发送"}}"#
+            }
+        } else {
+            body = #"{"value":"ek_test","model":"gpt-realtime","local_tools":["get_ios_version"]}"#
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    private func readRequestBody(_ request: URLRequest) -> Data {
+        if let body = request.httpBody, !body.isEmpty { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var out = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count <= 0 { break }
+            out.append(buffer, count: count)
+        }
+        return out
+    }
+}
+
+@MainActor
+private final class GoalTestSubscriptionVoice: SubscriptionVoice {
+    private var onEvent: ((String, [String: Any]) -> Void)?
+    private var onTool: ((String, String) async -> PhoneAnswer)?
+
+    func prepare(onEvent: @escaping (String, [String: Any]) -> Void, onTool: @escaping (String, String) async -> PhoneAnswer) async throws {
+        self.onEvent = onEvent
+        self.onTool = onTool
+    }
+
+    func start(offer: String) async throws -> String { "fixture-sdp-answer" }
+    func stop() { onEvent = nil; onTool = nil }
+    func notify(_ method: String, _ params: [String: Any]) { onEvent?(method, params) }
+    func callTool(_ name: String, _ arguments: String) async -> PhoneAnswer? { await onTool?(name, arguments) }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import PokiCore
 
 fileprivate enum VoiceTextNormalizer {
     static func toSimplified(_ text: String) -> String {
@@ -121,6 +122,10 @@ struct VoiceObservedElement: Equatable, Sendable {
         return lower.contains("textfield") || lower.contains("textview")
             || lower.contains("searchfield") || lower.contains("securetextfield")
     }
+
+    var isSecureInput: Bool {
+        type.lowercased().contains("securetextfield")
+    }
 }
 
 struct VoiceObservedScreenUpdate: Equatable, Sendable {
@@ -134,6 +139,10 @@ struct VoiceObservedScreenUpdate: Equatable, Sendable {
 struct VoiceObservedScreen: Equatable, Sendable {
     var app: String?
     var elements: [Int: VoiceObservedElement] = [:]
+
+    var hasSecureInput: Bool {
+        elements.values.contains { $0.isSecureInput }
+    }
 
     mutating func apply(_ update: VoiceObservedScreenUpdate) {
         let appChanged = update.app != nil && app != nil && update.app != app
@@ -330,6 +339,13 @@ enum VoiceAppIdentity {
         ("com.tinyspeck.chatlyio", ["com.tinyspeck.chatlyio", "slack"]),
     ]
 
+    private static let nonLaunchableAppAliases: [(canonical: String, names: [String])] = [
+        ("com.apple.passbook", ["com.apple.passbook", "wallet", "apple wallet", "passbook", "钱包", "錢包"]),
+        ("com.apple.mobilephone", ["com.apple.mobilephone", "phone", "电话", "電話"]),
+        ("com.apple.facetime", ["com.apple.facetime", "facetime"]),
+        ("nz.zheha.poki", ["nz.zheha.poki", "poki"]),
+    ]
+
     private static let genericMessageNouns: Set<String> = ["信息", "讯息", "短信", "邮件"]
     private static let messageNounModifiers = ["这条", "那条", "一条", "该", "这封", "那封", "一封", "发条", "发个", "把"]
 
@@ -351,7 +367,16 @@ enum VoiceAppIdentity {
         for entry in aliases {
             if entry.names.contains(trimmed) { return entry.canonical }
         }
+        for entry in nonLaunchableAppAliases {
+            if entry.names.contains(trimmed) { return entry.canonical }
+        }
         return trimmed
+    }
+
+    static func isPoki(_ bundleID: String?) -> Bool {
+        guard let bundleID, !bundleID.isEmpty else { return false }
+        let lower = bundleID.lowercased()
+        return lower == "nz.zheha.poki" || lower.hasPrefix("nz.zheha.poki.") || lower == "poki"
     }
 
     static func detectApp(in text: String) -> String? {
@@ -405,6 +430,21 @@ enum VoiceActionTarget: Equatable, Sendable {
     case text(String)
 }
 
+struct VoicePartialUtterance: Equatable, Sendable {
+    let itemID: String
+    let text: String
+    let source: VoiceUtteranceSource
+    let targetApp: String?
+    let hasMessagingIntent: Bool
+}
+
+enum VoiceProposalRisk: Equatable, Sendable {
+    case callControl
+    case lowRiskPreparation
+    case mutationRequiringCompletion
+    case sensitiveStep(reason: String)
+}
+
 struct VoiceProposedAction: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case launch(app: String)
@@ -412,6 +452,7 @@ struct VoiceProposedAction: Equatable, Sendable {
         case longPress(VoiceActionTarget)
         case typeText(String, target: VoiceActionTarget?, clear: Bool)
         case key(String)
+        case waitOrHome
         case navigation
         case other(String)
     }
@@ -500,8 +541,194 @@ struct VoiceToolProposal: Equatable, Sendable {
     var isPureNavigation: Bool {
         guard case .deviceActions(let actions) = kind, !actions.isEmpty else { return false }
         return actions.allSatisfy {
-            if case .navigation = $0.kind { return true }
-            return false
+            switch $0.kind {
+            case .navigation, .waitOrHome: true
+            default: false
+            }
+        }
+    }
+
+    func classifyRisk(
+        using screen: VoiceObservedScreen,
+        goal: VoiceGoal,
+        partial: VoicePartialUtterance?,
+        rules: SensitivityRules = SensitivityRules()
+    ) -> VoiceProposalRisk {
+        switch kind {
+        case .controlCancel:
+            return .callControl
+        case .readOnly, .readScreen:
+            return .lowRiskPreparation
+        case .openApp(let app, _):
+            return Self.classifyAppLaunch(app, goal: goal, partial: partial, rules: rules)
+        case .deviceActions(let actions):
+            guard !actions.isEmpty else { return .mutationRequiringCompletion }
+            for action in actions {
+                if let reason = Self.sensitiveReason(for: action, screen: screen, targetApp: goal.targetApp, rules: rules) {
+                    return .sensitiveStep(reason: reason)
+                }
+            }
+            if actions.count == 1, case .launch(let app) = actions[0].kind {
+                return Self.classifyAppLaunch(app, goal: goal, partial: partial, rules: rules)
+            }
+            if actions.allSatisfy({
+                if case .waitOrHome = $0.kind { return true }
+                return false
+            }) {
+                return .lowRiskPreparation
+            }
+            return .mutationRequiringCompletion
+        }
+    }
+
+    private static func classifyAppLaunch(
+        _ app: String,
+        goal: VoiceGoal,
+        partial: VoicePartialUtterance?,
+        rules: SensitivityRules
+    ) -> VoiceProposalRisk {
+        guard !app.isEmpty else { return .mutationRequiringCompletion }
+        if rules.isGuardedApp(app) { return .sensitiveStep(reason: "input in \(app)") }
+        if rules.isCallingApp(app) { return .sensitiveStep(reason: "a call (in \(app))") }
+        if VoiceAppIdentity.isPoki(app) { return .sensitiveStep(reason: "input in Poki") }
+
+        let groundedApp: String?
+        let groundedMessaging: Bool
+        if let partial {
+            if partial.targetApp != nil || partial.hasMessagingIntent {
+                groundedApp = partial.targetApp
+                groundedMessaging = partial.hasMessagingIntent
+            } else if goal.awaitingCompletion {
+                groundedApp = goal.targetApp
+                groundedMessaging = goal.hasMessagingIntent
+            } else {
+                groundedApp = nil
+                groundedMessaging = false
+            }
+        } else {
+            groundedApp = goal.targetApp
+            groundedMessaging = goal.hasMessagingIntent
+        }
+
+        if let groundedApp, groundedApp == app { return .lowRiskPreparation }
+        if groundedApp == nil, groundedMessaging, rules.isMessagingApp(app) { return .lowRiskPreparation }
+        return .mutationRequiringCompletion
+    }
+
+    private static func sensitiveReason(
+        for action: VoiceProposedAction,
+        screen: VoiceObservedScreen,
+        targetApp: String?,
+        rules: SensitivityRules
+    ) -> String? {
+        switch action.kind {
+        case .launch(let app):
+            if rules.isGuardedApp(app) { return "input in \(app)" }
+            if rules.isCallingApp(app) { return "a call (in \(app))" }
+            if VoiceAppIdentity.isPoki(app) { return "input in Poki" }
+            return nil
+        case .waitOrHome:
+            return nil
+        case .tap(let target), .longPress(let target):
+            let app = screen.app ?? targetApp
+            if VoiceAppIdentity.isPoki(app) { return "input in Poki" }
+            return sensitiveReason(for: target, hint: action.hintText, screen: screen, app: app, rules: rules)
+        case .typeText(let text, let target, _):
+            let app = screen.app ?? targetApp
+            if VoiceAppIdentity.isPoki(app) { return "input in Poki" }
+            let element = target.flatMap { resolvedElement(for: $0, in: screen) }
+            if let reason = rules.voiceStepReason(
+                label: element?.text ?? action.hintText,
+                elementType: element?.type ?? "TextField",
+                typing: true,
+                typedText: text,
+                appBundleID: app,
+                secureField: element?.isSecureInput ?? false,
+                secureOnScreen: screen.hasSecureInput
+            ) {
+                return reason
+            }
+            if let target {
+                return sensitiveReason(for: target, hint: action.hintText, screen: screen, app: app, rules: rules)
+            }
+            return nil
+        case .key(let key):
+            let app = screen.app ?? targetApp
+            if VoiceAppIdentity.isPoki(app) { return "input in Poki" }
+            return rules.voiceStepReason(
+                label: nil,
+                key: key,
+                appBundleID: app,
+                secureOnScreen: screen.hasSecureInput
+            )
+        case .navigation, .other:
+            let app = screen.app ?? targetApp
+            if VoiceAppIdentity.isPoki(app) { return "input in Poki" }
+            if rules.isGuardedApp(app) {
+                return rules.voiceStepReason(label: nil, appBundleID: app)
+            }
+            return nil
+        }
+    }
+
+    private static func sensitiveReason(
+        for target: VoiceActionTarget,
+        hint: String?,
+        screen: VoiceObservedScreen,
+        app: String?,
+        rules: SensitivityRules
+    ) -> String? {
+        switch target {
+        case .ref(let ref):
+            if let element = screen.elements[ref] {
+                return rules.voiceStepReason(
+                    label: element.text,
+                    elementType: element.type,
+                    appBundleID: app,
+                    secureField: element.isSecureInput,
+                    secureOnScreen: screen.hasSecureInput
+                )
+            }
+            return rules.voiceStepReason(
+                label: hint,
+                elementType: "Button",
+                appBundleID: app,
+                secureOnScreen: screen.hasSecureInput
+            )
+        case .point(let x, let y):
+            let hits = screen.elements(hitting: x, y: y)
+            if !hits.isEmpty {
+                return hits.lazy.compactMap { element in
+                    rules.voiceStepReason(
+                        label: element.text,
+                        elementType: element.type,
+                        appBundleID: app,
+                        secureField: element.isSecureInput,
+                        secureOnScreen: screen.hasSecureInput
+                    )
+                }.first
+            }
+            return rules.voiceStepReason(
+                label: hint,
+                elementType: "Button",
+                appBundleID: app,
+                secureOnScreen: screen.hasSecureInput
+            )
+        case .text(let text):
+            return rules.voiceStepReason(
+                label: text,
+                elementType: "Button",
+                appBundleID: app,
+                secureOnScreen: screen.hasSecureInput
+            )
+        }
+    }
+
+    private static func resolvedElement(for target: VoiceActionTarget, in screen: VoiceObservedScreen) -> VoiceObservedElement? {
+        switch target {
+        case .ref(let ref): screen.elements[ref]
+        case .point(let x, let y): screen.elements(hitting: x, y: y).first
+        case .text: nil
         }
     }
 
@@ -530,7 +757,7 @@ struct VoiceToolProposal: Equatable, Sendable {
                     keys.insert("type:\(text.trimmingCharacters(in: .whitespacesAndNewlines))")
                 case .key(let key):
                     keys.insert("key:\(key.lowercased())")
-                case .navigation:
+                case .navigation, .waitOrHome:
                     break
                 case .other(let name):
                     keys.insert("other:\(name)")
@@ -682,7 +909,7 @@ struct VoiceToolProposal: Equatable, Sendable {
             let text = (args["text"] as? String) ?? ""
             return .deviceActions([VoiceProposedAction(kind: .tap(.text(text)), hintText: text)])
         case "go_home":
-            return .deviceActions([VoiceProposedAction(kind: .navigation, hintText: nil)])
+            return .deviceActions([VoiceProposedAction(kind: .waitOrHome, hintText: nil)])
         case "do":
             let rawActions = args["actions"] as? [[String: Any]] ?? []
             return .deviceActions(rawActions.flatMap(parseDoActions))
@@ -745,8 +972,13 @@ struct VoiceToolProposal: Equatable, Sendable {
         if let key = raw["key"] as? String {
             return VoiceProposedAction(kind: .key(key), hintText: hint)
         }
-        if raw["swipe"] != nil || raw["scroll_to"] != nil || raw["back"] != nil
-            || raw["button"] != nil || raw["wait"] != nil || raw["wait_until"] != nil {
+        if raw["wait"] != nil || raw["wait_until"] != nil {
+            return VoiceProposedAction(kind: .waitOrHome, hintText: hint)
+        }
+        if let button = raw["button"] as? String {
+            return VoiceProposedAction(kind: button.lowercased() == "home" ? .waitOrHome : .navigation, hintText: hint)
+        }
+        if raw["swipe"] != nil || raw["scroll_to"] != nil || raw["back"] != nil || raw["button"] != nil {
             return VoiceProposedAction(kind: .navigation, hintText: hint)
         }
         return VoiceProposedAction(kind: .other(raw.keys.sorted().joined(separator: ",")), hintText: hint)
@@ -805,6 +1037,8 @@ struct VoiceGoal: Equatable, Sendable {
     var forbidsSend: Bool
     var needsFreshEvidence: Bool
     var stopped: Bool
+    var awaitingCompletion: Bool = false
+    var hasMessagingIntent: Bool = false
     var observedScreen: VoiceObservedScreen
     var steps: [VoiceGoalStep]
 
@@ -833,6 +1067,32 @@ enum VoiceTaskRelationClassifier {
     private static let backchannels: Set<String> = [
         "嗯", "哦", "好的", "好", "行", "明白", "知道了", "好吧", "可以",
         "uh-huh", "mm-hmm", "ok", "okay", "got it", "alright", "sure",
+    ]
+    private static let spokenAffirmations: Set<String> = [
+        "好的", "好", "好啊", "好呀", "行", "行啊", "可以", "没问题", "嗯", "哦", "明白", "知道了", "好吧",
+        "确认", "确定", "同意", "批准", "允许", "准许", "通过", "放行", "对", "是的", "没错", "好的确认",
+        "yes", "yeah", "yep", "yup", "ok", "okay", "alright", "sure", "confirm", "confirmed",
+        "approve", "approved", "allow", "go ahead", "got it", "sounds good", "uh-huh", "mm-hmm",
+    ]
+    private static let messagingIntentCues = [
+        "发消息", "发个消息", "发条消息", "发一条消息", "发短信", "发个短信", "发条短信",
+        "发微信", "发个微信", "发条微信", "发邮件", "发封邮件", "回复消息", "私信", "发给",
+        "send a message", "send message", "text message", "send a text", "send an email", "send email",
+        "reply to ", "message to ", "dm ",
+    ]
+    private static let incompleteSuffixes = [
+        "发消息说", "发消息", "发个消息", "发条消息", "发一条消息",
+        "发短信说", "发短信", "发微信说", "发微信", "发邮件说", "发邮件",
+        "回复说", "告诉他说", "告诉她说", "跟他说", "跟她说", "对他说", "对她说",
+        "留言说", "备注说", "写上说", "写着", "输入", "打字",
+        "转给", "转账给", "付款给", "支付给", "发给", "寄给",
+        "发消息给", "发短信给", "发微信给", "发邮件给",
+        "然后", "并且", "还有", "以及", "但是", "不过",
+        " saying", " telling", " to", " for", " with", " and", " then", " about",
+        " write", " type", " send a message", " send message", " send an email", " pay", " transfer",
+    ]
+    private static let trailingSayContextCues = [
+        "给", "消息", "短信", "微信", "邮件", "告诉", "回复", "写", "留言", "备注",
     ]
     private static let stopFillers: Set<String> = [
         "好了", "行了", "好吧", "嗯", "好的", "好", "ok", "okay", "alright",
@@ -918,6 +1178,56 @@ enum VoiceTaskRelationClassifier {
         return !isLiteralStopDictation && isStandaloneStop(clauses: clauses, normalized: unquoted)
     }
 
+    static func isSpokenAffirmation(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        let normalized = normalize(stripQuotedSpans(trimmed))
+        guard !normalized.isEmpty else { return false }
+        if spokenAffirmations.contains(normalized) { return true }
+        let clauses = splitClauses(normalized)
+        return !clauses.isEmpty && clauses.allSatisfy { spokenAffirmations.contains($0) }
+    }
+
+    static func hasMessagingIntent(_ text: String) -> Bool {
+        let unquoted = normalize(stripQuotedSpans(text))
+        guard !unquoted.isEmpty else { return false }
+        if let app = VoiceAppIdentity.detectApp(in: unquoted), VoiceAppIdentity.messagingApps.contains(app) {
+            return true
+        }
+        return containsAny(unquoted, messagingIntentCues)
+    }
+
+    static func isIncompleteUtterance(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if isStopUtterance(trimmed) || isSpokenAffirmation(trimmed) { return false }
+        if trimmed.hasSuffix("...") || trimmed.hasSuffix("…") { return true }
+        if hasUnclosedQuote(trimmed) { return true }
+        let unquoted = normalize(stripQuotedSpans(trimmed))
+        guard !unquoted.isEmpty else { return false }
+        if incompleteSuffixes.contains(where: { unquoted.hasSuffix($0) }) { return true }
+        if unquoted.hasSuffix("说"), trailingSayContextCues.contains(where: { unquoted.contains($0) }) {
+            return true
+        }
+        if unquoted.hasSuffix("写"), VoiceAppIdentity.detectApp(in: unquoted) != nil {
+            return true
+        }
+        return false
+    }
+
+    private static func hasUnclosedQuote(_ text: String) -> Bool {
+        let asymmetric: [(Character, Character)] = [("「", "」"), ("『", "』"), ("“", "”"), ("‘", "’"), ("《", "》")]
+        for (open, close) in asymmetric {
+            var depth = 0
+            for ch in text {
+                if ch == open { depth += 1 }
+                else if ch == close { depth = max(0, depth - 1) }
+            }
+            if depth > 0 { return true }
+        }
+        return text.filter({ $0 == "\"" }).count % 2 == 1
+    }
+
     static func classify(text: String, source: VoiceUtteranceSource, activeGoal: VoiceGoal?) -> VoiceUtteranceAssessment {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard source.authorizesDeviceWork, !trimmed.isEmpty else {
@@ -982,6 +1292,15 @@ enum VoiceTaskRelationClassifier {
                 return VoiceUtteranceAssessment(
                     relation: .independentNewTask, goalID: nil, revision: 1, baseRevision: nil,
                     replacementScope: .none, needsFreshEvidence: false, forbidsSend: forbidsSendCue, allowsSend: allowsSendCue
+                )
+            }
+
+            if active.awaitingCompletion {
+                return VoiceUtteranceAssessment(
+                    relation: .supplementOrRevise, goalID: active.id, revision: active.revision + 1, baseRevision: active.revision,
+                    replacementScope: .none, needsFreshEvidence: active.hasUnknownStep,
+                    forbidsSend: forbidsSendCue || (allowsSendCue ? false : active.forbidsSend),
+                    allowsSend: allowsSendCue
                 )
             }
 
@@ -1088,8 +1407,8 @@ enum VoiceTaskRelationClassifier {
     }
 
     private static func isChitchat(clauses: [String], normalized: String) -> Bool {
-        if pleasantries.contains(normalized) || backchannels.contains(normalized) { return true }
-        if !clauses.isEmpty, clauses.allSatisfy({ backchannels.contains($0) || pleasantries.contains($0) }) { return true }
+        if pleasantries.contains(normalized) || backchannels.contains(normalized) || spokenAffirmations.contains(normalized) { return true }
+        if !clauses.isEmpty, clauses.allSatisfy({ backchannels.contains($0) || pleasantries.contains($0) || spokenAffirmations.contains($0) }) { return true }
         return containsAny(normalized, chitchatPhrases)
     }
 
@@ -1124,6 +1443,8 @@ enum VoiceExecutionDecision: Equatable, Sendable {
     enum DenialCode: String, Equatable, Sendable {
         case unauthorizedSource = "unauthorized_source"
         case awaitingUtteranceTranscript = "awaiting_utterance_transcript"
+        case partialUtteranceRequiresCompletion = "partial_utterance_requires_completion"
+        case awaitingOnDeviceApproval = "awaiting_on_device_approval"
         case goalStopped = "goal_stopped"
         case staleRevision = "stale_revision"
         case forbiddenByConstraint = "forbidden_by_constraint"
@@ -1138,7 +1459,13 @@ enum VoiceExecutionDecision: Equatable, Sendable {
 }
 
 enum VoiceExecutionGate {
-    static func evaluate(proposal: VoiceToolProposal, goal: VoiceGoal, currentSession: Int) -> VoiceExecutionDecision {
+    static func evaluate(
+        proposal: VoiceToolProposal,
+        goal: VoiceGoal,
+        currentSession: Int,
+        partialUtterance: VoicePartialUtterance? = nil,
+        pendingApprovalReason: String? = nil
+    ) -> VoiceExecutionDecision {
         if !proposal.source.authorizesDeviceWork {
             return .deny(
                 reason: "Blocked: source \(proposal.source.rawValue) cannot authorize phone input.",
@@ -1157,11 +1484,26 @@ enum VoiceExecutionGate {
         if proposal.isReadOnly {
             return .allow(goalID: goal.id, revision: goal.revision)
         }
-        if proposal.awaitingUtteranceTranscript {
+        if let pendingApprovalReason {
             return .deny(
-                reason: "Blocked: waiting for the latest spoken utterance transcript before running device input.",
-                code: .awaitingUtteranceTranscript, goalID: goal.id, revision: goal.revision
+                reason: "Blocked: waiting for the owner's on-device confirmation (\(pendingApprovalReason)). Spoken confirmation cannot approve or retry this step.",
+                code: .awaitingOnDeviceApproval, goalID: goal.id, revision: goal.revision
             )
+        }
+        let risk = proposal.classifyRisk(using: goal.observedScreen, goal: goal, partial: partialUtterance)
+        if proposal.awaitingUtteranceTranscript {
+            guard partialUtterance != nil else {
+                return .deny(
+                    reason: "Blocked: waiting for the latest spoken utterance transcript before running device input.",
+                    code: .awaitingUtteranceTranscript, goalID: goal.id, revision: goal.revision
+                )
+            }
+            if risk != .lowRiskPreparation {
+                return denyIncompleteUtterance(risk: risk, goal: goal)
+            }
+        }
+        if goal.awaitingCompletion, risk != .lowRiskPreparation {
+            return denyIncompleteUtterance(risk: risk, goal: goal)
         }
         if let proposedRevision = proposal.goalRevision, proposedRevision < goal.minimumAllowedRevision {
             return .deny(
@@ -1242,6 +1584,16 @@ enum VoiceExecutionGate {
         }
         return nil
     }
+
+    private static func denyIncompleteUtterance(risk: VoiceProposalRisk, goal: VoiceGoal) -> VoiceExecutionDecision {
+        let reason: String
+        if case .sensitiveStep(let why) = risk {
+            reason = "Blocked: speaker has not finished speaking; sensitive step (\(why)) must wait for the complete request and on-device confirmation."
+        } else {
+            reason = "Blocked: speaker has not finished speaking; only low-risk preparation may run before the utterance completes."
+        }
+        return .deny(reason: reason, code: .partialUtteranceRequiresCompletion, goalID: goal.id, revision: goal.revision)
+    }
 }
 
 struct VoiceGoalTracker: Equatable, Sendable {
@@ -1273,10 +1625,59 @@ struct VoiceGoalTracker: Equatable, Sendable {
     private var pendingUtteranceItems: Set<String> = []
     private var resolvedTranscriptItems: Set<String> = []
     private var latestCommittedItemID: String?
+    private var partialUtterances: [String: VoicePartialUtterance] = [:]
+    private var activePartialItemID: String?
+    private var pendingOnDeviceApprovals: [String: String] = [:]
     private var goalIDByCall: [String: VoiceGoalID] = [:]
     private var provisionalGoalByItem: [String: VoiceGoalID] = [:]
     private var latestBinding: UtteranceBinding?
     private var recoverySent: RecoveryReceipt?
+
+    var hasPendingOnDeviceApproval: Bool { !pendingOnDeviceApprovals.isEmpty }
+    var pendingOnDeviceApprovalReason: String? { pendingOnDeviceApprovals.values.first }
+
+    mutating func setPendingOnDeviceApproval(id: String, reason: String) {
+        guard !id.isEmpty else { return }
+        pendingOnDeviceApprovals[id] = reason.isEmpty ? "sensitive step" : reason
+    }
+
+    mutating func clearPendingOnDeviceApproval(id: String) {
+        pendingOnDeviceApprovals.removeValue(forKey: id)
+    }
+
+    mutating func ingestPartialUtterance(
+        text: String,
+        itemID: String,
+        source: VoiceUtteranceSource,
+        replace: Bool
+    ) {
+        guard !itemID.isEmpty, !text.isEmpty else { return }
+        guard bindingByItem[itemID] == nil, !resolvedTranscriptItems.contains(itemID) else { return }
+        let combined: String
+        if replace {
+            combined = text
+        } else {
+            combined = (partialUtterances[itemID]?.text ?? "") + text
+        }
+        let unquoted = VoiceTaskRelationClassifier.stripQuotedSpans(combined)
+        partialUtterances[itemID] = VoicePartialUtterance(
+            itemID: itemID,
+            text: combined,
+            source: source,
+            targetApp: VoiceAppIdentity.detectApp(in: unquoted),
+            hasMessagingIntent: VoiceTaskRelationClassifier.hasMessagingIntent(combined)
+        )
+        activePartialItemID = itemID
+        pendingUtteranceItems.insert(itemID)
+    }
+
+    mutating func clearPartialUtterance(itemID: String?) {
+        guard let itemID, !itemID.isEmpty else { return }
+        partialUtterances.removeValue(forKey: itemID)
+        if activePartialItemID == itemID {
+            activePartialItemID = nil
+        }
+    }
 
     mutating func noteCommittedUtterance(itemID: String) {
         guard !itemID.isEmpty else { return }
@@ -1289,6 +1690,7 @@ struct VoiceGoalTracker: Equatable, Sendable {
         guard let itemID, !itemID.isEmpty else { return }
         pendingUtteranceItems.remove(itemID)
         resolvedTranscriptItems.insert(itemID)
+        clearPartialUtterance(itemID: itemID)
         if latestCommittedItemID == itemID {
             latestCommittedItemID = nil
         }
@@ -1310,6 +1712,7 @@ struct VoiceGoalTracker: Equatable, Sendable {
         if let itemID {
             pendingUtteranceItems.remove(itemID)
             resolvedTranscriptItems.insert(itemID)
+            clearPartialUtterance(itemID: itemID)
         }
         let utteranceID = itemID ?? delegationID ?? nextUtteranceID()
 
@@ -1322,9 +1725,13 @@ struct VoiceGoalTracker: Equatable, Sendable {
             active.source = source
             active.targetApp = active.targetApp ?? VoiceAppIdentity.detectApp(in: VoiceTaskRelationClassifier.stripQuotedSpans(text))
             active.forbidsSend = active.forbidsSend || assessment.forbidsSend
+            active.hasMessagingIntent = active.hasMessagingIntent || VoiceTaskRelationClassifier.hasMessagingIntent(text)
             if assessment.relation == .stop {
                 active.stopped = true
                 active.latestRelation = .stop
+                active.awaitingCompletion = false
+            } else {
+                active.awaitingCompletion = VoiceTaskRelationClassifier.isIncompleteUtterance(text)
             }
             activeGoal = active
             let binding = UtteranceBinding(goalID: active.id, revision: active.revision, source: source)
@@ -1359,6 +1766,7 @@ struct VoiceGoalTracker: Equatable, Sendable {
             if var active = activeGoal {
                 active.stopped = true
                 active.latestRelation = .stop
+                active.awaitingCompletion = false
                 active.forbidsSend = active.forbidsSend || assessment.forbidsSend
                 activeGoal = active
                 let binding = UtteranceBinding(goalID: active.id, revision: active.revision, source: source)
@@ -1370,6 +1778,7 @@ struct VoiceGoalTracker: Equatable, Sendable {
                 stoppedGoal.latestRelation = .stop
                 stoppedGoal.forbidsSend = assessment.forbidsSend
                 stoppedGoal.stopped = true
+                stoppedGoal.awaitingCompletion = false
                 activeGoal = stoppedGoal
                 let binding = UtteranceBinding(goalID: stoppedGoal.id, revision: stoppedGoal.revision, source: source)
                 recordBinding(binding, itemID: itemID, delegationID: delegationID)
@@ -1397,16 +1806,23 @@ struct VoiceGoalTracker: Equatable, Sendable {
         case .supplementOrRevise, .replace:
             if var active = activeGoal {
                 let previous = active.revision
+                let wasAwaitingCompletion = active.awaitingCompletion
                 active.baseRevision = previous
                 active.revision = previous + 1
                 if assessment.replacementScope.invalidatesEarlierRevisions {
                     active.minimumAllowedRevision = max(active.minimumAllowedRevision, active.revision)
                 }
-                active.latestUtterance = text
+                if wasAwaitingCompletion && assessment.relation == .supplementOrRevise {
+                    active.latestUtterance = active.latestUtterance.isEmpty ? text : "\(active.latestUtterance)\(text)"
+                } else {
+                    active.latestUtterance = text
+                }
                 active.latestRelation = assessment.relation
                 active.replacementScope = assessment.replacementScope
                 active.forbidsSend = assessment.forbidsSend
                 active.needsFreshEvidence = active.needsFreshEvidence || assessment.needsFreshEvidence
+                active.awaitingCompletion = VoiceTaskRelationClassifier.isIncompleteUtterance(text)
+                active.hasMessagingIntent = active.hasMessagingIntent || VoiceTaskRelationClassifier.hasMessagingIntent(text)
                 if let detected = VoiceAppIdentity.detectApp(in: VoiceTaskRelationClassifier.stripQuotedSpans(text)),
                    assessment.replacementScope == .wholeGoal || active.targetApp == nil {
                     active.targetApp = detected
@@ -1438,7 +1854,7 @@ struct VoiceGoalTracker: Equatable, Sendable {
     }
 
     mutating func bindResponse(_ responseID: String, itemID: String?) {
-        let effectiveItem = itemID ?? latestCommittedItemID
+        let effectiveItem = itemID ?? latestCommittedItemID ?? activePartialItemID
         if let effectiveItem {
             itemByResponse[responseID] = effectiveItem
             if let binding = bindingByItem[effectiveItem] {
@@ -1465,15 +1881,22 @@ struct VoiceGoalTracker: Equatable, Sendable {
         defaultSource: VoiceUtteranceSource
     ) -> (goalID: VoiceGoalID, revision: Int, source: VoiceUtteranceSource, awaitingTranscript: Bool) {
         let effectiveItem = speechItemID ?? responseID.flatMap { itemByResponse[$0] }
+        let delegationAlreadyBound = delegationID.flatMap { bindingByDelegation[$0] } != nil
         let transcriptionActive = !utterances.isEmpty
-        let hasPendingTranscript = transcriptionActive && (
+        let hasActivePartial = !delegationAlreadyBound && (
+            effectiveItem.map { partialUtterances[$0] != nil } == true
+                || (delegationID == nil && !partialUtterances.isEmpty)
+        )
+        let hasPendingTranscript = hasActivePartial || (transcriptionActive && !delegationAlreadyBound && (
             effectiveItem.map {
                 pendingUtteranceItems.contains($0) && bindingByItem[$0] == nil
             } == true || (delegationID == nil && !pendingUtteranceItems.isEmpty)
-        )
+        ))
         if hasPendingTranscript {
-            let goal = activeGoal ?? makeProvisionalGoal(itemID: effectiveItem ?? latestCommittedItemID, source: defaultSource)
-            return (goal.id, goal.revision, defaultSource, true)
+            let provisionalItem = effectiveItem ?? latestCommittedItemID ?? activePartialItemID
+            let partialSource = provisionalItem.flatMap { partialUtterances[$0]?.source } ?? defaultSource
+            let goal = activeGoal ?? makeProvisionalGoal(itemID: provisionalItem, source: partialSource)
+            return (goal.id, goal.revision, partialSource, true)
         }
         let found = delegationID.flatMap({ bindingByDelegation[$0] })
             ?? effectiveItem.flatMap({ bindingByItem[$0] })
@@ -1503,7 +1926,27 @@ struct VoiceGoalTracker: Equatable, Sendable {
             targetGoal = makeProvisionalGoal(itemID: proposal.speechItemID, source: proposal.source)
         }
 
-        let decision = VoiceExecutionGate.evaluate(proposal: proposal, goal: targetGoal, currentSession: session)
+        let partial: VoicePartialUtterance? = if proposal.awaitingUtteranceTranscript {
+            if let item = proposal.speechItemID {
+                partialUtterances[item]
+            } else if let committed = latestCommittedItemID, pendingUtteranceItems.contains(committed) {
+                partialUtterances[committed]
+            } else if let activePartialItemID {
+                partialUtterances[activePartialItemID]
+            } else {
+                nil
+            }
+        } else {
+            nil
+        }
+
+        let decision = VoiceExecutionGate.evaluate(
+            proposal: proposal,
+            goal: targetGoal,
+            currentSession: session,
+            partialUtterance: partial,
+            pendingApprovalReason: pendingOnDeviceApprovalReason
+        )
         guard case .allow(let goalID, let revision) = decision else { return decision }
 
         let createsDraft = proposal.createsDraft(using: targetGoal.observedScreen)
@@ -1590,6 +2033,8 @@ struct VoiceGoalTracker: Equatable, Sendable {
         pendingUtteranceItems.removeAll()
         resolvedTranscriptItems.removeAll()
         latestCommittedItemID = nil
+        partialUtterances.removeAll()
+        activePartialItemID = nil
         latestBinding = nil
     }
 
@@ -1633,6 +2078,8 @@ struct VoiceGoalTracker: Equatable, Sendable {
             forbidsSend: forbidsSend,
             needsFreshEvidence: false,
             stopped: false,
+            awaitingCompletion: VoiceTaskRelationClassifier.isIncompleteUtterance(text),
+            hasMessagingIntent: VoiceTaskRelationClassifier.hasMessagingIntent(text),
             observedScreen: VoiceObservedScreen(),
             steps: []
         )

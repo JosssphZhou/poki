@@ -2094,6 +2094,7 @@ final class AppModel {
                 askOwner(approval)
             }
         case .approvalEnded(let id, let approved):
+            voice.clearPendingOnDeviceApproval(id: id)
             lastApprovalAnswered = Date()
             if let approval = approvals.first(where: { $0.id == id }) {
                 record(approval, approved: approved)
@@ -2402,6 +2403,7 @@ final class AppModel {
     /// The island asks first. The notification is available if nobody answers before iOS folds it.
     private func askOwner(_ approval: PendingApproval) {
         approvals.append(approval)
+        voice.setPendingOnDeviceApproval(id: approval.id, reason: approval.reason)
         cancelLiveActivityReturn()
         log.add("approval", "requested \(approval.id) in \(approval.app): \(approval.summary); Live Activity \(activity.isRunning ? "running" : "NOT running: \(activity.lastError ?? "no error")")")
         let caller = currentCaller

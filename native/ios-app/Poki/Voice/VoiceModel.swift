@@ -445,19 +445,20 @@ final class VoiceModel {
     private var liveUsageSeconds: Double?
     private var liveSpeechStopped = false
     private enum LiveDelegationState: Equatable {
-        case active, cancelled, acknowledgment, duplicate
+        case active, cancelled, acknowledgment, awaitingOnDeviceApproval, duplicate
         case awaitingFirstTool(audio: Range<Int>, fallback: LiveCallerSpeech.TextReceipt?)
 
         var canRunTools: Bool {
             switch self {
             case .active, .awaitingFirstTool: true
-            case .cancelled, .acknowledgment, .duplicate: false
+            case .cancelled, .acknowledgment, .awaitingOnDeviceApproval, .duplicate: false
             }
         }
 
         var refusal: String? {
             switch self {
             case .acknowledgment: "The user was acknowledging the conversation. Wait for a request before starting work."
+            case .awaitingOnDeviceApproval: "An on-device confirmation is waiting for the owner. Spoken confirmation cannot approve or retry this step."
             case .duplicate: "This request repeats a turn already handled. This step did not run. Do not announce a new result."
             case .active, .cancelled, .awaitingFirstTool: nil
             }
@@ -645,6 +646,19 @@ final class VoiceModel {
     private let storage: PokiStorage
     private(set) var goalTracker = VoiceGoalTracker()
     private var deferredTranscriptResponse = false
+    private var activeCodexPartialItemID: String?
+    private var nextCodexPartialNumber = 0
+    private var activeLivePartialItemID: String?
+
+    var hasPendingOnDeviceApproval: Bool { goalTracker.hasPendingOnDeviceApproval }
+
+    func setPendingOnDeviceApproval(id: String, reason: String) {
+        goalTracker.setPendingOnDeviceApproval(id: id, reason: reason)
+    }
+
+    func clearPendingOnDeviceApproval(id: String) {
+        goalTracker.clearPendingOnDeviceApproval(id: id)
+    }
 
     init(clearTap: @escaping @MainActor (String, String?, String?) async -> TapClearance,
          phoneTool: @escaping @MainActor (String, String, PhoneOperationCancellation?) async -> PhoneAnswer,
@@ -938,11 +952,12 @@ final class VoiceModel {
                     let binding = goalTracker.resolveBinding(
                         delegationID: nil,
                         responseID: nil,
-                        speechItemID: nil,
+                        speechItemID: activeCodexPartialItemID,
                         defaultSource: defaultUtteranceSource
                     )
                     let syntheticCall = VoiceCall(
                         id: callID, name: name, arguments: arguments, session: number,
+                        speechItem: activeCodexPartialItemID,
                         goalID: binding.goalID, goalRevision: binding.revision, utteranceSource: binding.source
                     )
                     let proposal = VoiceToolProposal(
@@ -1248,7 +1263,15 @@ final class VoiceModel {
             if let audio { text = try? await openingSpeech.transcribe(audio) }
             else { text = nil }
             guard session == number, !Task.isCancelled else { return }
-            if let text, !text.isEmpty, openingSpeech.sendText(text) {
+            if let text, !text.isEmpty,
+               hasPendingOnDeviceApproval,
+               VoiceTaskRelationClassifier.isSpokenAffirmation(text) {
+                let notice = AppLocalization.text(LocalizedStringResource("An approval is waiting for you."))
+                lines.append(VoiceLine(role: .note, text: notice))
+                log.add("voice", "opening dictation refused spoken confirmation while on-device approval waits")
+                await openingSpeech.announce(notice)
+                if session == number { phase = .off }
+            } else if let text, !text.isEmpty, openingSpeech.sendText(text) {
                 let notice = plan.hasUncertainEarlierAudio
                     ? Self.openingUncertainEarlierPart
                     : AppLocalization.text(LocalizedStringResource("Voice couldn’t connect. I’ll handle this as text.", table: "Entry"))
@@ -1439,6 +1462,8 @@ final class VoiceModel {
         pendingRealtimeTurns = 0
         committedRealtimeItems.removeAll()
         goalTracker.sessionEnded()
+        activeCodexPartialItemID = nil
+        activeLivePartialItemID = nil
         deferredTranscriptResponse = false
         awaitingAnswer = false
         requestedAnswer = nil
@@ -1661,6 +1686,13 @@ final class VoiceModel {
             if lines.last?.role == .you, lines.last?.text != text { lines.removeLast() }
             guard !text.isEmpty else { phase = .listening; return }
             if lines.last?.text != text { lines.append(VoiceLine(role: .you, text: text)) }
+            if hasPendingOnDeviceApproval, VoiceTaskRelationClassifier.isSpokenAffirmation(text) {
+                let notice = AppLocalization.text(LocalizedStringResource("An approval is waiting for you."))
+                lines.append(VoiceLine(role: .note, text: notice))
+                log.add("voice", "dictation refused spoken confirmation while on-device approval waits")
+                phase = .listening
+                return
+            }
             guard let chat = AskPoki.chat else { phase = .lost(VoiceError.noBridge.words); return }
             if chat.running { lines.append(VoiceLine(role: .note, text: AppLocalization.text(LocalizedStringResource("Poki is still on the last task.")))); phase = .listening; return }
             let before = chat.entries.count
@@ -1869,6 +1901,17 @@ final class VoiceModel {
             lastActivity = time.now()
             keepOpen()
             phase = .hearing
+            if appAudio == nil, let delta = params["delta"] as? String, !delta.isEmpty {
+                let itemID: String
+                if let existing = activeCodexPartialItemID {
+                    itemID = existing
+                } else {
+                    nextCodexPartialNumber += 1
+                    itemID = (params["itemId"] as? String) ?? "codex-partial-\(number)-\(nextCodexPartialNumber)"
+                    activeCodexPartialItemID = itemID
+                }
+                goalTracker.ingestPartialUtterance(text: delta, itemID: itemID, source: defaultUtteranceSource, replace: false)
+            }
         case "thread/realtime/transcript/done":
             guard let role = params["role"] as? String else { return }
             let text = params["text"] as? String ?? ""
@@ -1876,7 +1919,12 @@ final class VoiceModel {
                 resumeLiveAudio(link)
                 lastActivity = time.now()
                 keepOpen()
+                let finishedItemID = activeCodexPartialItemID
+                activeCodexPartialItemID = nil
                 if text.isEmpty {
+                    if appAudio == nil, let finishedItemID {
+                        goalTracker.clearPartialUtterance(itemID: finishedItemID)
+                    }
                     if phase == .hearing {
                         phase = codexWorkPending ? .thinking : .listening
                         endIfDone()
@@ -1884,7 +1932,7 @@ final class VoiceModel {
                     return
                 }
                 lines.append(VoiceLine(role: .you, text: text))
-                recordCodexUtterance(text)
+                recordCodexUtterance(text, itemID: finishedItemID)
                 awaitingAnswer = true
                 phase = .thinking
                 watchForStall(session: number)
@@ -1966,11 +2014,25 @@ final class VoiceModel {
                 let utterance = Self.liveSpeechParts(liveCallerSpeech.text).filter { !Self.liveBackchannels.contains($0) }
                 if !liveCallerSpeech.alreadyHandled,
                    Self.liveRequestsStop(utterance) || VoiceTaskRelationClassifier.isStopUtterance(liveCallerSpeech.text) {
+                    if let old = activeLivePartialItemID {
+                        goalTracker.clearPartialUtterance(itemID: old)
+                        activeLivePartialItemID = nil
+                    }
                     trace("reply stop requested by recognized voice command")
                     if appAudio == nil { cancelLiveTask() }
                     let stopped = appAudio == nil ? "The user stopped the reply and cancelled the phone task." : "The user stopped the reply."
                     stopLivePlayback(on: link, note: stopped + " Drop the reply and stay silent until a new request.")
                 } else if !liveCallerSpeech.alreadyHandled, !utterance.isEmpty {
+                    if appAudio == nil, !VoiceTaskRelationClassifier.isSpokenAffirmation(liveCallerSpeech.text) {
+                        let partialID = liveCallerSpeech.itemID ?? "live-partial-\(number)"
+                        activeLivePartialItemID = partialID
+                        goalTracker.ingestPartialUtterance(
+                            text: liveCallerSpeech.text,
+                            itemID: partialID,
+                            source: liveCallerSpeech.source ?? defaultUtteranceSource,
+                            replace: true
+                        )
+                    }
                     resumeLiveAudio(link)
                     if !answerDue, phase != .thinking { clock = TurnClock(said: time.now()) }
                     else if clock.call == nil { clock.said = time.now() }
@@ -1983,6 +2045,10 @@ final class VoiceModel {
         case "session.delegation.created":
             if let offset = event["offset_ms"] as? Int, offset > 0 {
                 openingCapture?.audio.confirmRemoteAudio(session: number, endMilliseconds: offset)
+            }
+            if let old = activeLivePartialItemID {
+                goalTracker.clearPartialUtterance(itemID: old)
+                activeLivePartialItemID = nil
             }
             if let id = (event["delegation"] as? [String: Any])?["id"] as? String, liveDelegations[id] == nil {
                 if liveCallerSpeech.alreadyHandled {
@@ -1999,10 +2065,12 @@ final class VoiceModel {
                 let fallback = liveCallerSpeech.pendingTextReceipt
                 liveCallerSpeech.markHandled()
                 let source = utteranceSource(from: event, fallback: utteranceSourceOverride ?? defaultUtteranceSource)
-                if !parts.isEmpty, parts.allSatisfy(Self.liveBackchannels.contains) {
-                    liveDelegations[id] = .acknowledgment
+                let isAffirmationOnly = (!parts.isEmpty && parts.allSatisfy(Self.liveBackchannels.contains))
+                    || VoiceTaskRelationClassifier.isSpokenAffirmation(utteranceText)
+                if isAffirmationOnly {
+                    liveDelegations[id] = hasPendingOnDeviceApproval ? .awaitingOnDeviceApproval : .acknowledgment
                     recordCompleteUtterance(utteranceText, itemID: itemID, delegationID: id, source: source, on: link)
-                    log.add("voice", "delegation \(id) ignored (acknowledgment)")
+                    log.add("voice", "delegation \(id) ignored (\(hasPendingOnDeviceApproval ? "awaiting on-device approval" : "acknowledgment"))")
                     return
                 }
                 let request = parts.filter { !Self.liveBackchannels.contains($0) }
@@ -2045,6 +2113,10 @@ final class VoiceModel {
             trace("model speech started, reply was playing: \(phase == .speaking)")
             keepOpen()
             if usesLive {
+                if let old = activeLivePartialItemID {
+                    goalTracker.clearPartialUtterance(itemID: old)
+                    activeLivePartialItemID = nil
+                }
                 let eventID = event["event_id"] as? String
                 if let eventID {
                     guard eventID != liveCallerSpeech.lastStartEvent else { return }
@@ -2087,8 +2159,21 @@ final class VoiceModel {
             flush()
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
+        case "conversation.item.input_audio_transcription.delta":
+            if appAudio == nil, let delta = event["delta"] as? String, !delta.isEmpty {
+                let itemID = (event["item_id"] as? String) ?? "realtime-partial-\(number)"
+                goalTracker.ingestPartialUtterance(
+                    text: delta,
+                    itemID: itemID,
+                    source: utteranceSource(from: event),
+                    replace: false
+                )
+            }
         case "conversation.item.input_audio_transcription.completed":
             let itemID = event["item_id"] as? String
+            if appAudio == nil, itemID == nil {
+                goalTracker.clearPartialUtterance(itemID: "realtime-partial-\(number)")
+            }
             if let text = event["transcript"] as? String {
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -2104,7 +2189,9 @@ final class VoiceModel {
             }
         case "conversation.item.input_audio_transcription.failed":
             if appAudio == nil {
-                goalTracker.clearPendingUtterance(itemID: event["item_id"] as? String)
+                let itemID = event["item_id"] as? String
+                if itemID == nil { goalTracker.clearPartialUtterance(itemID: "realtime-partial-\(number)") }
+                goalTracker.clearPendingUtterance(itemID: itemID)
                 resumeDeferredTranscriptResponseIfNeeded()
             }
         case "response.created":
@@ -2360,10 +2447,12 @@ final class VoiceModel {
         case .deny(let reason, let code, let goalID, let revision):
             log.add("voice", "goal gate denied \(call.name) (\(call.id), goal \(goalID?.rawValue ?? "none") r\(revision ?? 0)): \(code.rawValue)")
             completeLiveControl(call, state: .failed, output: reason)
-            if code == .awaitingUtteranceTranscript, !usesLive {
+            let waitForTranscript = code == .awaitingUtteranceTranscript
+                || (code == .partialUtteranceRequiresCompletion && awaitingUtteranceTranscript)
+            if waitForTranscript, !usesLive {
                 deferredTranscriptResponse = true
             }
-            if code != .goalStopped, code != .unauthorizedSource, code != .awaitingUtteranceTranscript,
+            if code != .goalStopped, code != .unauthorizedSource, !waitForTranscript,
                (!usesLive || !liveSpeechStopped) {
                 wantsResponse = true
                 flush()
@@ -2433,6 +2522,20 @@ final class VoiceModel {
                         }
                         // A tap: Poki's approval rules first, and the owner's OK on the phone when they ask for it.
                         let app = result.app
+                        let pendingReason = SensitivityRules().voiceStepReason(
+                            label: target.says,
+                            appBundleID: app?.bundle_id,
+                            appName: app?.name
+                        ) ?? (target.says.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "tapping an unreadable control" : nil)
+                        let pendingApprovalID = "bridge-tap-\(call.id)"
+                        if let pendingReason {
+                            setPendingOnDeviceApproval(id: pendingApprovalID, reason: pendingReason)
+                        }
+                        defer {
+                            if pendingReason != nil {
+                                clearPendingOnDeviceApproval(id: pendingApprovalID)
+                            }
+                        }
                         let clearance = await clearTap(target.says, app?.bundle_id, app?.name)
                         if stopped(call) {
                             completeLiveControl(call, state: .failed, output: Self.stoppedStep)
@@ -2939,13 +3042,13 @@ final class VoiceModel {
         flush()
     }
 
-    private func recordCodexUtterance(_ text: String) {
+    private func recordCodexUtterance(_ text: String, itemID: String? = nil) {
         guard appAudio == nil else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let record = goalTracker.ingestCompleteUtterance(
             text: trimmed,
-            itemID: nil,
+            itemID: itemID,
             delegationID: nil,
             source: defaultUtteranceSource,
             at: time.now()

@@ -186,6 +186,84 @@ public struct SensitivityRules: Sendable, Equatable {
         return nil
     }
 
+    /// Whether `bundleID` is one of `guardedApps`, compared case-insensitively.
+    public func isGuardedApp(_ bundleID: String?) -> Bool {
+        canonicalBundle(bundleID, in: guardedApps) != nil
+    }
+
+    /// Whether `bundleID` is one of `callingApps`, compared case-insensitively.
+    public func isCallingApp(_ bundleID: String?) -> Bool {
+        canonicalBundle(bundleID, in: callingApps) != nil
+    }
+
+    /// Whether `bundleID` is one of `messagingApps`, compared case-insensitively.
+    public func isMessagingApp(_ bundleID: String?) -> Bool {
+        canonicalBundle(bundleID, in: messagingApps) != nil
+    }
+
+    /// Sensitivity reason for a proposed voice step, delegating directly to `SensitivityRules`
+    /// so voice gating shares the exact same rules as `PokiCore` execution approvals.
+    public func voiceStepReason(
+        label: String?,
+        elementType: String = "Button",
+        typing: Bool = false,
+        typedText: String? = nil,
+        key: String? = nil,
+        appBundleID: String? = nil,
+        appName: String? = nil,
+        secureField: Bool = false,
+        secureOnScreen: Bool = false
+    ) -> String? {
+        guard enabled else { return nil }
+        let matchedBundle = canonicalBundle(appBundleID, in: guardedApps)
+            ?? canonicalBundle(appBundleID, in: callingApps)
+            ?? canonicalBundle(appBundleID, in: messagingApps)
+            ?? appBundleID
+        let app = (matchedBundle != nil || appName != nil) ? Foreground(bundleID: matchedBundle, name: appName) : nil
+        if let bundle = matchedBundle, guardedApps.contains(bundle) {
+            return "input in \(app?.describe ?? bundle)"
+        }
+        let effectiveType = secureField ? "SecureTextField" : elementType
+        let isSearch = effectiveType == "SearchField"
+        let isMessaging = matchedBundle.map(messagingApps.contains) ?? false
+        if typing {
+            let field: Element? = secureField
+                ? Element(type: "SecureTextField", label: label, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+                : nil
+            if let r = reason(touching: field, typing: true, app: app, secureOnScreen: secureOnScreen, in: nil) {
+                return r
+            }
+            if isMessaging, typedText?.contains(where: \.isNewline) == true, !isSearch {
+                return "sending a message (a return typed in \(app?.describe ?? "messaging app"))"
+            }
+            return nil
+        }
+        if let key, !key.isEmpty {
+            let lowered = key.lowercased()
+            if lowered == "return" || lowered == "enter" || key.contains(where: \.isNewline) {
+                if secureFields && (secureField || secureOnScreen) {
+                    return "submitting a password field"
+                }
+                if isMessaging && !isSearch {
+                    return "sending a message (return in \(app?.describe ?? "messaging app"))"
+                }
+            }
+            return nil
+        }
+        let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let element: Element? = if let trimmedLabel, !trimmedLabel.isEmpty {
+            Element(type: effectiveType, label: trimmedLabel, value: nil, identifier: nil, frame: Rect(x: 0, y: 0, width: 0, height: 0), depth: 0)
+        } else {
+            nil
+        }
+        return reason(touching: element, typing: false, app: app, secureOnScreen: secureOnScreen, in: nil)
+    }
+
+    private func canonicalBundle(_ bundleID: String?, in list: [String]) -> String? {
+        guard let bundleID, !bundleID.isEmpty else { return nil }
+        return list.first { $0.caseInsensitiveCompare(bundleID) == .orderedSame }
+    }
+
     /// Why this action needs approval, or nil.
     /// Pass `in: elements` when the full accessibility tree is known (allowing ordinary page deletes
     /// while guarding compact deletes inside menus and confirmation dialogs). Pass `in: nil` when

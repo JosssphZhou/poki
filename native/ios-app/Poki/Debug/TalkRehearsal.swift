@@ -17,6 +17,7 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     private static var mode: String { UserDefaults.standard.string(forKey: "pokiTalkRehearsal") ?? "" }
     private static var loses: Bool { mode == "lost" }
     private static var revisesNotes: Bool { mode == "revise-notes" }
+    private static var partialPrep: Bool { mode == "partial-prep" }
     static var hold: TalkState? { UserDefaults.standard.string(forKey: "pokiTalkHold").flatMap(TalkState.named) }
 
     @MainActor
@@ -39,17 +40,41 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
         }
     }
 
+    @MainActor
+    struct PartialPrepState: Equatable {
+        var opened = 0
+        var typed: [String] = []
+        var sent = 0
+        var callLog: [String] = []
+
+        func screenText() -> String {
+            [
+                "app: 微信 (com.tencent.xin)   read: 2026-11-27T00:00:00Z (12 ms)",
+                "elements (3):",
+                #" 1 Cell "小王" [16,120,358,64]"#,
+                #" 2 TextField "\#(typed.last ?? "发消息")" [16,760,290,40]"#,
+                #" 3 Button "发送" [320,760,60,40]"#,
+            ].joined(separator: "\n")
+        }
+    }
+
     @MainActor private(set) static var notesState = NotesDraftState()
+    @MainActor private(set) static var partialPrepState = PartialPrepState()
 
     @MainActor
     static func resetNotesState() {
         notesState = NotesDraftState()
     }
 
+    @MainActor
+    static func resetPartialPrepState() {
+        partialPrepState = PartialPrepState()
+    }
+
     /// The stand-in for the key exchange, which a rehearsal skips. `do` is on the phone's list, so the
     /// step goes to `step()` below instead of a voice bridge.
     static var token: VoiceBridge.Token {
-        revisesNotes
+        (revisesNotes || partialPrep)
             ? VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: ["get_ios_version", "look", "open_app", "do"])
             : VoiceBridge.Token(value: "rehearsal", model: "rehearsal", local_tools: ["do"])
     }
@@ -58,6 +83,28 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     /// screenshot, it does not come back.
     @MainActor
     static func step(name: String = "do", arguments: String = "{}") async -> PhoneAnswer {
+        if partialPrep {
+            try? await Task.sleep(for: .milliseconds(120))
+            let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
+            partialPrepState.callLog.append("\(name):\(arguments)")
+            switch name {
+            case "open_app":
+                partialPrepState.opened += 1
+            case "look":
+                break
+            case "do":
+                for action in args["actions"] as? [[String: Any]] ?? [] {
+                    if action["launch"] != nil { partialPrepState.opened += 1 }
+                    if (action["tap"] as? Int) == 3 { partialPrepState.sent += 1 }
+                    if let text = action["type"] as? String { partialPrepState.typed.append(text) }
+                }
+            default:
+                break
+            }
+            let screen = partialPrepState.screenText()
+            AppLog.shared.add("voice", "rehearsal-partial-prep \(name): opened=\(partialPrepState.opened) typed=\(partialPrepState.typed.count) sent=\(partialPrepState.sent)")
+            return (screen, false, nil)
+        }
         if revisesNotes {
             try? await Task.sleep(for: .milliseconds(250))
             let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
@@ -107,6 +154,10 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
     func connect(secret: String, base: URL?, microphone: Bool, direct: Bool) async throws {
         if Self.revisesNotes {
             try await connectNotesRevision()
+            return
+        }
+        if Self.partialPrep {
+            try await connectPartialPrep()
             return
         }
         try await Task.sleep(for: .milliseconds(Self.hold == .connecting ? 3_600_000 : 900))
@@ -209,6 +260,56 @@ final class TalkRehearsal: VoiceConnection, @unchecked Sendable {
             }
             let summary = Self.notesState
             AppLog.shared.add("voice", "rehearsal-notes final: opened=\(summary.opened) drafts=\(summary.drafts.count) hasSaturday=\(summary.drafts == ["周六"]) sent=\(summary.sent)")
+        }
+    }
+
+    @MainActor
+    private func connectPartialPrep() async throws {
+        Self.partialPrepState = PartialPrepState()
+        try await Task.sleep(for: .milliseconds(200))
+        let turn: [(Double, [String: Any])] = [
+            (0.1, ["type": "session.created"]),
+            (0.3, ["type": "input_audio_buffer.speech_started", "item_id": "prep-u1"]),
+            (0.4, ["type": "conversation.item.input_audio_transcription.delta", "item_id": "prep-u1", "source": "silent_test", "delta": "给小王发消息说"]),
+            (0.5, ["type": "response.created", "response": ["id": "prep-r1"]]),
+            (0.6, ["type": "response.output_item.done", "response_id": "prep-r1",
+                   "item": ["type": "function_call", "call_id": "prep-open-1", "name": "open_app", "arguments": #"{"app":"微信"}"#]]),
+            (0.9, ["type": "response.output_item.done", "response_id": "prep-r1",
+                   "item": ["type": "function_call", "call_id": "prep-type-early", "name": "do", "arguments": #"{"actions":[{"tap":2},{"type":"我晚点到"}]}"#]]),
+            (1.1, ["type": "response.output_item.done", "response_id": "prep-r1",
+                   "item": ["type": "function_call", "call_id": "prep-send-early", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#]]),
+            (1.3, ["type": "response.done", "response": ["id": "prep-r1"]]),
+            (1.5, ["type": "input_audio_buffer.speech_stopped", "item_id": "prep-u1"]),
+            (1.55, ["type": "input_audio_buffer.committed", "item_id": "prep-u1"]),
+            (1.6, ["type": "conversation.item.input_audio_transcription.completed", "item_id": "prep-u1", "source": "silent_test", "transcript": "给小王发消息说"]),
+            (1.7, ["type": "response.created", "response": ["id": "prep-r2"]]),
+            (1.8, ["type": "response.output_item.done", "response_id": "prep-r2",
+                   "item": ["type": "function_call", "call_id": "prep-send-half", "name": "do", "arguments": #"{"actions":[{"tap":3}]}"#]]),
+            (2.0, ["type": "response.done", "response": ["id": "prep-r2"]]),
+            (2.2, ["type": "conversation.item.input_audio_transcription.completed", "item_id": "prep-u2", "source": "silent_test", "transcript": "我晚点到"]),
+            (2.3, ["type": "response.created", "response": ["id": "prep-r3"]]),
+            (2.4, ["type": "response.output_item.done", "response_id": "prep-r3",
+                   "item": ["type": "function_call", "call_id": "prep-reopen", "name": "open_app", "arguments": #"{"app":"微信"}"#]]),
+            (2.6, ["type": "response.output_item.done", "response_id": "prep-r3",
+                   "item": ["type": "function_call", "call_id": "prep-type-full", "name": "do", "arguments": #"{"actions":[{"tap":2},{"type":"我晚点到"}]}"#]]),
+            (3.0, ["type": "response.done", "response": ["id": "prep-r3"]]),
+            (3.2, ["type": "response.created", "response": ["id": "prep-r4"]]),
+            (3.3, ["type": "output_audio_buffer.started"]),
+            (3.4, ["type": "response.output_audio_transcript.done", "transcript": "已打开微信并写好草稿，未发送。"]),
+            (3.6, ["type": "response.done", "response": ["id": "prep-r4"]]),
+            (3.7, ["type": "output_audio_buffer.stopped"]),
+        ]
+        let onEvent = self.onEvent
+        script = Task { @MainActor in
+            var clock = 0.0
+            for (at, event) in turn {
+                try? await Task.sleep(for: .seconds(at - clock))
+                guard !Task.isCancelled else { return }
+                clock = at
+                onEvent(event)
+            }
+            let summary = Self.partialPrepState
+            AppLog.shared.add("voice", "rehearsal-partial-prep final: opened=\(summary.opened) typed=\(summary.typed.count) sent=\(summary.sent)")
         }
     }
 
