@@ -44,9 +44,9 @@ final class Phone: @unchecked Sendable {
 }
 
 final class LocalRunnerTests: XCTestCase {
-    private func makeLocalCore(_ phone: Phone, heldFor: Double = 60, unanswered: @escaping LocalRunner.Unanswered = { nil }) -> (PokiCore, FakeHost) {
+    private func makeLocalCore(_ phone: Phone, heldFor: Double = 60, readTimeout: Double = 1, unanswered: @escaping LocalRunner.Unanswered = { nil }) -> (PokiCore, FakeHost) {
         let host = FakeHost()
-        var config = CoreConfig(approvalWait: 0.3, toolDeadline: 6, actionCap: 2, readTimeout: 1, busyWait: 0.2, treeFormat: "json", humanize: false)
+        var config = CoreConfig(approvalWait: 0.3, toolDeadline: 6, actionCap: 2, readTimeout: readTimeout, busyWait: 0.2, treeFormat: "json", humanize: false)
         config.sensitive.enabled = false
         let lanes = LocalRunner(serve: phone.serve, unanswered: unanswered)
         lanes.heldFor = heldFor
@@ -126,6 +126,43 @@ final class LocalRunnerTests: XCTestCase {
         let later = await core.call("do", ["actions": [["tap": [100, 300]]]])
         XCTAssertFalse(later.isError, later.text)
         XCTAssertEqual(phone.touches.value.count, 1, "once it is through, a tap goes through: \(later.text)")
+    }
+
+    /// A request that is only held for a moment comes through on the existing retry: the owner step
+    /// must not replace a retry that still recovers the read.
+    func testAHeldRequestThatFinishesBeforeTheRetryStillReadsTheTree() async throws {
+        let phone = Phone()
+        let since = LockedBox<Double?>(nil)
+        let (core, _) = makeLocalCore(phone, readTimeout: 3, unanswered: { since.value.map { ("a lookup of the app in front", now() - $0) } })
+        _ = await core.call("look", [:])
+        since.value = now() - 0.1
+        // The phone side gives up on its lookup while the read waits out its retry delay.
+        Task { try? await Task.sleep(nanoseconds: 120_000_000); since.value = nil }
+        let look = await core.call("look", [:])
+        XCTAssertFalse(look.isError, look.text)
+        XCTAssertTrue(look.text.contains("Chat 0"), look.text)
+        XCTAssertFalse(look.text.contains("press the Home button"), look.text)
+    }
+
+    /// The owner is the only one who can end this: when the app in front does not answer, the read says
+    /// so (after its own retry) and asks for the Home button. Nothing on this side can change the app in
+    /// front (testmanagerd serves one request at a time), and the handoff card cannot be shown while the
+    /// request is held either, so the answer says what a person at the phone can do instead.
+    func testAFailedReadSaysTheOwnerMayEndAnAppThatDoesNotAnswer() async throws {
+        let phone = Phone()
+        let since = LockedBox<Double?>(nil)
+        let (core, _) = makeLocalCore(phone, readTimeout: 3, unanswered: { since.value.map { ("a lookup of the app in front", now() - $0) } })
+        _ = await core.call("look", [:])
+        // An app that does not answer: the read's request is left in testmanagerd (the daemon here),
+        // and the screenshot asked beside it waits behind that request.
+        phone.silentUntil.value = now() + 8
+        _ = await core.call("look", [:])
+        // The phone side still waits on its front-app lookup, and the screenshot before was abandoned.
+        since.value = now() - 11
+        let held = await core.call("look", [:])
+        XCTAssertTrue(held.isError, held.text)
+        XCTAssertTrue(held.text.contains("press the Home button"), held.text)
+        XCTAssertFalse(held.text.contains("handoff"), held.text)
     }
 
     /// What must not get looser: a request still not through past testmanagerd's own limit (60 s on the
