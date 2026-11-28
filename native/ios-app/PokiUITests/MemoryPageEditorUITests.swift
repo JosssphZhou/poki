@@ -15,6 +15,9 @@ final class MemoryPageEditorUITests: XCTestCase {
         let editor = field.exists ? field : view
         editor.tap()
         editor.typeText(" Owner draft")
+        let fullDraft = editor.value as? String
+        XCTAssertNotNil(fullDraft)
+        XCTAssertTrue(fullDraft?.contains("Owner draft") == true)
         app.buttons["memory.fixture.write"].tap()
         let saved = app.staticTexts["memory.fixture.saved"]
         let landed = NSPredicate(format: "label == %@", "Updated synthetic memory")
@@ -29,7 +32,7 @@ final class MemoryPageEditorUITests: XCTestCase {
         add(attachment)
         alert.buttons["OK"].tap()
         XCTAssertTrue(editor.exists)
-        XCTAssertTrue((editor.value as? String)?.contains("Owner draft") == true)
+        XCTAssertEqual(editor.value as? String, fullDraft, "A conflict must preserve the entire draft, not just its appended suffix")
         XCTAssertEqual(saved.label, "Updated synthetic memory")
         XCTAssertTrue(app.buttons["memory.pageEditor.save"].exists)
     }
