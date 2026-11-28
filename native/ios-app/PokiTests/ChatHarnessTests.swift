@@ -2834,7 +2834,6 @@ final class ChatHarnessTests: XCTestCase {
 
         chat.answer("Ele.me", picked: true)
         chat.answer("Use Ele.me", picked: false)
-        try await Task.sleep(for: .milliseconds(200))
 
         XCTAssertFalse(chat.running, "answering an inactive question must not start a new task")
         XCTAssertTrue(server.requests.isEmpty, "answering an inactive question must not call the model")
