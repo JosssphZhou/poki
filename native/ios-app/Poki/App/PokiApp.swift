@@ -8,6 +8,9 @@ struct PokiApp: App {
     @State private var inDuoSplitView = false
     @Environment(\.scenePhase) private var scenePhase
     private let startupLog: StartupLog?
+    #if POKI_WATCH
+    private let watchVoice: WatchVoicePhone
+    #endif
 
     @discardableResult
     static func scheduleStartupWork(routines: RoutineStore = .shared) -> Task<String?, Never> {
@@ -67,6 +70,9 @@ struct PokiApp: App {
         let chat = ChatModel(app: model)
         _chat = State(initialValue: chat)
         AskPoki.install(app: model, chat: chat)
+        #if POKI_WATCH
+        watchVoice = WatchVoicePhone(app: model, chat: chat)
+        #endif
     }
 
     var body: some Scene {
