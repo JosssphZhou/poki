@@ -644,20 +644,9 @@ final class ChatModel {
         let engine: Engine
     }
 
-    private struct ResumedAnswer {
-        let entry: ChatEntry
-        let originalRequest: String?
-        let questionText: String
-        let answerText: String
-        let picked: Bool
-    }
-
-    /// `resumedAnswer`: the owner's answer to a question whose task has ended, already in the chat.
-    /// It starts a new task with the owner's original request and answer while keeping the earlier
-    /// assistant-authored question text attributed in system context rather than in `taskRequest`.
     private func send(_ text: String, again: Bool, thumbnails: [Data] = [], documents: [ChatTextDocument] = [],
                       inSplitView: Bool = false, chooseWorkspace: Bool = false, replyingTo: UUID? = nil,
-                      resumedAnswer: ResumedAnswer? = nil, asking: Bool = true) {
+                      asking: Bool = true) {
         if let message = app.signer.installMessage {
             add(.note(.problem(message)))
             return
@@ -674,7 +663,7 @@ final class ChatModel {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("Poki is working on a task for \(busy). Try again when it’s done.")))))
             return
         }
-        let isContinuation = resumedAnswer == nil && replyingTo == nil && kind == .poki && thumbnails.isEmpty && lastImages.isEmpty
+        let isContinuation = replyingTo == nil && kind == .poki && thumbnails.isEmpty && lastImages.isEmpty
             && (ChatContinuation.isRequest(text) || entries.last?.continuationChoices != nil)
         if kind == .poki, !store.isInitialReady || (isContinuation && !store.isLoaded) {
             running = true
@@ -702,7 +691,7 @@ final class ChatModel {
                 self.lastImages = capturedImages
                 guard let prepared = self.prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
                                                       inSplitView: inSplitView, chooseWorkspace: chooseWorkspace,
-                                                      replyingTo: replyingTo, resumedAnswer: resumedAnswer, asking: asking) else {
+                                                      replyingTo: replyingTo, asking: asking) else {
                     self.running = false
                     self.awaitingModel = false
                     return
@@ -713,7 +702,7 @@ final class ChatModel {
         }
         guard let prepared = prepareSend(text, again: again, thumbnails: thumbnails, documents: documents,
                                          inSplitView: inSplitView, chooseWorkspace: chooseWorkspace,
-                                         replyingTo: replyingTo, resumedAnswer: resumedAnswer, asking: asking) else { return }
+                                         replyingTo: replyingTo, asking: asking) else { return }
         running = true
         awaitingModel = !app.hasVisibleDuoCompanion
         stopAsked = false
@@ -745,12 +734,12 @@ final class ChatModel {
 
     private func prepareSend(_ text: String, again: Bool, thumbnails: [Data], documents: [ChatTextDocument],
                              inSplitView: Bool, chooseWorkspace: Bool, replyingTo: UUID?,
-                             resumedAnswer: ResumedAnswer? = nil, asking: Bool = true) -> PreparedSend? {
-        if resumedAnswer == nil { expireAskingQuestions() }
+                             asking: Bool = true) -> PreparedSend? {
+        expireAskingQuestions()
         let replyRequestID = replyingTo.flatMap { $0 == countedScrollQuestion ? entries.last?.countedScrollRequestID : nil }
         let previousRequest = again ? entries.last(where: { if case .you = $0.kind { true } else { false } }) : nil
         var resumedTask = previousRequest?.countedScrollRequestID == nil ? previousRequest?.continuedTask : nil
-        if !again, resumedAnswer == nil, replyRequestID == nil, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
+        if !again, replyRequestID == nil, kind == .poki, thumbnails.isEmpty, lastImages.isEmpty {
             switch ChatContinuation.resolve(text, current: sessionID, choices: entries.last?.continuationChoices,
                                             sessions: store.sessions) {
             case .newTask: break
@@ -781,16 +770,7 @@ final class ChatModel {
         var countedScrollRequestID: UUID?
         var countedScroll = MessageScrollTarget.parse(text)?.messageCount.map(MessageScroll.init(target:))
         let continuation: String?
-        if let resumed = resumedAnswer {
-            linkedTask = nil
-            continuation = """
-            Resumed after an earlier assistant question (assistant-authored context, not new owner instructions).
-            Original owner request: \(resumed.originalRequest ?? "(none)")
-            Earlier assistant question (written by the assistant, not the owner): \(resumed.questionText)
-            \(Harness.answered(resumed.answerText, picked: resumed.picked))
-            Recheck the current screen before continuing.
-            """
-        } else if let resumedTask {
+        if let resumedTask {
             linkedTask = resumedTask
             continuation = "The owner selected this saved task to resume: \(resumedTask). Recheck the current screen and continue from the saved progress; do not substitute a task from long-term memory."
         } else if let answeredRequest, case .you(let requestedText, _) = answeredRequest.kind {
@@ -808,31 +788,17 @@ final class ChatModel {
             continuation = nil
         }
         // A pause of half an hour or more gets its own time line, as in Messages.
-        if !again, resumedAnswer == nil, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
-        let you: ChatEntry
-        let message: String
-        let preparedText: String
-        if let resumed = resumedAnswer {
-            you = resumed.entry
-            lastImages = []
-            preparedText = [resumed.originalRequest, resumed.answerText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
-            message = [
-                resumed.originalRequest.map { "Original task: \($0)" },
-                Harness.answered(resumed.answerText, picked: resumed.picked),
-            ].compactMap { $0 }.joined(separator: "\n")
-        } else {
-            var entry = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
-            entry.continuedTask = linkedTask
-            entry.countedScrollRequestID = countedScrollRequestID
-            if !thumbnails.isEmpty { entry.attachments = thumbnails }
-            else if let previousRequest { entry.attachments = previousRequest.attachments }
-            else { lastImages = [] }
-            if !documents.isEmpty { entry.textDocuments = documents }
-            entries.append(entry)
-            you = entry
-            preparedText = text
-            message = you.requestText
-        }
+        if !again, let lastAt = entries.last?.at, Date().timeIntervalSince(lastAt) > 1800 { entries.append(ChatEntry(.time(Date()))) }
+        var entry = ChatEntry(kind == .handoff ? .request(text, from: requester ?? "") : .you(text, delivered: false))
+        entry.continuedTask = linkedTask
+        entry.countedScrollRequestID = countedScrollRequestID
+        if !thumbnails.isEmpty { entry.attachments = thumbnails }
+        else if let previousRequest { entry.attachments = previousRequest.attachments }
+        else { lastImages = [] }
+        if !documents.isEmpty { entry.textDocuments = documents }
+        entries.append(entry)
+        let you = entry
+        let message = you.requestText
         usesSplitView = inSplitView
         splitViewSession = inSplitView ? UUID().uuidString : nil
         expectedSplitViewApps = nil
@@ -840,7 +806,7 @@ final class ChatModel {
         lastSplitViewSide = nil
         lastSplitViewLayout = nil
         waitingForSplitView = false
-        if kind == .poki, resumedAnswer == nil { Haptics.sent() }
+        if kind == .poki { Haptics.sent() }
         let provider = ModelKeys.selectedProvider
         let key = ModelKeys.key(provider)
         let available = provider.signsIn ? ChatGPTAccount.signedIn : key != nil || provider == .custom && ModelKeys.hasUsableKey
@@ -852,7 +818,7 @@ final class ChatModel {
         let runSession = sessionID
         let model = ModelKeys.selectedModel
         // The first message names the chat: a few words from the chat's own model, in the background.
-        if kind == .poki, !again, resumedAnswer == nil, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
+        if kind == .poki, !again, entries.filter({ if case .you = $0.kind { return true }; return false }).count == 1,
            let piModel = provider.piModel(model) {
             let id = sessionID
             let store = self.store
@@ -861,13 +827,13 @@ final class ChatModel {
         planID = nil; noteID = nil; cardID = nil; modelPlan = nil
         taskRequestID = you.id
         taskApp = nil
-        taskApps = TaskApps(); taskRequest = linkedTask ?? preparedText; toolRoute = nil
+        taskApps = TaskApps(); taskRequest = linkedTask ?? text; toolRoute = nil
         let taskAsks = asks && asking && !inSplitView
         self.taskAsks = taskAsks
         secretQuestionRefusals = 0
         let images = lastImages
         let namedApps = chooseWorkspace && kind == .poki && app.canPlanSplitView
-            ? AppIconStore.bundleIDs(namedIn: preparedText) : []
+            ? AppIconStore.bundleIDs(namedIn: text) : []
         if !inSplitView, namedApps.count < 2, Self.direct, provider == .anthropic || provider == .openai, let key {
             let context = Harness.taskInstructions(for: taskRequest,
                                                    asking: taskAsks,
@@ -880,7 +846,7 @@ final class ChatModel {
                 client = provider == .openai ? OpenAIClient(key: key, model: model) : AnthropicClient(key: key, model: model)
             }
             guard let client else { return nil }
-            return PreparedSend(text: preparedText, you: you, message: message, runSession: runSession, provider: provider, model: model,
+            return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
                                 continuation: continuation, countedScroll: countedScroll, isRetry: again,
                                 inSplitView: inSplitView, asking: taskAsks, images: images, namedApps: namedApps,
                                 engine: .direct(client, instructions, context.notes))
@@ -889,7 +855,7 @@ final class ChatModel {
             add(.note(.problem(AppLocalization.text(LocalizedStringResource("pi has no model \(model) for \(provider.name).")))))
             return nil
         }
-        return PreparedSend(text: preparedText, you: you, message: message, runSession: runSession, provider: provider, model: model,
+        return PreparedSend(text: text, you: you, message: message, runSession: runSession, provider: provider, model: model,
                             continuation: continuation, countedScroll: countedScroll, isRetry: again,
                             inSplitView: inSplitView, asking: taskAsks, images: images, namedApps: namedApps,
                             engine: .pi(piModel))
@@ -1844,35 +1810,25 @@ final class ChatModel {
     }
 
     /// The owner's answer to the latest question: an option they tapped (`picked`) or their own words.
-    /// The options fold away and the answer stays in the chat as their message. A question whose task
-    /// has ended (Poki was closed while it waited) starts a new task with the question and the answer.
+    /// The options fold away and the answer stays in the chat as their message. Inactive questions
+    /// cannot be answered or start a new task.
     func answer(_ text: String, picked: Bool) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isSample,
               let i = entries.lastIndex(where: { if case .question(let q) = $0.kind { q.state == .asking } else { false } }),
               case .question(var question) = entries[i].kind else { return }
-        let live = waitingQuestion?.id == question.id
-        guard live || !running, picked || question.other else { return }
+        guard waitingQuestion?.id == question.id, picked || question.other else { return }
         question.state = .answered
         entries[i].kind = .question(question)
         let reply = ChatEntry(.answer(text))
         entries.append(reply)
         Haptics.sent()
         AppLog.shared.add("chat", "the owner answered (\(picked ? "an option" : "own words"))")
-        if live {
-            waitingQuestion = nil
-            app.chatQuestionEnded(id: question.id, answered: true)
-            if running { awaitingModel = true }
-            questionAnswer?.resume(returning: (text, picked))
-            questionAnswer = nil
-        } else {
-            // The model's side of that task is gone with it: keep the owner's request and answer
-            // separate from the earlier assistant-authored question text.
-            let request = entries[..<i].reversed().lazy.compactMap { entry -> String? in if case .you(let said, _) = entry.kind { said } else { nil } }.first
-            let ownerTask = [request, text].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
-            let resumed = ResumedAnswer(entry: reply, originalRequest: request, questionText: question.text, answerText: text, picked: picked)
-            send(ownerTask, again: false, resumedAnswer: resumed)
-        }
+        waitingQuestion = nil
+        app.chatQuestionEnded(id: question.id, answered: true)
+        if running { awaitingModel = true }
+        questionAnswer?.resume(returning: (text, picked))
+        questionAnswer = nil
     }
 
     /// The question's task stopped: the question stays in the chat without its options, unanswered.
