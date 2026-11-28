@@ -20,5 +20,22 @@ struct ActionButtonSection: View {
             }
             .settingsFooter()
         }
+        Section {
+            Text("Settings › Accessibility › Vocal Shortcuts", tableName: "Entry")
+            Text("Settings › Accessibility › Touch › Back Tap", tableName: "Entry")
+        } header: {
+            Group {
+                Text("Vocal Shortcuts and Back Tap", tableName: "Entry")
+            }
+            .settingsHeader()
+        } footer: {
+            Group {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Create a shortcut with the “Talk to Poki” action in Shortcuts. Select it in Vocal Shortcuts or Back Tap to start or return to a talk. Avoid “Poki Anytime” here because running it again ends the current talk.", tableName: "Entry")
+                    Text("With Siri, say “Return to my call in Poki.”", tableName: "Entry")
+                }
+            }
+            .settingsFooter()
+        }
     }
 }

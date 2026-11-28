@@ -96,6 +96,22 @@
           }
         }
       }
+    },
+    "Return to my call in ${applicationName}" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到和${applicationName}的通话"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回到和${applicationName}的通話"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
