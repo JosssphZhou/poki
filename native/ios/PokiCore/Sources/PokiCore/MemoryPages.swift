@@ -151,6 +151,12 @@ extension SkillStore {
     static func undoPage(_ change: MemoryChangeRecord, in f: inout MemoryFile) -> Bool {
         let app = change.page?.app ?? change.pageBefore?.app
         let i = f.pages.firstIndex { MemoryPage.sameArea($0.app, app) }
+        // An empty page without a summary is removed by writePage. Undo can restore it only
+        // while it is still absent, just as other writes require their resulting page to remain.
+        let expected = change.page.flatMap { page in
+            page.lines.isEmpty && page.summary == nil ? nil : page
+        }
+        guard i.map({ f.pages[$0] }) == expected else { return false }
         if let before = change.pageBefore {
             if let i { f.pages[i] = before } else if before.app == nil { f.pages.insert(before, at: 0) } else { f.pages.append(before) }
         } else {
