@@ -14,7 +14,8 @@ public enum ApprovalLevel: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// The way of asking saved on the phone, from the keys each version of the app wrote. Nothing saved
-/// at all is Never Ask: a new install, and an owner who never touched Approvals, are not asked. Past
+/// at all is With Confirmation at Ask for Everything: a new install, and an owner who never touched
+/// Approvals, get an Allow card before a message is sent, a call placed or a password typed. Past
 /// that, an update never asks less than the version it replaces, and a value that cannot be read asks
 /// the most: With Confirmation at Ask for Everything, an Allow card for every step.
 public enum ApprovalChoice {
@@ -37,7 +38,7 @@ public enum ApprovalChoice {
         // Reading the keys is the only record of a choice, so there is nothing to migrate or mark: an owner
         // who saves one (here, or on a version that wrote one of these) is read by the rules below, and
         // everyone else stays here.
-        if allKeys.allSatisfy({ saved($0) == nil }) { return (.off, .everything) }
+        if allKeys.allSatisfy({ saved($0) == nil }) { return (.confirm, .everything) }
         let level = saved(levelKey)
         if let mode = saved(modeKey) {
             guard let mode = (mode as? String).flatMap(ApprovalMode.init) else { return (.confirm, .everything) }
