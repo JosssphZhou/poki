@@ -150,12 +150,20 @@ struct HistoryPage: View {
             return
         }
         #endif
-        await capture.tidy()
-        let kept = capture.enabled ? await HistoryStore.shared.recent() : []
-        let steps = BacktapeActivity.entries()
-        let entries = steps.isEmpty ? kept : (kept + steps).sorted { $0.at > $1.at }
-        layout = BacktapeLayout.build(entries)
+        guard let replacement = await Self.loadLayout(read: {
+            await capture.tidy()
+            let kept = capture.enabled ? await HistoryStore.shared.recent() : []
+            let steps = BacktapeActivity.entries()
+            return steps.isEmpty ? kept : (kept + steps).sorted { $0.at > $1.at }
+        }), !Task.isCancelled else { return }
+        layout = replacement
         loaded = true
+    }
+
+    static func loadLayout(read: () async -> [HistoryEntry]) async -> BacktapeLayout? {
+        let entries = await read()
+        guard !Task.isCancelled else { return nil }
+        return BacktapeLayout.build(entries)
     }
 
     #if DEBUG
