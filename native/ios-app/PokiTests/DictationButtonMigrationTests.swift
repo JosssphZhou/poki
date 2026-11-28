@@ -79,6 +79,27 @@ final class DictationButtonMigrationTests: XCTestCase {
         XCTAssertEqual(written, false)
     }
 
+    func testDisabledButtonSurvivesSettingsVaultRestoration() {
+        let button = FieldDictation.buttonKey
+        let settled = FieldDictation.buttonSettledKey
+        var backup: Data?
+
+        defaults.set(false, forKey: button)
+        defaults.set(true, forKey: settled)
+        defaults.set(Data([1]), forKey: "setup")
+        SettingsVault.save(defaults: defaults, read: { backup }, write: { backup = $0 })
+        defaults.removeObject(forKey: button)
+        defaults.removeObject(forKey: settled)
+        defaults.removeObject(forKey: "setup")
+
+        SettingsVault.restore(defaults: defaults, read: { backup })
+        XCTAssertEqual(defaults.object(forKey: settled) as? Bool, true)
+        XCTAssertEqual(defaults.data(forKey: "setup"), Data([1]))
+
+        launch()
+        XCTAssertEqual(written, false)
+    }
+
     func testAChoiceAlreadyMadeIsNotOverwritten() throws {
         try Data("{}".utf8).write(to: folder.appendingPathComponent("old-1.json"))
         defaults.set(false, forKey: FieldDictation.buttonKey)
