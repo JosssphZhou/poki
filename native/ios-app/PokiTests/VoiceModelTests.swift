@@ -138,6 +138,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
     private(set) var liveAnswer: String?
     private(set) var remoteVolume = 1.0
     @MainActor var remoteSpeech = false
+    @MainActor var sentMicrophoneAudio = false
     @MainActor var failNetworkPath = false
     var failSend = false
     @MainActor var openingCaptureRunning: Bool? = true
@@ -187,6 +188,7 @@ final class FakeConnection: VoiceConnection, @unchecked Sendable {
         return true
     }
     func setRemoteVolume(_ value: Double) { remoteVolume = value }
+    @MainActor func hasSentMicrophoneAudio() async -> Bool { sentMicrophoneAudio }
     func hasRemoteSpeech() async -> Bool { await MainActor.run { remoteSpeech } }
     func diagnose(_ write: @escaping @MainActor (String) -> Void) {}
     @MainActor func close() {
@@ -5178,7 +5180,7 @@ extension VoiceModelTests {
         XCTAssertTrue(session.allowHapticsAndSystemSoundsDuringRecording, "the cue plays while the microphone is on")
     }
 
-    func testLiveInputTranscriptRecordsTheFirstLaunchUtteranceWithoutACommitEvent() async {
+    func testLiveInputTranscriptRecordsTheFirstLaunchUtteranceWithoutACommitEvent() async throws {
         let h = Harness()
         defer { h.voice.stop() }
         XCTAssertTrue(h.voice.setBridge(BridgeStub.liveAddress))
@@ -5188,16 +5190,28 @@ extension VoiceModelTests {
         h.link.play(["type": "session.started"],
                     ["type": "session.output_transcript.delta", "delta": "Hello"])
         XCTAssertEqual(h.voice.phase, .listening)
-        let launch = "launch request=\(request.id.uuidString)"
-        let firstUtterance = "\(launch) stage=firstUtterance "
-        XCTAssertTrue(AppLog.shared.lines.contains { $0.contains("\(launch) stage=transportConnected ") })
-        XCTAssertFalse(AppLog.shared.lines.contains { $0.contains(firstUtterance) })
+        let requestID = "request_id=\(request.id.uuidString)"
+        let connected = AppLog.shared.lines.filter {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_transport_connected") && $0.contains(requestID)
+        }
+        XCTAssertEqual(connected.count, 1)
+        let connectedLine = try XCTUnwrap(connected.first)
+        XCTAssertTrue(connectedLine.contains("session=1 flow=voice turn=0 "))
+        XCTAssertFalse(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_first_utterance") && $0.contains(requestID)
+        })
 
         h.link.play(["type": "session.input_transcript.delta", "delta": "Open", "start_ms": 100, "end_ms": 220],
                     ["type": "session.input_transcript.delta", "delta": " Settings", "start_ms": 220, "end_ms": 400])
 
-        let milestones = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
+        let milestones = AppLog.shared.lines.filter {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_first_utterance") && $0.contains(requestID)
+        }
         XCTAssertEqual(milestones.count, 1, "Live transcript deltas must record the first utterance once without an audio buffer commit")
+        let firstUtteranceLine = try XCTUnwrap(milestones.first)
+        XCTAssertTrue(firstUtteranceLine.contains("session=1 flow=voice turn=0 "))
+        XCTAssertTrue(firstUtteranceLine.contains("source=app_shortcut"))
+        XCTAssertTrue(firstUtteranceLine.contains("since_receipt_ms="))
         XCTAssertFalse(milestones.contains { $0.contains("Open") || $0.contains("Settings") })
     }
 
@@ -5210,21 +5224,30 @@ extension VoiceModelTests {
                                             source: .appShortcut, epoch: PokiEntry.shared.epoch)
             await h.voice.start(admitEntry: { request })
             XCTAssertEqual(h.voice.phase, .listening)
-            let launch = "launch request=\(request.id.uuidString)"
-            let firstUtterance = "\(launch) stage=firstUtterance "
-            XCTAssertTrue(AppLog.shared.lines.contains { $0.contains("\(launch) stage=transportConnected ") })
+            let requestID = "request_id=\(request.id.uuidString)"
+            XCTAssertTrue(AppLog.shared.lines.contains {
+                $0.contains("[voice-timing]") && $0.contains("event=launch_transport_connected") && $0.contains(requestID)
+            })
 
             codex.notify("thread/realtime/transcript/done", ["role": "assistant", "text": "Ready"])
-            XCTAssertFalse(AppLog.shared.lines.contains { $0.contains(firstUtterance) })
+            XCTAssertFalse(AppLog.shared.lines.contains {
+                $0.contains("[voice-timing]") && $0.contains("event=launch_first_utterance") && $0.contains(requestID)
+            })
 
             codex.notify("thread/realtime/transcript/delta", ["role": "user", "text": "Open"])
-            let afterDelta = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
-            XCTAssertEqual(afterDelta.count, 1, "First non-empty user transcript delta must record firstUtterance immediately")
+            let afterDelta = AppLog.shared.lines.filter {
+                $0.contains("[voice-timing]") && $0.contains("event=launch_first_utterance") && $0.contains(requestID)
+            }
+            XCTAssertEqual(afterDelta.count, 1, "First non-empty user transcript delta must record launch_first_utterance immediately")
+            let deltaLine = try XCTUnwrap(afterDelta.first)
+            XCTAssertTrue(deltaLine.contains("session=1 flow=voice turn=0 "))
             XCTAssertFalse(afterDelta.contains { $0.contains("Open") })
 
             codex.notify("thread/realtime/transcript/done", ["role": "user", "text": "Open Calendar"])
-            let afterDone = AppLog.shared.lines.filter { $0.contains(firstUtterance) }
-            XCTAssertEqual(afterDone.count, 1, "Subsequent transcript done must not duplicate firstUtterance")
+            let afterDone = AppLog.shared.lines.filter {
+                $0.contains("[voice-timing]") && $0.contains("event=launch_first_utterance") && $0.contains(requestID)
+            }
+            XCTAssertEqual(afterDone.count, 1, "Subsequent transcript done must not duplicate launch_first_utterance")
             XCTAssertFalse(afterDone.contains { $0.contains("Open") || $0.contains("Calendar") })
         }
     }
@@ -5307,5 +5330,177 @@ extension VoiceModelTests {
                        "An invalidated intent after connect failure must not start a new talk: \(added)")
         XCTAssertFalse(hostVoice.isOn)
         #endif
+    }
+
+    func testInputReadyWaitsForSentMicrophoneAudioAndDoesNotFireAfterStopOrWithoutMic() async throws {
+        let defaults = UserDefaults.standard
+        let savedRehearsal = defaults.object(forKey: "pokiTalkRehearsal")
+        defaults.removeObject(forKey: "pokiTalkRehearsal")
+        let h = Harness()
+        defer {
+            h.voice.stop()
+            defaults.set(savedRehearsal, forKey: "pokiTalkRehearsal")
+        }
+
+        let first = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                      source: .appShortcut, epoch: PokiEntry.shared.epoch)
+        let firstID = first.id.uuidString
+        await h.voice.start(microphone: true, admitEntry: { first })
+        h.link.play(["type": "session.created"])
+        await h.time.settle()
+
+        let connected = AppLog.shared.lines.filter {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_transport_connected") && $0.contains("request_id=\(firstID)")
+        }
+        XCTAssertEqual(connected.count, 1)
+        XCTAssertFalse(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_input_ready") && $0.contains("request_id=\(firstID)")
+        }, "transportConnected must not emit launch_input_ready before outbound microphone bytes are sent")
+
+        await h.time.advance(0.25)
+        XCTAssertFalse(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_input_ready") && $0.contains("request_id=\(firstID)")
+        })
+
+        h.link.sentMicrophoneAudio = true
+        await h.time.advance(0.25)
+        let ready = AppLog.shared.lines.filter {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_input_ready") && $0.contains("request_id=\(firstID)")
+        }
+        XCTAssertEqual(ready.count, 1)
+        let readyLine = try XCTUnwrap(ready.first)
+        XCTAssertTrue(readyLine.contains("session=1 flow=voice turn=0 "))
+        XCTAssertTrue(readyLine.contains("source=app_shortcut"))
+        XCTAssertTrue(readyLine.contains("since_receipt_ms="))
+        XCTAssertTrue(readyLine.contains("input_ready_source=webrtc_outbound_rtp_bytes"))
+
+        await h.time.advance(1.0)
+        XCTAssertEqual(AppLog.shared.lines.filter {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_input_ready") && $0.contains("request_id=\(firstID)")
+        }.count, 1)
+        h.voice.stop()
+
+        let stopped = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                        source: .control, epoch: PokiEntry.shared.epoch)
+        let stoppedID = stopped.id.uuidString
+        await h.voice.start(microphone: true, admitEntry: { stopped })
+        await h.time.settle()
+        XCTAssertTrue(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_transport_connected") && $0.contains("request_id=\(stoppedID)")
+        })
+        let stoppedLink = h.link
+        h.voice.stop()
+        stoppedLink.sentMicrophoneAudio = true
+        await h.time.advance(1.0)
+        XCTAssertFalse(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_input_ready") && $0.contains("request_id=\(stoppedID)")
+        })
+
+        let silent = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                       source: .appShortcut, epoch: PokiEntry.shared.epoch)
+        let silentID = silent.id.uuidString
+        await h.voice.start(microphone: false, admitEntry: { silent })
+        h.link.sentMicrophoneAudio = true
+        await h.time.advance(1.0)
+        XCTAssertTrue(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_transport_connected") && $0.contains("request_id=\(silentID)")
+        })
+        XCTAssertFalse(AppLog.shared.lines.contains {
+            $0.contains("[voice-timing]") && $0.contains("event=launch_input_ready") && $0.contains("request_id=\(silentID)")
+        })
+    }
+
+    func testRecordedSpeechPlaybackLinksFirstLaunchUtteranceToTurnSessionWithoutDuplication() async throws {
+        let defaults = UserDefaults.standard
+        let savedRehearsal = defaults.object(forKey: "pokiTalkRehearsal")
+        defaults.removeObject(forKey: "pokiTalkRehearsal")
+        let h = Harness(phoneTool: { _, _ in ("Settings is open.", false, nil) })
+        defer {
+            h.voice.stop()
+            defaults.set(savedRehearsal, forKey: "pokiTalkRehearsal")
+        }
+        let marker = "launch-playback-\(UUID().uuidString)"
+        AppLog.shared.add("test", marker)
+
+        let request = PokiEntry.Request(id: UUID(), destination: .talk, issuedAt: .now,
+                                        source: .appShortcut, epoch: PokiEntry.shared.epoch)
+        let requestID = request.id.uuidString
+        await h.voice.start(microphone: false, admitEntry: { request })
+        h.link.play(["type": "session.created"])
+        await h.time.settle()
+
+        // A synthesized recording of "Open Settings"; the remote events below remain simulated.
+        let recordingURL = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "VoiceLaunchPlayback", withExtension: "wav"))
+        let recording = try AVAudioFile(forReading: recordingURL, commonFormat: .pcmFormatInt16, interleaved: false)
+        let audio = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: recording.processingFormat,
+                                                 frameCapacity: AVAudioFrameCount(recording.length)))
+        try recording.read(into: audio)
+        let samples = try XCTUnwrap(audio.int16ChannelData?[0])
+        h.voice.say(pcm24k: Data(bytes: samples, count: Int(audio.frameLength) * MemoryLayout<Int16>.size))
+        h.link.play(
+            ["type": "conversation.item.added", "item": ["role": "user"]],
+            ["type": "conversation.item.input_audio_transcription.completed", "transcript": "Open Settings"],
+            ["type": "response.created", "response": ["id": "r1"]],
+            ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "c1", "name": "do", "arguments": "{}"]],
+            ["type": "response.done", "response": ["id": "r1"]]
+        )
+        await h.time.settle()
+        h.link.play(
+            ["type": "response.created", "response": ["id": "r2"]],
+            ["type": "output_audio_buffer.started"],
+            ["type": "response.output_audio_transcript.done", "transcript": "Settings is open."],
+            ["type": "response.done", "response": ["id": "r2"]],
+            ["type": "output_audio_buffer.stopped"],
+            ["type": "conversation.item.input_audio_transcription.completed", "transcript": "Thanks"]
+        )
+
+        let all = AppLog.shared.lines
+        let startIndex = try XCTUnwrap(all.lastIndex { $0.contains(marker) })
+        let added = Array(all.dropFirst(startIndex + 1))
+
+        let stageEvents: Set<String> = [
+            "launch_receipt",
+            "launch_page_shown",
+            "launch_transport_connected",
+            "launch_input_ready",
+            "launch_first_utterance",
+        ]
+        func field(_ name: String, in line: String) -> String? {
+            let prefix = "\(name)="
+            return line.split(separator: " ").first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+        }
+        let stageLines = added.filter {
+            $0.contains("[voice-timing]")
+                && field("request_id", in: $0) == requestID
+                && field("event", in: $0).map(stageEvents.contains) == true
+        }
+        XCTAssertEqual(stageLines.compactMap { field("event", in: $0) }, [
+            "launch_transport_connected",
+            "launch_first_utterance",
+        ])
+        let firstUtteranceLine = try XCTUnwrap(stageLines.last)
+        let session = try XCTUnwrap(field("session", in: firstUtteranceLine))
+        XCTAssertEqual(session, "1")
+        XCTAssertTrue(stageLines.allSatisfy {
+            field("session", in: $0) == session
+                && field("flow", in: $0) == "voice"
+                && field("turn", in: $0) == "0"
+                && field("source", in: $0) == "app_shortcut"
+        })
+        let timestamps = stageLines.compactMap { field("t_ms", in: $0).flatMap(UInt64.init) }
+        let elapsed = stageLines.compactMap { field("since_receipt_ms", in: $0).flatMap(Int.init) }
+        XCTAssertEqual(timestamps.count, 2)
+        XCTAssertEqual(elapsed.count, 2)
+        XCTAssertEqual(timestamps, timestamps.sorted())
+        XCTAssertEqual(elapsed, elapsed.sorted())
+        if timestamps.count == 2 && elapsed.count == 2 {
+            XCTAssertEqual(elapsed[1] - elapsed[0], Int(timestamps[1] - timestamps[0]))
+        }
+        XCTAssertFalse(stageLines.contains { $0.contains("Open Settings") || $0.contains("Thanks") })
+        XCTAssertFalse(added.contains { $0.contains("request=\(requestID)") && $0.contains("stage=") })
+
+        let turnLine = try XCTUnwrap(added.first { $0.contains("[voice] turn: end of speech to spoken result") })
+        XCTAssertEqual(field("session", in: turnLine), session)
+        print((stageLines + [turnLine]).joined(separator: "\n"))
     }
 }
