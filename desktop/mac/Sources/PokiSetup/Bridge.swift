@@ -2,10 +2,15 @@ import Foundation
 
 /// An error from the core: `kind` is stable (`apple`, `needs_person`, `usbmuxd`, `device`, ...),
 /// `message` is for people.
-struct CoreError: LocalizedError, Equatable {
+struct CoreError: Decodable, LocalizedError, Equatable {
     var kind: String
     var message: String
-    var errorDescription: String? { message }
+    var certificate: CertificateToReplace? = nil
+
+    var errorDescription: String? {
+        if kind == "certificate_limit", let certificate { return certificate.warning(in: .shared) }
+        return message
+    }
 }
 
 /// Talks to `poki-setup-bridge`, the Rust core behind a pipe. One JSON object per line each way.
@@ -134,10 +139,12 @@ final class Bridge {
         let id = idNum.uint64Value
         guard let request = waiting.removeValue(forKey: id) else { return }
         if let err = obj["err"] as? [String: Any] {
-            let kind = err["kind"] as? String ?? "error"
-            let message = err["message"] as? String ?? localized("Something went wrong.")
-            if kind == "needs_code", request.command != "install" { onNeedsCode?() }
-            request.reply.resume(throwing: CoreError(kind: kind, message: message))
+            let data = try? JSONSerialization.data(withJSONObject: err)
+            let decoded = data.flatMap { try? decoder.decode(CoreError.self, from: $0) }
+            let error = decoded ?? CoreError(kind: err["kind"] as? String ?? "error",
+                                             message: err["message"] as? String ?? localized("Something went wrong."))
+            if error.kind == "needs_code", request.command != "install" { onNeedsCode?() }
+            request.reply.resume(throwing: error)
         } else {
             let value = obj["ok"] ?? NSNull()
             let raw = (try? JSONSerialization.data(withJSONObject: ["v": value])) ?? Data("{\"v\":null}".utf8)

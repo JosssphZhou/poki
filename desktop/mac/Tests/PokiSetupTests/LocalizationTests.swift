@@ -2,6 +2,33 @@ import XCTest
 @testable import PokiSetup
 
 final class LocalizationTests: XCTestCase {
+    func testCertificateWarningKeepsTheIdentityAndConsequenceInBothLanguages() throws {
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let localization = SetupLocalization(defaults: defaults)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let error = try decoder.decode(CoreError.self, from: Data("""
+        {"kind":"certificate_limit","message":"English fallback","certificate":
+          {"name":"Example Certificate","serial":"5F00","machine":"Example Mac","days_left":3}}
+        """.utf8))
+        let certificate = try XCTUnwrap(error.certificate)
+        localization.language = .english
+        let en = certificate.warning(in: localization)
+        XCTAssertTrue(en.contains("Every app signed with the old certificate will stop opening"))
+        XCTAssertTrue(en.contains("It expires in 3 days."))
+        localization.language = .simplifiedChinese
+        let zh = certificate.warning(in: localization)
+        XCTAssertTrue(zh.contains("使用旧证书签名的 App 都将无法打开，直到使用有效证书重新安装"))
+        XCTAssertTrue(zh.contains("3 天后到期"))
+        for warning in [en, zh] {
+            XCTAssertTrue(warning.contains("Example Certificate"))
+            XCTAssertTrue(warning.contains("5F00"))
+            XCTAssertTrue(warning.contains("Example Mac"))
+        }
+    }
+
     func testSystemLanguageAndFallback() {
         XCTAssertEqual(SetupLanguage.system.resolve(preferred: ["zh-CN"]), "zh-Hans")
         XCTAssertEqual(SetupLanguage.system.resolve(preferred: ["de"]), "en")

@@ -40,7 +40,7 @@ export default function Setup({ goAccount }: { goAccount: () => void }) {
     setRunning(true); setResult(null); setCertQuestion(null); reset();
     try {
       if (replaceCertificate) await api.approveCertificateReplacement();
-      const r = await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false);
+      const r = await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false, null, null, reset);
       setResult({ notes: r.notes, handoff: r.handoff, name: r.record.phone_name, version: r.record.version });
     } catch (e) {
       const kind = failureKind(e);

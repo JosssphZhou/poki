@@ -141,7 +141,7 @@ export function TestBuilds({ dev, setDev }: { dev: DevState | null; setDev: (d: 
     if (!phone) { setError(t("Connect the device to install on.")); return; }
     setRunning("install"); setError(null); install.reset();
     try {
-      await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false, ipa, b ? buildRef(b) : null);
+      await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false, ipa, b ? buildRef(b) : null, install.reset);
       api.records().then(setRecords);
       load();
     } catch (e) {

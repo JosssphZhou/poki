@@ -211,6 +211,17 @@
 "Renewals Keep the Test Build" = "Renewals Keep the Test Build";
 "Replace Certificate" = "Replace Certificate";
 "Replace the Certificate?" = "Replace the Certificate?";
+"Your Apple Account has reached its development certificate limit." = "Your Apple Account has reached its development certificate limit.";
+"The certificate “%@” (serial %@) was made by “%@”." = "The certificate “%@” (serial %@) was made by “%@”.";
+"The certificate is “%@” (serial %@)." = "The certificate is “%@” (serial %@).";
+"Its expiration date could not be read." = "Its expiration date could not be read.";
+"It has already expired." = "It has already expired.";
+"It expires today." = "It expires today.";
+"It expires tomorrow." = "It expires tomorrow.";
+"It expires in %lld days." = "It expires in %lld days.";
+"Poki Setup on this computer cannot use the old certificate because its signing key is on the computer or in the app that created it." = "Poki Setup on this computer cannot use the old certificate because its signing key is on the computer or in the app that created it.";
+"Replacing it lets this computer sign Poki. Every app signed with the old certificate will stop opening on all affected iPhones and iPads until it is reinstalled with a valid certificate." = "Replacing it lets this computer sign Poki. Every app signed with the old certificate will stop opening on all affected iPhones and iPads until it is reinstalled with a valid certificate.";
+"If another computer still signs Poki for you, use that computer instead." = "If another computer still signs Poki for you, use that computer instead.";
 "Repository" = "Repository";
 "Required" = "Required";
 "Restart to Update" = "Restart to Update";

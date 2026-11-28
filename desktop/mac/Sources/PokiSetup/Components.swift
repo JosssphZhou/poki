@@ -6,8 +6,6 @@ import SwiftUI
 /// The steps of a long job, like Software Update's progress list.
 struct StepsView: View {
     var steps: [StepItem]
-    var summarizedID: String? = nil
-    var summarizedLine: String? = nil
 
     var body: some View {
         ForEach(steps) { s in
@@ -20,17 +18,15 @@ struct StepsView: View {
                     if let f = s.fraction, s.state == .running {
                         ProgressView(value: f).progressViewStyle(.linear).frame(maxWidth: 280)
                     }
-                    if let d = s.detail, !d.isEmpty, !(summarizedID == s.id && summarizedLine == d) {
+                    if let d = s.detail, !d.isEmpty {
                         Text(progressLine(d))
                             .font(.callout)
-                            .foregroundStyle(s.state == .failed ? .red : .secondary)
+                            .foregroundStyle(s.state == .failed ? .red : (s.state == .waiting ? .orange : .secondary))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(Array(s.notes.enumerated()), id: \.offset) { _, n in
-                        if !(summarizedID == s.id && summarizedLine == n) {
-                            Text(progressLine(n)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        }
+                        Text(progressLine(n)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
@@ -190,7 +186,7 @@ struct JobProgress: View {
             if !detailsOnly { summary }
             DisclosureGroup(isExpanded: $showSteps) {
                 VStack(alignment: .leading, spacing: 4) {
-                    StepsView(steps: steps, summarizedID: detailsOnly ? nil : current?.id, summarizedLine: detailLine)
+                    StepsView(steps: steps)
                 }
                     .padding(.top, 4)
             } label: {
@@ -221,7 +217,7 @@ struct JobProgress: View {
             .progressViewStyle(.linear)
             .tint(failed != nil ? .red : Color.pokiBlue)
             .animation(.easeOut(duration: 0.25), value: fraction)
-        if let line = detailLine {
+        if !showSteps, let line = detailLine {
             Text(progressLine(line))
                 .font(.callout)
                 .foregroundStyle(failed != nil ? .red : (current?.state == .waiting ? .orange : .secondary))

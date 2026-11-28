@@ -6,7 +6,7 @@ struct SetupView: View {
     @State private var handOff = false
     @State private var result: InstallAnswer?
     /// Set when the Apple Account is at its certificate limit: the question to put to the person.
-    @State private var certificateQuestion: String?
+    @State private var certificateQuestion: CoreError?
     @State private var checking = false
     @State private var channelError: String?
 
@@ -35,7 +35,7 @@ struct SetupView: View {
             }
             Button(localized("Cancel"), role: .cancel) {}
         } message: {
-            Text(certificateQuestion ?? "")
+            Text(certificateQuestion?.localizedDescription ?? "")
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -346,7 +346,7 @@ struct SetupView: View {
             result = try await model.install(udid: phone.id, ipa: nil, handOff: handOff)
         } catch let e as CoreError where e.kind == "certificate_limit" {
             model.steps["install"] = []
-            certificateQuestion = e.message
+            certificateQuestion = e
         } catch {}
     }
 

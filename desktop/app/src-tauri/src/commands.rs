@@ -1,21 +1,10 @@
 use crate::Shared;
 use poki_setup_core::apple::anisette::Source;
+use poki_setup_core::error::Failure;
 use poki_setup_core::{Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-/// Errors cross to the page as `{kind, message}`.
-#[derive(Serialize)]
-pub struct Failure {
-    kind: &'static str,
-    message: String,
-}
-impl From<poki_setup_core::Error> for Failure {
-    fn from(e: poki_setup_core::Error) -> Self { Failure { kind: e.kind(), message: e.to_string() } }
-}
-impl From<String> for Failure {
-    fn from(s: String) -> Self { Failure { kind: "message", message: s } }
-}
 type R<T> = Result<T, Failure>;
 
 #[derive(Serialize, Clone)]
@@ -47,7 +36,7 @@ async fn with_signer<T>(state: &Shared, f: impl AsyncFnOnce(&mut setup::Signer) 
         Err(poki_setup_core::Error::NeedsCode(pending)) => {
             let msg = poki_setup_core::Error::NeedsCode(pending.clone()).to_string();
             *state.pending.lock().await = Some(*pending);
-            Err(Failure { kind: "needs_code", message: msg })
+            Err(Failure::new("needs_code", msg))
         }
         Err(e) => Err(e.into()),
     }
