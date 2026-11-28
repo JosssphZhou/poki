@@ -19,7 +19,7 @@ enum BackgroundRefresh {
     private static let holds: Duration = .seconds(20)
 
     /// Called once while the app starts, before it has finished launching, as iOS requires.
-    static func register(onWake: @escaping @MainActor () -> Void) {
+    static func register(shouldContinue: @escaping @MainActor () -> Bool, onWake: @escaping @MainActor () -> Void) {
         guard let id, !registered else {
             if id == nil { AppLog.shared.add("background", "refresh: no task name in Info.plist, not used") }
             return
@@ -27,14 +27,23 @@ enum BackgroundRefresh {
         registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: .main) { task in
             let work = Task { @MainActor in
                 AppLog.shared.add("background", "refresh: iOS woke Poki")
-                schedule()
-                onWake()
+                guard handleWake(shouldContinue: shouldContinue(), scheduleNext: schedule, onWake: onWake) else {
+                    task.setTaskCompleted(success: !Task.isCancelled)
+                    return
+                }
                 try? await Task.sleep(for: holds)
                 task.setTaskCompleted(success: !Task.isCancelled)
             }
             task.expirationHandler = { work.cancel() }
         }
         if !registered { AppLog.shared.add("background", "refresh: iOS did not take the registration") }
+    }
+
+    static func handleWake(shouldContinue: Bool, scheduleNext: () -> Void, onWake: () -> Void) -> Bool {
+        guard shouldContinue, !Task.isCancelled else { return false }
+        scheduleNext()
+        onWake()
+        return true
     }
 
     /// Asks for the next wake, no sooner than a quarter of an hour from now. Asked again at every
