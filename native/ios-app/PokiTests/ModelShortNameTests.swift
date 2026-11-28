@@ -128,6 +128,7 @@ final class ModelShortNameTests: XCTestCase {
 
     func testClosedPillAndMenuSubtitleDistinguishDirectOpenAIAndOpenRouterSameModel() throws {
         let store = storage.storage
+        try configureChatGPT(in: store)
         try ModelKeys.save("sk-test-openai", for: .openai, storage: store)
         try ModelKeys.save("sk-test-openrouter", for: .openrouter, storage: store)
         ModelCatalog.set("openai/gpt-6.2-sol", on: true, for: .openrouter, notify: false, storage: store)
@@ -158,16 +159,24 @@ final class ModelShortNameTests: XCTestCase {
             .environment(app)
         )
 
-        // Direct OpenAI and OpenRouter both offer "6.2 Sol": closed pill (and VoiceOver value) disambiguates both.
+        // Direct OpenAI, OpenRouter, and ChatGPT all offer "6.2 Sol": closed pill and VoiceOver distinguish every account.
         ModelKeys.choose(.openai, model: "gpt-6.2-sol", in: store)
         settle { self.accessibilityValue(identifier: "composer.settings.model", in: composerWindow) == "6.2 Sol (OpenAI)" }
+        XCTAssertEqual(accessibilityLabel(identifier: "composer.settings.model", in: composerWindow), "Model")
         XCTAssertEqual(accessibilityValue(identifier: "composer.settings.model", in: composerWindow), "6.2 Sol (OpenAI)")
 
         ModelKeys.choose(.openrouter, model: "openai/gpt-6.2-sol", in: store)
         settle { self.accessibilityValue(identifier: "composer.settings.model", in: composerWindow) == "6.2 Sol (OpenRouter)" }
+        XCTAssertEqual(accessibilityLabel(identifier: "composer.settings.model", in: composerWindow), "Model")
         XCTAssertEqual(accessibilityValue(identifier: "composer.settings.model", in: composerWindow), "6.2 Sol (OpenRouter)")
 
-        // OpenAI "6.1 Terra" is unique (not offered by OpenRouter), so it keeps the bare short name.
+        ModelKeys.choose(.chatgpt, model: "gpt-6.2-sol", in: store)
+        settle { self.accessibilityValue(identifier: "composer.settings.model", in: composerWindow) == "6.2 Sol (ChatGPT)" }
+        XCTAssertEqual(accessibilityLabel(identifier: "composer.settings.model", in: composerWindow), "Model")
+        XCTAssertEqual(accessibilityValue(identifier: "composer.settings.model", in: composerWindow), "6.2 Sol (ChatGPT)")
+
+        // Remove ChatGPT so OpenAI "6.1 Terra" is unique (not offered by OpenRouter) and keeps the bare short name.
+        try ModelKeys.removeChatGPTSignIn(storage: store)
         ModelKeys.choose(.openai, model: "gpt-6.1-terra", in: store)
         settle { self.accessibilityValue(identifier: "composer.settings.model", in: composerWindow) == "6.1 Terra" }
         XCTAssertEqual(accessibilityValue(identifier: "composer.settings.model", in: composerWindow), "6.1 Terra")
@@ -211,6 +220,130 @@ final class ModelShortNameTests: XCTestCase {
         ModelCatalog.set("openai/gpt-6.2-sol", on: false, for: .openrouter, notify: true, storage: store)
         settle { self.modelMenu(in: menuWindow)?.subtitle == "6.2 Sol" }
         XCTAssertEqual(modelMenu(in: menuWindow)?.subtitle, "6.2 Sol")
+    }
+
+    func testModelUsePickerCollapsedDisplayAndVoiceOverDistinguishSameNameModels() throws {
+        try withLiveModelSnapshot {
+            try ChatGPTAccount.save(
+                OAuthCredentials(
+                    refresh: "live-refresh",
+                    access: "live-access",
+                    expires: Date().addingTimeInterval(3600).timeIntervalSince1970 * 1000,
+                    clientId: "live-client"
+                )
+            )
+            try ModelKeys.save("sk-live-openai", for: .openai)
+            try ModelKeys.save("sk-live-openrouter", for: .openrouter)
+            ModelCatalog.set("openai/gpt-6.2-sol", on: true, for: .openrouter, notify: false)
+            let office = CustomProviders.upsert(
+                CustomProvider(name: "Office", endpoints: [CustomEndpoint(url: "http://127.0.0.1:8765/v1")], model: "shared-model")
+            )
+            let home = CustomProviders.upsert(
+                CustomProvider(name: "Home", endpoints: [CustomEndpoint(url: "http://127.0.0.1:8766/v1")], model: "shared-model")
+            )
+
+            // Grouped options stay bare short names inside each provider section.
+            let chatGroups = Dictionary(uniqueKeysWithValues: ModelPicks.groups(.chat).map { ($0.name, $0.items.map(\.name)) })
+            XCTAssertEqual(chatGroups["OpenAI"], ["6.1 Terra", "6.2 Sol"])
+            XCTAssertEqual(chatGroups["OpenRouter"], ["3.8 Flash", "Sonnet 5.5", "6.2 Sol"])
+            XCTAssertEqual(chatGroups["ChatGPT"], ["6.1 Terra", "6.2 Sol"])
+            XCTAssertEqual(chatGroups["Office"], ["shared-model"])
+            XCTAssertEqual(chatGroups["Home"], ["shared-model"])
+
+            ModelPicks.pick(.account(.openai, "gpt-6.2-sol"), for: .chat)
+            ModelPicks.pick(.account(.openai, "gpt-6.1-terra"), for: .decision)
+
+            let settingsWindow = try show(
+                NavigationStack {
+                    ModelSettingsView()
+                }
+                .environment(\.locale, AppLocalization.locale)
+            )
+            settle { self.accessibilityElement(identifier: "models.use.chat", in: settingsWindow) != nil }
+
+            @MainActor func collapsedSummary(_ identifier: String) throws -> (label: String?, value: String?, texts: [String]) {
+                let element = try XCTUnwrap(accessibilityElement(identifier: identifier, in: settingsWindow), "Missing \(identifier)")
+                return (element.accessibilityLabel, element.accessibilityValue, visibleTexts(in: element))
+            }
+
+            @MainActor func containsToken(_ token: String, in identifier: String) -> Bool {
+                guard let element = accessibilityElement(identifier: identifier, in: settingsWindow) else { return false }
+                let all = [element.accessibilityLabel, element.accessibilityValue].compactMap { $0 } + visibleTexts(in: element)
+                return all.contains { $0.contains(token) }
+            }
+
+            // Collapsed Chat picker distinguishes direct OpenAI vs OpenRouter vs ChatGPT "6.2 Sol".
+            settle { containsToken("6.2 Sol (OpenAI)", in: "models.use.chat") }
+            let openAIChat = try collapsedSummary("models.use.chat")
+            XCTAssertTrue(
+                containsToken("6.2 Sol (OpenAI)", in: "models.use.chat"),
+                "Collapsed Chat picker must distinguish OpenAI 6.2 Sol, got label=\(String(describing: openAIChat.label)) value=\(String(describing: openAIChat.value)) texts=\(openAIChat.texts)"
+            )
+
+            ModelPicks.pick(.account(.openrouter, "openai/gpt-6.2-sol"), for: .chat)
+            settle { containsToken("6.2 Sol (OpenRouter)", in: "models.use.chat") }
+            let openRouterChat = try collapsedSummary("models.use.chat")
+            XCTAssertTrue(
+                containsToken("6.2 Sol (OpenRouter)", in: "models.use.chat"),
+                "Collapsed Chat picker must distinguish OpenRouter 6.2 Sol, got label=\(String(describing: openRouterChat.label)) value=\(String(describing: openRouterChat.value)) texts=\(openRouterChat.texts)"
+            )
+
+            ModelPicks.pick(.account(.chatgpt, "gpt-6.2-sol"), for: .chat)
+            settle { containsToken("6.2 Sol (ChatGPT)", in: "models.use.chat") }
+            let chatGPTChat = try collapsedSummary("models.use.chat")
+            XCTAssertTrue(
+                containsToken("6.2 Sol (ChatGPT)", in: "models.use.chat"),
+                "Collapsed Chat picker must distinguish ChatGPT 6.2 Sol, got label=\(String(describing: chatGPTChat.label)) value=\(String(describing: chatGPTChat.value)) texts=\(chatGPTChat.texts)"
+            )
+
+            // Collapsed Chat picker distinguishes same-name custom providers.
+            ModelPicks.pick(.account(.custom, CustomProviders.choiceID(home.id, "shared-model")), for: .chat)
+            settle { containsToken("shared-model (Home)", in: "models.use.chat") }
+            let homeChat = try collapsedSummary("models.use.chat")
+            XCTAssertTrue(
+                containsToken("shared-model (Home)", in: "models.use.chat"),
+                "Collapsed Chat picker must distinguish Home custom provider, got label=\(String(describing: homeChat.label)) value=\(String(describing: homeChat.value)) texts=\(homeChat.texts)"
+            )
+
+            ModelPicks.pick(.account(.custom, CustomProviders.choiceID(office.id, "shared-model")), for: .chat)
+            settle { containsToken("shared-model (Office)", in: "models.use.chat") }
+            let officeChat = try collapsedSummary("models.use.chat")
+            XCTAssertTrue(
+                containsToken("shared-model (Office)", in: "models.use.chat"),
+                "Collapsed Chat picker must distinguish Office custom provider, got label=\(String(describing: officeChat.label)) value=\(String(describing: officeChat.value)) texts=\(officeChat.texts)"
+            )
+
+            // Collapsed Decisions picker distinguishes colliding ChatGPT vs OpenAI "6.1 Terra" and keeps unique "6 Luna" bare.
+            settle { containsToken("6.1 Terra (OpenAI)", in: "models.use.decision") }
+            let openAIDecision = try collapsedSummary("models.use.decision")
+            XCTAssertTrue(
+                containsToken("6.1 Terra (OpenAI)", in: "models.use.decision"),
+                "Collapsed Decisions picker must distinguish OpenAI 6.1 Terra, got label=\(String(describing: openAIDecision.label)) value=\(String(describing: openAIDecision.value)) texts=\(openAIDecision.texts)"
+            )
+
+            ModelPicks.pick(.account(.chatgpt, "gpt-6.1-terra"), for: .decision)
+            settle { containsToken("6.1 Terra (ChatGPT)", in: "models.use.decision") }
+            let chatGPTDecision = try collapsedSummary("models.use.decision")
+            XCTAssertTrue(
+                containsToken("6.1 Terra (ChatGPT)", in: "models.use.decision"),
+                "Collapsed Decisions picker must distinguish ChatGPT 6.1 Terra, got label=\(String(describing: chatGPTDecision.label)) value=\(String(describing: chatGPTDecision.value)) texts=\(chatGPTDecision.texts)"
+            )
+
+            ModelPicks.pick(.account(.openai, AccountDecisions.luna), for: .decision)
+            settle { containsToken("6 Luna", in: "models.use.decision") && !containsToken("(OpenAI)", in: "models.use.decision") }
+            let lunaDecision = try collapsedSummary("models.use.decision")
+            XCTAssertTrue(containsToken("6 Luna", in: "models.use.decision"), "Expected bare 6 Luna, got \(lunaDecision)")
+            XCTAssertFalse(containsToken("(OpenAI)", in: "models.use.decision"), "Unique decision model must stay bare, got \(lunaDecision)")
+
+            // Removing competing providers restores the bare short name on the collapsed Chat picker.
+            ModelPicks.pick(.account(.openai, "gpt-6.2-sol"), for: .chat)
+            try ModelKeys.removeChatGPTSignIn()
+            ModelCatalog.set("openai/gpt-6.2-sol", on: false, for: .openrouter, notify: true)
+            settle { containsToken("6.2 Sol", in: "models.use.chat") && !containsToken("(OpenAI)", in: "models.use.chat") }
+            let uniqueChat = try collapsedSummary("models.use.chat")
+            XCTAssertTrue(containsToken("6.2 Sol", in: "models.use.chat"), "Expected bare 6.2 Sol, got \(uniqueChat)")
+            XCTAssertFalse(containsToken("(OpenAI)", in: "models.use.chat"), "Unique chat model must drop account suffix, got \(uniqueChat)")
+        }
     }
 
     func testPokiMenuGroupsShowShortModelNamesForEveryProviderAndKeepStorageIDs() throws {
@@ -328,7 +461,7 @@ final class ModelShortNameTests: XCTestCase {
         XCTAssertEqual(groupActionTitles(in: window, group: "ChatGPT"), ["6.1 Terra", "6.2 Sol", "6.2 Astra", "6.1 Sol"])
     }
 
-    func testLegacySavedSelectionKeepsOriginalProviderModelIDAndAPIRequest() throws {
+    func testLegacySavedSelectionKeepsOriginalProviderModelIDAndAPIRequest() async throws {
         let store = storage.storage
         try configureChatGPT(in: store)
         try ModelKeys.save("sk-test-openrouter", for: .openrouter, storage: store)
@@ -353,7 +486,7 @@ final class ModelShortNameTests: XCTestCase {
 
         // Switch back to legacy ChatGPT selection and confirm UI renders short label while keeping IDs.
         store.defaults.set("chatgpt", forKey: "chat.provider")
-        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: store)
+        let isolatedApp = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: store)
         let window = try show(
             ComposerInputView(
                 input: .constant("Hi"),
@@ -366,11 +499,108 @@ final class ModelShortNameTests: XCTestCase {
                 openVoice: {}
             )
             .frame(width: 393, height: 180)
-            .environment(app)
+            .environment(isolatedApp)
         )
         settle { self.accessibilityValue(identifier: "composer.settings.model", in: window) == "6.1 Terra" }
         XCTAssertEqual(accessibilityValue(identifier: "composer.settings.model", in: window), "6.1 Terra")
         XCTAssertEqual(ModelKeys.selectedModel(in: store), "gpt-6.1-terra")
+
+        // End-to-end upgrade check: legacy UserDefaults keys select the original provider and send the
+        // exact original model ID over the real ChatModel -> PiLoop -> URLSession request path.
+        try await withLiveModelSnapshotAsync {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let suite = "ModelShortNameLegacy-\(UUID().uuidString)"
+            let sessionDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let responsesSSE = [
+                #"data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_legacy","role":"assistant"}}"#,
+                #"data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"OK"}"#,
+                #"data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_legacy","role":"assistant","content":[{"type":"output_text","text":"OK"}]}}"#,
+                #"data: {"type":"response.completed","response":{"status":"completed"}}"#,
+            ].joined(separator: "\n\n") + "\n\n"
+
+            ModelServerStub.clear()
+            ModelServerStub.additionalHosts = ["api.openai.com"]
+            ModelServerStub.responder = { request, _ in
+                if request.url?.path.contains("/responses") == true {
+                    return (200, "text/event-stream", responsesSSE)
+                }
+                return (200, "text/event-stream", FakeCompletions.text("OK"))
+            }
+            URLProtocol.registerClass(ModelServerStub.self)
+            defer {
+                URLProtocol.unregisterClass(ModelServerStub.self)
+                ModelServerStub.clear()
+                try? FileManager.default.removeItem(at: folder)
+                sessionDefaults.removePersistentDomain(forName: suite)
+            }
+
+            let sessionStore = SessionStore(folder: folder, defaults: sessionDefaults)
+            let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing())
+            app.inProcessReadyForProbe()
+            let chat = ChatModel(app: app, store: sessionStore)
+            defer {
+                chat.stop()
+                app.stopSession()
+            }
+
+            @MainActor func sendAndCapture(marker: String) async throws -> ModelServerStub.Sent {
+                ModelServerStub.recordedReset()
+                chat.newConversation()
+                chat.send(marker)
+                let deadline = ContinuousClock.now + .seconds(10)
+                while chat.running && ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertFalse(chat.running, "Chat task did not finish for \(marker)")
+                let matching = ModelServerStub.requests.filter {
+                    let body = String(decoding: $0.body, as: UTF8.self)
+                    return body.contains(marker) && !body.contains("You name chat conversations")
+                }
+                return try XCTUnwrap(matching.last, "Expected outgoing model request for \(marker), saw \(ModelServerStub.requests.map { $0.url?.absoluteString ?? "nil" })")
+            }
+
+            // 1. Legacy OpenAI + OpenRouter both offering "6.2 Sol": legacy OpenAI keeps provider & "gpt-6.2-sol".
+            try ModelKeys.save("sk-live-openai", for: .openai)
+            try ModelKeys.save("sk-live-openrouter", for: .openrouter)
+            UserDefaults.standard.set("openai", forKey: "chat.provider")
+            UserDefaults.standard.set("gpt-6.2-sol", forKey: "chat.model.openai")
+            UserDefaults.standard.set(["gpt-6.1-terra", "gpt-6.2-sol"], forKey: "models.enabled.openai")
+            UserDefaults.standard.set("openai/gpt-6.2-sol", forKey: "chat.model.openrouter")
+            UserDefaults.standard.set(["openai/gpt-6.2-sol"], forKey: "models.enabled.openrouter")
+
+            XCTAssertEqual(ModelKeys.selectedProvider, .openai)
+            XCTAssertEqual(ModelKeys.selectedModel, "gpt-6.2-sol")
+            XCTAssertEqual(ModelKeys.selectedShortModelName, "6.2 Sol (OpenAI)")
+            let openAISent = try await sendAndCapture(marker: "Legacy OpenAI payload check")
+            XCTAssertEqual(openAISent.url?.host(), "api.openai.com")
+            XCTAssertEqual(openAISent.json["model"] as? String, "gpt-6.2-sol")
+
+            // 2. Legacy OpenRouter selection keeps provider & "openai/gpt-6.2-sol" in outgoing JSON.
+            UserDefaults.standard.set("openrouter", forKey: "chat.provider")
+            XCTAssertEqual(ModelKeys.selectedProvider, .openrouter)
+            XCTAssertEqual(ModelKeys.selectedModel, "openai/gpt-6.2-sol")
+            XCTAssertEqual(ModelKeys.selectedShortModelName, "6.2 Sol (OpenRouter)")
+            let openRouterSent = try await sendAndCapture(marker: "Legacy OpenRouter payload check")
+            XCTAssertEqual(openRouterSent.url?.host(), "openrouter.ai")
+            XCTAssertEqual(openRouterSent.json["model"] as? String, "openai/gpt-6.2-sol")
+
+            // 3. Legacy single custom endpoint (chat.customURL + chat.customModel) migrates cleanly,
+            // displays "v4.1-flash", and sends the full "workbuddy/deepseek-v4.1-flash" ID.
+            UserDefaults.standard.removeObject(forKey: CustomProviders.storeKey)
+            UserDefaults.standard.removeObject(forKey: CustomProviders.selectedKey)
+            UserDefaults.standard.removeObject(forKey: "chat.model.custom")
+            UserDefaults.standard.removeObject(forKey: "models.enabled.custom")
+            UserDefaults.standard.set("custom", forKey: "chat.provider")
+            UserDefaults.standard.set("https://model-server.test/v1", forKey: "chat.customURL")
+            UserDefaults.standard.set("workbuddy/deepseek-v4.1-flash", forKey: "chat.customModel")
+
+            XCTAssertEqual(ModelKeys.selectedProvider, .custom)
+            XCTAssertEqual(ModelKeys.selectedShortModelName, "v4.1-flash")
+            let customSent = try await sendAndCapture(marker: "Legacy custom payload check")
+            XCTAssertEqual(customSent.url?.host(), "model-server.test")
+            XCTAssertEqual(customSent.json["model"] as? String, "workbuddy/deepseek-v4.1-flash")
+        }
     }
 
     func testComposerSheetModelUsesAndSettingsRowsUseShortDisplayNames() throws {
@@ -612,18 +842,20 @@ final class ModelShortNameTests: XCTestCase {
         }
     }
 
-    private func withLiveModelSnapshot(_ body: () throws -> Void) throws {
-        let keys = [
-            "custom.providers", "chat.customProvider", "chat.provider",
-            "chat.model.chatgpt", "chat.model.openai", "chat.model.openrouter", "chat.model.custom",
-            "models.enabled.chatgpt", "models.enabled.openai", "models.enabled.openrouter", "models.enabled.custom",
-            "models.introduced.chatgpt", "models.introduced.openai", "models.introduced.openrouter",
-            "models.listed.openai", "models.listed.openrouter",
-            "decisions.offered.openai", "decisions.offered.custom",
-            "quickFixes.choice", "quickFixes.account.provider", "quickFixes.account.model",
-        ]
+    private static let liveSnapshotKeys = [
+        "pokiChat", "chatEngine",
+        "custom.providers", "chat.customProvider", "chat.customURL", "chat.customModel", "chat.provider",
+        "chat.model.chatgpt", "chat.model.openai", "chat.model.openrouter", "chat.model.custom",
+        "models.enabled.chatgpt", "models.enabled.openai", "models.enabled.openrouter", "models.enabled.custom",
+        "models.introduced.chatgpt", "models.introduced.openai", "models.introduced.openrouter",
+        "models.listed.openai", "models.listed.openrouter", "models.listed.custom", "models.revision.custom",
+        "decisions.offered.chatgpt", "decisions.offered.openai", "decisions.offered.openrouter", "decisions.offered.custom",
+        "quickFixes.choice", "quickFixes.account.provider", "quickFixes.account.model",
+    ]
+
+    private func captureLiveModelSnapshot() -> (defaults: [String: Any], keys: [ModelProvider: String]) {
         var savedDefaults: [String: Any] = [:]
-        for key in keys {
+        for key in Self.liveSnapshotKeys {
             savedDefaults[key] = UserDefaults.standard.object(forKey: key)
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -635,24 +867,38 @@ final class ModelShortNameTests: XCTestCase {
             }
             ModelKeys.remove(provider)
         }
-        defer {
-            for custom in CustomProviders.all { CustomProviders.remove(custom.id) }
-            for key in keys {
-                if let previous = savedDefaults[key] {
-                    UserDefaults.standard.set(previous, forKey: key)
-                } else {
-                    UserDefaults.standard.removeObject(forKey: key)
-                }
-            }
-            for provider in savedProviders {
-                if let previous = savedKeys[provider] {
-                    try? ModelKeys.save(previous, for: provider)
-                } else {
-                    ModelKeys.remove(provider)
-                }
+        return (savedDefaults, savedKeys)
+    }
+
+    private func restoreLiveModelSnapshot(_ snapshot: (defaults: [String: Any], keys: [ModelProvider: String])) {
+        for custom in CustomProviders.all { CustomProviders.remove(custom.id) }
+        for key in Self.liveSnapshotKeys {
+            if let previous = snapshot.defaults[key] {
+                UserDefaults.standard.set(previous, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
             }
         }
+        let savedProviders: [ModelProvider] = [.chatgpt, .openai, .anthropic, .deepseek, .gemini, .openrouter]
+        for provider in savedProviders {
+            if let previous = snapshot.keys[provider] {
+                try? ModelKeys.save(previous, for: provider)
+            } else {
+                ModelKeys.remove(provider)
+            }
+        }
+    }
+
+    private func withLiveModelSnapshot(_ body: @MainActor () throws -> Void) throws {
+        let snapshot = captureLiveModelSnapshot()
+        defer { restoreLiveModelSnapshot(snapshot) }
         try body()
+    }
+
+    private func withLiveModelSnapshotAsync(_ body: @MainActor () async throws -> Void) async throws {
+        let snapshot = captureLiveModelSnapshot()
+        defer { restoreLiveModelSnapshot(snapshot) }
+        try await body()
     }
 
     private func modelMenu(in window: UIWindow) -> UIMenu? {

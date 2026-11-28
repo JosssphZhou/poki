@@ -222,6 +222,7 @@ final class SettingsRowLayoutTests: XCTestCase {
         let rowTexts = visibleTexts(in: modelRow)
         XCTAssertTrue(rowTexts.contains { $0.contains("模型") }, "Expected Settings Models title, got: \(rowTexts)")
         XCTAssertTrue(rowTexts.contains { $0.contains("v4.1-flash") }, "Expected short model name without provider prefix, got: \(rowTexts)")
+        XCTAssertFalse(rowTexts.contains { $0.contains("workbuddy/") }, "Provider prefix must not appear on Settings Models row, got: \(rowTexts)")
         XCTAssertLessThanOrEqual(
             modelRow.accessibilityFrame.height,
             setupRow.accessibilityFrame.height + 2,
