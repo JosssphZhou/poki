@@ -1492,25 +1492,25 @@
         }
       }
     },
-    "Open Pair with Poki there. The code shows up here." : {
+    "Open Privacy & Security, then Developer Mode and Pair with Poki." : {
       "extractionState" : "manual",
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点“与 Poki 配对”看配对码"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap Pair with Poki there. Code appears here."
+            "value" : "Open Privacy & Security, then Developer Mode and Pair with Poki."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开“隐私与安全性”，再打开“开发者模式”和“与 Poki 配对”。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點「與 Poki 配對」看配對碼"
+            "value" : "打開「隱私權與安全性」，接著開啟「開發者模式」和「與 Poki 配對」。"
           }
         }
       }
@@ -3077,25 +3077,25 @@
         }
       }
     },
-    "This iPhone is ready for Poki" : {
+    "Return to Poki to continue." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ready for Poki"
+            "value" : "Return to Poki to continue."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 iPhone 已可供 Poki 使用"
+            "value" : "返回 Poki 继续。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 iPhone 已可供 Poki 使用"
+            "value" : "返回 Poki 繼續。"
           }
         }
       }

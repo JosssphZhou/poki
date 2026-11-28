@@ -711,9 +711,6 @@ struct SetupSettingsPage: View {
         if let problem = model.problem {
             return Text(verbatim: AppLocalization.bundle.localizedString(forKey: problem, value: problem, table: nil)).foregroundStyle(.red)
         }
-        if model.isDone(.pairing), case .downloaded = model.diskImage.state {
-            return Text(DiskImageStore.unavailableMessage).foregroundStyle(.orange)
-        }
         return nil
     }
 

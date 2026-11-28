@@ -103,6 +103,12 @@ final class ActivityController {
 
     var isRunning: Bool { activity != nil }
 
+    func showPairingCode(_ pin: String, postNotice: @MainActor (String) -> Void = { PairingNotice.post(pin: $0) }) {
+        guard state.pin != pin else { return }
+        update { $0.phase = .pairing; $0.pin = pin; $0.headline = "Pairing code" }
+        if !isRunning { postNotice(pin) }
+    }
+
     /// The sensor housing's smallest safe-area inset, in points of the screen's native size. iOS has no
     /// call that says whether the phone has a Dynamic Island, so this reads the window's top inset (59
     /// to 68 on the island phones) against the notch phones' (47 to 50). A phone this cannot read
@@ -361,7 +367,7 @@ final class ActivityController {
         }
         if old.phase == .pairing, state.phase == .idle, state.headline == "Paired" {
             setEvent(.paired, "Pairing complete")
-            alert = critical(String(activity: "Poki’s paired"), String(activity: "This iPhone is ready for Poki"))
+            alert = critical(String(activity: "Poki’s paired"), String(activity: "Return to Poki to continue."))
         }
 
         // A step began (AppModel sets the headline to the step's words): shown, never popped up.

@@ -176,7 +176,7 @@ extension SetupStep {
 
 /// Opens Settings with the step in the Live Activity.
 @MainActor func openSettings(_ model: AppModel, for step: SetupStep?) {
-    if let step { model.guide(step) }
+    if let step, step != .pairing { model.guide(step) }
     if let url = settingsURL(for: step) { UIApplication.shared.open(url) }
 }
 
@@ -566,8 +566,7 @@ private struct PairingPage: View {
     }
 
     @MainActor static func pair(_ model: AppModel) {
-        model.startPairing()
-        openSettings(model, for: .pairing)
+        Task { if await model.startPairing() { openSettings(model, for: .pairing) } }
     }
 
     var body: some View {
@@ -585,7 +584,7 @@ private struct PairingPage: View {
                 .settingsHeader()
             } footer: {
                 Group {
-                    Text("Enter this code in Settings. It also appears on the Lock Screen.")
+                    Text("Enter this code in Settings.")
                 }
                 .settingsFooter()
             }
@@ -595,7 +594,7 @@ private struct PairingPage: View {
                 Label("Waiting for Settings. Tap Pair with Poki there.", systemImage: "dot.radiowaves.left.and.right")
                     .symbolEffect(.pulse, options: .repeating)
                 Label("Open **Settings › Privacy & Security › Developer Mode**.", systemImage: "1.circle").font(.allo(.subheadline))
-                Label("Tap **Pair with Poki** and enter the code shown here and on the Lock Screen.", systemImage: "2.circle").font(.allo(.subheadline))
+                Label("Tap **Pair with Poki** and enter the code from Poki.", systemImage: "2.circle").font(.allo(.subheadline))
             }
             Section {
                 Button("Open Settings", systemImage: "gear") { openSettings(model, for: .pairing) }
@@ -615,14 +614,18 @@ private struct PairingPage: View {
                 }
             } else if model.pairingPath != nil {
                 Section {
-                    Label(model.pairingVerifiedAt.map { AppLocalization.text(LocalizedStringResource("Paired. The phone accepted it at \($0.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLocalization.locale))).")) }
-                            ?? AppLocalization.text(LocalizedStringResource("Paired. Checked the next time the runner starts.")), systemImage: "checkmark.seal.fill")
+                    Label("Pairing File Saved", systemImage: "link")
+                    if let verifiedAt = model.pairingVerifiedAt {
+                        Label(AppLocalization.text(LocalizedStringResource("Paired. The phone accepted it at \(verifiedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLocalization.locale))).")), systemImage: "checkmark.seal.fill")
+                    } else {
+                        Label("Not Verified Yet", systemImage: "clock").foregroundStyle(.secondary)
+                    }
                 }
             } else if SetupStep.onDevicePairing {
                 Section {
                     Label("Connect to Wi‑Fi and tap **Start Pairing**. Allow local network access when prompted.", systemImage: "1.circle").font(.allo(.subheadline))
                     Label("Poki opens the main Settings page. Go to **Privacy & Security › Developer Mode** and tap **Pair with Poki**.", systemImage: "2.circle").font(.allo(.subheadline))
-                    Label("Enter the code shown here and on the Lock Screen.", systemImage: "3.circle").font(.allo(.subheadline))
+                    Label("Enter the code from Poki. If you don’t see it in Settings, return here to read it.", systemImage: "3.circle").font(.allo(.subheadline))
                 } header: {
                     Group {
      Text("How To") 
@@ -694,12 +697,7 @@ private struct PairingPage: View {
         case .ready:
             LabeledContent("Status", value: AppLocalization.text(LocalizedStringResource("Ready")))
         case .downloaded:
-            if model.isDone(.pairing) {
-                LabeledContent("Status", value: AppLocalization.text(LocalizedStringResource("Downloaded, not available")))
-                Text(DiskImageStore.unavailableMessage).font(.allo(.footnote)).foregroundStyle(.orange)
-            } else {
-                LabeledContent("Status", value: AppLocalization.text(LocalizedStringResource("Downloaded")))
-            }
+            LabeledContent("Status", value: AppLocalization.text(LocalizedStringResource("Downloaded")))
         case .downloading(let step):
             LabeledContent("Downloading") { HStack { Text(verbatim: "\(step)"); ProgressView() } }
         case .missing:
@@ -717,12 +715,9 @@ private struct PairingPage: View {
 
 // MARK: 6, background
 
-/// Stay On in Background, one section: location set to Always, and Live Activities. Each row is its
-/// own button: Allow asks iOS, and once iOS answered anything short of Always, the Choose Always
-/// popup explains and opens Settings (the owner, Nov 21 2026).
+/// Stay On in Background, one section: location set to Always, and Live Activities.
 struct BackgroundPage: View {
     @Environment(AppModel.self) private var model
-    @State private var choosingAlways = false
 
     var body: some View {
         let background = model.background
@@ -746,18 +741,13 @@ struct BackgroundPage: View {
             .accessibilityIdentifier("background.activities")
         } footer: {
             Group {
-                Text("Poki never records your location.")
+                if background.authorization != .notDetermined, !background.always {
+                    Text("Set Location to Always in Settings to finish this step. Poki never records your location.")
+                } else {
+                    Text("Poki never records your location.")
+                }
             }
             .settingsFooter()
-        }
-        .onChange(of: background.endedShortOfAlways) { _, _ in
-            if !model.background.always { choosingAlways = true }
-        }
-        .alert("Choose Always", isPresented: $choosingAlways) {
-            Button("Open Settings") { openSettings(model, for: .background) }
-            Button("Not Now", role: .cancel) {}
-        } message: {
-            Text("Poki counts this as set up only with Always, and never records your location.")
         }
     }
 
@@ -769,11 +759,10 @@ struct BackgroundPage: View {
         return AppLocalization.text(LocalizedStringResource("While Using"))
     }
 
-    /// Before iOS asked, the request; after, the popup that sends the owner to Settings.
     private func location() {
         let background = model.background
         if background.always { return }
-        if background.authorization == .notDetermined { background.requestPermission() } else { choosingAlways = true }
+        if background.authorization == .notDetermined { background.requestPermission() } else { openSettings(model, for: .background) }
     }
 }
 
@@ -1019,4 +1008,3 @@ struct SetupStepPage: View {
         }
     }
 }
-
