@@ -343,7 +343,7 @@ struct VoiceCall: Identifiable, Equatable {
     var observationRequirement: VoiceObservationRequirement = .structuredOnly
     var state = State.running
     var output = ""
-    /// The encoded screen when the call finished (look, do, open_app): Realtime sends it next to the output.
+    /// The encoded screen when the call finished (look, do, open_app): Realtime sends it before the output.
     var screenDataURL: String?
     /// The model has both the tool result and any required observation (or terminal failure).
     var delivered = false
@@ -351,6 +351,7 @@ struct VoiceCall: Identifiable, Equatable {
     var toolDeliverySession: Int? = nil
     var observationDelivery: VoiceDeliveryStatus = .skipped(reason: "none")
     var observationRetryCount = 0
+    var observationSession: Int? = nil
     var pendingEvidenceID: String? = nil
     var result: VoiceStepResult? = nil
     var silentResult = false
@@ -2889,26 +2890,22 @@ final class VoiceModel {
             reportLiveReconnect(call, on: link)
             return
         }
-        let toolAlreadyDeliveredInSession = calls[index].toolDelivery == .delivered && calls[index].toolDeliverySession == session
-        if !toolAlreadyDeliveredInSession {
-            if !sameSession { calls[index].observationRetryCount = 0 }
-            let itemEvent = usesLive ? "response.item.create" : "conversation.item.create"
-            let payload = wireOutput(for: call)
-            let reconnect = "While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(payload)"
-            let sent = sameSession
-                ? link.send(["type": itemEvent, "item": ["type": "function_call_output", "call_id": call.id, "output": payload]])
-                : link.send(note(reconnect, spoken: true))
-            guard sent else {
-                calls[index].toolDelivery = .failed(reason: "data channel send failed", retryable: true)
-                logObservationCorrelation(calls[index], note: "tool_send_failed")
-                return
-            }
-            calls[index].toolDelivery = .delivered
-            calls[index].toolDeliverySession = session
-        }
-
         if !usesLive, let imageURL = calls[index].screenDataURL {
-            if !show(imageURL, for: index, on: link) {
+            if calls[index].observationSession != session {
+                calls[index].observationSession = session
+                calls[index].observationRetryCount = 0
+                calls[index].observationDelivery = .pending
+            }
+            let imageSent = calls[index].observationDelivery == .delivered || show(imageURL, for: index, on: link)
+            calls[index].result = Self.classifyStepResult(
+                call: calls[index], state: call.state, rawToolOutput: call.output,
+                waitingForOwner: call.result?.status == .needsOwnerInput,
+                localPhoneTool: localTools.contains(call.name) && Self.phoneTools.contains(call.name), live: false,
+                observationRequirement: call.observationRequirement,
+                observationDelivery: calls[index].observationDelivery, screenOutcome: .none,
+                pendingEvidenceID: calls[index].pendingEvidenceID
+            )
+            if !imageSent {
                 calls[index].observationDelivery = .failed(reason: "data channel send failed", retryable: true)
                 calls[index].observationRetryCount += 1
                 if calls[index].observationRetryCount <= Self.maxObservationRetries {
@@ -2929,8 +2926,26 @@ final class VoiceModel {
             }
         }
 
+        let toolAlreadyDeliveredInSession = calls[index].toolDelivery == .delivered && calls[index].toolDeliverySession == session
+        if !toolAlreadyDeliveredInSession {
+            let itemEvent = usesLive ? "response.item.create" : "conversation.item.create"
+            let payload = wireOutput(for: calls[index])
+            let reconnect = "While the connection was down, \(call.name) \(call.arguments) finished. It already ran; do not run it again. Tell the user in one sentence how it ended. Result: \(payload)"
+            let sent = sameSession
+                ? link.send(["type": itemEvent, "item": ["type": "function_call_output", "call_id": call.id, "output": payload]])
+                : link.send(note(reconnect, spoken: true))
+            guard sent else {
+                calls[index].toolDelivery = .failed(reason: "data channel send failed", retryable: true)
+                logObservationCorrelation(calls[index], note: "tool_send_failed")
+                return
+            }
+            calls[index].toolDelivery = .delivered
+            calls[index].toolDeliverySession = session
+        }
+
         cancelObservationRetry(for: call.id)
         calls[index].delivered = true
+        calls[index].screenDataURL = nil
         lastActivity = time.now()
         clock.delivered = Date()
         logObservationCorrelation(calls[index], note: "delivered")
@@ -2957,7 +2972,7 @@ final class VoiceModel {
         keepOpen()
     }
 
-    /// A function_call_output carries text only, so the screenshot behind it follows as an image in a
+    /// A function_call_output carries text only, so its required screenshot is sent first in a
     /// user message. Only the latest stays: the one before is deleted after the new one is sent, and a
     /// late older call never overwrites newer evidence.
     private func show(_ image: String, for index: Int, on link: VoiceConnection) -> Bool {
@@ -2984,7 +2999,6 @@ final class VoiceModel {
         pendingObservationEvents[eventID] = (callID: call.id, itemID: id)
         latestShownObservation = (sequence: call.sequence, generation: call.deviceGeneration, sourceAt: call.evidenceSourceAt)
         calls[index].observationDelivery = .delivered
-        calls[index].screenDataURL = nil
         logObservationCorrelation(calls[index], note: "obs_sent")
         return true
     }
@@ -3075,7 +3089,9 @@ final class VoiceModel {
                 }
                 return VoiceStepResult.make(goalID: call.goalID, status: .incomplete, message: summary, evidenceID: nil)
             }
-            return VoiceStepResult.make(goalID: call.goalID, status: pendingEvidenceID != nil ? .verifiedCompleted : .incomplete, message: summary, evidenceID: pendingEvidenceID)
+            let delivered = observationDelivery == .delivered
+            return VoiceStepResult.make(goalID: call.goalID, status: delivered ? .verifiedCompleted : .incomplete,
+                                        message: summary, evidenceID: delivered ? pendingEvidenceID : nil)
         }
         if localPhoneTool && isMutatingAction(call.name, arguments: call.arguments) {
             return VoiceStepResult.make(goalID: call.goalID, status: .incomplete, message: summary, evidenceID: nil)
