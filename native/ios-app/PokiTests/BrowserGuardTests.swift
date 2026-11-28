@@ -105,7 +105,8 @@ final class BrowserGuardTests: XCTestCase {
         let browser = PokiBrowser()
         let first = try XCTUnwrap(URL(string: "http://127.0.0.1:\(pages.port)/first"))
         await browser.open(first)
-        XCTAssertEqual(browser.url?.path, "/first")
+        XCTAssertEqual(browser.url?.path, "/first",
+                       "WebKit URL: \(String(describing: browser.webView.url)); loading: \(browser.isLoading)/\(browser.webView.isLoading); local fixtures: \(BrowserAddress.allowsLocal)")
         browser.taskStopped()
 
         let loaded = expectation(description: "Page-initiated navigation finished")
@@ -634,9 +635,13 @@ final class PageServer: @unchecked Sendable {
         listener.newConnectionHandler = { [weak self] connection in self?.serve(connection) }
         listener.start(queue: queue)
         guard ready.wait(timeout: .now() + 5) == .success else { throw URLError(.cannotConnectToHost) }
+        print("[PageFixture] listening on \(port)")
     }
 
-    deinit { listener.cancel() }
+    deinit {
+        print("[PageFixture] stopping \(port)")
+        listener.cancel()
+    }
 
     private func serve(_ connection: NWConnection) {
         connection.start(queue: queue)
@@ -649,6 +654,7 @@ final class PageServer: @unchecked Sendable {
             let received = received + (data ?? Data())
             if received.range(of: Data("\r\n\r\n".utf8)) != nil {
                 let path = String(decoding: received.prefix(64), as: UTF8.self).split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+                print("[PageFixture] \(self.port) received \(path)")
                 let body = self.pages[path] ?? ""
                 let status = self.pages[path] == nil ? "404 Not Found" : "200 OK"
                 let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"

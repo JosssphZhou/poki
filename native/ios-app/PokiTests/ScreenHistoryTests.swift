@@ -601,7 +601,15 @@ final class ScreenHistoryTests: XCTestCase {
         _ = await chat.runDelegated("Read the earlier note and tell me when done.")
         let requests = server.requests
         guard requests.count == 4 else {
-            return XCTFail("Expected four actual model requests, got \(requests.count)")
+            let turns = requests.map { request -> String in
+                let last = (request["messages"] as? [[String: Any]])?.last ?? [:]
+                let tools = (request["tools"] as? [[String: Any]])?.count ?? 0
+                let role = last["role"] as? String ?? "none"
+                let content = last["content"] as? String ?? ""
+                let name = last["name"] as? String ?? "none"
+                return "tools=\(tools), role=\(role), name=\(name), characters=\(content.count), mentionsFinish=\(content.contains("finish_task"))"
+            }
+            return XCTFail("Expected four actual model requests, got \(requests.count): \(turns)")
         }
         func hasHistoryTool(_ request: [String: Any]) -> Bool {
             let tools = request["tools"] as? [[String: Any]] ?? []
