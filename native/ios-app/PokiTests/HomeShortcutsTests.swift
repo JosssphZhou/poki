@@ -187,7 +187,7 @@ final class HomeShortcutsTests: XCTestCase {
         AppLocalization.shared.preference = "en"
     }
 
-    func testTappingHomeShortcutAfterSwitchingLanguageProducesLocalizedPrompt() throws {
+    func testTappingHomeShortcutAfterSwitchingLanguageProducesLocalizedPrompt() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         var picked: [String] = []
         AppLocalization.shared.preference = "zh-Hans"
@@ -205,9 +205,11 @@ final class HomeShortcutsTests: XCTestCase {
             HomeShortcutStore.shared.refresh(sessions: [], routines: [])
         }
 
-        func settle(for seconds: TimeInterval = 3, until done: () -> Bool) {
-            let end = Date().addingTimeInterval(seconds)
-            while !done(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        func settle(until done: @escaping @MainActor () -> Bool) async {
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                MainActor.assumeIsolated { done() }
+            }, object: nil)
+            await fulfillment(of: [ready], timeout: 3)
         }
         func accessibilityElement(in root: NSObject, identifier: String) -> NSObject? {
             var pending = [root]
@@ -230,13 +232,15 @@ final class HomeShortcutsTests: XCTestCase {
         }
 
         AppLocalization.shared.preference = "en"
-        settle { accessibilityElement(in: window, identifier: "home.idea.com.tinyspeck.chatlyio") != nil }
+        await settle {
+            accessibilityElement(in: window, identifier: "home.idea.com.tinyspeck.chatlyio")?.accessibilityLabel?.hasPrefix("Slack") == true
+        }
         let slack = try XCTUnwrap(accessibilityElement(in: window, identifier: "home.idea.com.tinyspeck.chatlyio"))
         XCTAssertTrue(slack.accessibilityActivate())
         XCTAssertEqual(picked.last, "Slack Tell the team I’m late")
 
         AppLocalization.shared.preference = "zh-Hant"
-        settle {
+        await settle {
             accessibilityElement(in: window, identifier: "home.idea.com.apple.MobileSMS")?.accessibilityLabel?.hasPrefix("訊息") == true
         }
         let messages = try XCTUnwrap(accessibilityElement(in: window, identifier: "home.idea.com.apple.MobileSMS"))
