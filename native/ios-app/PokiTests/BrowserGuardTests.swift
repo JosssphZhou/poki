@@ -149,7 +149,13 @@ final class BrowserGuardTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        PokiBrowser.shared.close()
+        let browser = PokiBrowser.shared
+        browser.close()
+        let cleared = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            browser.url?.absoluteString == "about:blank" && !browser.isLoading
+                && browser.webView.url?.absoluteString == "about:blank" && !browser.webView.isLoading
+        }, object: nil)
+        await fulfillment(of: [cleared], timeout: 12)
         AppLocalization.shared.preference = language
     }
 
