@@ -1131,10 +1131,11 @@ def judge_host_comparison(
             f"missing_primary_latency: {primary_metric} has baseline n={b_lat.count}, candidate n={c_lat.count} on verified runs"
         )
     else:
-        b_ver_by_sample = _count_by_sample([r for r in baseline if _is_verified_record(r)])
-        c_ver_by_sample = _count_by_sample([r for r in candidate if _is_verified_record(r)])
+        b_ver_by_sample = _rounds_by_sample([r for r in baseline if _is_verified_record(r)])
+        c_ver_by_sample = _rounds_by_sample([r for r in candidate if _is_verified_record(r)])
         has_sufficient_verified_sample = any(
-            b_ver_by_sample.get(sid, 0) >= min_rounds and c_ver_by_sample.get(sid, 0) >= min_rounds
+            len(b_ver_by_sample.get(sid, set())) >= min_rounds
+            and len(c_ver_by_sample.get(sid, set())) >= min_rounds
             for sid in b_counts
         )
         if b_lat.count < min_rounds or c_lat.count < min_rounds or not has_sufficient_verified_sample:
