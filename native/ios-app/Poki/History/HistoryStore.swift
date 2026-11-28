@@ -37,9 +37,9 @@ final class HistoryStore: @unchecked Sendable {
     private let file: URL
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    private init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        folder = base.appendingPathComponent("History", isDirectory: true)
+    init(folder: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("History", isDirectory: true)) {
+        self.folder = folder
         file = folder.appendingPathComponent("history.sqlite")
     }
 

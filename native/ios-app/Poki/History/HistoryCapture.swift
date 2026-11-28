@@ -304,7 +304,15 @@ final class HistoryCapture: ObservableObject {
         "com.paypal.PPClient", "com.apple.MobileSMS", "com.tencent.xin", "net.whatsapp.WhatsApp", "ph.telegra.Telegraph",
     ]
 
-    init() {
+    private let deletionStore: HistoryStore
+    private let suggestions: SensesSuggestions
+    private let memoriesCleared: @MainActor (Bool) -> Void
+
+    init(deletionStore: HistoryStore = .shared, suggestions: SensesSuggestions = .shared,
+         memoriesCleared: @escaping @MainActor (Bool) -> Void = { SensesMemories.shared.historyCleared(everything: $0) }) {
+        self.deletionStore = deletionStore
+        self.suggestions = suggestions
+        self.memoriesCleared = memoriesCleared
         let defaults = UserDefaults.standard
         if defaults.object(forKey: Self.enabledKey) == nil,
            let legacyEnabled = defaults.object(forKey: "history.enabled") as? Bool {
@@ -885,30 +893,42 @@ final class HistoryCapture: ObservableObject {
 
     func clear(last seconds: TimeInterval) async {
         Self.queryLease.beginDeletion()
-        defer { Self.queryLease.endDeletion() }
+        suggestions.clear()
+        defer {
+            suggestions.clear()
+            Self.queryLease.endDeletion()
+        }
         BacktapeNotes.shared.reset()
-        await HistoryStore.shared.delete(from: Date().addingTimeInterval(-seconds), to: Date().addingTimeInterval(60))
-        HistoryStore.shared.note("cleared", "\(Int(seconds))")
+        await deletionStore.delete(from: Date().addingTimeInterval(-seconds), to: Date().addingTimeInterval(60))
+        deletionStore.note("cleared", "\(Int(seconds))")
         changes += 1
-        SensesMemories.shared.historyCleared(everything: false)
+        memoriesCleared(false)
     }
 
     func clearEverything() async {
         Self.queryLease.beginDeletion()
-        defer { Self.queryLease.endDeletion() }
+        suggestions.clear()
+        defer {
+            suggestions.clear()
+            Self.queryLease.endDeletion()
+        }
         BacktapeNotes.shared.reset()
-        await HistoryStore.shared.deleteEverything()
+        await deletionStore.deleteEverything()
         changes += 1
-        SensesMemories.shared.historyCleared(everything: true)
+        memoriesCleared(true)
     }
 
     func delete(from start: Date, to end: Date) async {
         Self.queryLease.beginDeletion()
-        defer { Self.queryLease.endDeletion() }
+        suggestions.clear()
+        defer {
+            suggestions.clear()
+            Self.queryLease.endDeletion()
+        }
         BacktapeNotes.shared.reset()
-        await HistoryStore.shared.delete(from: start, to: end)
+        await deletionStore.delete(from: start, to: end)
         changes += 1
-        SensesMemories.shared.historyCleared(everything: false)
+        memoriesCleared(false)
     }
 
     #if targetEnvironment(simulator)

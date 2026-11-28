@@ -3,6 +3,40 @@ import XCTest
 
 @MainActor
 final class SensesSuggestionCancellationTests: XCTestCase {
+    func testClearingHistoryDiscardsHomeRefreshAndAllowsFreshSuggestions() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let history = HistoryStore(folder: folder)
+        defer { history.close() }
+        var displayed: [HomeShortcut] = []
+        let started = expectation(description: "Home refresh generating old suggestions")
+        var finish: CheckedContinuation<[HomeShortcut], Never>?
+        var requests = 0
+        let fresh = HomeShortcut(key: "fresh", app: "com.apple.mobilenotes", appName: "Notes",
+                                 text: "Fresh suggestion", prompt: "Fresh suggestion")
+        let suggestions = SensesSuggestions(enabled: { true }, deliver: { displayed = $0 }, produce: {
+            requests += 1
+            if requests == 1 {
+                return await withCheckedContinuation { finish = $0; started.fulfill() }
+            }
+            return [fresh]
+        })
+        let capture = HistoryCapture(deletionStore: history, suggestions: suggestions, memoriesCleared: { _ in })
+        let old = Task { await suggestions.refresh() }
+        await fulfillment(of: [started], timeout: 5)
+        history.add(at: Date(), app: "com.apple.mobilenotes", title: "Old", text: "Old evidence")
+        await capture.clearEverything()
+        let remaining = await history.recent()
+        XCTAssertTrue(remaining.isEmpty)
+        finish?.resume(returning: [HomeShortcut(key: "old", app: "com.apple.mobilenotes", appName: "Notes",
+                                               text: "Old suggestion", prompt: "Old suggestion")])
+        await old.value
+        XCTAssertTrue(displayed.isEmpty)
+        await suggestions.refresh()
+        XCTAssertEqual(displayed, [fresh])
+        XCTAssertEqual(requests, 2)
+    }
+
     func testCancelledRefreshDoesNotDeliverLateSuggestions() async {
         var displayed: [HomeShortcut] = []
         let started = expectation(description: "Suggestion generation suspended")
