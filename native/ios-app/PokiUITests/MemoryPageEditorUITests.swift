@@ -8,7 +8,10 @@ final class MemoryPageEditorUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["memory.about.all"].waitForExistence(timeout: 20))
         app.buttons["memory.about.all"].tap()
-        app.buttons["memory.editPage"].tap()
+        let edit = app.buttons["memory.editPage"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 10))
+        if !edit.isHittable { app.swipeUp() }
+        edit.tap()
         let field = app.textFields["memory.pageEditor"]
         let view = app.textViews["memory.pageEditor"]
         XCTAssertTrue(field.waitForExistence(timeout: 5) || view.waitForExistence(timeout: 5))
