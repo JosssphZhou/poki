@@ -364,7 +364,12 @@ extension PokiState {
                 compact: .symbol("link", .accent),
                 link: ActivityLink.setup("pairing"))
         case .setup:
-            guard let guide else { return quietFace }
+            guard let guide else {
+                return ActivityFace(
+                    symbol: "checklist", bear: .checking, size: .low, meta: .none,
+                    content: String(activity: "Setting up Poki"), bottom: .none,
+                    compact: .symbol("checklist", .plain), link: ActivityLink.setup())
+            }
             let (setupTitle, setupSubtitle) = Self.setupPresentation(for: guide.title)
             return ActivityFace(
                 symbol: "checklist",
@@ -404,6 +409,12 @@ extension PokiState {
                     subtitleLines: voice == .finishingOpening ? 2 : 1,
                     bottom: .none,
                     compact: .symbol(symbol, .accent))
+            }
+            if headline == "Paired" {
+                return ActivityFace(
+                    symbol: "checkmark.circle.fill", bear: .done, size: .low, meta: .none,
+                    content: String(activity: "Pairing complete"), subtitle: String(activity: "Return to Poki to continue."),
+                    bottom: .none, compact: .symbol("checkmark", .accent), link: ActivityLink.setup())
             }
             return quietFace
         }

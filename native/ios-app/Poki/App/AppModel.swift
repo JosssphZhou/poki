@@ -147,9 +147,8 @@ final class AppModel {
         // A pairing made here writes the same file just before it reports `paired`, which handles it.
         guard there, !pairingUnderWay else { return }
         try? (storage.pairingFileURL as NSURL).setResourceValue(URLFileProtection.completeUntilFirstUserAuthentication, forKey: .fileProtectionKey)
-        setup.pairingFile = storage.pairingFileURL.path
         SetupVault.mirrorPairingFromContainer(storage: storage)
-        pairingTrouble = nil; pairingVerifiedAt = nil
+        pairingFileSaved(at: storage.pairingFileURL)
         log.add("pairing", "pairing file from Poki Setup found")
     }
     /// Why the phone refused the pairing the last time the runner started, until it is accepted again.
@@ -1113,9 +1112,10 @@ final class AppModel {
         if let pairingCheck { return await pairingCheck.value }
         let task = Task { @MainActor [weak self] () -> Bool in
             guard let self else { return true }
-            defer { self.pairingCheck = nil }
+            defer { if !Task.isCancelled { self.pairingCheck = nil } }
             do {
                 _ = try await SignerBridge.call(["op": "udid", "device_address": "10.7.0.1", "pairing_file": path, "host_name": "Poki"])
+                guard !Task.isCancelled else { return true }
                 if self.pairingTrouble != nil { self.log.add("pairing", "check: accepted again") }
                 self.pairingTrouble = nil
                 self.servicesSilent = false
@@ -1124,6 +1124,7 @@ final class AppModel {
                 InstalledApps.shared.refreshSoon()
                 return true
             } catch {
+                guard !Task.isCancelled else { return true }
                 let text = error.localizedDescription
                 let code = (error as? SignerError)?.code
                 if code == "pairing" {
@@ -2591,10 +2592,22 @@ final class AppModel {
         try? FileManager.default.removeItem(at: storage.phonePairingFileURL)
         pairingFileSeen = true
         SetupVault.storePairing(data, storage: storage)
-        setup.pairingFile = storage.pairingFileURL.path
-        pairingTrouble = nil; pairingVerifiedAt = nil
-        pairingNote = nil
+        pairingFileSaved(at: storage.pairingFileURL)
         log.add("pairing", "pairing file \(how)")
+    }
+
+    private func pairingFileSaved(at url: URL) {
+        if pairing != nil { cancelPairing() }
+        setup.pairingFile = url.path
+        resetPairingVerification()
+        pairingNote = nil
+    }
+
+    private func resetPairingVerification() {
+        pairingCheck?.cancel()
+        pairingCheck = nil
+        pairingTrouble = nil
+        pairingVerifiedAt = nil
     }
 
     private static func checkPairingFileFormat(_ data: Data) throws {
@@ -2790,8 +2803,8 @@ final class AppModel {
         stopGuide()
         // Started now, while Poki is in front: the PIN arrives while the person is in Settings, when
         // iOS no longer lets Poki start a Live Activity.
-        activity.start(deviceName: deviceName)
         activity.update { $0.phase = .pairing; $0.pin = nil; $0.headline = "Pair in Settings" }
+        activity.start(deviceName: deviceName)
         // The person completes pairing in Settings. Keep the listener and Bonjour publication alive
         // there, before a regular Poki session can be started. Without it (audio can be busy, as in a
         // call) pairing still starts, as it did before the keep-alive.
@@ -2817,8 +2830,12 @@ final class AppModel {
         pairingKeepAlive.stop()
         background.releasePairing()
         pairing = nil
-        activity.update { $0.pin = nil }
-        if !sessionOn { stopGuide(); activity.end() }
+        let state = activity.state
+        let failed = state.phase == .problem && state.label == "Pairing Failed"
+        guard state.phase == .pairing || (state.phase == .idle && state.headline == "Paired") || failed else { return }
+        if failed { AttentionNotice.clear() }
+        if !sessionOn { activity.end(dismissalPolicy: .immediate) }
+        activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Waiting for agent"; $0.event = nil }
     }
 
     /// Waiting for Settings or showing a PIN: the listener, Bonjour and the keep-alive are running.
@@ -2863,7 +2880,7 @@ final class AppModel {
                 SetupVault.storePairing(data, storage: storage)
                 try? data.write(to: storage.phonePairingFileURL, options: .completeFileProtectionUntilFirstUserAuthentication)
             }
-            pairingTrouble = nil; pairingVerifiedAt = nil
+            resetPairingVerification()
             log.add("pairing", "paired on the phone")
             activity.update { $0.phase = .idle; $0.pin = nil; $0.headline = "Paired" }
             if !sessionOn {
@@ -2895,20 +2912,20 @@ final class AppModel {
     func guide(_ step: SetupStep) {
         guiding = step
         guard !sessionOn else { return }
-        activity.start(deviceName: deviceName)
         let steps = SetupStep.shown
         activity.update {
             $0.phase = .setup
             $0.headline = "Setting up Poki"
             $0.guide = .init(number: (steps.firstIndex(of: step) ?? 0) + 1, count: steps.count, title: step.activityTitle)
         }
+        activity.start(deviceName: deviceName)
     }
 
     func stopGuide() {
         guard guiding != nil else { return }
         guiding = nil
-        activity.update { $0.guide = nil }
         if !sessionOn, activity.state.phase == .setup { activity.end() }
+        activity.update { $0.guide = nil }
     }
 
     func isDone(_ step: SetupStep) -> Bool {

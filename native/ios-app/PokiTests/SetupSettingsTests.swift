@@ -34,6 +34,66 @@ final class SetupSettingsTests: XCTestCase {
     }
 
     @MainActor
+    func testImportAfterFailedPairingShowsSavedFileWithoutRetryOrVerification() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "SetupSettingsTests.\(folder.lastPathComponent)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let path = folder.appendingPathComponent("pairing.plist")
+        let storage = PokiStorage(defaults: defaults, appGroupDefaults: defaults, keychainService: suite,
+                                  codexService: suite, codexHome: folder, pairingFileURL: path)
+        defer {
+            SetupVault.forget(storage: storage)
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: folder)
+        }
+
+        let model = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), storage: storage)
+        model.loopback.simulate(.noAnswer)
+        _ = await model.startPairing()
+        guard case .failed? = model.pairing else { return XCTFail("Expected a failed pairing attempt") }
+
+        XCTAssertThrowsError(try model.importPairingFile(Data(), how: "fixture"))
+        guard case .failed? = model.pairing else { return XCTFail("Invalid imports must not clear the failure") }
+
+        let record: [String: Any] = ["identifier": "fixture", "public_key": Data(repeating: 1, count: 32),
+                                     "private_key": Data(repeating: 2, count: 32)]
+        let data = try PropertyListSerialization.data(fromPropertyList: record, format: .binary, options: 0)
+        try model.importPairingFile(data, how: "fixture")
+
+        XCTAssertNil(model.pairing)
+        XCTAssertEqual(try Data(contentsOf: path), data)
+        XCTAssertNil(model.pairingVerifiedAt, "Saving a valid file format does not verify it with the phone")
+
+        let elements = try await renderElements(
+            NavigationStack { SetupStepPage(step: .pairing).settingsPage() }
+                .environment(model),
+            waitForLabelContaining: "Pairing File Saved"
+        )
+        let labels = elements.compactMap(\.accessibilityLabel)
+        XCTAssertTrue(labels.contains { $0.contains("Not Verified Yet") })
+        XCTAssertFalse(labels.contains { $0.contains("Try Again") })
+    }
+
+    @MainActor
+    func testSetupAndPairingCompletionNeverShowTaskStandby() {
+        let controller = ActivityController()
+        controller.canStart = { false }
+        controller.update { $0.phase = .setup; $0.headline = "Setting up Poki" }
+        XCTAssertEqual(controller.state.face.content, String(activity: "Setting up Poki"))
+        XCTAssertNil(controller.state.face.subtitle)
+
+        controller.update { $0.phase = .pairing; $0.headline = "Pair in Settings" }
+        controller.update { $0.phase = .idle; $0.headline = "Paired" }
+        let finished = controller.state.face
+        XCTAssertEqual(finished.content, String(activity: "Pairing complete"))
+        XCTAssertEqual(finished.subtitle, String(activity: "Return to Poki to continue."))
+        XCTAssertNil(finished.event)
+
+        controller.update { $0.headline = "Waiting for agent" }
+        XCTAssertEqual(controller.state.face.subtitle, String(activity: "Runner on. Waiting for the agent."))
+    }
+
+    @MainActor
     func testPairingCodeIsShownOnceWhenNoLiveActivityCanStart() {
         let activity = ActivityController()
         activity.canStart = { false }

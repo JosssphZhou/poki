@@ -614,10 +614,11 @@ private struct PairingPage: View {
                 }
             } else if model.pairingPath != nil {
                 Section {
+                    Label("Pairing File Saved", systemImage: "link")
                     if let verifiedAt = model.pairingVerifiedAt {
                         Label(AppLocalization.text(LocalizedStringResource("Paired. The phone accepted it at \(verifiedAt.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLocalization.locale))).")), systemImage: "checkmark.seal.fill")
                     } else {
-                        Label("Pairing saved. Poki checks it when automation starts.", systemImage: "link")
+                        Label("Not Verified Yet", systemImage: "clock").foregroundStyle(.secondary)
                     }
                 }
             } else if SetupStep.onDevicePairing {

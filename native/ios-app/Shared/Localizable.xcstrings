@@ -12198,24 +12198,46 @@
         }
       }
     },
-    "Pairing saved. Poki checks it when automation starts." : {
+    "Pairing File Saved" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pairing saved. Poki checks it when automation starts."
+            "value" : "Pairing File Saved"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配对已保存。Poki 会在启动自动化时检查配对。"
+            "value" : "配对文件已保存"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "配對已儲存。Poki 會在啟動自動化時檢查配對。"
+            "value" : "配對檔案已儲存"
+          }
+        }
+      }
+    },
+    "Not Verified Yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not Verified Yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未验证"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未驗證"
           }
         }
       }
