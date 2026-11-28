@@ -2196,6 +2196,7 @@ final class VoiceModel {
             phase = .speaking
             recordSpokenAnswer(at: Date())
         case "output_audio_buffer.stopped", "output_audio_buffer.cleared":
+            if type == "output_audio_buffer.cleared", playbackInterruption == .tentative { markInterrupted() }
             clearBargeInMute(on: link)
             trace(type == "output_audio_buffer.cleared" ? "model cleared reply playback" : "reply playback stopped (model event)")
             // Cleared because the person started speaking over the answer: they are still being heard.
