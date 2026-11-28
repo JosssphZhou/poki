@@ -245,7 +245,7 @@ final class VoiceUXSyncTests: XCTestCase {
             let codex = SyncFakeCodexVoice()
             var finishOld: CheckedContinuation<PhoneAnswer, Never>?
             let (voice, _) = makeVoice(time: clock, codex: codex, storage: chatGPT.storage) { _, arguments in
-                if arguments == "old" {
+                if arguments == #"{"turn":"old"}"# {
                     return await withCheckedContinuation { finishOld = $0 }
                 }
                 return ("app: Settings\nChecked current step", false, nil)
@@ -253,7 +253,7 @@ final class VoiceUXSyncTests: XCTestCase {
             defer { voice.stop() }
             await voice.start()
             codex.notify("poki/backend/turnStarted", [:])
-            let old = Task { await codex.callTool("look", "old") }
+            let old = Task { await codex.callTool("look", #"{"turn":"old"}"#) }
             await clock.settle()
             let release = try XCTUnwrap(finishOld, "Previous turn's tool must actually be suspended")
             var released = false
@@ -273,11 +273,11 @@ final class VoiceUXSyncTests: XCTestCase {
                 let oldAnswer = try XCTUnwrap(returnedOld)
                 XCTAssertFalse(oldAnswer.text.contains("[Poki progress sync]"))
             }
-            let first = await codex.callTool("look", "current-1")
+            let first = await codex.callTool("look", #"{"step":1}"#)
             let firstAnswer = try XCTUnwrap(first)
             XCTAssertFalse(firstAnswer.text.contains("[Poki progress sync]"),
                            "A prior turn's result cannot count as the first current step")
-            let second = await codex.callTool("look", "current-2")
+            let second = await codex.callTool("look", #"{"step":2}"#)
             let secondAnswer = try XCTUnwrap(second)
 
             if oldFinishesFirst {
@@ -292,7 +292,7 @@ final class VoiceUXSyncTests: XCTestCase {
                 let oldAnswer = try XCTUnwrap(returnedOld)
                 XCTAssertFalse(oldAnswer.text.contains("[Poki progress sync]"),
                                "An old result must not describe a current progress milestone")
-                let third = await codex.callTool("look", "current-3")
+                let third = await codex.callTool("look", #"{"step":3}"#)
                 XCTAssertTrue(try XCTUnwrap(third).text.hasPrefix("[Poki progress sync]"),
                               "Current progress becomes eligible once every older tool has finished")
             }
