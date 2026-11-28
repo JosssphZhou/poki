@@ -184,8 +184,9 @@ final class BrowserGuardTests: XCTestCase {
             let expected = index.isMultiple(of: 2) ? "First result" : "Second result"
             print("Browser reopen cycle \(index + 1): opening \(path)")
             let answer = await WebTools.perform("web_open", arguments: Self.json(["url": "http://127.0.0.1:\(pages.port)\(path)"]))
-            XCTAssertFalse(answer.isError, answer.text)
-            XCTAssertTrue(answer.text.contains(expected), answer.text)
+            let diagnostic = "\(answer.text)\nBrowser URL: \(browser.url?.absoluteString ?? "nil"); WebKit URL: \(browser.webView.url?.absoluteString ?? "nil"); loading: \(browser.isLoading)/\(browser.webView.isLoading)"
+            XCTAssertFalse(answer.isError, diagnostic)
+            XCTAssertTrue(answer.text.contains(expected), diagnostic)
             browser.close()
             print("Browser reopen cycle \(index + 1): complete")
         }
@@ -400,7 +401,7 @@ final class BrowserGuardTests: XCTestCase {
 
         let calls = SessionStore.shared.record(chat.sessionID)
         XCTAssertEqual(calls.map(\.name), ["web_handoff", "web_read", "web_click", "web_type", "web_open"])
-        XCTAssertTrue(calls.allSatisfy(\.ok))
+        XCTAssertTrue(calls.allSatisfy(\.ok), calls.map { "\($0.name): \($0.ok) \($0.answer)" }.joined(separator: "\n"))
         XCTAssertTrue(calls.first?.answer.contains("ordinary search") == true)
         XCTAssertTrue(calls.first?.answer.contains("(filled)") == true)
         XCTAssertTrue(calls.first?.answer.contains("one-time code") == true)
@@ -410,7 +411,7 @@ final class BrowserGuardTests: XCTestCase {
         XCTAssertTrue(opened.text.contains("(empty)"))
         let requests = Self.json(server.requests)
         XCTAssertTrue(requests.contains("The owner handed the page back."))
-        XCTAssertTrue(requests.contains("ordinary updated search"))
+        XCTAssertTrue(requests.contains("ordinary updated search"), requests)
         let session = try XCTUnwrap(SessionStore.shared.session(chat.sessionID))
         let exported = String(decoding: try JSONEncoder().encode(session), as: UTF8.self)
         let support = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
@@ -429,6 +430,13 @@ final class BrowserGuardTests: XCTestCase {
     }
 
     func testBrowserTakeOverInstructionIsSelectableAndCopyableWithLineBreaks() async throws {
+        let accessibility = try XCTUnwrap(dlopen("/usr/lib/libAccessibility.dylib", RTLD_NOW))
+        defer { dlclose(accessibility) }
+        let isEnabled = unsafeBitCast(try XCTUnwrap(dlsym(accessibility, "_AXSAutomationEnabled")), to: (@convention(c) () -> Int32).self)
+        let setEnabled = unsafeBitCast(try XCTUnwrap(dlsym(accessibility, "_AXSSetAutomationEnabled")), to: (@convention(c) (Int32) -> Void).self)
+        let previous = isEnabled()
+        setEnabled(1)
+        defer { setEnabled(previous) }
         let instruction = "Run this command and open the URL:\ncurl -fsSL https://example.com/setup.sh | sh\nhttps://example.com/verify?code=482913"
         let browser = PokiBrowser.shared
         browser.close()
@@ -438,7 +446,8 @@ final class BrowserGuardTests: XCTestCase {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.frame = scene.screen.bounds
-        let host = UIHostingController(rootView: BrowserTakeOverSheet(running: true, stop: {}))
+        let host = UIHostingController(rootView: BrowserTakeOverSheet(running: true, stop: {})
+            .environment(\.accessibilityEnabled, true))
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer {
@@ -633,6 +642,7 @@ final class PageServer: @unchecked Sendable {
             let received = received + (data ?? Data())
             if received.range(of: Data("\r\n\r\n".utf8)) != nil {
                 let path = String(decoding: received.prefix(64), as: UTF8.self).split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+                print("[BrowserFixture] received \(path)")
                 let body = self.pages[path] ?? ""
                 let status = self.pages[path] == nil ? "404 Not Found" : "200 OK"
                 let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
