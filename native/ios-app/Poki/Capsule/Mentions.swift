@@ -187,10 +187,10 @@ enum MentionRecents {
 
     static var ids: [String] { UserDefaults.standard.stringArray(forKey: key) ?? [] }
 
-    static func rank(_ id: String) -> Int? { ids.firstIndex(of: id) }
+    static func rank(_ id: String) -> Int? { ids.firstIndex { $0.caseInsensitiveCompare(id) == .orderedSame } }
 
     static func used(_ id: String) {
-        var list = ids.filter { $0 != id }
+        var list = ids.filter { $0.caseInsensitiveCompare(id) != .orderedSame }
         list.insert(id, at: 0)
         UserDefaults.standard.set(Array(list.prefix(most)), forKey: key)
     }
@@ -203,8 +203,9 @@ enum MentionRecents {
     /// The recent apps that still make a capsule; with few yet, the apps installed here that Poki knows, then Apple's.
     static var apps: [AppCapsule] {
         let catalog = AppCapsule.catalog
-        let byID = Dictionary(catalog.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let recent = ids.compactMap { byID[$0] }
+        let byID = Dictionary(catalog.map { ($0.id.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+        var seen: Set<String> = []
+        let recent = ids.compactMap { byID[$0.lowercased()] }.filter { seen.insert($0.id.lowercased()).inserted }
         if recent.count >= 4 { return recent }
         let installed = catalog.filter { app in !recent.contains(app) && DynamicApps.name(forID: app.id) != nil }
         // Apple's own apps are on every iPhone: they fill the rest when little else is known yet.
