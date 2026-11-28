@@ -381,11 +381,13 @@ final class VoiceUXSyncTests: XCTestCase {
             let link = currentLink()
             link.play(["type": "session.created"])
             link.play(["type": "input_audio_buffer.speech_started"],
-                      ["type": "input_audio_buffer.speech_stopped"],
-                      ["type": "response.created", "response": ["id": "r1"]],
+                      ["type": "input_audio_buffer.speech_stopped"])
+            await clock.advance(22)
+            link.play(["type": "response.created", "response": ["id": "r1"]],
                       ["type": "response.output_item.done", "item": ["type": "function_call", "call_id": "rt1", "name": "look", "arguments": "{}"]])
             await clock.settle()
-            XCTAssertFalse(link.notes.contains { $0.contains("progress sync") })
+            XCTAssertFalse(link.notes.contains { $0.hasPrefix("Progress sync:") },
+                           "Even a slow first step must not send a progress note")
 
             link.play(["type": "response.done", "response": ["id": "r1"]])
             await clock.advance(22)
