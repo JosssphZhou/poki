@@ -3,6 +3,7 @@
 const now = Math.floor(Date.now() / 1000);
 const facts = { udid: "00008150-000829EA2183C01C", name: "Zhehan's iPhone", product_type: "iPhone18,1", ios: "26.1", build: "23B81", developer_mode: true, paired_with_this_computer: true, can_pair_on_device: false, wifi_address: "192.168.1.23" };
 const record = { udid: facts.udid, phone_name: facts.name, ios: "26.1", apple_id: "zh…@example.com", team_id: "ABCDE12345", team_name: "Zhehan Zhang", team_is_free: true, bundle_id: "nz.zheha.poki.ABCDE12345", version: "0.2.7", build: "70", release_tag: "ios-v0.2.7", signed_at: now - 86400 * 5, profile_expires_at: now + 86400 * 2, last_error: null, pairing_handed_off: true };
+const relayWorker = { source: "built in", download_url: "https://example.invalid/worker.js", guide_url: "https://example.invalid/relay-guide", sha256: "worker", deployed_sha256: "previous-worker", update_available: true };
 const answers: Record<string, unknown> = {
   app_info: { version: "0.2.0", os: (new URLSearchParams(location.search).get("os") ?? "windows"), arch: "aarch64", data_dir: "~/Library/Application Support/nz.Poki.Poki Setup", can_use_system_anisette: true },
   phones: [{ phone: { udid: facts.udid, link: { kind: "usb" } }, facts, error: null, record }],
@@ -10,6 +11,11 @@ const answers: Record<string, unknown> = {
   teams: [{ team_id: "ABCDE12345", name: "Zhehan Zhang", kind: "Individual", is_free: true }],
   records: [record],
   relay_state: { account_id: "x", account_name: "Zhehan's account", address: "https://poki-relay.zhehan.workers.dev", first_deploy: false, deployed_at: now, phone_link: "poki://setup?relay=https%3A%2F%2Fpoki-relay.zhehan.workers.dev" },
+  relay_worker: relayWorker,
+  relay_token_setup_url: "https://example.invalid/cloudflare-token",
+  relay_accounts: [{ id: "x", name: "Zhehan's account" }],
+  relay_token_saved: false,
+  relay_check: true,
   connectors: [{ name: "Claude", url: `https://poki-relay.zhehan.workers.dev/v1/${"a".repeat(52)}/${"s".repeat(43)}/mcp`, added_at: now, last_check: { at: now, ok: true, relay_ok: true, phone_online: true, tools: ["look", "do", "screenshot"], detail: "Working: 12 tools through the phone." } }],
   connector_snippets: [["Claude Code", "claude mcp add --transport http poki \"https://…/mcp\""]],
   agent_prompt: "You are setting up Poki on my iPhone (or iPad) with Poki Setup's command line tool…",
@@ -30,7 +36,15 @@ const answers: Record<string, unknown> = {
   qr_svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#fff"/><rect x="1" y="1" width="3" height="3"/><rect x="6" y="1" width="3" height="3"/><rect x="1" y="6" width="3" height="3"/></svg>',
 };
 (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
-  invoke: async (cmd: string) => (cmd.startsWith("plugin:") ? 1 : answers[cmd] ?? null),
+  invoke: async (cmd: string) => {
+    if (cmd === "relay_deploy") {
+      answers.relay_token_saved = true;
+      answers.relay_worker = { ...relayWorker, deployed_sha256: relayWorker.sha256, update_available: false };
+      return answers.relay_state;
+    }
+    if (cmd === "relay_forget_token") answers.relay_token_saved = false;
+    return cmd.startsWith("plugin:") ? 1 : answers[cmd] ?? null;
+  },
   transformCallback: () => Math.floor(Math.random() * 1e9),
   metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
   convertFileSrc: (p: string) => p,

@@ -110,6 +110,7 @@ h2 { font-size: 15px; line-height: 20px; font-weight: 600; margin: 0 0 8px; }
   outline: none; user-select: text; cursor: text; width: 100%;
 }
 .input::placeholder { color: var(--text3); }
+.relay-token::-ms-reveal { display: none; }
 .input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,119,253,0.25); }
 select.input { appearance: none; -webkit-appearance: none; }
 textarea.input, pre.input { height: auto; padding: 8px 10px; }

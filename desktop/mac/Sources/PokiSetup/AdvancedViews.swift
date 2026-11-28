@@ -3,16 +3,12 @@ import SwiftUI
 
 // MARK: Relay
 
+@MainActor
 struct RelayView: View {
     @EnvironmentObject var model: AppModel
-    @State private var token = ""
-    @State private var accounts: [CloudflareAccount] = []
-    @State private var accountID = ""
-    @State private var working = false
-    @State private var error: SetupMessage?
+    @StateObject private var onboarding = RelayOnboarding()
     @State private var relayUp: Bool?
     @State private var worker: WorkerStatus?
-    @State private var tokenSaved = false
 
     var body: some View {
         Form {
@@ -65,88 +61,136 @@ struct RelayView: View {
                 }
             }
             Section {
-                if tokenSaved {
-                    LabeledContent(localized("Cloudflare API Token")) {
-                        HStack {
-                            Text(localized("Saved in Keychain")).foregroundStyle(.secondary)
-                            Button(localized("Forget")) { Task { _ = try? await model.bridge.call("relay_forget_token", as: Bool?.self); tokenSaved = false; accounts = [] } }
-                        }
-                    }
-                } else {
-                    SecureField(localized("Cloudflare API Token"), text: $token, prompt: Text(localized("Paste the token")))
+                let isDeploying = model.busyJobs.contains("relay")
+                let steps = model.steps["relay"] ?? []
+                onboardingControls
+                    .disabled(onboarding.working || isDeploying)
+                if !steps.isEmpty {
+                    JobProgress(steps: steps, running: isDeploying, doneTitle: localized("Relay deployed"))
                 }
-                if !accounts.isEmpty {
-                    Picker(localized("Account"), selection: $accountID) {
-                        ForEach(accounts) { Text($0.name).tag($0.id) }
-                    }
+                if (onboarding.working || isDeploying) && (!isDeploying || steps.isEmpty) {
+                    ProgressView().controlSize(.small)
                 }
-                if let s = model.steps["relay"], !s.isEmpty { JobProgress(steps: s, running: working, doneTitle: localized("Relay deployed")) }
-                HStack {
-                    Link(localized("Create a token…"), destination: URL(string: "https://dash.cloudflare.com/profile/api-tokens")!)
-                    Spacer()
-                    if working { ProgressView().controlSize(.small) }
-                    if accounts.isEmpty {
-                        Button(localized("Continue")) { Task { await loadAccounts() } }.disabled((token.isEmpty && !tokenSaved) || working)
-                    } else {
-                        Button(model.relay == nil ? localized("Deploy Relay") : localized("Update Relay")) { Task { await deploy() } }
-                            .pokiProminentButton()
-                            .disabled(accountID.isEmpty || working)
-                    }
+                if let status = onboarding.status { guidance(status.text) }
+                if let error = onboarding.error, !steps.contains(where: { $0.state == .failed && $0.detail == error.text }) {
+                    Text(error.text).foregroundStyle(.red).font(.callout).fixedSize(horizontal: false, vertical: true)
                 }
-                if let error { Text(error.text).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
+                if onboarding.error?.needsManualDeploy == true, let w = worker, let url = URL(string: w.guideUrl) {
+                    Link(localized("Open Manual Deployment Guide"), destination: url)
+                }
             } header: {
                 Text(model.relay == nil ? localized("Deploy") : localized("Redeploy"))
             } footer: {
-                Text(localized("Use the “Edit Cloudflare Workers” template. Poki Setup keeps the token in your Keychain, so you can update the relay later without pasting it again."))
+                Text(localized("If your account doesn't have a workers.dev address yet, Poki Setup can register one when you deploy."))
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .pokiPage()
         .task {
-            if let d = model.relay, !model.demo { await check(d.address) } else if model.demo { relayUp = true }
             if !model.demo {
-                tokenSaved = (try? await model.bridge.call("relay_token_saved")) ?? false
+                await onboarding.readSavedToken(using: model.bridge)
                 worker = try? await model.bridge.call("relay_worker")
+            }
+        }
+        .task(id: model.relay?.address) {
+            if let d = model.relay { await check(d.address) }
+        }
+    }
+
+    @ViewBuilder private var onboardingControls: some View {
+        if let account = onboarding.accounts.first {
+            if onboarding.accounts.count == 1 {
+                LabeledContent(localized("Cloudflare Account")) { Text(account.name) }
+            } else {
+                Picker(localized("Cloudflare Account"), selection: $onboarding.accountID) {
+                    Text(localized("Choose an account")).tag("")
+                    ForEach(onboarding.accounts) { Text($0.name).tag($0.id) }
+                }
+            }
+            HStack {
+                Button(localized("Cancel")) { cancelOnboarding() }
+                Spacer()
+                Button(model.relay == nil ? localized("Deploy Relay") : localized("Update Relay")) {
+                    Task {
+                        if await onboarding.deploy(using: model) != nil {
+                            relayUp = true
+                            worker = try? await model.bridge.call("relay_worker")
+                        }
+                    }
+                }
+                .pokiProminentButton()
+                .disabled(!onboarding.canDeploy)
+            }
+        } else if onboarding.entry == .browser {
+            guidance(localized("Create the API token in Cloudflare and restrict it to the account you want to use. Copy the token, then return here to import it."))
+            HStack {
+                Button(localized("Cancel")) { cancelOnboarding() }
+                Button(localized("Enter Token Manually…")) { onboarding.enterManually() }
+                Spacer()
+                Button(localized("Import Copied Token")) {
+                    Task {
+                        await onboarding.importCopiedToken(using: model) {
+                            NSPasteboard.general.string(forType: .string)
+                        }
+                    }
+                }
+                .pokiProminentButton()
+            }
+        } else if onboarding.entry == .manual {
+            SecureField(localized("Cloudflare API Token"), text: $onboarding.manualToken, prompt: Text(localized("Paste the token")))
+            HStack {
+                Button(localized("Cancel")) { cancelOnboarding() }
+                Spacer()
+                Button(localized("Continue")) { Task { await onboarding.useManualToken(using: model) } }
+                    .pokiProminentButton()
+                    .disabled(onboarding.manualToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        } else {
+            if onboarding.tokenSaved == true {
+                LabeledContent(localized("Cloudflare API Token")) {
+                    HStack {
+                        Text(localized("Saved in Keychain")).foregroundStyle(.secondary)
+                        Button(localized("Forget")) { Task { await onboarding.forgetToken(using: model.bridge) } }
+                    }
+                }
+            }
+            HStack {
+                Button(localized("Enter Token Manually…")) { onboarding.enterManually() }
+                Spacer()
+                if onboarding.tokenSaved == true {
+                    connectButton
+                    Button(localized("Continue with Saved Token")) { Task { await onboarding.useSavedToken(using: model) } }
+                        .pokiProminentButton()
+                } else {
+                    connectButton.pokiProminentButton()
+                }
             }
         }
     }
 
-    private func loadAccounts() async {
-        working = true
-        error = nil
-        defer { working = false }
-        do {
-            var args: [String: Any?] = [:]
-            if !token.isEmpty { args["token"] = token }
-            accounts = try await model.bridge.call("relay_accounts", args)
-            accountID = accounts.first?.id ?? ""
-            if accounts.isEmpty { error = .copy("This token can't see any Cloudflare account.") }
-        } catch { self.error = .verbatim(error.localizedDescription) }
+    private var connectButton: some View {
+        Button {
+            Task { await onboarding.connect(using: model.bridge) { NSWorkspace.shared.open($0) } }
+        } label: {
+            Label(localized("Connect Cloudflare"), systemImage: "arrow.up.right")
+        }
     }
 
-    private var deployArgs: [String: Any?] {
-        var args: [String: Any?] = ["account_id": accountID]
-        if !token.isEmpty { args["token"] = token }
-        return args
+    private func cancelOnboarding() {
+        onboarding.cancel()
+        if model.steps["relay"]?.contains(where: { $0.state == .failed }) == true {
+            model.steps["relay"] = []
+        }
     }
 
-    private func deploy() async {
-        working = true
-        error = nil
-        defer { working = false }
-        do {
-            let d: Deployed = try await model.job("relay") { try await model.bridge.call("relay_deploy", deployArgs) }
-            model.relay = d
-            worker = try? await model.bridge.call("relay_worker")
-            tokenSaved = (try? await model.bridge.call("relay_token_saved")) ?? false
-            token = ""
-            accounts = []
-            await check(d.address)
-        } catch { self.error = .verbatim(error.localizedDescription) }
+    private func guidance(_ text: String) -> some View {
+        Text(text)
+            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
     private func check(_ address: String) async {
-        relayUp = try? await model.bridge.call("relay_check", ["address": address])
+        let answering: Bool? = model.demo ? true : (try? await model.bridge.call("relay_check", ["address": address]))
+        if model.relay?.address == address, !Task.isCancelled { relayUp = answering }
     }
 }
 

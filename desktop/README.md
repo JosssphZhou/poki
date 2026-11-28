@@ -22,9 +22,15 @@ desktop/
 | Installs | installation_proxy, profiles through misagent |
 | Pairing file | written straight into Poki's container, and offered as a `poki://pairing?url=…&sha256=…` QR on the LAN |
 | Keeps it alive | the phones this computer set up, with their expiry; renewal is due with 2 days left and runs by itself every 6 h when the password is kept |
-| Relay | deploys `deploy/cf-relay/worker.js` to your own Cloudflare account through the API and shows the `poki://setup?relay=` QR |
+| Relay | opens Cloudflare with the required permissions selected, deploys the Worker to your account, and shows the `poki://setup?relay=` QR |
 | Connectors | keeps links the phone made, runs the OAuth round and `tools/list` through the phone, writes client snippets |
 | Debug | live syslog, developer disk image, support bundle for private review before sharing |
+
+## Set up your relay
+
+In **Relay**, choose **Connect Cloudflare**. Sign in to Cloudflare, scope the prefilled token to the account you want to use, and create it. Copy the token Cloudflare shows once and choose **Import Copied Token** in Poki Setup. Select the account if more than one is available, then choose **Deploy**. Poki Setup registers a `workers.dev` subdomain only if the account doesn't have one, checks that the relay answers, and offers a QR code to open in Poki. It saves the token in your OS credential store for later updates.
+
+The token needs **Workers Scripts Edit** for the Worker and its `workers.dev` routes and **Account Settings Read** to list eligible accounts. It doesn't need a custom domain or DNS permissions. Workers plan limits still apply.
 
 ## For agents
 

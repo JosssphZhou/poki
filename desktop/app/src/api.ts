@@ -80,6 +80,7 @@ export const api = {
   latestRelease: () => invoke<Release>("latest_release"),
   relayState: () => invoke<Deployed | null>("relay_state"),
   relayWorker: () => invoke<WorkerStatus>("relay_worker"),
+  relayTokenSetupUrl: () => invoke<string>("relay_token_setup_url"),
   relayTokenSaved: () => invoke<boolean>("relay_token_saved"),
   relayForgetToken: () => invoke<void>("relay_forget_token"),
   relayAccounts: (token: string) => invoke<CfAccount[]>("relay_accounts", { token }),

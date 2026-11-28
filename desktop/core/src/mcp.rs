@@ -89,9 +89,12 @@ fn save(list: &[Connector]) -> Result<()> {
 
 /// Is the relay up? Stateless metadata answers 200 for any well-formed link.
 pub async fn relay_up(origin: &str) -> Result<bool> {
+    Ok(relay_probe(origin).await?.status().is_success())
+}
+
+pub(crate) async fn relay_probe(origin: &str) -> Result<reqwest::Response> {
     let probe = format!("{origin}/.well-known/oauth-protected-resource/v1/{}/{}/mcp", "a".repeat(52), "a".repeat(43));
-    let res = reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build()?.get(probe).send().await?;
-    Ok(res.status().is_success())
+    Ok(reqwest::Client::builder().timeout(std::time::Duration::from_secs(15)).build()?.get(probe).send().await?)
 }
 
 /// The whole path a Claude connector takes: metadata, registration, authorize (the phone must

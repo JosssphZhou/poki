@@ -515,6 +515,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
         "test_builds_delete_downloads" => ok(devbuilds::delete_downloads()?),
         "relay_state" => ok(relay::remembered()?),
         "relay_worker" => ok(relay::worker_status().await?),
+        "relay_token_setup_url" => ok(relay::token_setup_url()),
         "relay_token_saved" => ok(relay::saved_token().is_some()),
         "relay_forget_token" => ok(relay::forget_token()?),
         "relay_accounts" => {
@@ -525,7 +526,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             let token = relay::token_or_saved(a.get("token").and_then(|v| v.as_str()).map(String::from))?;
             let account_id: String = arg(a, "account_id")?;
             let cf = relay::Cloudflare::new(&token)?;
-            let acct = cf.accounts().await?.into_iter().find(|x| x.id == account_id).ok_or_else(|| Error::msg("That account is not visible to this token."))?;
+            let acct = cf.account(&account_id).await?;
             let d = cf.deploy(&acct, &out.reporter("relay")).await?;
             relay::remember(&d)?;
             if let Err(e) = relay::save_token(&token) { tracing::warn!("could not keep the Cloudflare token: {e}"); }
