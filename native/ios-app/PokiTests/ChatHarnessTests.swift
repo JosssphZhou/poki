@@ -16,7 +16,7 @@ final class ChatHarnessTests: XCTestCase {
     private var saved: [String: Any?] = [:]
     private var app: AppModel?
     private var notes: [String] = []
-    private static let settings = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom"]
+    private static let settings = ["chat.provider", "chat.customURL", "chat.customModel", "custom.providers", "chat.customProvider", "chat.model.custom", ActivityController.capturePermissionKey]
 
     override func setUp() async throws {
         for key in Self.settings { saved[key] = UserDefaults.standard.object(forKey: key) }
@@ -45,6 +45,24 @@ final class ChatHarnessTests: XCTestCase {
 
     nonisolated private static func json(_ object: [String: Any]) -> String {
         String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+    }
+
+    func testModelCanHideLiveActivityForCapture() async throws {
+        UserDefaults.standard.removeObject(forKey: ActivityController.capturePermissionKey)
+        let server = try FakeCompletions(replies: [
+            FakeCompletions.tool("hide_live_activity", [:]),
+            FakeCompletions.text("Ready to capture."),
+        ])
+        let chat = chat(on: server)
+        chat.send("Hide Poki’s Live Activity so I can take a screenshot.")
+        try await waitForTask(chat)
+
+        let request = try XCTUnwrap(server.requests.first)
+        let tools = try XCTUnwrap(request["tools"] as? [[String: Any]])
+        XCTAssertTrue(tools.contains { ($0["function"] as? [String: Any])?["name"] as? String == "hide_live_activity" })
+        let receipt = try XCTUnwrap(chat.savedCalls.first { $0.name == "hide_live_activity" })
+        XCTAssertTrue(receipt.ok, receipt.answer)
+        XCTAssertTrue(receipt.answer.contains("until this task ends and Poki is opened again"))
     }
 
     func testCountedMessageScrollShowsVerifiedProgressAndStopsAtTheTarget() async throws {
@@ -2400,7 +2418,7 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertFalse(prompt.contains("web_open"))
         let offered = (request["tools"] as? [[String: Any]] ?? []).compactMap { ($0["function"] as? [String: Any])?["name"] as? String }
         // personal_context is the chat's way into Screen History since the Senses work (6600edd8).
-        XCTAssertEqual(Set(offered), ["look", "do", "status", "personal_context", "report_plan", "finish_task"])
+        XCTAssertEqual(Set(offered), ["look", "do", "status", "personal_context", "hide_live_activity", "report_plan", "finish_task"])
     }
 
     func testInterruptedConversationReachesModelAfterReload() async throws {

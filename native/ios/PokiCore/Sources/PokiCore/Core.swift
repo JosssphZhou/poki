@@ -195,6 +195,9 @@ public protocol CoreHost: AnyObject, Sendable {
     func restartRunner()
     /// An agent connected (MCP initialize): get ready for its first look now, not during it.
     func warmUp()
+    /// An outside agent completed its phone task. Called before another phone step can start.
+    func externalTaskReturning(session: String) async
+    func externalTaskFinished(session: String) async
     /// The app may unlock for an owner-started task. No passcode crosses into the core.
     func unlockForLocalTask(timeout: Double) async -> Bool
     /// Text read from a PNG screenshot, used for elements an app collapsed. PokiCore answers it with
@@ -213,6 +216,8 @@ public protocol CoreHost: AnyObject, Sendable {
 
 extension CoreHost {
     public var currentRunner: RunnerState { runnerState() }
+    public func externalTaskReturning(session: String) async {}
+    public func externalTaskFinished(session: String) async {}
     public func unlockForLocalTask(timeout: Double) async -> Bool { false }
     public func screenshotWithoutRunner() async -> Data? { nil }
     public func approveConnection(client: String, callback: String, connector: String) async -> Bool { false }
@@ -286,9 +291,13 @@ public struct HostTool: Sendable {
     public var name: String
     public var description: String
     public var schemaJSON: String
+    /// A presentation tool for the current MCP task, serialized with look/do and owner decisions.
+    let requiresCurrentTask: Bool
     public var run: @Sendable (_ arguments: String, _ session: String?, _ timeLeft: Double?) async -> PokiCore.ToolAnswer
-    public init(name: String, description: String, schemaJSON: String, run: @escaping @Sendable (_ arguments: String, _ session: String?, _ timeLeft: Double?) async -> PokiCore.ToolAnswer) {
-        self.name = name; self.description = description; self.schemaJSON = schemaJSON; self.run = run
+    public init(name: String, description: String, schemaJSON: String, requiresCurrentTask: Bool = false, run: @escaping @Sendable (_ arguments: String, _ session: String?, _ timeLeft: Double?) async -> PokiCore.ToolAnswer) {
+        self.name = name; self.description = description; self.schemaJSON = schemaJSON
+        self.requiresCurrentTask = requiresCurrentTask
+        self.run = run
     }
 }
 
@@ -576,12 +585,18 @@ public final class PokiCore: @unchecked Sendable {
         if ifNoLocalWorkspace, computer.hasLocalWorkspace { return nil }
         if let session, !computer.ownsTask(session: session) { return nil }
         if let activeTask = computer.recordingTask { taskScreenshots.clear(task: activeTask) }
-        guard switching else {
-            if session != nil, computer.hasLocalWorkspace { return await computer.returnToOrigin() }
+        let externalSession = computer.origin?.session
+        let line: String?
+        if switching || (session != nil && computer.hasLocalWorkspace) {
+            // Returning can activate Poki before the queued session-end event is consumed.
+            if let externalSession { await host?.externalTaskReturning(session: externalSession) }
+            line = await computer.returnToOrigin()
+        } else {
             computer.forgetTask()
-            return nil
+            line = nil
         }
-        return await computer.returnToOrigin()
+        if let externalSession { await host?.externalTaskFinished(session: externalSession) }
+        return line
     }
 
     // MARK: MCP over HTTP (Streamable HTTP, JSON answers only)
@@ -849,9 +864,7 @@ public final class PokiCore: @unchecked Sendable {
             return ToolResult(text: "Earlier screenshot \(id). Use a current screen read for taps.", jpeg: jpeg, isError: false)
         }
         if let tool = hostTools.value.first(where: { $0.name == name }) {
-            // Outside the gate: the app's tool makes its own look and do calls, one at a time as any.
-            let answer = await tool.run(args.serialized(), session, answerBy.map { max(0, $0 - now() - 3) })
-            return ToolResult(text: answer.text, jpeg: answer.jpeg, isError: answer.isError)
+            return await callHostTool(tool, args, session: session, answerBy: answerBy)
         }
         if name == "skills" || name == "routines" {
             // Memory only: no phone input, so it does not wait for a look or do in progress.
@@ -894,6 +907,8 @@ public final class PokiCore: @unchecked Sendable {
             return ToolResult(text: "another task is using Split View; wait for it to finish", jpeg: nil, isError: true)
         }
         let gateWaited = now() - received
+        let previousOwner = computer.origin?.session
+        let previousTaskWasIdle = computer.beginsTask()
         gate.current = "\(name): \(activity.summary)"
         emit(.toolStarted(activity))
         // The owner's time on an approval, and the runner's start, come on top of the tool's own time.
@@ -914,6 +929,12 @@ public final class PokiCore: @unchecked Sendable {
         } catch {
             // Never reached in practice (every step has its own deadline), but a call always answers.
             output = ToolResult(text: "error: \(error); what was sent is unknown. Call look to see the screen.", jpeg: nil, isError: true)
+        }
+        if let previousOwner, previousTaskWasIdle || computer.origin?.session != previousOwner {
+            await host?.externalTaskFinished(session: previousOwner)
+        }
+        if let finished = output.finishedExternalSession, finished != previousOwner {
+            await host?.externalTaskFinished(session: finished)
         }
         if local, session == nil, let localTask, localTask == computer.recordingTask,
            !output.isError, let app = output.readApp?.lowercased(), app != "com.apple.springboard",
@@ -978,6 +999,26 @@ public final class PokiCore: @unchecked Sendable {
         default: break
         }
         return output
+    }
+
+    private func callHostTool(_ tool: HostTool, _ args: JSON, session: String?, answerBy: Double?) async -> ToolResult {
+        func run() async -> ToolResult {
+            let answer = await tool.run(args.serialized(), session, answerBy.map { max(0, $0 - now() - 3) })
+            return ToolResult(text: answer.text, jpeg: answer.jpeg, isError: answer.isError)
+        }
+        // A delegating tool makes its own look/do calls.
+        guard tool.requiresCurrentTask else { return await run() }
+        let pending = "Wait for the owner to answer the pending approval or hand-off, then try again."
+        guard pendingApproval == nil, handoff == nil else { return ToolResult(text: pending, isError: true) }
+        guard await gate.enter(waiting: config.busyWait) else {
+            return ToolResult(text: "Another phone step is still running. Retry after it finishes.", isError: true)
+        }
+        defer { gate.leave() }
+        guard pendingApproval == nil, handoff == nil else { return ToolResult(text: pending, isError: true) }
+        guard let session, computer.ownsTask(session: session), !computer.beginsTask() else {
+            return ToolResult(text: "Start a phone task in this MCP session with look or do first.", isError: true)
+        }
+        return await run()
     }
 
     func status() -> ToolResult {

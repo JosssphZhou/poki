@@ -232,6 +232,17 @@ The computer-use profile, ported from `src/cua.mjs` and `src/cua-wda.mjs`:
 - `skills {action, ...}`: the phone's saved skills and the owner's notes (see below), without touching the device. `routines` still works as an alias for older clients, but it is no longer listed.
 - `status`: the relay, the runner and pending approvals, without touching the device.
 
+The iPhone app also exposes `hide_live_activity {}` to the active MCP task and to Poki's built-in
+chat. For MCP, start the task with `look` or `do` in the same session. Call the tool before taking
+a screenshot or recording. A pending approval or hand-off blocks the call. Any later request for
+the owner still uses Poki's notifications.
+
+The activity stays hidden until the task ends and Poki returns to the foreground, either
+automatically when the task returns to Poki or when the owner reopens it. Stopping and starting
+the phone session also clears the previous task’s hidden state. In Settings › Advanced,
+turn off **Let Poki Hide the Live Activity** to disable this tool. iOS system indicators may still
+appear in a capture.
+
 Each answer is facts only: the app in front, numbered elements, what each action did (`sent`,
 `not_sent`, `unknown`), timings and a JPEG screenshot. No verdicts.
 

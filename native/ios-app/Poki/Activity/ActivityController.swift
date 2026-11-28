@@ -98,6 +98,14 @@ final class ActivityController {
     var canStart: () -> Bool = { true }
     /// The device name `start` was last asked with: the activity is wanted, shown or not.
     private var wanted: String?
+    enum CaptureTask: Equatable {
+        case chat(UUID), external(String)
+    }
+    private enum CaptureVisibility: Equatable {
+        case visible, hiddenDuringTask(CaptureTask), hiddenUntilReopen
+    }
+    nonisolated static let capturePermissionKey = "allowAgentToHideLiveActivity"
+    private var captureVisibility = CaptureVisibility.visible
     /// Wanted but not shown because nothing is happening: not a fault.
     var waitsForWork: Bool { activity == nil && wanted != nil && state.isQuiet && hidesWhenIdle() }
 
@@ -146,7 +154,7 @@ final class ActivityController {
         guard activity == nil else { return }
         // Keep it wanted for the next foreground update, without asking ActivityKit to start from
         // the background. Direct callers and update-driven restarts share the same restriction.
-        guard fromIntent || canStart() else { return }
+        guard captureVisibility == .visible, fromIntent || canStart() else { return }
         if state.isQuiet, hidesWhenIdle() { lastError = nil; return }
         guard enabled else { lastError = "Live Activities are off for Poki (Settings > Poki > Live Activities)."; return }
         guard let content = content() else { return }
@@ -226,6 +234,43 @@ final class ActivityController {
         clearActivity()
         let previous = tail
         tail = Task { await previous?.value; await activity.end(nil, dismissalPolicy: .immediate) }
+    }
+
+    enum CaptureHideResult { case hidden, ownedByAnotherTask, dismissalUnconfirmed }
+
+    /// Keep tracking the task while ActivityKit removes its presentation.
+    func hideForCapture(task: CaptureTask) async -> CaptureHideResult {
+        if case .hiddenDuringTask(let owner) = captureVisibility, owner != task { return .ownedByAnotherTask }
+        captureVisibility = .hiddenDuringTask(task)
+        hide()
+        await tail?.value
+        // On device, end() can return before ActivityKit updates the list of visible activities.
+        let deadline = ContinuousClock.now + .seconds(3)
+        while Activity<PokiActivityAttributes>.activities.contains(where: {
+            $0.activityState != .ended && $0.activityState != .dismissed
+        }) {
+            guard ContinuousClock.now < deadline, !Task.isCancelled else { return .dismissalUnconfirmed }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return .hidden
+    }
+
+    func captureTaskEnded(_ task: CaptureTask) {
+        if captureVisibility == .hiddenDuringTask(task) { captureVisibility = .hiddenUntilReopen }
+    }
+
+    func resetCaptureVisibility() { captureVisibility = .visible }
+
+    var captureOwner: CaptureTask? {
+        if case .hiddenDuringTask(let task) = captureVisibility { return task }
+        return nil
+    }
+
+    @discardableResult
+    func reopenedAfterBackground() -> Bool {
+        guard captureVisibility == .hiddenUntilReopen else { return false }
+        captureVisibility = .visible
+        return true
     }
 
     /// Language is a presentation update, never an activity transition or a new automation session.

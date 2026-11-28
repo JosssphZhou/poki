@@ -13,6 +13,7 @@ public struct ToolResult: Sendable {
     public var isError = false
     var splitView: PokiCore.SplitViewRead?
     var splitViewNeedsRead = false
+    var finishedExternalSession: String?
     /// What the read behind this answer saw: the app in front and its element tree, without the read's
     /// time or the changes since the read before, and a mark that is new each time when the picture
     /// moved with the same elements (a canvas, a web view). The same screen reads the same, so a loop
@@ -1578,7 +1579,10 @@ final class Computer: @unchecked Sendable {
         }
         // The read above is the work's last screen; the owner then sees their own app again.
         if finish, error == nil {
+            let finishedSession = origin?.session
+            if let finishedSession { await host.externalTaskReturning(session: finishedSession) }
             let line = await returnToOrigin() ?? "finish: the app this task began in is not known, so the phone stays here"
+            result.finishedExternalSession = finishedSession
             var lines = result.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             lines.insert(line, at: min(1, lines.count))
             if trace.count >= 2, !skillRanWhole {

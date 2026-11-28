@@ -376,14 +376,14 @@ enum Harness {
             let webTools = includeMemoryAttribution ? WebTools.specs.map(withActionMemoryIDs) : WebTools.specs
             let extra = resultCardMode == .none ? [findApp] : [findApp, getScreenshot]
             // Screen History reaches Poki's chat through personal_context only (SensesContext).
-            return catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution) + extra + webTools + [SensesContext.spec] + taskTools
+            return catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution) + extra + webTools + [SensesContext.spec, hideLiveActivity] + taskTools
         }
         return [
             ToolSpec(name: "look", description: "Read the app, numbered UI elements and screenshot of the left or right pane. Select a pane explicitly when you first read and whenever moving between apps. Points use the selected screenshot’s own coordinates.",
                      schema: object(["pane": ["type": "string", "enum": ["left", "right"]], "full": ["type": "boolean"]], [])),
             ToolSpec(name: "do", description: "Act in the selected pane, then read it. Actions include {tap: ref or [x,y]}, {type: text, ref?: number}, {key: return|delete|tab|space|escape}, {scroll_to: text}, {swipe: direction}, {back: true}, {wait_until: text}, {handoff: {kind, text}}, and {drag: {from: ref or [x,y], to: [x,y], to_pane: left or right}} for a continuous cross-pane drag. Read the destination first and the source second. The drop point uses destination-local coordinates. Read the destination after sending the drag. Do not switch apps or end Split View.",
                      schema: object(["actions": ["type": "array", "items": ["type": "object"], "minItems": 0, "maxItems": 20], "full": ["type": "boolean"]], ["actions"])),
-        ] + catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" } + [SensesContext.spec] + taskTools
+        ] + catalogTools(includeScreenHistory: false, includeMemoryAttribution: includeMemoryAttribution).filter { $0.name == "status" } + [SensesContext.spec, hideLiveActivity] + taskTools
     }
 
     /// Keep the cached task prompt consistent with the current tool catalog.
@@ -464,6 +464,11 @@ enum Harness {
         tools.append(finishTask(resultCardMode: resultCardMode))
         return tools
     }
+
+    static let hideLiveActivity = ToolSpec(
+        name: "hide_live_activity",
+        description: "Hide Poki's Live Activity before a requested screenshot or screen recording. It stays hidden until this task ends and Poki is opened again. Wait for pending approvals and hand-offs first. iOS system indicators and owner notifications can still appear.",
+        schema: object([:], []))
 
     static let reportPlan = ToolSpec(
         name: "report_plan",

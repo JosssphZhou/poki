@@ -1883,6 +1883,71 @@ final class MCPTests: XCTestCase {
         XCTAssertEqual(started.value, ["s1", nil])
     }
 
+    func testCaptureToolUsesTheCurrentMCPTaskAndKeepsOwnerDecisionsVisible() async throws {
+        let wda = FakeWDA()
+        // A confirmation dialog, rather than an ordinary toolbar button.
+        wda.tree([
+            Node("Alert", nil, [16, 80, 358, 120], [
+                Node("Button", "Delete Photo", [16, 100, 358, 44]),
+            ]),
+        ], app: "Photos")
+        let (core, _, host) = makeCore(wda) { $0.approvalWait = 0 }
+        let hiddenFor = LockedBox<[String]>([])
+        core.setHostTools([HostTool(name: "hide_live_activity", description: "Hide for capture.", schemaJSON: #"{"type":"object"}"#,
+                                    requiresCurrentTask: true) { _, session, _ in
+            hiddenFor.update { $0.append(session ?? "") }
+            return .init(text: "hidden", jpeg: nil, isError: false)
+        }])
+
+        let request: JSON = ["jsonrpc": "2.0", "id": 1, "method": "initialize"]
+        let initialized = await post(core, request)
+        let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+        let peerInitialized = await post(core, request)
+        let peer = try XCTUnwrap(peerInitialized.headers["mcp-session-id"])
+        func call(_ name: String, _ arguments: JSON = [:], from caller: String? = nil) async throws -> JSON {
+            let response = await post(core, ["jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                             "params": ["name": .string(name), "arguments": arguments]], session: caller ?? session)
+            return try XCTUnwrap(JSON.parse(response.body)["result"])
+        }
+        let premature = try await call("hide_live_activity")
+        XCTAssertEqual(premature["isError"], true)
+        _ = try await call("look")
+        let foreign = try await call("hide_live_activity", from: peer)
+        XCTAssertEqual(foreign["isError"], true)
+
+        _ = try await call("do", ["actions": [["tap": 1]]])
+        let approval = try XCTUnwrap(core.pendingApproval)
+        let blockedApproval = try await call("hide_live_activity")
+        XCTAssertEqual(blockedApproval["isError"], true)
+        XCTAssertTrue(blockedApproval["content"]?[0]?["text"]?.string?.contains("pending approval") == true)
+        core.resolveApproval(id: approval.id, approved: false)
+        _ = try await call("do", ["actions": [["handoff": ["kind": "other", "text": "Capture QA"]]]])
+        let handoff = try XCTUnwrap(core.handoff)
+        let blockedHandoff = try await call("hide_live_activity")
+        XCTAssertEqual(blockedHandoff["isError"], true)
+        XCTAssertTrue(hiddenFor.value.isEmpty)
+        core.handoffDone(id: handoff.id)
+
+        let hidden = try await call("hide_live_activity")
+        XCTAssertEqual(hidden["isError"], false)
+        XCTAssertEqual(hiddenFor.value, [session])
+        _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": peer], body: ""))
+        XCTAssertTrue(host.finishedExternalTasks.value.isEmpty)
+        let finish = try await call("do", ["actions": [], "finish": true])
+        XCTAssertEqual(finish["isError"], false)
+        XCTAssertEqual(host.finishedExternalTasks.value, [session])
+        XCTAssertEqual(host.externalTaskLifecycle.value, ["returning \(session)", "finished \(session)"])
+        let betweenTasks = try await call("hide_live_activity")
+        XCTAssertEqual(betweenTasks["isError"], true)
+
+        _ = try await call("look")
+        _ = try await call("hide_live_activity")
+        _ = await core.handle(RelayRequest(id: "d", method: "DELETE", headers: ["mcp-session-id": session], body: ""))
+        XCTAssertEqual(host.finishedExternalTasks.value, [session, session])
+        XCTAssertEqual(host.externalTaskLifecycle.value,
+                       ["returning \(session)", "finished \(session)", "returning \(session)", "finished \(session)"])
+    }
+
     func testGetIsNotAllowed() async {
         let (core, _, _) = makeCore()
         let r = await core.handle(RelayRequest(id: "r", method: "GET", headers: [:], body: ""))

@@ -1,5 +1,6 @@
 import ActivityKit
 import Darwin
+import PokiCore
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -201,11 +202,270 @@ final class LiveActivityTests: XCTestCase {
         }
     }
 
+    func testCaptureHideWaitsForTaskEndAndThenForegroundReturn() async throws {
+        let taskID = UUID()
+        try await withSessionApp { app, activities in
+            app.startSession()
+            await app.chatTaskBegan()
+            let original = try XCTUnwrap(activities().first)
+
+            UserDefaults.standard.set(false, forKey: ActivityController.capturePermissionKey)
+            let refused = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertTrue(refused.isError)
+            XCTAssertEqual(activities().map(\.id), [original.id])
+
+            UserDefaults.standard.removeObject(forKey: ActivityController.capturePermissionKey)
+            app.wakeRunner(asked: "Capture QA")
+            app.runnerChanged(RunnerStatus(state: "launching", code: "passcode"))
+            let blocked = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertTrue(blocked.isError, "A pending hand-off must keep its Live Activity")
+            XCTAssertEqual(activities().map(\.id), [original.id])
+            app.handoffDoneInApp()
+
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertFalse(hidden.isError)
+            XCTAssertTrue(activities().isEmpty)
+
+            app.chatCaptureTaskEnded(UUID())
+            app.wentToBackground()
+            app.becameActive()
+            XCTAssertTrue(activities().isEmpty, "Opening Poki while the task is running must not restore the activity")
+
+            app.chatCaptureTaskEnded(taskID)
+            app.becameActive()
+            XCTAssertTrue(activities().isEmpty, "An active-scene callback without reopening must not restore the activity")
+
+            app.wentToBackground()
+            app.becameActive()
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testNewApprovalAndHandoffNotifyOwnerWhileCaptureHidesActivity() async throws {
+        _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.provisional])
+        try await withSessionApp { app, activities in
+            UserDefaults.standard.removeObject(forKey: ActivityController.capturePermissionKey)
+            app.startSession()
+            await app.chatTaskBegan()
+            XCTAssertFalse(activities().isEmpty, "The test must hide an existing activity")
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(UUID()))
+            XCTAssertFalse(hidden.isError)
+            XCTAssertTrue(activities().isEmpty)
+            // Model the lifecycle change without suspending the shared test process.
+            app.wentToBackground()
+
+            let id = UUID().uuidString
+            let noticeID = "approval-\(id)"
+            clearNotice(AttentionNotice.id)
+            defer { clearNotice(noticeID); clearNotice(AttentionNotice.id) }
+            let approval = PendingApproval(id: id, app: "Messages", summary: "Send a message", reason: "sending a message (a tap in Messages)", expires: .now.addingTimeInterval(60))
+            app.handle(.approvalRequested(approval))
+            let notice = try await waitForDeliveredNotice(noticeID)
+            XCTAssertEqual(notice.request.content.userInfo["approval"] as? String, id)
+            XCTAssertTrue(activities().isEmpty)
+            app.handle(.approvalEnded(id: id, approved: false))
+
+            let handoffText = "Complete verification."
+            app.handle(.handoffRequested(id: UUID().uuidString, kind: "verification", text: handoffText, app: nil))
+            let handoff = try await waitForDeliveredNotice(AttentionNotice.id)
+            XCTAssertEqual(handoff.request.content.body, handoffText)
+            XCTAssertTrue(activities().isEmpty)
+        }
+    }
+
+    func testCaptureActivityReturnsWhenPokiOpensDuringTaskCleanup() async throws {
+        for captureEndsFirst in [true, false] {
+            try await withSessionApp { app, activities in
+                let taskID = UUID()
+                app.startSession()
+                await app.chatTaskBegan()
+                let original = try XCTUnwrap(activities().first)
+                let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+                XCTAssertFalse(hidden.isError)
+
+                app.wentToBackground()
+                let cleanup = expectation(description: "Task cleanup finished")
+                app.finishTask { cleanup.fulfill() }
+                // The scene callback arrives before the async return-to-origin call has completed.
+                app.becameActive()
+                XCTAssertTrue(activities().isEmpty)
+                if captureEndsFirst {
+                    app.chatCaptureTaskEnded(taskID)
+                    XCTAssertTrue(activities().isEmpty)
+                }
+
+                await fulfillment(of: [cleanup], timeout: 10)
+                if !captureEndsFirst {
+                    XCTAssertTrue(activities().isEmpty)
+                    app.chatCaptureTaskEnded(taskID)
+                }
+                XCTAssertEqual(activities().count, 1)
+                XCTAssertNotEqual(activities().first?.id, original.id)
+            }
+        }
+    }
+
+    func testChatDoneRestoresCaptureAfterReturningToPoki() async throws {
+        try await withSessionApp { app, activities in
+            let taskID = UUID()
+            app.startSession()
+            await app.chatTaskBegan()
+            let original = try XCTUnwrap(activities().first)
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertFalse(hidden.isError)
+
+            app.wentToBackground()
+            app.chatTaskEnded(reply: nil, session: "capture-test", acted: true,
+                              result: "Captured Notes", task: "Capture Notes")
+            app.becameActive()
+            XCTAssertTrue(activities().isEmpty)
+            app.chatCaptureTaskEnded(taskID)
+
+            for _ in 0..<100 {
+                if !activities().isEmpty { break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let restored = try XCTUnwrap(activities().first)
+            XCTAssertNotEqual(restored.id, original.id)
+            XCTAssertEqual(restored.content.state.phase, .done)
+            XCTAssertEqual(restored.content.state.face.content, "Captured Notes")
+        }
+    }
+
+    func testExternalCaptureActivityReturnsAfterExplicitFinish() async throws {
+        try await withSessionApp { app, activities in
+            let session = "capture-session"
+            app.startSession()
+            app.handle(.toolStarted(name: "look", summary: "Look at Notes", session: session))
+            let original = try XCTUnwrap(activities().first)
+            let hidden = await app.hideLiveActivityForCapture(task: .external(session))
+            XCTAssertFalse(hidden.isError)
+
+            app.wentToBackground()
+            await app.host.externalTaskReturning(session: session)
+            app.becameActive()
+            await app.host.externalTaskFinished(session: "other-session")
+            XCTAssertTrue(activities().isEmpty)
+
+            await app.host.externalTaskFinished(session: session)
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testDeletingMCPSessionRestoresCaptureBeforeSessionEventIsHandled() async throws {
+        try await withSessionApp { app, activities in
+            let automation = FakeAutomation()
+            _ = automation.prepare()
+            let transport = CaptureReturnTransport(session: automation) {
+                await MainActor.run {
+                    app.becameActive()
+                    XCTAssertTrue(activities().isEmpty, "Return activation is still in progress")
+                }
+            }
+            let core = PokiCore(config: CoreConfig(treeFormat: "xml", humanize: false),
+                                host: app.host, transport: transport)
+            // This core's end event is deliberately not pumped into AppModel. UIKit's callback
+            // must be safe even when the AsyncStream consumer has not incremented endingTasks.
+            let initialized = await core.handle(RelayRequest(id: "init", method: "POST", headers: [:],
+                body: #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#))
+            let session = try XCTUnwrap(initialized.headers["mcp-session-id"])
+            app.startSession()
+            app.inProcessReadyForProbe()
+            app.handle(.toolStarted(name: "look", summary: "Look at Notes", session: session))
+            XCTAssertTrue(app.sessionOn, app.problem ?? "Session did not start")
+            let original = try XCTUnwrap(activities().first, AppLog.shared.lines.suffix(12).joined(separator: "\n"))
+            let looked = await core.handle(RelayRequest(id: "look", method: "POST",
+                headers: ["mcp-session-id": session],
+                body: #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"look","arguments":{}}}"#))
+            XCTAssertFalse(looked.body.contains(#""isError":true"#), looked.body)
+            let hidden = await app.hideLiveActivityForCapture(task: .external(session))
+            XCTAssertFalse(hidden.isError)
+            app.wentToBackground()
+            await transport.leaveOrigin()
+
+            let deleted = await core.handle(RelayRequest(id: "delete", method: "DELETE",
+                headers: ["mcp-session-id": session], body: ""))
+            XCTAssertEqual(deleted.status, 200)
+            let activations = await transport.activations
+            XCTAssertEqual(activations, 1, "The test must actually return to the origin")
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testRestartingSessionInPokiClearsCaptureVisibility() async throws {
+        try await withSessionApp { app, activities in
+            app.startSession()
+            await app.chatTaskBegan()
+            let taskID = UUID()
+            let original = try XCTUnwrap(activities().first)
+            let hidden = await app.hideLiveActivityForCapture(task: .chat(taskID))
+            XCTAssertFalse(hidden.isError)
+            app.chatCaptureTaskEnded(taskID)
+            XCTAssertTrue(activities().isEmpty)
+
+            app.stopSession()
+            XCTAssertFalse(app.sessionOn)
+            app.startSession()
+            XCTAssertTrue(app.sessionOn)
+            XCTAssertEqual(activities().count, 1)
+            XCTAssertNotEqual(activities().first?.id, original.id)
+        }
+    }
+
+    func testActivityKitDismissesAndRestoresCaptureActivity() async throws {
+        let activity = ActivityController()
+        let taskID = UUID()
+        let recordEvidence = ProcessInfo.processInfo.environment["POKI_CAPTURE_QA"] == "1"
+        let background = recordEvidence ? UIApplication.shared.beginBackgroundTask(withName: "Capture QA") : .invalid
+        defer { if background != .invalid { UIApplication.shared.endBackgroundTask(background) } }
+        defer { activity.end(dismissalPolicy: .immediate) }
+        activity.hidesWhenIdle = { false }
+        activity.start(deviceName: "Capture QA")
+        XCTAssertTrue(activity.isRunning, activity.lastError ?? "ActivityKit did not start")
+        let initial = try XCTUnwrap(Activity<PokiActivityAttributes>.activities.first {
+            $0.attributes.deviceName == "Capture QA" && $0.activityState == .active
+        })
+        try await captureEvidenceWindow("visible")
+        if recordEvidence { XCTAssertEqual(UIApplication.shared.applicationState, .background) }
+
+        let hidden = await activity.hideForCapture(task: .chat(taskID))
+        guard case .hidden = hidden else { return XCTFail("ActivityKit did not confirm dismissal") }
+        XCTAssertFalse(activity.isRunning)
+        XCTAssertFalse(Activity<PokiActivityAttributes>.activities.contains {
+            $0.id == initial.id && $0.activityState != .ended && $0.activityState != .dismissed
+        })
+        try await captureEvidenceWindow("hidden")
+        activity.update { $0.phase = .working; $0.headline = "Capture QA" }
+        activity.reopenedAfterBackground()
+        activity.start(deviceName: "Capture QA")
+        XCTAssertFalse(activity.isRunning)
+
+        activity.captureTaskEnded(.chat(taskID))
+        activity.stopRun()
+        try await captureEvidenceWindow("reopen")
+        if recordEvidence { XCTAssertEqual(UIApplication.shared.applicationState, .active) }
+        activity.reopenedAfterBackground()
+        activity.start(deviceName: "Capture QA")
+        XCTAssertTrue(activity.isRunning, activity.lastError ?? "ActivityKit did not restore")
+        try await captureEvidenceWindow("restored")
+        await activity.end(dismissalPolicy: .immediate)?.value
+    }
+
+    /// Optional windows for a physical-device recording of the ActivityKit test.
+    private func captureEvidenceWindow(_ phase: String) async throws {
+        guard ProcessInfo.processInfo.environment["POKI_CAPTURE_QA"] == "1" else { return }
+        NSLog("Capture QA: %@", phase)
+        try await Task.sleep(for: .seconds(4))
+    }
+
     private func withSessionApp(
         _ test: (AppModel, @escaping () -> [Activity<PokiActivityAttributes>]) async throws -> Void
     ) async throws {
         let defaults = UserDefaults.standard
-        let keys = ["relayAddress", "relayEnabled", "wantsOn"]
+        let keys = ["relayAddress", "relayEnabled", "wantsOn", ActivityController.capturePermissionKey]
         let saved = keys.map { defaults.object(forKey: $0) }
         let setup = SetupState.load()
         let existingIDs = Set(Activity<PokiActivityAttributes>.activities.map(\.id))
@@ -885,5 +1145,33 @@ private extension ActivityFace.Compact {
     func says(_ text: String) -> Bool {
         let words = Mirror(reflecting: self).children.first.map { String(describing: $0.value) } ?? ""
         return words.contains(text)
+    }
+}
+
+
+private actor CaptureReturnTransport: HTTPTransport {
+    private let screen: SessionScreenTransport
+    private let returning: @Sendable () async -> Void
+    private var atOrigin = true
+    private(set) var activations = 0
+
+    init(session: FakeAutomation, returning: @escaping @Sendable () async -> Void) {
+        screen = SessionScreenTransport(session: session)
+        self.returning = returning
+    }
+
+    func leaveOrigin() { atOrigin = false }
+
+    func send(method: String, url: URL, body: Data?, timeout: Double) async throws -> (status: Int, body: Data) {
+        if url.path.hasSuffix("/wda/apps/activate") {
+            activations += 1
+            await returning()
+            atOrigin = true
+        }
+        if url.path.hasSuffix("/wda/activeAppInfo"), !atOrigin {
+            let response: JSON = ["value": ["bundleId": "com.apple.calculator", "name": "Calculator"]]
+            return (200, response.data())
+        }
+        return try await screen.send(method: method, url: url, body: body, timeout: timeout)
     }
 }

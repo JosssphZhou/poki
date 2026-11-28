@@ -1,6 +1,38 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Let Poki Hide the Live Activity": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许 Poki 隐藏实时活动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許 Poki 隱藏即時動態"
+          }
+        }
+      }
+    },
+    "Poki can hide its Live Activity for a screenshot or recording. It returns after the task ends and you reopen Poki. Approvals and hand-offs still appear in notifications.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图或录屏时，Poki 可以隐藏自己的实时活动。任务结束后，重新打开 Poki 即可恢复。审批和交接仍会通过通知提醒。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截圖或錄影時，Poki 可以隱藏自己的即時動態。任務結束後，重新打開 Poki 即可恢復。核准和交接仍會透過通知提醒。"
+          }
+        }
+      }
+    },
     "Tap Poki" : {
       "localizations" : {
         "zh-Hans" : {

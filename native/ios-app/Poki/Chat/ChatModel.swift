@@ -671,7 +671,8 @@ final class ChatModel {
         let localTask = "\(prepared.runSession)#\(token)"
         switch prepared.engine {
         case .direct(let client, let instructions, let notes):
-            await began("direct", prepared.provider, prepared.model, task: prepared.text, countedScroll: prepared.countedScroll, isRetry: prepared.isRetry)
+            let captureTaskID = await began("direct", prepared.provider, prepared.model, task: prepared.text, countedScroll: prepared.countedScroll, isRetry: prepared.isRetry)
+            defer { app.chatCaptureTaskEnded(captureTaskID) }
             guard runToken == token, !Task.isCancelled else { app.finishTask(switching: false, localTask: localTask); return }
             offeredMemories = notes
             awaitingModel = true
@@ -718,8 +719,9 @@ final class ChatModel {
                 }
             }
             let splitSession = splitViewSession
-            await began("pi", prepared.provider, prepared.model, task: prepared.text,
+            let captureTaskID = await began("pi", prepared.provider, prepared.model, task: prepared.text,
                         countedScroll: prepared.countedScroll, isRetry: prepared.isRetry, splitViewSession: splitSession)
+            defer { app.chatCaptureTaskEnded(captureTaskID) }
             guard runToken == token, !Task.isCancelled else { app.finishTask(switching: false, localTask: localTask); return }
             awaitingModel = true
             if let splitSession, pair.count == 2 {
@@ -932,8 +934,12 @@ final class ChatModel {
     /// instead; that code goes once the phone acceptance with the owner's OpenAI key has passed on pi.
     private static var direct: Bool { UserDefaults.standard.string(forKey: "chatEngine") == "direct" }
 
+    private var captureTaskID = UUID()
+
     private func began(_ engine: String, _ provider: ModelProvider, _ model: String, task: String,
-                       countedScroll: MessageScroll?, isRetry: Bool, splitViewSession: String? = nil) async {
+                       countedScroll: MessageScroll?, isRetry: Bool, splitViewSession: String? = nil) async -> UUID {
+        let taskID = UUID()
+        captureTaskID = taskID
         taskStart = Date(); toolCalls = 0; taskResult = nil; taskText = task
         countedScrollReplyQuestion = nil
         pendingCountedScroll = nil
@@ -951,6 +957,7 @@ final class ChatModel {
         // find_app and the task's icons see the phone's current apps.
         InstalledApps.shared.refreshSoon()
         AppLog.shared.add("chat", "task started: \(engine), \(provider.rawValue)/\(model)")
+        return taskID
     }
 
     private func finishTaskSaves(completed: Bool, stopped: Bool, token: Int) {
@@ -1383,12 +1390,17 @@ final class ChatModel {
                 if args["finish"] as? Bool == true || actions.contains(where: { $0["launch"] != nil || $0["run"] != nil || $0["path"] != nil || $0["button"] != nil }) {
                     return splitViewRefusal("Keep both apps in place. Do not launch apps, use hardware buttons, or run skills. Finish with finish_task.")
                 }
-            case "report_plan", "finish_task", "count_messages", Harness.countedScrollReplyTool, "status", SensesContext.name: break
+            case "report_plan", "finish_task", "count_messages", Harness.countedScrollReplyTool, "status", SensesContext.name, Harness.hideLiveActivity.name: break
             default:
                 return splitViewRefusal("Use the two visible apps with look and do for this task.")
             }
         }
         switch call.name {
+        case Harness.hideLiveActivity.name:
+            guard running, !stopAsked, !Task.isCancelled else {
+                return .init(text: "Task stopped. Action not executed.", jpeg: nil, isError: true)
+            }
+            return await app.hideLiveActivityForCapture(task: .chat(captureTaskID))
         case Harness.countedScrollReplyTool:
             guard kind == .poki, messageScroll != nil, taskResult == nil,
                   let question = (args["question"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
