@@ -2978,11 +2978,13 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(benign.other)
 
         chat.answer("Search on the web", picked: true)
-        try await until(10) { !chat.running }
+        try await until(10) { !chat.running || chat.waitingQuestion != nil }
 
         XCTAssertNil(chat.waitingQuestion, "third ask_user after two refusals must never open a waiting card")
         let task1Requests = server.requests
-        XCTAssertEqual(task1Requests.count, 6, "unexpected request count in task 1: \(task1Requests.count)")
+        guard task1Requests.count == 6 else {
+            return XCTFail("Expected the task to finish without asking again, got \(task1Requests.count) model requests")
+        }
         XCTAssertTrue(Self.toolNames(task1Requests[0]).contains("ask_user"))
         XCTAssertTrue(Self.toolNames(task1Requests[1]).contains("ask_user"), "first refusal keeps ask_user available")
         XCTAssertTrue(Self.toolNames(task1Requests[2]).contains("ask_user"))
