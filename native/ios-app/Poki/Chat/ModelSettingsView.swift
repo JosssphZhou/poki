@@ -221,10 +221,12 @@ private struct AccountDetail: View {
             Section {
                 ProviderUseRows(provider: .account(provider))
                 if provider == .chatgpt {
-                    LabeledContent {
-                        Text(ModelAccounts.chatGPTVoiceStatus().label)
-                    } label: {
-                        SettingsLabel("Live Voice", systemImage: "waveform")
+                    NavigationLink { ChatGPTLiveVoiceFeature() } label: {
+                        LabeledContent {
+                            Text(verbatim: ChatGPTLiveVoiceFeature.statusText(activeLabel: VoiceCatalog.voice(for: .chatgpt).displayName))
+                        } label: {
+                            SettingsLabel("Live Voice", systemImage: "waveform")
+                        }
                     }
                     .accessibilityIdentifier("provider.chatgpt.liveVoice")
                 }
@@ -291,6 +293,99 @@ private struct AccountDetail: View {
             ModelKeys.selectedProvider = other
         }
         dismiss()
+    }
+}
+
+/// Provider › ChatGPT › Live Voice: status and official ChatGPT voice selection.
+struct ChatGPTLiveVoiceFeature: View {
+    @State private var version = ModelKeys.saved
+
+    static func statusText(activeLabel: String? = nil) -> String {
+        let status = ModelAccounts.chatGPTVoiceStatus()
+        if status == .active, let activeLabel { return activeLabel }
+        return AppLocalization.text(status.label)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Status", value: Self.statusText())
+                NavigationLink {
+                    LiveVoicePickerView(route: .chatgpt)
+                } label: {
+                    LabeledContent {
+                        Text(verbatim: VoiceCatalog.voice(for: .chatgpt).displayName)
+                    } label: {
+                        Text("Speaking Voice")
+                    }
+                }
+                .accessibilityIdentifier("chatgptLiveVoice.voicePicker")
+            } footer: {
+                Group {
+                    Text("Poki uses this ChatGPT sign-in for live voice when ChatGPT is selected as your chat account. Choose from ChatGPT’s official voices.")
+                }
+                .settingsFooter()
+            }
+        }
+        .background { Color.clear.accessibilityHidden(true).id(version) }
+        .settingsPage()
+        .navigationTitle(AppLocalization.text("Live Voice"))
+        .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
+    }
+}
+
+/// Official voice picker for a specific live voice backend route (Realtime API or ChatGPT).
+struct LiveVoicePickerView: View {
+    var route: LiveVoiceRoute
+    @State private var version = ModelKeys.saved
+
+    private var selected: LiveVoiceOption {
+        VoiceCatalog.voice(for: route)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(route.options) { option in
+                    let isSelected = option == selected
+                    Button {
+                        VoiceCatalog.setVoice(option, for: route)
+                    } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: option.displayName)
+                                    .foregroundStyle(Color(.label))
+                                Text(verbatim: option.personality)
+                                    .font(.allo(.footnote))
+                                    .foregroundStyle(Color(.secondaryLabel))
+                            }
+                            Spacer()
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.tint)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                    .accessibilityIdentifier("voice.option.\(option.rawValue)")
+                }
+            } footer: {
+                Group {
+                    Text("Changes apply to your next voice conversation.")
+                }
+                .settingsFooter()
+            }
+        }
+        .background { Color.clear.accessibilityHidden(true).id(version) }
+        .settingsPage()
+        .navigationTitle(AppLocalization.text("Choose Voice"))
+        .navigationBarTitleDisplayMode(.inline)
+        .onReceive(NotificationCenter.default.publisher(for: ModelKeys.changed)) { _ in version = ModelKeys.saved }
     }
 }
 

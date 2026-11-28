@@ -974,7 +974,7 @@ final class VoiceModel {
                 if let key { liveScreenDescription = { try await VoiceDirect.describeLiveScreen($0, apiKey: key) } }
                 else { liveScreenDescription = bridge?.liveScreenReader }
                 try await link.connectLive(microphone: microphone, direct: direct) { sdp in
-                    if let key { return try await VoiceDirect.exchangeLiveOffer(sdp, model: token.model, apiKey: key) }
+                    if let key { return try await VoiceDirect.exchangeLiveOffer(sdp, model: token.model, apiKey: key, storage: storage) }
                     guard let bridge else { throw VoiceError.noBridge }
                     return try await bridge.exchangeLiveOffer(sdp)
                 }
