@@ -18,7 +18,12 @@ import PokiCore
 /// go to Poki's model only when the owner taps it and sends them.
 @MainActor
 final class SensesSuggestions {
-    static let shared = SensesSuggestions()
+    static let shared: SensesSuggestions = {
+        #if DEBUG
+        if SensesHomeUITestFixture.active { return SensesHomeUITestFixture.suggestions() }
+        #endif
+        return SensesSuggestions()
+    }()
 
     static let shown = 3
     private static let every: TimeInterval = 30 * 60
