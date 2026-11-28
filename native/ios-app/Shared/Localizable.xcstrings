@@ -37609,6 +37609,150 @@
         }
       }
     },
+    "Starting recording…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在准备记录…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在準備記錄…"
+          }
+        }
+      }
+    },
+    "Unlock this iPhone to resume recording." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁这台 iPhone 后会继续记录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解鎖這台 iPhone 後會繼續記錄。"
+          }
+        }
+      }
+    },
+    "Automation is using the screen. Recording resumes when it releases the screen." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动化正在使用屏幕。屏幕空闲后会继续记录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動化正在使用螢幕。螢幕閒置後會繼續記錄。"
+          }
+        }
+      }
+    },
+    "Recording needs the local connection. Connect to Wi-Fi and check Local Connection in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "记录需要本机通道。请连接 Wi-Fi，并在 Poki 设置的「连接」中检查「本机通道」。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記錄需要本機通道。請連接 Wi-Fi，並在 Poki 設定的「連線」中檢查「本機通道」。"
+          }
+        }
+      }
+    },
+    "Pair this iPhone in Settings › Connection to start recording." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在 Poki 设置的「连接」中配对这台 iPhone，配对后会开始记录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請在 Poki 設定的「連線」中配對這台 iPhone，配對後會開始記錄。"
+          }
+        }
+      }
+    },
+    "iOS paused background recording. Open Poki to resume." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 暂停了后台记录。打开 Poki 后会继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 暫停了背景記錄。打開 Poki 後會繼續。"
+          }
+        }
+      }
+    },
+    "Poki couldn’t read the screen. It will try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 未能读取屏幕，会自动重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poki 未能讀取螢幕，會自動重試。"
+          }
+        }
+      }
+    },
+    "iOS Paused Background Recording" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 暂停了后台记录"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS 暫停了背景記錄"
+          }
+        }
+      }
+    },
+    "Screen Read Failed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕读取失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "螢幕讀取失敗"
+          }
+        }
+      }
+    },
     "Paused, Waiting to Resume" : {
       "localizations" : {
         "zh-Hans" : {
