@@ -13,8 +13,8 @@ enum VoiceBargeInPolicy {
     static let backchannels: Set<String> = ["嗯", "哦", "好的", "好", "uh-huh", "mm-hmm"]
 
     static func speechParts(_ text: String) -> [String] {
-        text.lowercased().split { ",，。.!！?？;；…".contains($0) }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        text.lowercased().split { $0.isPunctuation && $0 != "-" }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)) }
             .filter { !$0.isEmpty }
     }
 
