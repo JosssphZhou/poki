@@ -11,7 +11,7 @@ final class ComposerDraftFlowUITests: XCTestCase {
         let field = app.textViews["capsule.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.tap()
-        field.typeText("Open Settings")
+        field.typeText("31415926")
         app.buttons["composer.main"].tap()
         XCTAssertTrue(app.staticTexts["Synthetic reply finished."].waitForExistence(timeout: 15),
                       "The real send path must consume the local response before switching conversations")
@@ -22,10 +22,9 @@ final class ComposerDraftFlowUITests: XCTestCase {
         fresh.tap()
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText("Open Settings")
+        field.typeText("31415926")
         Thread.sleep(forTimeInterval: 2)
-        XCTAssertTrue((field.value as? String)?.contains("Open") == true)
-        XCTAssertTrue((field.value as? String)?.contains("Settings") == true)
+        XCTAssertEqual(field.value as? String, "31415926")
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Full app new conversation keeps identical draft"
         attachment.lifetime = .keepAlways
