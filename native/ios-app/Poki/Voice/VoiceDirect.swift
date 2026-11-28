@@ -373,7 +373,7 @@ struct OpeningSpeech {
         transcribe: { try await Dictation.transcribeLocally($0) },
         sendText: { text in
             guard let chat = AskPoki.chat, !chat.running else { return false }
-            chat.send(text)
+            chat.send(spoken: text)
             return true
         },
         announce: { await Dictation().speakAndWait($0) }
