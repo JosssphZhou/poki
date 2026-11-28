@@ -12,17 +12,24 @@ final class SensesMemoryCancellationTests: XCTestCase {
         var suspended: CheckedContinuation<[SensesSighting], Never>?
         var hold = false
         var requests = 0
+        var newHistory = false
+        var modelInputs: [String] = []
         let memories = SensesMemories(file: file, learning: { true }, modelAvailable: { true },
                                      readSightings: { _ in
             if hold {
                 return await withCheckedContinuation { suspended = $0; started.fulfill() }
             }
             return []
-        }, readTopics: { _, _ in
-            (0..<4).map { (Double($0), BacktapeNote(title: "Gardening", body: "Tomatoes")) }
-        }, ask: { _, _ in
+        }, readTopics: { _, now in
+            (0..<4).map { (now.addingTimeInterval(Double(-$0)).timeIntervalSince1970,
+                          BacktapeNote(title: newHistory ? "Fresh roses" : "Old tomatoes",
+                                       body: newHistory ? "NEW_ROSE_SUMMARY" : "OLD_TOMATO_SUMMARY")) }
+        }, ask: { input, _ in
             requests += 1
-            return requests == 1 ? "You grow tomatoes | Gardening on several days" : "You grow roses | Fresh gardening notes"
+            modelInputs.append(input)
+            return input.contains("NEW_ROSE_SUMMARY")
+                ? "You grow roses | Fresh rose notes"
+                : "You grow tomatoes | Old tomato notes"
         })
         await memories.refresh(force: true)
         XCTAssertEqual(memories.topics.map(\.text), ["You grow tomatoes"])
@@ -31,6 +38,7 @@ final class SensesMemoryCancellationTests: XCTestCase {
         await fulfillment(of: [started], timeout: 5)
         memories.historyCleared(everything: true)
         let cleared = try Data(contentsOf: file)
+        newHistory = true
         hold = false
         suspended?.resume(returning: [])
         await older.value
@@ -40,6 +48,12 @@ final class SensesMemoryCancellationTests: XCTestCase {
         await memories.refresh(force: true)
         XCTAssertEqual(requests, 2)
         XCTAssertEqual(memories.topics.map(\.text), ["You grow roses"])
+        XCTAssertTrue(modelInputs[0].contains("OLD_TOMATO_SUMMARY"))
+        XCTAssertTrue(modelInputs[1].contains("NEW_ROSE_SUMMARY"))
+        XCTAssertFalse(modelInputs[1].contains("OLD_TOMATO_SUMMARY"))
+        let reopened = SensesMemories(file: file, learning: { true })
+        XCTAssertEqual(reopened.topics.map(\.text), ["You grow roses"])
+        XCTAssertFalse(reopened.topics.contains { $0.text.contains("tomatoes") })
     }
 
     func testClearDuringReadDoesNotAskModelOrRewriteClearedFile() async throws {
