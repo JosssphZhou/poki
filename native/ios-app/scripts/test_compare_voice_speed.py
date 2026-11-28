@@ -205,6 +205,68 @@ class VoiceSpeedCompareTests(unittest.TestCase):
         self.assertIn("100.0% (5/5)", report)
         self.assertIsNone(re.search(r"\b\d+(?:\.\d+)?x\s+faster\b", report, re.I))
 
+    def test_report_counts_only_independent_paired_observations_via_cli(self):
+        records = make_paired_rounds(
+            [{"target_confirmed_ms": 1200}] * 5,
+            [{"target_confirmed_ms": 800}] * 5,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            datasets = {
+                "one-pair": records[:2],
+                "first-three": records[:6],
+                "third-and-fourth": records[4:8],
+                "last-three": records[4:],
+                "unique": records,
+                "same-round": [dict(r, round=1) for r in records],
+                "unpaired": [
+                    dict(r, round=r["round"] + 5)
+                    if r["side"] == "candidate" and r["round"] > 1 else r
+                    for r in records
+                ],
+            }
+            for name, rows in datasets.items():
+                (root / f"{name}.jsonl").write_text(
+                    "\n".join(json.dumps(r, sort_keys=(name == "last-three")) for r in rows) + "\n",
+                    encoding="utf-8",
+                )
+
+            cases = (
+                ("repeated-file", ["one-pair"] * 5, 2, "insufficient_rounds"),
+                ("overlap-below-minimum", ["first-three", "third-and-fourth"], 8, "insufficient_rounds"),
+                ("unique-pairs", ["unique"], 10, None),
+                ("overlap-with-five-pairs", ["first-three", "last-three"], 10, None),
+                ("distinct-records-one-round", ["same-round"], 10, "insufficient_rounds"),
+                ("equal-counts-unpaired-rounds", ["unpaired"], 10, "unmatched_sample_set"),
+            )
+            for name, inputs, total, reason in cases:
+                with self.subTest(case=name):
+                    summary_path = root / f"{name}-summary.json"
+                    proc = subprocess.run(
+                        [
+                            sys.executable, str(SCRIPT_PATH), "report",
+                            *[arg for source in inputs for arg in ("--input", str(root / f"{source}.jsonl"))],
+                            "--json-out", str(summary_path), "--exit-on-not-faster",
+                        ],
+                        text=True,
+                        capture_output=True,
+                        timeout=15,
+                    )
+                    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                    self.assertEqual(proc.stderr, "")
+                    self.assertEqual(proc.returncode, 1 if reason else 0, summary["overall_reasons"])
+                    self.assertEqual(summary["total_records"], total)
+                    self.assertEqual(summary["hosts"]["phone_direct"]["baseline"]["total"], total // 2)
+                    self.assertEqual(summary["hosts"]["phone_direct"]["candidate"]["total"], total // 2)
+                    if reason:
+                        self.assertEqual(summary["overall_verdict"], "not_faster")
+                        self.assertEqual(summary["overall_detail"], "inconclusive")
+                        self.assertTrue(any(reason in r for r in summary["overall_reasons"]))
+                        self.assertIn("**NOT FASTER (inconclusive)**", proc.stdout)
+                    else:
+                        self.assertEqual(summary["overall_verdict"], "speedup")
+                        self.assertIn("**SPEEDUP**", proc.stdout)
+
     def test_speedup_verdict_gates_confirmation_variation_tail_and_safety_counters(self):
         good_records = make_paired_rounds(
             [{"target_confirmed_ms": 1200 + i * 5} for i in range(5)],
