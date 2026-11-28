@@ -41,4 +41,32 @@ final class AppIconFallbackTests: XCTestCase {
         XCTAssertTrue(store.icon("哔哩哔哩") === red)
         XCTAssertTrue(store.icon("bilibili") === red)
     }
+
+    func testLookupDoesNotCacheArtworkUnderAReassignedDisplayName() async {
+        let oldID = "test.poki." + UUID().uuidString
+        let newID = "test.poki." + UUID().uuidString
+        let name = "Icon Test App"
+        let oldEntry = DynamicApps.Entry(id: oldID, name: name, user: true)
+        let newEntry = DynamicApps.Entry(id: newID, name: name, user: true)
+        let stale = picture(.red)
+        let installed = picture(.green)
+        DynamicApps.set([oldEntry])
+        defer {
+            DynamicApps.set([])
+            let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            try? FileManager.default.removeItem(at: cache.appendingPathComponent("AppIcons/\(oldID).png"))
+        }
+        let store = AppIconStore(installed: { id, _ in id == newID ? installed : nil })
+        XCTAssertNil(store.icon(name))
+
+        await store.load(name) { id in
+            XCTAssertEqual(id, oldID)
+            DynamicApps.set([newEntry])
+            store.directoryChanged()
+            return .found(stale)
+        }
+
+        XCTAssertTrue(store.icon(name) === installed)
+        XCTAssertNotNil(store.icon(oldID), "Artwork is still cached for the original bundle ID")
+    }
 }
