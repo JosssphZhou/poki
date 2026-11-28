@@ -5,9 +5,8 @@ struct SetupView: View {
     @EnvironmentObject var model: AppModel
     @State private var handOff = false
     @State private var result: InstallAnswer?
-    @State private var failed: String?
     /// Set when the Apple Account is at its certificate limit: the question to put to the person.
-    @State private var certificateQuestion: String?
+    @State private var certificateQuestion: CoreError?
     @State private var checking = false
     @State private var channelError: String?
 
@@ -36,7 +35,7 @@ struct SetupView: View {
             }
             Button(localized("Cancel"), role: .cancel) {}
         } message: {
-            Text(certificateQuestion ?? "")
+            Text(certificateQuestion?.localizedDescription ?? "")
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -59,7 +58,7 @@ struct SetupView: View {
                 Label {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(localized("Poki Setup can't see devices right now"))
-                        Text(err.message).font(.callout).foregroundStyle(.secondary)
+                        Text(err.localizedDescription).font(.callout).foregroundStyle(.secondary)
                     }
                 } icon: {
                     Image(systemName: "cable.connector.slash").foregroundStyle(.orange)
@@ -103,7 +102,7 @@ struct SetupView: View {
                 if let f = row.facts {
                     Text("iOS \(f.ios) · \(f.productType)").font(.callout).foregroundStyle(.secondary)
                 } else if let e = row.error {
-                    Text(e).font(.callout).foregroundStyle(.secondary)
+                    Text(progressLine(e)).font(.callout).foregroundStyle(.secondary)
                 }
             }
         }
@@ -166,9 +165,11 @@ struct SetupView: View {
                     Label {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(localized("Could not read your saved Apple Account"))
-                            Text(localized("When macOS asks for keychain access, enter your Mac login password and choose “Always Allow”, then retry."))
-                                .font(.callout).foregroundStyle(.secondary)
-                            Text(err.message)
+                            if err.kind == "keychain" {
+                                Text(localized("When macOS asks for keychain access, enter your Mac login password and choose “Always Allow”, then retry."))
+                                    .font(.callout).foregroundStyle(.secondary)
+                            }
+                            Text(err.localizedDescription)
                                 .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                         }
                     } icon: {
@@ -266,11 +267,10 @@ struct SetupView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canInstall)
             }
-            if let steps = model.steps["install"], !steps.isEmpty {
-                JobProgress(steps: steps, running: installing, weights: JobProgress.install, doneTitle: localized("Poki is installed"))
+            if let steps = model.steps["install"], !steps.isEmpty, certificateQuestion == nil {
+                JobProgress(steps: steps, running: installing, weights: JobProgress.install, doneTitle: localized("Poki is installed"), detailsOnly: result != nil)
             }
-            // A failure shows on the bar; one from before the first step shows here.
-            if let message = (model.steps["install"]?.isEmpty ?? true) ? (failed ?? channelError) : channelError {
+            if let message = channelError ?? model.latestError {
                 Text(message).font(.callout).foregroundStyle(.red).textSelection(.enabled)
             }
         } header: {
@@ -283,7 +283,7 @@ struct SetupView: View {
     /// The line under "Poki": what Install will put on the device.
     private var installLine: String {
         if let latest = model.latest { return buildLine(latest) }
-        return localized("No release published yet")
+        return model.latestError == nil ? localized("Checking for a Poki release…") : localized("Could Not Check for a Poki Release")
     }
 
     /// The line under "Poki Setup": its version, or what the last check found.
@@ -305,9 +305,8 @@ struct SetupView: View {
 
     /// Why Install is not available yet, if it is not.
     private var footer: String? {
-        if model.accountError != nil { return localized("Unlock your keychain and choose “Always Allow”, then tap Retry above.") }
+        if model.accountError != nil { return nil }
         if model.account?.signedIn != true { return localized("Sign in first. Your Apple Account password goes to Apple only.") }
-        if model.latest == nil { return localized("No Poki release is published yet. To install an IPA file, use Developer › Test Builds.") }
         return nil
     }
 
@@ -322,9 +321,9 @@ struct SetupView: View {
             Label(localized("Poki \(r.record.version) is on \(r.record.phoneName). It stays signed until \(expiry)."), systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.primary)
             ForEach(Array(r.notes.enumerated()), id: \.offset) { _, n in
-                Text(n).font(.callout).foregroundStyle(.secondary)
+                Text(progressLine(n)).font(.callout).foregroundStyle(.secondary)
             }
-            Text(localized("On the device, open Settings › General › VPN & Device Management, trust your Apple Account, then open Poki."))
+            Text(localized("Open Poki on your device. If it says the developer is untrusted, go to Settings › General › VPN & Device Management and trust your Apple Account."))
                 .font(.callout)
             if let h = r.handoff {
                 HStack(alignment: .top, spacing: 16) {
@@ -342,16 +341,13 @@ struct SetupView: View {
 
     private func install() async {
         guard let phone = model.selectedPhone else { return }
-        failed = nil
         result = nil
         do {
             result = try await model.install(udid: phone.id, ipa: nil, handOff: handOff)
         } catch let e as CoreError where e.kind == "certificate_limit" {
-            failed = e.message
-            certificateQuestion = e.message
-        } catch {
-            failed = error.localizedDescription
-        }
+            model.steps["install"] = []
+            certificateQuestion = e
+        } catch {}
     }
 
     private func run(_ body: () async throws -> Void) async {

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { Progress } from "./api";
-import { t } from "./i18n";
+import { progressLine, t } from "./i18n";
+import { failStep, type Step } from "./progress";
 
 export function Card({ children, white, className = "" }: { children: ReactNode; white?: boolean; className?: string }) {
   return <section className={`card fade ${white ? "white" : ""} ${className}`}>{children}</section>;
@@ -36,8 +37,6 @@ export function Qr({ svg }: { svg: string }) {
 }
 
 /** The ordered steps of a job, drawn from its progress events. */
-export type Step = { id: string; title: string; state: "todo" | "active" | "done" | "failed" | "waiting"; detail?: string; fraction?: number; notes: string[] };
-
 export function useSteps(initial: { id: string; title: string }[]) {
   const [steps, setSteps] = useState<Step[]>(initial.map((s) => ({ ...s, state: "todo", notes: [] })));
   const apply = (p: Progress) => {
@@ -45,6 +44,9 @@ export function useSteps(initial: { id: string; title: string }[]) {
       const next = prev.map((s) => ({ ...s, notes: [...s.notes] }));
       const find = (id: string) => next.find((s) => s.id === id);
       if (p.kind === "step") {
+        for (const s of next) {
+          if (s.state === "active" || s.state === "waiting") s.state = "done";
+        }
         let s = find(p.id);
         if (!s) { s = { id: p.id, title: p.title, state: "todo", notes: [] }; next.push(s); }
         s.title = p.title; s.state = "active"; s.detail = undefined; s.fraction = undefined;
@@ -61,21 +63,21 @@ export function useSteps(initial: { id: string; title: string }[]) {
       return next;
     });
   };
-  const fail = (text: string) => setSteps((prev) => prev.map((s) => (s.state === "active" || s.state === "waiting" ? { ...s, state: "failed", detail: text } : s)));
+  const fail = (text: string) => setSteps((prev) => failStep(prev, text));
   const reset = () => setSteps(initial.map((s) => ({ ...s, state: "todo", notes: [] })));
   return { steps, apply, fail, reset };
 }
 
-export function Steps({ steps }: { steps: Step[] }) {
+export function Steps({ steps, summarized }: { steps: Step[]; summarized?: { id: string; line: string } | null }) {
   return (
     <ol className="steps">
       {steps.map((s, i) => (
         <li key={s.id} className={s.state}>
           <span className="dot">{s.state === "done" ? "✓" : s.state === "failed" ? "!" : i + 1}</span>
           <div className="grow">
-            <div>{t(s.title)}</div>
-            {s.detail && <div className="detail">{s.detail}</div>}
-            {s.notes.map((n, j) => <div className="detail" key={j}>· {n}</div>)}
+            <div>{progressLine(s.title)}</div>
+            {s.detail && !(summarized?.id === s.id && summarized.line === s.detail) && <div className="detail">{progressLine(s.detail)}</div>}
+            {s.notes.map((n, j) => summarized?.id === s.id && summarized.line === n ? null : <div className="detail" key={j}>· {progressLine(n)}</div>)}
             {s.fraction !== undefined && s.state === "active" && <div className="bar"><i style={{ width: `${Math.round(s.fraction * 100)}%` }} /></div>}
           </div>
         </li>
@@ -89,7 +91,7 @@ export const INSTALL_WEIGHTS: Record<string, number> = { phone: 2, pair: 3, devm
 export const RENEW_WEIGHTS: Record<string, number> = { release: 16, sign: 18, profiles: 3, install: 40 };
 
 /** A job as one bar: the step under way and its detail under the bar, the steps behind Details. */
-export function JobBar({ steps, running, weights, doneTitle = "Done" }: { steps: Step[]; running: boolean; weights?: Record<string, number>; doneTitle?: string }) {
+export function JobBar({ steps, running, weights, doneTitle = "Done", detailsOnly = false }: { steps: Step[]; running: boolean; weights?: Record<string, number>; doneTitle?: string; detailsOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   const failed = [...steps].reverse().find((s) => s.state === "failed");
   const current = failed ?? [...steps].reverse().find((s) => s.state === "active" || s.state === "waiting") ?? [...steps].reverse().find((s) => s.state === "done");
@@ -104,14 +106,16 @@ export function JobBar({ steps, running, weights, doneTitle = "Done" }: { steps:
   const line = current?.detail || current?.notes[current.notes.length - 1];
   return (
     <div className={`jobbar ${failed ? "failed" : ""} ${current?.state === "waiting" ? "waiting" : ""}`}>
-      <div className="row between">
-        <b className="grow">{finished ? t(doneTitle) : t(current?.title ?? "Starting")}</b>
-        <span className="muted small mono">{Math.round(fraction * 100)}%</span>
-      </div>
-      <div className="bar wide"><i style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
-      {line && <div className="detail">{line}</div>}
+      {!detailsOnly && <>
+        <div className="row between">
+          <b className="grow">{finished ? t(doneTitle) : progressLine(current?.title ?? "Starting")}</b>
+          <span className="muted small mono">{Math.round(fraction * 100)}%</span>
+        </div>
+        <div className="bar wide"><i style={{ width: `${Math.round(fraction * 100)}%` }} /></div>
+        {line && <div className="detail">{progressLine(line)}</div>}
+      </>}
       <button type="button" className="linkish small" onClick={() => setOpen(!open)}>{t(open ? "Hide Details" : "Show Details")}</button>
-      {open && <Steps steps={steps.filter((s) => s.state !== "todo")} />}
+      {open && <Steps steps={steps.filter((s) => s.state !== "todo")} summarized={!detailsOnly && current && line ? { id: current.id, line } : null} />}
     </div>
   );
 }

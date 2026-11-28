@@ -35,7 +35,7 @@ pub enum Error {
     /// from opening, so only the person decides: they approve it ([`crate::apple::identity::approve_replacement`])
     /// and try again.
     #[error("{0}")]
-    CertificateLimit(String),
+    CertificateLimit(crate::apple::identity::CertificateToReplace),
     /// Poki is open on the device (in front or in the background) and the update would replace it
     /// under it. The person decides whether Poki Setup closes it ([`crate::setup::Options::close_poki`]).
     #[error("{0}")]
@@ -86,6 +86,44 @@ impl Error {
             Error::Json(_) => "json",
         }
     }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct Failure {
+    pub kind: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<crate::apple::identity::CertificateToReplace>,
+}
+
+impl Failure {
+    pub fn new(kind: &'static str, message: impl Into<String>) -> Self {
+        Self { kind, message: message.into(), certificate: None }
+    }
+}
+
+impl From<Error> for Failure {
+    fn from(error: Error) -> Self {
+        let kind = error.kind();
+        let message = error.to_string();
+        let certificate = match error {
+            Error::CertificateLimit(certificate) => Some(certificate),
+            _ => None,
+        };
+        Self { kind, message, certificate }
+    }
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Self { Self::new("message", message) }
+}
+
+impl From<&str> for Failure {
+    fn from(message: &str) -> Self { Self::new("message", message) }
+}
+
+impl From<serde_json::Error> for Failure {
+    fn from(error: serde_json::Error) -> Self { Self::new("bad_request", error.to_string()) }
 }
 
 #[cfg(feature = "device")]

@@ -50,7 +50,7 @@ struct PhonesView: View {
             LabeledContent(localized("Team")) { Text(r.teamIsFree ? localized("\(r.teamName), free") : r.teamName).foregroundStyle(.secondary) }
             LabeledContent(localized("Bundle ID")) { Text(r.bundleId).foregroundStyle(.secondary).textSelection(.enabled) }
             if let e = r.lastError {
-                Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.callout)
+                Label(progressLine(e), systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.callout)
             }
             if let steps = model.steps["renew"], !steps.isEmpty, model.busyJobs.contains("renew") {
                 JobProgress(steps: steps, running: true, weights: JobProgress.renew)

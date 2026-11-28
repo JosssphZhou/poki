@@ -26,16 +26,10 @@ impl Reporter {
     pub fn new(f: impl Fn(Progress) + Send + Sync + 'static) -> Self { Reporter(Arc::new(f)) }
     /// Drops everything; for tests and for calls that have no UI.
     pub fn silent() -> Self { Reporter(Arc::new(|_| {})) }
-    /// Prints one line per event, for the CLI.
+    /// Prints progress, without repeating the CLI's final install result or handoff.
     pub fn stderr() -> Self {
-        Reporter(Arc::new(|p| match p {
-            Progress::Step { title, .. } => eprintln!("▸ {title}"),
-            Progress::Part { fraction, detail, .. } => {
-                if let Some(d) = detail { eprintln!("  {:>3}% {d}", (fraction * 100.0) as u32) }
-            }
-            Progress::Note { text, .. } => eprintln!("  · {text}"),
-            Progress::Waiting { text, .. } => eprintln!("  ⏸ {text}"),
-            Progress::Done { detail, .. } => eprintln!("  ✓ {}", detail.unwrap_or_default()),
+        Reporter(Arc::new(|p| {
+            if let Some(line) = stderr_line(p) { eprintln!("{line}") }
         }))
     }
     pub fn emit(&self, p: Progress) { (self.0)(p) }
@@ -56,6 +50,34 @@ impl Reporter {
     }
 }
 
+fn stderr_line(p: Progress) -> Option<String> {
+    match p {
+        Progress::Step { title, .. } => Some(format!("▸ {title}")),
+        Progress::Part { fraction, detail, .. } => detail.map(|d| format!("  {:>3}% {d}", (fraction * 100.0) as u32)),
+        Progress::Note { text, .. } => Some(format!("  · {text}")),
+        Progress::Waiting { id, .. } if id == "pairing_file" => None,
+        Progress::Waiting { text, .. } => Some(format!("  ⏸ {text}")),
+        Progress::Done { id, .. } if id == "all" => None,
+        Progress::Done { detail, .. } => Some(format!("  ✓ {}", detail.unwrap_or_default())),
+    }
+}
+
 impl std::fmt::Debug for Reporter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("Reporter") }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_handoff_and_summary_are_left_to_the_cli_result() {
+        let handoff = Progress::Waiting { id: "pairing_file".into(), text: "Scan the code".into() };
+        let finished = Progress::Done { id: "all".into(), detail: Some("Poki is installed".into()) };
+        assert!(stderr_line(handoff).is_none());
+        assert!(stderr_line(finished).is_none());
+
+        let trust = Progress::Waiting { id: "pair".into(), text: "Tap Trust".into() };
+        assert_eq!(stderr_line(trust).as_deref(), Some("  ⏸ Tap Trust"));
+    }
 }

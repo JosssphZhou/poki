@@ -635,7 +635,6 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     let phone = pick_phone(opts.udid.as_deref()).await?;
     reporter.done("phone", Some(phone.udid.clone()));
 
-    reporter.step("pair", "Pairing with the iPhone");
     let lockdown_record = device::pairing::pair(&phone, reporter, wait).await?;
     if let Err(e) = device::pairing::enable_network(&phone).await {
         reporter.note("pair", format!("Could not let the iPhone use this pairing over the network ({e}); Poki may need to pair on the phone."));
@@ -656,14 +655,15 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     };
     reporter.done("pair", Some(format!("{} · iOS {}", facts.name, facts.ios)));
 
-    reporter.step("devmode", "Developer Mode");
-    if facts.developer_mode != Some(true) {
+    if facts.developer_mode == Some(true) {
+        reporter.step("devmode", "Developer Mode");
+        reporter.done("devmode", Some("Developer Mode is already on.".into()));
+    } else {
         let already = device::devmode::enable(&phone, reporter).await?;
         if !already {
             device::devmode::wait_until_on(&phone.udid, reporter, wait).await?;
         }
     }
-    reporter.done("devmode", Some("on".into()));
 
     reporter.step("account", "Apple account");
     let team = signer.team().await?;
@@ -699,15 +699,14 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     let out = crate::paths::cache_dir()?.join(format!("Poki-{}-{}.ipa", team.team_id, phone.udid));
     let built = sign_for_team(signer, &team, Some((&phone.udid, &facts.name)), &ipa, signing_zip.as_deref(), &out, reporter).await?;
 
-    reporter.step("install", "Installing");
-    device::install::install_profiles(&phone, &built.profiles, reporter).await?;
     let existing = device::install::find_apps(&phone, crate::POKI_BUNDLE_ID).await.unwrap_or_default();
-    let upgrade = existing.iter().any(|a| a.bundle_id == built.bundle_id);
-    if upgrade {
-        let path = existing.iter().find(|a| a.bundle_id == built.bundle_id).and_then(|a| a.path.clone());
-        make_sure_poki_is_closed(&phone, path, opts.close_poki, reporter).await?;
-    }
-    device::install::install_ipa(&phone, &built.ipa, upgrade, reporter).await?;
+    let installed = existing.into_iter().find(|app| app.bundle_id == built.bundle_id);
+    let upgrade = installed.is_some();
+    install_after_close_check(
+        installed.map(|app| make_sure_poki_is_closed(&phone, app.path, opts.close_poki, reporter)),
+        device::install::install_profiles(&phone, &built.profiles, reporter),
+        device::install::install_ipa(&phone, &built.ipa, upgrade, reporter),
+    ).await?;
 
     reporter.step("pairing_file", "Giving Poki its pairing file");
     let mut handed = false;
@@ -782,6 +781,52 @@ pub async fn run(signer: &mut Signer, opts: Options, reporter: &Reporter) -> Res
     keeper::put(rec.clone())?;
     reporter.done("all", Some(format!("Poki {} is on {}", built.version, facts.name)));
     Ok(Done { record: rec, handoff, notes: built.notes })
+}
+
+#[cfg(feature = "device")]
+async fn install_after_close_check(
+    check: Option<impl Future<Output = Result<()>>>,
+    profiles: impl Future<Output = Result<()>>,
+    ipa: impl Future<Output = Result<()>>,
+) -> Result<()> {
+    if let Some(check) = check {
+        check.await?;
+    }
+    profiles.await?;
+    ipa.await
+}
+
+#[cfg(all(test, feature = "device"))]
+mod install_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[tokio::test]
+    async fn only_a_permitted_upgrade_replaces_profiles_and_ipa() {
+        let profile = Cell::new("previous profile");
+        let ipa = Cell::new("previous IPA");
+        for approved in [false, true] {
+            let result = install_after_close_check(
+                Some(async {
+                    assert_eq!(profile.get(), "previous profile");
+                    if approved { Ok(()) } else { Err(Error::PokiRunning("Poki is still open".into())) }
+                }),
+                async { profile.set("new profile"); Ok(()) },
+                async {
+                    assert_eq!(profile.get(), "new profile");
+                    ipa.set("new IPA");
+                    Ok(())
+                },
+            ).await;
+            if approved {
+                assert!(result.is_ok());
+                assert_eq!((profile.get(), ipa.get()), ("new profile", "new IPA"));
+            } else {
+                assert!(matches!(result, Err(Error::PokiRunning(_))));
+                assert_eq!((profile.get(), ipa.get()), ("previous profile", "previous IPA"));
+            }
+        }
+    }
 }
 
 #[cfg(feature = "device")]

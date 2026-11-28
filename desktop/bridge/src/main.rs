@@ -9,6 +9,7 @@
 //! Requests run concurrently; the Apple account is behind one lock, as in the Tauri shell.
 //! Logs go to stderr. The process ends when stdin closes.
 use poki_setup_core::apple::anisette::Source;
+use poki_setup_core::error::Failure;
 use poki_setup_core::{Error, Progress, Reporter, devbuilds, device, keeper, mcp, pairshare, relay, release, setup, support};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -24,25 +25,6 @@ struct Request {
     args: Value,
 }
 
-#[derive(Serialize)]
-struct Failure {
-    kind: &'static str,
-    message: String,
-}
-
-impl From<Error> for Failure {
-    fn from(e: Error) -> Self { Failure { kind: e.kind(), message: e.to_string() } }
-}
-impl From<String> for Failure {
-    fn from(s: String) -> Self { Failure { kind: "message", message: s } }
-}
-impl From<&str> for Failure {
-    fn from(s: &str) -> Self { Failure { kind: "message", message: s.to_string() } }
-}
-impl From<serde_json::Error> for Failure {
-    fn from(e: serde_json::Error) -> Self { Failure { kind: "bad_request", message: e.to_string() } }
-}
-
 type R = Result<Value, Failure>;
 
 /// Where Poki keeps its agent backup, inside its container.
@@ -55,7 +37,7 @@ const HANDOFF_FILES: [&str; 2] = ["poki-hello.json", "model-key.json"];
 
 fn handoff_path(name: &str) -> Result<String, Failure> {
     if !HANDOFF_FILES.contains(&name) {
-        return Err(Failure { kind: "bad_request", message: format!("not a Poki hand-off file: {name}") });
+        return Err(Failure::new("bad_request", format!("not a Poki hand-off file: {name}")));
     }
     Ok(format!("Documents/PokiSetup/{name}"))
 }
@@ -96,7 +78,7 @@ impl Out {
 fn ok<T: Serialize>(v: T) -> R { Ok(serde_json::to_value(v)?) }
 
 fn arg<T: for<'de> Deserialize<'de>>(args: &Value, key: &str) -> Result<T, Failure> {
-    serde_json::from_value(args.get(key).cloned().unwrap_or(Value::Null)).map_err(|e| Failure { kind: "bad_request", message: format!("{key}: {e}") })
+    serde_json::from_value(args.get(key).cloned().unwrap_or(Value::Null)).map_err(|e| Failure::new("bad_request", format!("{key}: {e}")))
 }
 
 async fn with_signer<T>(state: &Shared, f: impl AsyncFnOnce(&mut setup::Signer) -> poki_setup_core::Result<T>) -> Result<T, Failure> {
@@ -112,7 +94,7 @@ async fn with_signer<T>(state: &Shared, f: impl AsyncFnOnce(&mut setup::Signer) 
         Err(Error::NeedsCode(pending)) => {
             let msg = Error::NeedsCode(pending.clone()).to_string();
             *state.pending.lock().await = Some(*pending);
-            Err(Failure { kind: "needs_code", message: msg })
+            Err(Failure::new("needs_code", msg))
         }
         Err(e) => Err(e.into()),
     }
@@ -470,7 +452,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
             use base64::Engine;
             let udid: String = arg(a, "udid")?;
             let path = handoff_path(&arg::<String>(a, "name")?)?;
-            let bytes = base64::engine::general_purpose::STANDARD.decode(arg::<String>(a, "data")?).map_err(|e| Failure { kind: "bad_request", message: format!("data: {e}") })?;
+            let bytes = base64::engine::general_purpose::STANDARD.decode(arg::<String>(a, "data")?).map_err(|e| Failure::new("bad_request", format!("data: {e}")))?;
             let rec = keeper::get(&udid)?.ok_or_else(|| Error::msg("Set up Poki on this iPhone with Poki Setup first."))?;
             let phone = setup::pick_phone(Some(&udid)).await?;
             device::container::write_file(&phone, &rec.bundle_id, &path, &bytes).await?;
@@ -619,7 +601,7 @@ async fn dispatch(state: &Shared, out: &Out, cmd: &str, a: &Value) -> R {
         "agent_prompt" => ok(json!({ "prompt": poki_setup_core::agent::prompt_for(poki_setup_core::agent::cli_path().as_deref()) })),
         "agent_next" => ok(poki_setup_core::agent::next(None).await),
         "ping" => ok("pong"),
-        other => Err(Failure { kind: "bad_request", message: format!("unknown command {other}") }),
+        other => Err(Failure::new("bad_request", format!("unknown command {other}"))),
     }
 }
 

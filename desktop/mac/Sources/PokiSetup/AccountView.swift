@@ -14,7 +14,7 @@ struct AccountView: View {
             if let a = model.account, a.signedIn {
                 signedIn(a)
             } else if let err = model.accountError {
-                keychainError(err)
+                accountError(err)
             } else {
                 signInForm
             }
@@ -22,14 +22,19 @@ struct AccountView: View {
         .pokiPage()
     }
 
-    @ViewBuilder private func keychainError(_ err: CoreError) -> some View {
+    @ViewBuilder private func accountError(_ err: CoreError) -> some View {
+        let keychain = err.kind == "keychain"
         HeroSection {
-            PageHero(symbol: "key.slash", title: localized("Keychain Access Needed"), subtitle: localized("Poki Setup could not read your saved Apple Account from the macOS keychain. Your session was not signed out."))
+            PageHero(symbol: keychain ? "key.slash" : "person.crop.circle.badge.exclamationmark",
+                     title: keychain ? localized("Keychain Access Needed") : localized("Apple Account Unavailable"),
+                     subtitle: keychain ? localized("Poki Setup could not read your saved Apple Account from the macOS keychain. Your session was not signed out.") : localized("Could not read your saved Apple Account"))
         }
         Section {
-            Text(localized("When macOS asks to access your keychain, enter your Mac login password and choose “Always Allow”, then click Retry."))
-                .fixedSize(horizontal: false, vertical: true)
-            Text(err.message)
+            if keychain {
+                Text(localized("When macOS asks to access your keychain, enter your Mac login password and choose “Always Allow”, then click Retry."))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(err.localizedDescription)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)

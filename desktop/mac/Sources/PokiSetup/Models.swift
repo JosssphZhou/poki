@@ -126,6 +126,36 @@ struct InstallAnswer: Decodable {
     var handoff: Handoff?
 }
 
+struct CertificateToReplace: Decodable, Equatable {
+    var name: String
+    var serial: String
+    var machine: String?
+    var daysLeft: Int?
+
+    func warning(in localization: SetupLocalization) -> String {
+        let identity = if let machine {
+            localization.text("The certificate “\(name)” (serial \(serial)) was made by “\(machine)”.")
+        } else {
+            localization.text("The certificate is “\(name)” (serial \(serial)).")
+        }
+        let expiry: String
+        switch daysLeft {
+        case .some(..<0): expiry = localization.text("It has already expired.")
+        case 0: expiry = localization.text("It expires today.")
+        case 1: expiry = localization.text("It expires tomorrow.")
+        case .some(let days): expiry = localization.text("It expires in \(days) days.")
+        case nil: expiry = localization.text("Its expiration date could not be read.")
+        }
+        return [
+            localization.text("Your Apple Account has reached its development certificate limit."),
+            identity, expiry,
+            localization.text("Poki Setup on this computer cannot use the old certificate because its signing key is on the computer or in the app that created it."),
+            localization.text("Replacing it lets this computer sign Poki. Every app signed with the old certificate will stop opening on all affected iPhones and iPads until it is reinstalled with a valid certificate."),
+            localization.text("If another computer still signs Poki for you, use that computer instead.")
+        ].joined(separator: " ")
+    }
+}
+
 struct Deployed: Decodable, Equatable {
     var accountId: String
     var accountName: String
@@ -238,19 +268,7 @@ struct StepItem: Identifiable, Equatable {
     var detail: String?
     var notes: [String] = []
 
-    // Only step headings have translations. Details and notes are the original diagnostic output.
-    var displayTitle: String {
-        let localization = SetupLocalization.shared
-        if id == "sign", title.hasPrefix("Signing Poki for ") {
-            let team = String(title.dropFirst("Signing Poki for ".count))
-            return localization.text("Signing Poki for \(team)", table: "Progress")
-        }
-        if id == "release", title.hasPrefix("Downloading test build ") {
-            let build = String(title.dropFirst("Downloading test build ".count))
-            return localization.text("Downloading test build \(build)", table: "Progress")
-        }
-        return localization.text(String.LocalizationValue(stringLiteral: title), table: "Progress")
-    }
+    var displayTitle: String { progressLine(title) }
 }
 
 /// The SF Symbol for a device: an iPad by its product type ("iPad16,3") or, without one, by name.

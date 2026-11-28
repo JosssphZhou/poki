@@ -19,14 +19,14 @@ struct StepsView: View {
                         ProgressView(value: f).progressViewStyle(.linear).frame(maxWidth: 280)
                     }
                     if let d = s.detail, !d.isEmpty {
-                        Text(d)
+                        Text(progressLine(d))
                             .font(.callout)
-                            .foregroundStyle(s.state == .failed ? .red : .secondary)
+                            .foregroundStyle(s.state == .failed ? .red : (s.state == .waiting ? .orange : .secondary))
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(Array(s.notes.enumerated()), id: \.offset) { _, n in
-                        Text(n).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(progressLine(n)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
@@ -150,6 +150,7 @@ struct JobProgress: View {
     /// named take none. Without weights, every step counts the same.
     var weights: [String: Double]? = nil
     var doneTitle = localized("Done")
+    var detailsOnly = false
     @State private var showSteps = false
 
     /// The install's steps as the core reports them, by how long each usually takes.
@@ -182,42 +183,48 @@ struct JobProgress: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if failed != nil {
-                    Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
-                } else if finished {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                } else if current?.state == .waiting {
-                    Image(systemName: "hand.tap.fill").foregroundStyle(.orange)
-                }
-                Text(finished ? doneTitle : (current?.displayTitle ?? localized("Starting")))
-                    .font(.body.weight(.medium))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text(fraction, format: .percent.precision(.fractionLength(0)))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            ProgressView(value: fraction)
-                .progressViewStyle(.linear)
-                .tint(failed != nil ? .red : Color.pokiBlue)
-                .animation(.easeOut(duration: 0.25), value: fraction)
-            if let line = detailLine {
-                Text(line)
-                    .font(.callout)
-                    .foregroundStyle(failed != nil ? .red : (current?.state == .waiting ? .orange : .secondary))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .lineLimit(4)
-            }
+            if !detailsOnly { summary }
             DisclosureGroup(isExpanded: $showSteps) {
-                VStack(alignment: .leading, spacing: 4) { StepsView(steps: steps) }
+                VStack(alignment: .leading, spacing: 4) {
+                    StepsView(steps: steps)
+                }
                     .padding(.top, 4)
             } label: {
                 Text(showSteps ? localized("Hide Details") : localized("Show Details")).font(.callout).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder private var summary: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if failed != nil {
+                Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+            } else if finished {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            } else if current?.state == .waiting {
+                Image(systemName: "hand.tap.fill").foregroundStyle(.orange)
+            }
+            Text(finished ? doneTitle : (current?.displayTitle ?? localized("Starting")))
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(fraction, format: .percent.precision(.fractionLength(0)))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        ProgressView(value: fraction)
+            .progressViewStyle(.linear)
+            .tint(failed != nil ? .red : Color.pokiBlue)
+            .animation(.easeOut(duration: 0.25), value: fraction)
+        if !showSteps, let line = detailLine {
+            Text(progressLine(line))
+                .font(.callout)
+                .foregroundStyle(failed != nil ? .red : (current?.state == .waiting ? .orange : .secondary))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(4)
+        }
     }
 
     /// The step's own line, or its newest note, or for a finished job the last step's detail.

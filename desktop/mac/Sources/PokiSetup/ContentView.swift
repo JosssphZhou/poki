@@ -75,18 +75,18 @@ private struct SidebarFooter: View {
     @EnvironmentObject var model: AppModel
 
     private var signedIn: Bool { model.account?.signedIn == true }
-    private var hasKeychainError: Bool { !signedIn && model.accountError != nil }
+    private var hasAccountError: Bool { !signedIn && model.accountError != nil }
 
     var body: some View {
         HStack(spacing: 10) {
             AccountBadge(name: model.account?.name, appleID: model.account?.appleId, signedIn: signedIn)
             VStack(alignment: .leading, spacing: 1) {
-                Text(signedIn ? (model.account?.name ?? localized("Signed In")) : hasKeychainError ? localized("Keychain Locked") : localized("Not Signed In"))
+                Text(signedIn ? (model.account?.name ?? localized("Signed In")) : hasAccountError ? localized("Apple Account Unavailable") : localized("Not Signed In"))
                     .font(.callout.weight(.medium))
                     .lineLimit(1)
-                Text(signedIn ? (model.account?.appleId ?? "") : hasKeychainError ? localized("Choose “Always Allow” and retry") : localized("Sign in to set up Poki"))
+                Text(signedIn ? (model.account?.appleId ?? "") : hasAccountError ? localized("Open Apple Account") : localized("Sign in to set up Poki"))
                     .font(.caption)
-                    .foregroundStyle(hasKeychainError ? Color.orange : Color.secondary)
+                    .foregroundStyle(hasAccountError ? Color.orange : Color.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)

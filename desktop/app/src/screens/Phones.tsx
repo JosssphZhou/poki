@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, failureText, okToReplacePoki, onProgress, type Handoff, type Record_ } from "../api";
-import { t } from "../i18n";
+import { progressLine, t } from "../i18n";
 import { Capsule, Card, ErrorBox, JobBar, Pill, Qr, RENEW_WEIGHTS, useSteps } from "../ui";
 
 export default function Phones() {
@@ -44,7 +44,7 @@ export default function Phones() {
                 <h2 style={{ margin: 0 }}>{r.phone_name}</h2>
                 <div className="muted small">iOS {r.ios} · Poki {r.version} ({r.build}) · {r.team_name}{r.team_is_free ? " · free" : ""} · <span className="mono">{r.bundle_id}</span></div>
                 {r.test_build && <div className="muted small">{t("Test build")} {r.test_build.run_number} {t("from")} {r.test_build.branch} ({r.test_build.sha.slice(0, 7)})</div>}
-                {r.last_error && <div className="small" style={{ color: "var(--bad)", marginTop: 4 }}>{r.last_error}</div>}
+                {r.last_error && <div className="small" style={{ color: "var(--bad)", marginTop: 4 }}>{progressLine(r.last_error)}</div>}
               </div>
               <Pill tone={days < 0 ? "bad" : days <= 2 ? "warn" : "ok"}>{days < 0 ? t("expired") : `${days} ${t("days left")}`}</Pill>
               <Capsule onClick={() => renew(r.udid)} disabled={busy !== null}>{busy === r.udid ? t("Renewing…") : t("Renew")}</Capsule>

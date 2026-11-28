@@ -1,6 +1,6 @@
 // Developer: the GitHub sign-in, and test builds from GitHub Actions artifacts (core devbuilds).
 import { useEffect, useMemo, useState } from "react";
-import { api, buildRef, failureText, installClosingPoki, onProgress, type DevPrefs, type DevState, type GithubSignIn, type PhoneRow, type Record_, type TestBuild, type TestBuildListing } from "../api";
+import { api, buildRef, failureKind, failureText, installClosingPoki, onProgress, type DevPrefs, type DevState, type GithubSignIn, type PhoneRow, type Record_, type TestBuild, type TestBuildListing } from "../api";
 import { t } from "../i18n";
 import { Capsule, Card, ErrorBox, INSTALL_WEIGHTS, JobBar, Pill, Toggle, useInterval, useSteps } from "../ui";
 
@@ -141,10 +141,13 @@ export function TestBuilds({ dev, setDev }: { dev: DevState | null; setDev: (d: 
     if (!phone) { setError(t("Connect the device to install on.")); return; }
     setRunning("install"); setError(null); install.reset();
     try {
-      await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false, ipa, b ? buildRef(b) : null);
+      await installClosingPoki(phone.phone.udid, phone.facts?.name ?? t("Device"), false, ipa, b ? buildRef(b) : null, install.reset);
       api.records().then(setRecords);
       load();
-    } catch (e) { const m = failureText(e); install.fail(m); setError(m); }
+    } catch (e) {
+      if (failureKind(e) === "cancelled") install.reset();
+      else install.fail(failureText(e));
+    }
     setRunning(null);
   };
   const doDownload = async (b: TestBuild) => {

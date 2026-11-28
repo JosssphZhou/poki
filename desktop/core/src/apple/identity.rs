@@ -250,21 +250,42 @@ pub fn approve_replacement() -> Result<usize> {
     Ok(n)
 }
 
-/// What to tell the person when the team is at its limit and `old` would be replaced.
-fn limit_message(old: &Certificate) -> String {
-    let made_by = if old.machine_name.trim().is_empty() { String::new() } else { format!(" made by “{}”", old.machine_name.trim()) };
-    let ends = match days_left(&old.der) {
-        Some(d) if d < 0 => "it has already expired".to_string(),
-        Some(0) => "it expires today".to_string(),
-        Some(1) => "it expires tomorrow".to_string(),
-        Some(d) => format!("it expires in {d} days"),
-        None => "its end date could not be read".to_string(),
-    };
-    format!(
-        "Your Apple Account already has its development certificate: “{}”{made_by}, serial {}; {ends}. Poki Setup on this computer cannot use it, because its key is on the computer or app that made it. Replacing it lets this computer sign Poki, but every app that certificate signed stops opening, on every iPhone and iPad, until it is installed again from here. If another computer still signs Poki for you, sign with that one instead. Choose Replace Certificate to go ahead.",
-        old.name.trim(),
-        old.serial_number.trim()
-    )
+#[derive(Debug, serde::Serialize)]
+pub struct CertificateToReplace {
+    name: String,
+    serial: String,
+    machine: Option<String>,
+    days_left: Option<i64>,
+}
+
+impl From<&Certificate> for CertificateToReplace {
+    fn from(old: &Certificate) -> Self {
+        let machine = old.machine_name.trim();
+        Self {
+            name: old.name.trim().into(),
+            serial: old.serial_number.trim().into(),
+            machine: (!machine.is_empty()).then(|| machine.into()),
+            days_left: days_left(&old.der),
+        }
+    }
+}
+
+impl std::fmt::Display for CertificateToReplace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let made_by = self.machine.as_ref().map(|name| format!(" made by “{name}”")).unwrap_or_default();
+        let ends = match self.days_left {
+            Some(d) if d < 0 => "it has already expired".to_string(),
+            Some(0) => "it expires today".to_string(),
+            Some(1) => "it expires tomorrow".to_string(),
+            Some(d) => format!("it expires in {d} days"),
+            None => "its end date could not be read".to_string(),
+        };
+        write!(
+            f,
+            "Your Apple Account already has its development certificate: “{}”{made_by}, serial {}; {ends}. Poki Setup on this computer cannot use it, because its key is on the computer or app that made it. Replacing it lets this computer sign Poki, but every app that certificate signed stops opening, on every iPhone and iPad, until it is installed again from here. If another computer still signs Poki for you, sign with that one instead. Choose Replace Certificate to go ahead.",
+            self.name, self.serial
+        )
+    }
 }
 
 /// A certificate on the team that matches this computer's key, or a new one. When Apple's limit
@@ -296,7 +317,7 @@ pub async fn ensure(portal: &mut Portal<'_>, team: &str, reporter: &crate::Repor
             if !approved {
                 // Remember which certificate the person is asked about, so a yes covers only it.
                 set_replacement(team, Some(&Replacement { serial: old.serial_number.clone(), approved: false }))?;
-                return Err(Error::CertificateLimit(limit_message(old)));
+                return Err(Error::CertificateLimit(old.into()));
             }
             set_replacement(team, None)?;
             reporter.note("identity", format!("Replacing the certificate “{}” (serial {}), as you chose", old.name.trim(), old.serial_number.trim()));
@@ -427,8 +448,12 @@ mod replacement_tests {
 
     #[test]
     fn the_question_names_the_certificate_and_what_stops() {
-        let m = limit_message(&cert("5F00", "Poki Setup on Old Mac", "Apple Development: Jane"));
+        let certificate = CertificateToReplace::from(&cert("5F00", "Poki Setup on Old Mac", "Apple Development: Jane"));
+        let m = certificate.to_string();
         assert!(m.contains("Poki Setup on Old Mac") && m.contains("5F00") && m.contains("stops opening") && m.contains("Replace Certificate"));
+        assert_eq!(serde_json::to_value(certificate).unwrap(), serde_json::json!({
+            "name": "Apple Development: Jane", "serial": "5F00", "machine": "Poki Setup on Old Mac", "days_left": null
+        }));
     }
 }
 

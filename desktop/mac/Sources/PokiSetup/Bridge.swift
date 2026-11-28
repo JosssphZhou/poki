@@ -2,10 +2,15 @@ import Foundation
 
 /// An error from the core: `kind` is stable (`apple`, `needs_person`, `usbmuxd`, `device`, ...),
 /// `message` is for people.
-struct CoreError: LocalizedError, Equatable {
+struct CoreError: Decodable, LocalizedError, Equatable {
     var kind: String
     var message: String
-    var errorDescription: String? { message }
+    var certificate: CertificateToReplace? = nil
+
+    var errorDescription: String? {
+        if kind == "certificate_limit", let certificate { return certificate.warning(in: .shared) }
+        return progressLine(message)
+    }
 }
 
 /// Talks to `poki-setup-bridge`, the Rust core behind a pipe. One JSON object per line each way.
@@ -25,7 +30,7 @@ final class Bridge {
     private var process: Process?
     private var input: FileHandle?
     private var nextID: UInt64 = 1
-    private var waiting: [UInt64: CheckedContinuation<Data, Error>] = [:]
+    private var waiting: [UInt64: (command: String, reply: CheckedContinuation<Data, Error>)] = [:]
     private var outBuffer = Data()
     private var errBuffer = Data()
 
@@ -86,8 +91,8 @@ final class Bridge {
         input = nil
         let pending = waiting
         waiting = [:]
-        for (_, c) in pending {
-            c.resume(throwing: CoreError(kind: "bridge", message: localized("Poki Setup's helper stopped (status \(status)). Try again.")))
+        for request in pending.values {
+            request.reply.resume(throwing: CoreError(kind: "bridge", message: localized("Poki Setup's helper stopped (status \(status)). Try again.")))
         }
         helperLog.append("[helper ended with status \(status)]")
     }
@@ -132,16 +137,18 @@ final class Bridge {
         }
         guard let idNum = obj["id"] as? NSNumber else { return }
         let id = idNum.uint64Value
-        guard let c = waiting.removeValue(forKey: id) else { return }
+        guard let request = waiting.removeValue(forKey: id) else { return }
         if let err = obj["err"] as? [String: Any] {
-            let kind = err["kind"] as? String ?? "error"
-            let message = err["message"] as? String ?? localized("Something went wrong.")
-            if kind == "needs_code" { onNeedsCode?() }
-            c.resume(throwing: CoreError(kind: kind, message: message))
+            let data = try? JSONSerialization.data(withJSONObject: err)
+            let decoded = data.flatMap { try? decoder.decode(CoreError.self, from: $0) }
+            let error = decoded ?? CoreError(kind: err["kind"] as? String ?? "error",
+                                             message: err["message"] as? String ?? localized("Something went wrong."))
+            if error.kind == "needs_code", request.command != "install" { onNeedsCode?() }
+            request.reply.resume(throwing: error)
         } else {
             let value = obj["ok"] ?? NSNull()
             let raw = (try? JSONSerialization.data(withJSONObject: ["v": value])) ?? Data("{\"v\":null}".utf8)
-            c.resume(returning: raw)
+            request.reply.resume(returning: raw)
         }
     }
 
@@ -160,7 +167,7 @@ final class Bridge {
         var line = try JSONSerialization.data(withJSONObject: req)
         line.append(0x0A)
         let raw: Data = try await withCheckedThrowingContinuation { c in
-            waiting[id] = c
+            waiting[id] = (cmd, c)
             do {
                 try input?.write(contentsOf: line)
             } catch {

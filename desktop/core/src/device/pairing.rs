@@ -191,10 +191,10 @@ pub async fn verify(phone: &Phone) -> Result<bool> {
 /// Pairs over USB. Waits for the person to tap Trust and enter the passcode (up to `wait`), then
 /// tests the record, saves it on this computer and with usbmuxd. Returns the record's bytes.
 pub async fn pair(phone: &Phone, reporter: &Reporter, wait: Duration) -> Result<Vec<u8>> {
+    reporter.step("pair", "Pairing with the iPhone");
     if !phone.is_usb() {
         return Err(Error::device("Pairing needs the cable. Plug the iPhone in with a data cable."));
     }
-    reporter.step("pair", "Pairing with the iPhone");
 
     // A record this computer or usbmuxd already holds is kept when it still works: the phone then
     // shows no dialog, and Poki keeps the identity it knows.
