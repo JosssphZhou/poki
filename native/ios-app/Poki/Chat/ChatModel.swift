@@ -377,6 +377,7 @@ final class ChatModel {
     private var questionAnswer: CheckedContinuation<(text: String, picked: Bool)?, Never>?
     /// The task under way may ask the owner (ask_user): its prompt names the tool and the model has it.
     private var taskAsks = false
+    private var secretQuestionRefusals = 0
     /// The plan bubble of the task under way.
     private var planID: UUID?
     private var noteID: UUID?
@@ -863,6 +864,7 @@ final class ChatModel {
         taskApps = TaskApps(); taskRequest = linkedTask ?? preparedText; toolRoute = nil
         let taskAsks = asks && asking && !inSplitView
         self.taskAsks = taskAsks
+        secretQuestionRefusals = 0
         let images = lastImages
         let namedApps = chooseWorkspace && kind == .poki && app.canPlanSplitView
             ? AppIconStore.bundleIDs(namedIn: preparedText) : []
@@ -1657,11 +1659,21 @@ final class ChatModel {
             if let title { nameTask(title) }
             return PokiCore.ToolAnswer(text: Harness.planPublished, jpeg: nil, isError: false)
         case "ask_user":
-            guard taskAsks, waitingQuestion == nil, let question = ChatQuestion(id: call.id, arguments: args) else {
+            guard taskAsks else {
+                return PokiCore.ToolAnswer(text: secretQuestionRefusals >= 2 ? Harness.secretQuestionDisabled : Harness.invalidQuestion,
+                                           jpeg: nil, isError: true)
+            }
+            guard waitingQuestion == nil, let question = ChatQuestion(id: call.id, arguments: args) else {
                 return PokiCore.ToolAnswer(text: Harness.invalidQuestion, jpeg: nil, isError: true)
             }
             if question.requestsSecretOrCredential {
                 AppLog.shared.add("chat", "refused ask_user requesting a secret or verification code")
+                secretQuestionRefusals += 1
+                if secretQuestionRefusals >= 2 {
+                    taskAsks = false
+                    loop?.disableAskUser()
+                    return PokiCore.ToolAnswer(text: Harness.secretQuestionDisabled, jpeg: nil, isError: true)
+                }
                 return PokiCore.ToolAnswer(text: Harness.secretQuestionRefused, jpeg: nil, isError: true)
             }
             return await ask(question.sanitizingApps(allowedFromFindApp: taskFoundApps))

@@ -626,6 +626,7 @@ enum Harness {
     }
     static let invalidQuestion = "Invalid question: one question and two or three options with labels."
     static let secretQuestionRefused = "Refused: never ask for passwords, passcodes, verification codes, card numbers, or account credentials with ask_user. Use web_handoff or do {handoff} instead."
+    static let secretQuestionDisabled = "Refused: ask_user is disabled for this task after repeated credential requests. Do not retry ask_user. Use web_handoff or do {handoff} for credentials instead."
     static let questionStopped = "Task stopped. No answer."
 
     /// task-runner.mjs's answers to its harness tools.

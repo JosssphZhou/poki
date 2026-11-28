@@ -98,6 +98,10 @@ final class PiLoop {
             }
         }
 
+        func disableAskUser() {
+            lock.withLock { includeAskUser = false }
+        }
+
         func current() -> (memoryAttribution: Bool, countedScroll: Bool, countedScrollReply: Bool, askUser: Bool, resultCardMode: Harness.ResultCardMode) {
             lock.withLock { (includeMemoryAttribution, includeCountedScroll, includeCountedScrollReply, includeAskUser, resultCardMode) }
         }
@@ -328,6 +332,11 @@ final class PiLoop {
     /// Widens the active task's result-card schema when a card-capable app is launched or read.
     func observeApp(_ bundleID: String) {
         toolPolicy.observeApp(bundleID)
+    }
+
+    /// Withdraws questions for the rest of the current task after repeated credential requests.
+    func disableAskUser() {
+        toolPolicy.disableAskUser()
     }
 
     /// The owner's message (with the JPEGs of its photos and PDFs) under this task's instructions, then
