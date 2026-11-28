@@ -17,6 +17,8 @@ final class RecentAppMentionUITests: XCTestCase {
         XCTAssertTrue(ordinaryNotes.waitForExistence(timeout: 5))
         ordinaryNotes.tap()
         XCTAssertTrue((ordinary.value as? String)?.contains("Notes") == true)
+        ordinary.tap()
+        ordinary.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 32))
         app.terminate()
         app.launch()
         let fingerprint = app.staticTexts["fixture.recents.fingerprint"]
