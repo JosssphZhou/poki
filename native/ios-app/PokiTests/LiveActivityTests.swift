@@ -128,6 +128,51 @@ final class LiveActivityTests: XCTestCase {
         XCTAssertFalse(activity.state.hasThumbnail, "a step without a fresh screenshot clears the thumbnail")
     }
 
+    func testQuestionPhaseSetsStaleDateAndReachesStaleFace() throws {
+        let activity = ActivityController()
+        let before = Date.now
+        activity.update {
+            $0.phase = .question
+            $0.question = .init(id: "q-stale", text: "A train ticket, or a flight?", since: before)
+        }
+        let after = Date.now
+
+        let content = try XCTUnwrap(activity.content())
+        XCTAssertEqual(content.state.phase, .question)
+        let staleDate = try XCTUnwrap(content.staleDate, "question phase must set a staleDate so a killed or suspended app goes stale")
+        let delay = staleDate.timeIntervalSince(before)
+        XCTAssertGreaterThanOrEqual(delay, 600, "question staleDate should not expire sooner than working phase")
+        XCTAssertLessThanOrEqual(staleDate.timeIntervalSince(after), 3_600, "question staleDate should be bounded")
+
+        let staleFace = content.state.face(stale: true)
+        XCTAssertTrue(staleFace.stale)
+        XCTAssertEqual(staleFace.event, "Not updating")
+        XCTAssertEqual(staleFace.meta, .none)
+        XCTAssertEqual(staleFace.bottom, .none)
+    }
+
+    func testQuestionNoticeCapsNotificationBodyTo160Characters() async throws {
+        let center = UNUserNotificationCenter.current()
+        let allowed = try await center.requestAuthorization(options: [.provisional])
+        XCTAssertTrue(allowed, "the simulator must allow test notifications")
+        defer { QuestionNotice.cancel() }
+        QuestionNotice.cancel()
+
+        let expectedBody = String(repeating: "Q", count: 160)
+        let longText = expectedBody + "EXTRA_PAGE_TEXT_THAT_MUST_BE_TRUNCATED"
+        QuestionNotice.schedule(text: longText)
+        let longRequest = await center.pendingNotificationRequests().first { $0.identifier == QuestionNotice.id }
+        let capped = try XCTUnwrap(longRequest, "QuestionNotice.schedule must register a pending notification")
+        XCTAssertEqual(capped.content.body.count, 160, "notification body must be capped to 160 characters")
+        XCTAssertEqual(capped.content.body, expectedBody)
+
+        let shortText = "A train ticket, or a flight?"
+        QuestionNotice.schedule(text: shortText)
+        let shortRequest = await center.pendingNotificationRequests().first { $0.identifier == QuestionNotice.id }
+        let preserved = try XCTUnwrap(shortRequest, "short question text should be preserved verbatim")
+        XCTAssertEqual(preserved.content.body, shortText)
+    }
+
     private var language = AppLocalization.system
 
     override func setUp() async throws {

@@ -102,6 +102,7 @@ struct ActivityPreview: View {
         case "approval": AppLocalization.text(LocalizedStringResource("Approval"))
         case "deciding": AppLocalization.text(LocalizedStringResource("Approved"))
         case "yourturn": AppLocalization.text(LocalizedStringResource("Your Turn"))
+        case "question": StatusWord.needsAnswer.text
         case "passcode": AppLocalization.text(LocalizedStringResource("Passcode"))
         case "done": AppLocalization.text(LocalizedStringResource("Done"))
         case "plan": AppLocalization.text(LocalizedStringResource("Chat Plan"))
@@ -165,6 +166,12 @@ struct ActivityPreview: View {
         yourTurn.handoff = .init(id: "h1", kind: .payment, text: "Confirm the $42.10 order with Face ID", app: "Amazon", since: now.addingTimeInterval(-20))
         var passcode = PokiState(phase: .handoff, headline: "Your turn", thumbnailVersion: 0)
         passcode.handoff = .init(id: "h2", kind: AutomationPath.current == .inProcess ? .automationPasscode : .runnerPasscode, text: nil, app: nil, since: now.addingTimeInterval(-6))
+
+        // A question from the chat's model: only the question and how long it has waited, never its options.
+        var question = PokiState(phase: .question, headline: "Thinking", thumbnailVersion: 0)
+        question.since = now.addingTimeInterval(-130)
+        question.stepCount = 2
+        question.question = .init(id: "q1", text: AppLocalization.text(LocalizedStringResource("Damai isn’t installed. Search on the web, or install it first?")), since: now.addingTimeInterval(-42))
 
         var done = PokiState(phase: .done, headline: "Finished", thumbnailVersion: 1)
         done.app = "Messages"
@@ -250,7 +257,7 @@ struct ActivityPreview: View {
         var voiceDone = doneResult
         voiceDone.voice = .listening
 
-        let all = [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("passcode", passcode), ("done", done),
+        let all = [("start", start), ("working", working), ("step", step), ("approval", approval), ("deciding", deciding), ("yourturn", yourTurn), ("question", question), ("passcode", passcode), ("done", done),
                    ("plan", plan), ("plannext", planNext), ("plandone", planDone),
                    ("ready", ready), ("waking", waking), ("idle", idle), ("problem", problem), ("pairing", pairWait), ("code", pairCode), ("setup", setup), ("voice", voice),
                    ("voicethinking", voiceThinking), ("voicespeaking", voiceSpeaking),

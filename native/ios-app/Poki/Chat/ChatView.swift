@@ -119,7 +119,7 @@ struct ChatView: View {
 
     /// Poki is at work (or the sample scene shows it at work): the message field offers Stop.
     private var busy: Bool {
-        chat.running || ["working", "approval", "handoff"].contains(sampleScene ?? "")
+        chat.running || ["working", "approval", "handoff", "question", "questionApps", "questionMeaning", "answered"].contains(sampleScene ?? "")
     }
 
     /// A newer Poki is on the channel, or downloaded and ready to install: its version, for the home
@@ -167,6 +167,7 @@ struct ChatView: View {
                                handedOver: model.handoffText != nil || sampleScene == "handoff",
                                plan: chat.planSteps, app: sampleScene == nil ? chat.taskApp : ChatModel.Sample.app(sampleScene),
                                shot: shot, rise: reduceMotion || !(sampleScene == nil || sampleScene == "demo") ? nil : rise,
+                               waitingQuestion: chat.waitingQuestion?.id, answer: { chat.answer($0, picked: true) }, otherAnswer: { writing = true },
                                cardActions: cardActions) {
                     if let hint = currentSetupHint {
                         SetupHintLine(hint: hint, openSetupStep: openSetupStep, openSetup: openSetup, openModel: openModel)
@@ -227,7 +228,10 @@ struct ChatView: View {
                     }
                 }
                 ComposerInputView(input: draft, focused: $writing, adding: $adding,
-                                  settingsPresented: $composerSettingsPresented, running: busy, progress: progress, restarts: restarts, conversationID: chat.sessionID,
+                                  settingsPresented: $composerSettingsPresented, running: busy,
+                                  answering: chat.waitingQuestion?.other == true,
+                                  waitingForAnswer: chat.waitingQuestion != nil,
+                                  progress: progress, restarts: restarts, conversationID: chat.sessionID,
                                   send: { text, attachments in
                                       let reply = scrollReplyQuestion == chat.countedScrollQuestion ? scrollReplyQuestion : nil
                                       scrollReplyQuestion = nil
@@ -687,6 +691,10 @@ struct ChatTranscript<Footer: View>: View {
     /// How far your first words rise out of the message field when they open the conversation
     /// (the chat only); nil where a first message just appears.
     var rise: CGFloat? = nil
+    /// The question the task under way waits on, and what its options and Other Answer do.
+    var waitingQuestion: String? = nil
+    var answer: (String) -> Void = { _ in }
+    var otherAnswer: () -> Void = {}
     /// What a result card can do here; nil where the conversation is only shown.
     var cardActions: ResultCardActions? = nil
     @ViewBuilder var footer: () -> Footer
@@ -702,7 +710,7 @@ struct ChatTranscript<Footer: View>: View {
 
     /// Your newest message: when it changes you have just sent one.
     private var lastSent: UUID? {
-        entries.last { if case .you = $0.kind { true } else { false } }?.id
+        entries.last { switch $0.kind { case .you, .answer: true; default: false } }?.id
     }
 
     var body: some View {
@@ -844,6 +852,22 @@ struct ChatTranscript<Footer: View>: View {
             MessageBubble(direction: .incoming, text: text, tail: isLast(i, poki: true))
                 .padding(.top, startsRun(i) ? 8 : 0)
                 .transition(PlanMotion.stepTransition)
+        case .question(let question):
+            // The options can be tapped only while this question is the active waiting question.
+            let open = question.state == .asking && waitingQuestion == question.id
+            QuestionCard(question: question, open: open, tail: isLast(i, poki: true), answer: answer, other: otherAnswer)
+                .padding(.top, startsRun(i) ? 10 : 0)
+                .transition(PlanMotion.stepTransition)
+        case .answer(let text):
+            // Your answer to Poki's question: your bubble, marked as an answer.
+            VStack(alignment: .trailing, spacing: 4) {
+                MessageBubble(direction: .outgoing, text: text, tail: isLast(i, poki: false))
+                Text("Answered").font(.caption2.weight(.medium)).foregroundStyle(Color(.secondaryLabel))
+                    .padding(.horizontal, 4).padding(.bottom, 8)
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.top, startsRun(i) ? 10 : 0)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         case .plan(let steps):
             let ask = asking(at: i)
             let current = live && entry.ended == nil && isLastPlan(i)
@@ -915,8 +939,8 @@ struct ChatTranscript<Footer: View>: View {
     private func isLast(_ i: Int, poki: Bool) -> Bool {
         !entries[(i + 1)...].contains { entry in
             switch entry.kind {
-            case .poki, .plan, .card: poki
-            case .you, .request: !poki
+            case .poki, .plan, .card, .question: poki
+            case .you, .request, .answer: !poki
             default: false
             }
         }
@@ -1369,6 +1393,12 @@ struct ComposerInputView: View {
     @Binding var adding: Bool
     @Binding var settingsPresented: Bool
     var running: Bool
+    /// A question from Poki waits and takes the owner's own words: what is typed is the answer, sent
+    /// with the arrow while the task keeps running.
+    var answering = false
+    /// Any question from Poki is waiting (even when `allow_other` is false): attachments cannot go
+    /// with an answer and are not added or silently dropped.
+    var waitingForAnswer = false
     var isSettingsPreview = false
     @AppStorage(ComposerSettingsView.modelKey) private var showsModelShortcut = true
     @State private var previewTaps = 0
@@ -1548,7 +1578,7 @@ struct ComposerInputView: View {
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("composer")) } action: { fieldFrame = $0 }
                             .overlay(alignment: .topLeading) {
                                 if input.isEmpty {
-                                    Text(dictation.on ? "Listening…" : attachments.isEmpty ? "Message Poki" : "Add a message")
+                                    Text(dictation.on ? "Listening…" : answering ? "Type another answer" : attachments.isEmpty ? "Message Poki" : "Add a message")
                                         .foregroundStyle(Tint.homePlaceholder).lineLimit(1)
                                         .padding(.top, 6)
                                         .overlay(alignment: .leading) {
@@ -1936,9 +1966,17 @@ struct ComposerInputView: View {
         return (MentionRecents.ids + RecentAppsStore.shared.recentIDs).filter { seen.insert($0.lowercased()).inserted }
     }
 
+    private var attachmentRoom: Int {
+        waitingForAnswer ? 0 : max(0, Self.most - attachments.count)
+    }
+
+    private var canAddAttachments: Bool {
+        attachmentRoom > 0
+    }
+
     /// Plus's sheet, with the library, Files and the camera opening over it.
     private var addSheet: some View {
-        ComposerAddSheet(room: Self.most - attachments.count,
+        ComposerAddSheet(room: attachmentRoom,
                          choosePhotos: { pickerGeneration = attachmentDraft.generation; choosingPhotos = true },
                          takePhoto: { pickerGeneration = attachmentDraft.generation; takingPhoto = true },
                          chooseFiles: { pickerGeneration = attachmentDraft.generation; choosingFiles = true },
@@ -1951,7 +1989,7 @@ struct ComposerInputView: View {
                              adding = false
                          },
                          mentionedIDs: AppPickerCatalog.mentionedBundleIDs(in: input))
-            .photosPicker(isPresented: $choosingPhotos, selection: $picked, maxSelectionCount: max(1, Self.most - attachments.count), matching: .images)
+            .photosPicker(isPresented: $choosingPhotos, selection: $picked, maxSelectionCount: max(1, attachmentRoom), matching: .images)
             .fileImporter(isPresented: $choosingFiles, allowedContentTypes: AttachmentReader.fileTypes, allowsMultipleSelection: true) { result in
                 guard pickerGeneration == attachmentDraft.generation, case .success(let urls) = result else { return }
                 for url in urls { add { try AttachmentReader.file(url) } }
@@ -2047,7 +2085,7 @@ struct ComposerInputView: View {
     /// One more photo or PDF, up to the limit; a file Poki can't read says so.
     @discardableResult
     private func add(_ read: () throws -> ChatAttachment) -> UUID? {
-        guard attachments.count < Self.most else { return nil }
+        guard canAddAttachments else { return nil }
         do {
             let item = try read()
             withAnimation(.snappy) { attachments.append(item) }
@@ -2068,7 +2106,9 @@ struct ComposerInputView: View {
     /// blue while it is yours to press for Poki; ink while it stops a task, with the task's progress
     /// as a ring around it.
     private var mainButton: some View {
-        Button {
+        // While a question waits, words in the field send it as the answer; empty, the button stops.
+        let running = self.running && !(answering && hasText)
+        return Button {
             guard !isSettingsPreview else { previewTaps += 1; return }
             // On an empty field: Talk with Poki at once. Dictation has its own
             // button beside this one. Without a voice key `openVoice` has the field say so.
@@ -2110,7 +2150,12 @@ struct ComposerInputView: View {
     }
 
     private func submit() {
-        guard !running, canSend else { return }
+        if waitingForAnswer && !attachments.isEmpty {
+            problem = ChatModel.attachmentsNotAllowedWithAnswerMessage
+            return
+        }
+        guard !running || answering && hasText, canSend else { return }
+        problem = nil
         dictation.cancel(model)
         let text = input
         send(text, attachments)

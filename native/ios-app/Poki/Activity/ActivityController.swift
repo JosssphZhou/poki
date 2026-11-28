@@ -83,7 +83,7 @@ final class ActivityController {
 
     /// The phase and step iOS last reported holding for the activity.
     private var held: (phase: PokiState.Phase, step: Int)?
-    private static let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding, .handoff]
+    private static let runPhases: Set<PokiState.Phase> = [.working, .approval, .deciding, .handoff, .question]
     private var justRecorded = false
 
     var enabled: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
@@ -208,7 +208,7 @@ final class ActivityController {
         let final: ActivityContent<PokiState>? = state.phase.isRunOutcome || state.phase == .problem
             ? Self.fittedState(state).map { ActivityContent(state: $0, staleDate: nil, relevanceScore: 0) } : nil
         let policy = dismissalPolicy ?? (final == nil ? .immediate : .after(.now.addingTimeInterval(15 * 60)))
-        state.guide = nil; state.pin = nil; state.since = nil; state.event = nil; state.previous = nil
+        state.guide = nil; state.pin = nil; state.since = nil; state.event = nil; state.previous = nil; state.question = nil
         state.stepCount = 0; state.failedCount = 0; state.failedSteps = nil; state.endedAt = nil; state.decision = nil; state.plan = nil
         let previous = tail
         tail = Task { await previous?.value; await activity.end(final, dismissalPolicy: policy) }
@@ -252,7 +252,7 @@ final class ActivityController {
             AttentionNotice.post(title: banner.title, body: banner.body)
         }
         attention = nil
-        if state.handoff == nil, state.phase != .problem, old.handoff != nil || old.phase == .problem { AttentionNotice.clear() }
+        if state.handoff == nil, state.question == nil, state.phase != .problem, old.handoff != nil || old.question != nil || old.phase == .problem { AttentionNotice.clear() }
         send(alert: alert, critical: Self.isCritical(state, after: old))
     }
     /// The hand-off or problem this change pops up for (`update` posts a banner when no activity runs).
@@ -339,6 +339,12 @@ final class ActivityController {
         if state.handoff == nil, old.handoff != nil, state.phase == .working {
             setEvent(.resumed, "Resumed")
         }
+        // The chat's question: pops up and lights the screen once, as a hand-off does. The run waits
+        // for the answer, which is given in the chat (the reminder is a notification, QuestionNotice).
+        if let question = state.question, question.id != old.question?.id {
+            alert = critical(StatusWord.needsAnswer.text, question.text)
+            attention = (StatusWord.needsAnswer.text, question.text)
+        }
         // Approval: always pops up and lights the screen.
         if let approval = state.approval, approval.id != old.approval?.id {
             alert = critical(approval.question, "")
@@ -376,7 +382,7 @@ final class ActivityController {
 
     /// Updates that change what the person must do or know go out at once, ahead of plain progress.
     private static func isCritical(_ state: PokiState, after old: PokiState) -> Bool {
-        state.phase != old.phase || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin
+        state.phase != old.phase || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin || state.question?.id != old.question?.id
     }
 
     /// A run of steps counts as finished after `finishAfter` without a new one, for an agent that does
@@ -385,7 +391,7 @@ final class ActivityController {
     /// two of their steps the model thinks or speaks, often longer than the wait, and the run read as
     /// finished while it went on (ESP-954).
     private var quietEnds: Bool {
-        !chatOwnsCompletion && state.voice == nil && state.phase == .working && state.approval == nil && state.handoff == nil && state.stepCount > 0
+        !chatOwnsCompletion && state.voice == nil && state.phase == .working && state.approval == nil && state.handoff == nil && state.question == nil && state.stepCount > 0
     }
 
     private func armFinish() {
@@ -417,6 +423,7 @@ final class ActivityController {
             state.approval = nil
             state.decision = nil
             state.handoff = nil
+            state.question = nil
             state.event = nil
             state.previous = nil
             state.since = nil
@@ -435,7 +442,7 @@ final class ActivityController {
     func finishNow(alert: Bool, result: String? = nil, task: String? = nil) -> Bool {
         finishTimer?.cancel()
         chatOwnsCompletion = false
-        guard state.phase == .working, state.approval == nil, state.handoff == nil else {
+        guard state.phase == .working, state.approval == nil, state.handoff == nil, state.question == nil else {
             if Self.runPhases.contains(state.phase) { AppLog.shared.add("activity", "the run was not marked finished: the activity shows \(state.phase.rawValue)") }
             return false
         }
@@ -622,6 +629,10 @@ final class ActivityController {
                 handoff.app = handoff.app.map { shortened($0, to: 80) }
                 state.handoff = handoff
             }
+            if var question = state.question {
+                question.text = shortened(question.text, to: 160)
+                state.question = question
+            }
             if !fits() {
                 // Keep the phase, timing and action identities if rich display data is too large.
                 state.approval?.sourceSession = nil
@@ -644,19 +655,33 @@ final class ActivityController {
             state.approval?.reason = ""
             state.handoff?.text = nil
             state.handoff?.app = nil
+            state.question?.text = ""
         }
         return fits() ? state : nil
     }
+
+    static let workingStaleInterval: TimeInterval = 600
+    static let questionStaleInterval: TimeInterval = 1800
 
     func content() -> ActivityContent<PokiState>? {
         guard let state = Self.fittedState(state) else {
             AppLog.shared.add("activity", "Live Activity state exceeds the payload budget")
             return nil
         }
-        // An approval goes stale when it expires. A run goes stale when no update has come for ten
-        // minutes (Poki was closed or suspended), and then says it is not updating.
-        let stale = state.approval?.expires ?? (state.phase == .working ? Date.now.addingTimeInterval(600) : nil)
-        return ActivityContent(state: state, staleDate: stale, relevanceScore: state.approval == nil && state.handoff == nil ? 50 : 100)
+        // An approval goes stale when it expires. A run goes stale after ten minutes without an
+        // update, and a waiting question goes stale after thirty minutes if Poki was closed or
+        // suspended so the Lock Screen does not keep showing an active question forever.
+        let stale: Date?
+        if let expires = state.approval?.expires {
+            stale = expires
+        } else if state.phase == .working {
+            stale = Date.now.addingTimeInterval(Self.workingStaleInterval)
+        } else if state.phase == .question {
+            stale = Date.now.addingTimeInterval(Self.questionStaleInterval)
+        } else {
+            stale = nil
+        }
+        return ActivityContent(state: state, staleDate: stale, relevanceScore: state.approval == nil && state.handoff == nil && state.question == nil ? 50 : 100)
     }
 
     private static func shrink(_ data: Data, maxPixels: Int) -> Data? {

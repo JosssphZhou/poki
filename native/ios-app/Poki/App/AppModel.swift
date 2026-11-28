@@ -1606,6 +1606,7 @@ final class AppModel {
             && (automationPath != .inProcess || inProcessSession == .open)
             && (chatTaskActive || !outsideAgentsAtWork.isEmpty)
             && approvals.isEmpty && handoffText == nil
+            && activity.state.question == nil
             && !drivesDuoCompanion && activitySplitViewSession == nil
     }
 
@@ -2255,7 +2256,7 @@ final class AppModel {
         if sessionOn {
             activity.update { state in
                 state.plan = nil
-                guard state.approval == nil, state.handoff == nil, state.phase == .idle || state.phase.isRunOutcome else { return }
+                guard state.approval == nil, state.handoff == nil, state.question == nil, state.phase == .idle || state.phase.isRunOutcome else { return }
                 state.phase = .working
                 state.headline = "Thinking"
                 state.since = Date()
@@ -2276,10 +2277,37 @@ final class AppModel {
         }
     }
 
+    /// The chat's model asked the owner something (ask_user) and waits: the Live Activity says so until
+    /// the answer comes, and one notification reminds the owner after ten minutes, never more.
+    func chatQuestionAsked(id: String, text: String) {
+        activity.update { state in
+            state.question = .init(id: id, text: String(text.prefix(160)), since: Date())
+            state.phase = .question
+        }
+        QuestionNotice.schedule(text: text)
+    }
+
+    /// The question was answered, or its task stopped: the run goes on, or ends as a stopped task does.
+    func chatQuestionEnded(id: String, answered: Bool) {
+        QuestionNotice.cancel()
+        activity.update { state in
+            guard state.question?.id == id else { return }
+            state.question = nil
+            guard state.phase == .question else { return }
+            // Unanswered (stopped) before any step: nothing ran, so nothing is left showing as working.
+            if !answered, state.stepCount == 0 {
+                state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil
+            } else {
+                state.phase = .working
+                if answered { state.headline = "Thinking" }
+            }
+        }
+    }
+
     func chatWaitingForSplitView(_ waiting: Bool) {
         if waiting { lastShot = nil }
         activity.update { state in
-            guard state.phase == .working, state.approval == nil, state.handoff == nil else { return }
+            guard state.phase == .working, state.approval == nil, state.handoff == nil, state.question == nil else { return }
             if waiting { state.headline = "Waiting for Split View" }
             else if state.headline == "Waiting for Split View" { state.headline = "Continuing" }
         }
@@ -2294,7 +2322,7 @@ final class AppModel {
             // A turn that never touched the phone: nothing ran, so nothing is left showing as working.
             activity.update { state in
                 state.plan = nil
-                guard state.phase == .working, state.stepCount == 0, state.approval == nil, state.handoff == nil else { return }
+                guard state.phase == .working, state.stepCount == 0, state.approval == nil, state.handoff == nil, state.question == nil else { return }
                 state.phase = .idle; state.headline = "Waiting for agent"; state.since = nil
             }
             // The owner's own reply still reaches them when they are elsewhere (a task sent from a shortcut).

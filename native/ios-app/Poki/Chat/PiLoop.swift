@@ -71,18 +71,21 @@ final class PiLoop {
         private var includeMemoryAttribution = true
         private var includeCountedScroll = true
         private var includeCountedScrollReply = true
+        private var includeAskUser = false
         private var rendersCards = true
         private var resultCardMode: Harness.ResultCardMode = .all
 
         func set(includeMemoryAttribution: Bool,
                  includeCountedScroll: Bool,
                  includeCountedScrollReply: Bool,
+                 includeAskUser: Bool,
                  rendersCards: Bool,
                  resultCardMode: Harness.ResultCardMode) {
             lock.withLock {
                 self.includeMemoryAttribution = includeMemoryAttribution
                 self.includeCountedScroll = includeCountedScroll
                 self.includeCountedScrollReply = includeCountedScrollReply
+                self.includeAskUser = includeAskUser
                 self.rendersCards = rendersCards
                 self.resultCardMode = resultCardMode
             }
@@ -95,8 +98,12 @@ final class PiLoop {
             }
         }
 
-        func current() -> (memoryAttribution: Bool, countedScroll: Bool, countedScrollReply: Bool, resultCardMode: Harness.ResultCardMode) {
-            lock.withLock { (includeMemoryAttribution, includeCountedScroll, includeCountedScrollReply, resultCardMode) }
+        func disableAskUser() {
+            lock.withLock { includeAskUser = false }
+        }
+
+        func current() -> (memoryAttribution: Bool, countedScroll: Bool, countedScrollReply: Bool, askUser: Bool, resultCardMode: Harness.ResultCardMode) {
+            lock.withLock { (includeMemoryAttribution, includeCountedScroll, includeCountedScrollReply, includeAskUser, resultCardMode) }
         }
     }
 
@@ -179,7 +186,7 @@ final class PiLoop {
                     gate.end(.waitingForReply)
                 } else if answer.automationAuthorizationDeclined {
                     gate.end(.authorizationDeclined)
-                } else if answer.waitingForOwner {
+                } else if spec.name == Harness.askUser.name || answer.waitingForOwner {
                     stall.reset()
                 } else if stall.record(call: "\(spec.name)\n\(arguments)", screen: answer.screen ?? answer.text) {
                     gate.end(.stuck)
@@ -205,6 +212,7 @@ final class PiLoop {
                                                                 includeMemoryAttribution: true,
                                                                 includeCountedScroll: true,
                                                                 includeCountedScrollReply: true,
+                                                                includeAskUser: true,
                                                                 resultCardMode: .all),
                                      messages: messages),
             streamFn: { model, transcript, options in
@@ -295,6 +303,7 @@ final class PiLoop {
                                                 includeMemoryAttribution: currentPolicy.memoryAttribution,
                                                 includeCountedScroll: currentPolicy.countedScroll,
                                                 includeCountedScrollReply: currentPolicy.countedScrollReply,
+                                                includeAskUser: currentPolicy.askUser,
                                                 resultCardMode: currentPolicy.resultCardMode) + shelf.tools
                 var context = request.context
                 context.tools = tools
@@ -325,14 +334,21 @@ final class PiLoop {
         toolPolicy.observeApp(bundleID)
     }
 
+    /// Withdraws questions for the rest of the current task after repeated credential requests.
+    func disableAskUser() {
+        toolPolicy.disableAskUser()
+    }
+
     /// The owner's message (with the JPEGs of its photos and PDFs) under this task's instructions, then
     /// pi's loop until the model answers without tools, `stop()`, a repeated call or pair on the same
     /// screen, or `maxTurns` model turns (a ceiling for a model that runs away). Owner waits reset the
-    /// stall history. `onText` gets each finished text block.
+    /// stall history. `includeAskUser` controls whether this task offers ask_user (omitted for Voice
+    /// dictation and outside-agent tasks). `onText` gets each finished text block.
     func run(_ text: String, images: [Data] = [], instructions: String, maxTurns: Int,
              includeMemoryAttribution: Bool = true,
              includeCountedScroll: Bool = true,
              includeCountedScrollReply: Bool = true,
+             includeAskUser: Bool = false,
              rendersCards: Bool = true,
              resultCardMode: Harness.ResultCardMode = .all,
              timing: ChatStepTiming? = nil, onText: @escaping @MainActor (String) -> Void) async -> Outcome {
@@ -341,12 +357,14 @@ final class PiLoop {
         toolPolicy.set(includeMemoryAttribution: includeMemoryAttribution,
                        includeCountedScroll: includeCountedScroll,
                        includeCountedScrollReply: includeCountedScrollReply,
+                       includeAskUser: includeAskUser,
                        rendersCards: rendersCards,
                        resultCardMode: resultCardMode)
         agent.tools = Self.availableTools(toolVariants, allowed: HistoryCapture.agentQueryAllowed,
                                           includeMemoryAttribution: includeMemoryAttribution,
                                           includeCountedScroll: includeCountedScroll,
                                           includeCountedScrollReply: includeCountedScrollReply,
+                                          includeAskUser: includeAskUser,
                                           resultCardMode: resultCardMode) + shelf.tools
         use(instructions)
         let turns = Counter()
@@ -431,6 +449,7 @@ final class PiLoop {
                                                    includeMemoryAttribution: Bool,
                                                    includeCountedScroll: Bool,
                                                    includeCountedScrollReply: Bool,
+                                                   includeAskUser: Bool,
                                                    resultCardMode: Harness.ResultCardMode) -> [AgentTool] {
         variants.compactMap { variant in
             let tool: AgentTool
@@ -444,6 +463,7 @@ final class PiLoop {
             if tool.name == "get_screenshot", resultCardMode == .none { return nil }
             if tool.name == "count_messages", !includeCountedScroll { return nil }
             if tool.name == Harness.countedScrollReplyTool, !(includeCountedScroll && includeCountedScrollReply) { return nil }
+            if tool.name == Harness.askUser.name, !includeAskUser { return nil }
             return tool
         }
     }

@@ -441,8 +441,10 @@ enum ConversationSearchIndex {
 
     static func searchableText(_ entry: ChatEntry) -> String? {
         switch entry.kind {
-        case .you(let text, _), .poki(let text), .step(let text, _), .request(let text, _):
+        case .you(let text, _), .poki(let text), .answer(let text), .step(let text, _), .request(let text, _):
             return text
+        case .question(let question):
+            return question.text
         case .plan(let steps):
             return ([entry.title ?? ""] + steps.map(\.text)).joined(separator: " ")
         case .note(.problem(let text)), .note(.modelApproved(let text)), .note(.modelDeclined(let text)):
@@ -462,9 +464,9 @@ enum ConversationSearchIndex {
 
     private static func author(_ entry: ChatEntry) -> ConversationSearchHit.Author? {
         switch entry.kind {
-        case .you: return .you
+        case .you, .answer: return .you
         case .request(_, let from): return .agent(from)
-        case .poki: return .poki
+        case .poki, .question: return .poki
         case .plan, .step, .note, .card: return .task
         case .browser: return .browser
         case .time: return nil

@@ -1616,7 +1616,7 @@ final class VoiceModel {
             guard let chat = AskPoki.chat else { phase = .lost(VoiceError.noBridge.words); return }
             if chat.running { lines.append(VoiceLine(role: .note, text: AppLocalization.text(LocalizedStringResource("Poki is still on the last task.")))); phase = .listening; return }
             let before = chat.entries.count
-            chat.send(text)
+            chat.send(spoken: text)
             while chat.running, self.dictation === dictation {
                 do { try await Task.sleep(for: .milliseconds(200)) }
                 catch { return }
