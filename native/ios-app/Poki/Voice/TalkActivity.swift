@@ -71,7 +71,11 @@ final class TalkActivity {
         guard talk != shown else { return }
         let started = shown == nil
         shown = talk
-        activity.update { $0.voice = talk }
+        if let talk, activity.state.phase.isRunOutcome, started || talk != .listening {
+            activity.clearRunOutcome(voice: talk)
+        } else {
+            activity.update { $0.voice = talk }
+        }
         // Started from a tap in Poki, or from Talk Here's intent: the times iOS lets a Live Activity start.
         if started, talk != nil { activity.start(deviceName: deviceName(), fromIntent: fromIntent) }
         // Only a Live Activity that shows nothing else goes with the talk: an approval, a hand-off, a
@@ -85,6 +89,10 @@ final class TalkActivity {
     /// that ends mid-turn leaves its run to the Live Activity's quiet wait.
     private func turn(_ mid: Bool) {
         defer { wasMidTurn = mid }
+        if !wasMidTurn, mid, voice.isOn, activity.state.phase.isRunOutcome {
+            activity.clearRunOutcome(voice: Self.state(of: voice))
+            return
+        }
         guard wasMidTurn, !mid, voice.isOn, activity.state.stepCount > 0 else { return }
         let asked = voice.lines.lastIndex { $0.role == .you }
         let said = voice.lines[(asked.map { $0 + 1 } ?? 0)...].last { $0.role == .poki }?.text

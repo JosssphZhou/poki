@@ -247,6 +247,32 @@ extension PokiState {
 
     var face: ActivityFace { face(stale: false) }
 
+    /// True when a new active voice turn state (.connecting, .thinking, .speaking, .finishingOpening)
+    /// must supersede a leftover finished/stopped run outcome instead of staying stuck on the old checkmark.
+    private var showsActiveVoiceOverOutcome: Bool {
+        guard let voice, phase.isRunOutcome else { return false }
+        return voice != .listening
+    }
+
+    private func voiceFace(for voice: PokiState.Voice) -> ActivityFace {
+        let (line, hint, bear, symbol): (String, String, ActivityBear, String) = switch voice {
+        case .connecting: (StatusWord.starting.text, ActivityWords.local("Connecting"), .ready, "antenna.radiowaves.left.and.right")
+        case .listening: (StatusWord.listening.text, String(activity: "Talk with Poki"), .ready, "waveform")
+        case .finishingOpening: (StatusWord.listening.text, String(activity: "Run Poki Anytime again to send as text."), .ready, "waveform")
+        case .thinking: (StatusWord.thinking.text, String(activity: "Working out the next step."), .thinking, "waveform")
+        case .speaking: (StatusWord.speaking.text, String(activity: "Talk with Poki"), .ready, "waveform")
+        }
+        return ActivityFace(
+            symbol: symbol,
+            bear: bear, size: .working,
+            meta: .none,
+            content: line,
+            subtitle: hint,
+            subtitleLines: voice == .finishingOpening ? 2 : 1,
+            bottom: .none,
+            compact: .symbol(symbol, .accent))
+    }
+
     /// The face for the widget: `stale` when ActivityKit says the content is past its stale date.
     func face(stale: Bool) -> ActivityFace {
         var face = baseFace
@@ -254,7 +280,7 @@ extension PokiState {
         // During a talk the card and the island carry End, while Poki listens, speaks or works on a step
         // of the talk. Anything that needs the person (an approval, a hand-off) or tells of a problem
         // keeps them to itself.
-        face.endsTalk = voice != nil && (phase == .idle || phase == .working) && !stale
+        face.endsTalk = voice != nil && (phase == .idle || phase == .working || showsActiveVoiceOverOutcome) && !stale
         face.talkGlow = voice != nil && !stale
         face.shieldsTaps = !stale && ([.working, .approval, .deciding, .handoff].contains(phase) || voice != nil)
         if face.shieldsTaps, face.link == ActivityLink.chat { face.link = ActivityLink.activity }
@@ -311,6 +337,7 @@ extension PokiState {
                 thumbnail: hasThumbnail ? .small : .none,
                 compact: .asking(String(activity: "Allow?"), approval.expires))
         case .done:
+            if showsActiveVoiceOverOutcome, let voice { return voiceFace(for: voice) }
             // Done once: over what the run came to where that is known, else as the title.
             let line = doneLine
             return ActivityFace(
@@ -324,6 +351,7 @@ extension PokiState {
                 thumbnail: hasThumbnail ? .large : .none,
                 compact: .symbol("checkmark", .accent))
         case .stopped:
+            if showsActiveVoiceOverOutcome, let voice { return voiceFace(for: voice) }
             return ActivityFace(
                 symbol: "stop.circle.fill",
                 bear: .paused, size: .low,
@@ -387,24 +415,7 @@ extension PokiState {
                 bottom: .handoff(id: handoff.id),
                 compact: .symbol("hand.tap.fill", .accent))
         case .idle:
-            if let voice {
-                let (line, hint, bear, symbol): (String, String, ActivityBear, String) = switch voice {
-                case .connecting: (StatusWord.starting.text, ActivityWords.local("Connecting"), .ready, "antenna.radiowaves.left.and.right")
-                case .listening: (StatusWord.listening.text, String(activity: "Talk with Poki"), .ready, "waveform")
-                case .finishingOpening: (StatusWord.listening.text, String(activity: "Run Poki Anytime again to send as text."), .ready, "waveform")
-                case .thinking: (StatusWord.thinking.text, String(activity: "Working out the next step."), .thinking, "waveform")
-                case .speaking: (StatusWord.speaking.text, String(activity: "Talk with Poki"), .ready, "waveform")
-                }
-                return ActivityFace(
-                    symbol: symbol,
-                    bear: bear, size: .working,
-                    meta: .none,
-                    content: line,
-                    subtitle: hint,
-                    subtitleLines: voice == .finishingOpening ? 2 : 1,
-                    bottom: .none,
-                    compact: .symbol(symbol, .accent))
-            }
+            if let voice { return voiceFace(for: voice) }
             return quietFace
         }
     }

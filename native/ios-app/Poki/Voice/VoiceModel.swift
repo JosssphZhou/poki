@@ -236,6 +236,7 @@ struct VoiceCall: Identifiable, Equatable {
     /// The model has the result (as a function_call_output, or in a reconnect note).
     var delivered = false
     var silentResult = false
+    var progressTool: VoiceProgressSync.Tool?
     let started = Date()
     var finished: Date?
 }
@@ -323,7 +324,7 @@ final class VoiceModel {
     var staged: TalkState?
     #endif
     /// Model audio off: for silent test runs. Speech is still transcribed into `lines`.
-    var muted = false { didSet { link?.setRemoteVolume(muted || liveSpeechStopped || liveCloseTimeout != nil ? 0 : 1) } }
+    var muted = false { didSet { syncRemoteVolume() } }
     /// The last measured turn: from the end of speech to the first audio of the answer that carries a tool result.
     private(set) var lastTurnMS: Int?
     /// Timestamps of the current turn, from the end of the person's speech.
@@ -438,6 +439,12 @@ final class VoiceModel {
     var onAwaitingLiveClose: (@MainActor () -> Void)?
     private var liveUsageSeconds: Double?
     private var liveSpeechStopped = false
+    private enum PlaybackInterruption { case none, tentative, confirmed }
+    private var playbackInterruption = PlaybackInterruption.none
+    private var bargeInMuted: Bool { playbackInterruption != .none }
+    private var liveRemoteAudible = false
+    private var codexUserTranscript = ""
+    private var progressSync = VoiceProgressSync()
     private enum LiveDelegationState: Equatable {
         case active, cancelled, acknowledgment, duplicate
         case awaitingFirstTool(audio: Range<Int>, fallback: LiveCallerSpeech.TextReceipt?)
@@ -923,6 +930,7 @@ final class VoiceModel {
                     openingCapture?.audio.markPhoneActionStarted(session: number)
                     activeCodexTools += 1
                     lastActivity = time.now()
+                    let progressTool = progressSync.toolStarted(at: lastActivity)
                     keepOpen()
                     if phase != .speaking && phase != .hearing { phase = .thinking }
                     defer {
@@ -933,7 +941,15 @@ final class VoiceModel {
                             endIfDone()
                         }
                     }
-                    return await runPhoneTool(name, arguments: arguments, cancellation: nil)
+                    var answer = await runPhoneTool(name, arguments: arguments, cancellation: nil)
+                    if number == session {
+                        let update = progressSync.toolCompleted(progressTool, name: name, arguments: arguments, output: answer.text,
+                                                                failed: answer.failed, at: time.now())
+                        if let update, !liveSpeechStopped, phase != .hearing, phase != .speaking {
+                            answer.text = "\(update.codexHeader)\n\(answer.text)"
+                        }
+                    }
+                    return answer
                 })
                 return VoiceBridge.Token(value: nil, model: CodexVoice.model, local_tools: [], live: true)
             }
@@ -1055,7 +1071,7 @@ final class VoiceModel {
                 endIfDone()
             }
             watchForStall(session: number)
-            link.setRemoteVolume(muted || liveSpeechStopped ? 0 : 1)
+            syncRemoteVolume(on: link)
             if usesLive { watchLivePlayback(link, session: number) }
             return number
         } catch {
@@ -1357,6 +1373,10 @@ final class VoiceModel {
         loggedLiveInputDuringPlayback = false
         liveCaptions.removeAll()
         liveSpeechStopped = false
+        playbackInterruption = .none
+        liveRemoteAudible = false
+        codexUserTranscript = ""
+        progressSync.reset()
         liveDelegations.removeAll()
         liveHasCancellation = false
         liveCallerSpeech = LiveCallerSpeech()
@@ -1485,17 +1505,19 @@ final class VoiceModel {
                 let playing = await link.hasRemoteSpeech()
                 guard let self, number == session, !Task.isCancelled else { return }
                 let suppressHearingDrain = usesCodexLive && phase == .hearing && audible && suppressedWhileHearing < 3
-                if ready && playing && !liveSpeechStopped && !suppressHearingDrain {
+                if ready && playing && !liveSpeechStopped && !bargeInMuted && !suppressHearingDrain {
                     if !audible {
                         loggedLiveInputDuringPlayback = false
                         trace("reply playback started (remote audio level)")
                         openingCapture?.audio.markRemoteReplied(session: number)
                         audible = true
+                        liveRemoteAudible = true
                     }
                     quiet = 0
                     suppressedWhileHearing = 0
                     keepOpen()
                     lastActivity = time.now()
+                    progressSync.noteSpeech(at: lastActivity)
                     phase = .speaking
                     if usesCodexLive, awaitingAnswer {
                         awaitingAnswer = false
@@ -1514,24 +1536,33 @@ final class VoiceModel {
                         if quiet >= 3 {
                             trace("reply playback went quiet (remote audio level)")
                             audible = false
+                            liveRemoteAudible = false
                             quiet = 0
                             suppressedWhileHearing = 0
                         }
                     }
-                } else if phase == .speaking || audible {
-                    quiet += 1
-                    if quiet >= 3 {
-                        if audible {
-                            trace("reply playback went quiet (remote audio level)")
-                            audible = false
-                        }
+                } else if phase == .speaking || audible || bargeInMuted {
+                    if playing {
                         quiet = 0
-                        suppressedWhileHearing = 0
-                        if phase == .speaking {
-                            let working = awaitingAnswer || liveAwaitingPlayback || activeResponse != nil
-                                || calls.contains { $0.state == .running } || codexWorkPending
-                            phase = working ? .thinking : .listening
-                            endIfDone()
+                    } else {
+                        quiet += 1
+                        if quiet >= 3 {
+                            if audible {
+                                trace("reply playback went quiet (remote audio level)")
+                                audible = false
+                                liveRemoteAudible = false
+                            }
+                            quiet = 0
+                            suppressedWhileHearing = 0
+                            if playbackInterruption == .confirmed, !usesCodexLive || phase != .hearing {
+                                clearBargeInMute(on: link)
+                            }
+                            if phase == .speaking {
+                                let working = awaitingAnswer || liveAwaitingPlayback || activeResponse != nil
+                                    || calls.contains { $0.state == .running } || codexWorkPending
+                                phase = working ? .thinking : .listening
+                                endIfDone()
+                            }
                         }
                     }
                 } else {
@@ -1686,13 +1717,50 @@ final class VoiceModel {
 
     private static let stoppedNote = "The user pressed Stop talking. Drop the reply you were giving; do not continue or repeat it. When a running step finishes, report only its result, in one sentence."
 
+    private func syncRemoteVolume(on target: VoiceConnection? = nil) {
+        (target ?? link)?.setRemoteVolume(muted || liveSpeechStopped || bargeInMuted || liveCloseTimeout != nil ? 0 : 1)
+    }
+
+    private func interruptPlaybackForBargeIn(on link: VoiceConnection) {
+        playbackInterruption = .confirmed
+        liveAwaitingPlayback = false
+        markInterrupted()
+        link.clearRemotePlayback()
+        phase = .hearing
+    }
+
+    private func mutePlaybackPendingTranscript(on link: VoiceConnection) {
+        playbackInterruption = .tentative
+        syncRemoteVolume(on: link)
+        phase = .hearing
+    }
+
+    private func resolveBargeInTranscript(_ text: String, on link: VoiceConnection) {
+        guard playbackInterruption == .tentative else { return }
+        switch VoiceBargeInPolicy.classify(text) {
+        case .empty, .backchannel:
+            clearBargeInMute(on: link)
+            if !usesLive { awaitingAnswer = false }
+            phase = .speaking
+        case .stopCommand, .substantive:
+            interruptPlaybackForBargeIn(on: link)
+        }
+    }
+
+    private func clearBargeInMute(on target: VoiceConnection? = nil) {
+        guard bargeInMuted else { return }
+        playbackInterruption = .none
+        syncRemoteVolume(on: target)
+    }
+
     private func stopLivePlayback(on link: VoiceConnection, note message: String) {
         guard !liveSpeechStopped else { return }
-        if phase == .speaking { markInterrupted() }
+        if phase == .speaking || bargeInMuted { markInterrupted() }
         liveSpeechStopped = true
+        playbackInterruption = .none
         liveAwaitingPlayback = false
         for index in calls.indices where !calls[index].delivered { calls[index].silentResult = true }
-        link.setRemoteVolume(0)
+        link.clearRemotePlayback()
         phase = (calls.contains { $0.state == .running } || codexWorkPending) ? .thinking : .listening
         if ready { link.send(note(message)) }
         endIfDone()
@@ -1768,14 +1836,17 @@ final class VoiceModel {
             }
         case "thread/realtime/itemAdded":
             guard (params["item"] as? CodexVoice.JSON)?["type"] as? String == "handoff_request" else { return }
+            clearBargeInMute(on: link)
             lastActivity = time.now()
             keepOpen()
             beginCodexHandoff(session: number)
             if phase != .speaking && phase != .hearing { phase = .thinking }
         case "poki/backend/turnStarted":
             clearCodexHandoff()
+            clearBargeInMute(on: link)
             codexBackendBusy = true
             lastActivity = time.now()
+            progressSync.beginTurn(at: lastActivity)
             keepOpen()
             if phase != .speaking && phase != .hearing { phase = .thinking }
         case "poki/backend/turnCompleted":
@@ -1817,6 +1888,30 @@ final class VoiceModel {
             }
         case "thread/realtime/transcript/delta":
             guard params["role"] as? String == "user" else { return }
+            let delta = params["delta"] as? String ?? ""
+            codexUserTranscript += delta
+            let classification = VoiceBargeInPolicy.classify(codexUserTranscript)
+            if phase == .speaking || liveRemoteAudible || bargeInMuted {
+                switch classification {
+                case .empty:
+                    return
+                case .backchannel:
+                    lastActivity = time.now()
+                    keepOpen()
+                    phase = .hearing
+                    return
+                case .stopCommand, .substantive:
+                    if classification == .substantive { resumeLiveAudio(link) }
+                    lastActivity = time.now()
+                    keepOpen()
+                    if !bargeInMuted {
+                        interruptPlaybackForBargeIn(on: link)
+                    } else {
+                        phase = .hearing
+                    }
+                    return
+                }
+            }
             resumeLiveAudio(link)
             lastActivity = time.now()
             keepOpen()
@@ -1825,21 +1920,32 @@ final class VoiceModel {
             guard let role = params["role"] as? String else { return }
             let text = params["text"] as? String ?? ""
             if role == "user" {
+                codexUserTranscript = ""
                 resumeLiveAudio(link)
                 lastActivity = time.now()
                 keepOpen()
                 if text.isEmpty {
+                    clearBargeInMute(on: link)
                     if phase == .hearing {
                         phase = codexWorkPending ? .thinking : .listening
                         endIfDone()
                     }
                     return
                 }
+                if VoiceBargeInPolicy.classify(text) == .stopCommand {
+                    stopLivePlayback(on: link, note: "The user stopped playback. Stay silent until they speak again.")
+                    lines.append(VoiceLine(role: .you, text: text))
+                    return
+                }
+                clearBargeInMute(on: link)
+                progressSync.beginTurn(at: lastActivity)
                 lines.append(VoiceLine(role: .you, text: text))
                 awaitingAnswer = true
                 phase = .thinking
                 watchForStall(session: number)
             } else if role == "assistant", !text.isEmpty {
+                clearBargeInMute(on: link)
+                progressSync.noteSpeech(at: time.now())
                 openingCapture?.audio.markRemoteReplied(session: number)
                 lines.append(VoiceLine(role: .poki, text: text))
             }
@@ -1890,6 +1996,7 @@ final class VoiceModel {
         case "session.input_transcript.delta", "session.output_transcript.delta":
             let role: VoiceLine.Role = type == "session.input_transcript.delta" ? .you : .poki
             guard let text = event["delta"] as? String, !text.isEmpty else { return }
+            if role == .you, phase == .speaking, VoiceBargeInPolicy.classify(text) == .empty { return }
             let start = event["start_ms"] as? Int
             let end = event["end_ms"] as? Int
             keepOpen()
@@ -1911,6 +2018,7 @@ final class VoiceModel {
                     return
                 }
                 appendLiveSpeech(text, audio: audio, itemID: itemID)
+                resolveBargeInTranscript(liveCallerSpeech.text, on: link)
                 let utterance = Self.liveSpeechParts(liveCallerSpeech.text).filter { !Self.liveBackchannels.contains($0) }
                 if !liveCallerSpeech.alreadyHandled, Self.liveRequestsStop(utterance) {
                     trace("reply stop requested by recognized voice command")
@@ -1918,11 +2026,21 @@ final class VoiceModel {
                     let stopped = appAudio == nil ? "The user stopped the reply and cancelled the phone task." : "The user stopped the reply."
                     stopLivePlayback(on: link, note: stopped + " Drop the reply and stay silent until a new request.")
                 } else if !liveCallerSpeech.alreadyHandled, !utterance.isEmpty {
-                    resumeLiveAudio(link)
-                    if !answerDue, phase != .thinking { clock = TurnClock(said: time.now()) }
-                    else if clock.call == nil { clock.said = time.now() }
+                    if phase == .speaking && !bargeInMuted {
+                        interruptPlaybackForBargeIn(on: link)
+                    } else {
+                        resumeLiveAudio(link)
+                    }
+                    if !answerDue, phase != .thinking {
+                        clock = TurnClock(said: time.now())
+                        progressSync.beginTurn(at: lastActivity)
+                    } else if clock.call == nil {
+                        clock.said = time.now()
+                    }
                 }
             } else {
+                progressSync.noteSpeech(at: lastActivity)
+                if bargeInMuted, phase != .hearing { clearBargeInMute(on: link) }
                 openingCapture?.audio.markRemoteReplied(session: number)
                 if clock.delivered != nil { clock.reply += text }
             }
@@ -1958,6 +2076,10 @@ final class VoiceModel {
                 } else {
                     liveDelegations[id] = .active
                     log.add("voice", "delegation \(id) created")
+                }
+                if liveDelegations[id]?.canRunTools == true {
+                    clearBargeInMute(on: link)
+                    progressSync.beginTurn(at: lastActivity)
                 }
             }
             link.send(["type": "session.thinking.append", "event_id": UUID().uuidString, "delegation_id": NSNull(), "content": ""])
@@ -1995,18 +2117,26 @@ final class VoiceModel {
                 let itemID = event["item_id"] as? String
                 liveCallerSpeech.recordInput(id: itemID ?? eventID)
                 liveCallerSpeech.begin(itemID: itemID)
+                if phase == .speaking {
+                    mutePlaybackPendingTranscript(on: link)
+                } else {
+                    phase = .hearing
+                }
                 endIfDone()
                 return
             }
-            // Spoken over Poki's answer: the server drops the answer's audio, and the talk says so.
-            if phase == .speaking { markInterrupted() }
-            phase = .hearing
+            if phase == .speaking {
+                mutePlaybackPendingTranscript(on: link)
+            } else {
+                phase = .hearing
+            }
         case "input_audio_buffer.speech_stopped":
             trace("model speech stopped")
             if let end = event["audio_end_ms"] as? Int, end > 0 {
                 openingCapture?.audio.confirmRemoteAudio(session: number, endMilliseconds: end)
             }
             guard !usesLive else { return }
+            progressSync.beginTurn(at: lastActivity)
             phase = .thinking
             awaitingAnswer = true
             clock = TurnClock(said: Date())
@@ -2025,6 +2155,7 @@ final class VoiceModel {
         case "conversation.item.added":
             if (event["item"] as? [String: Any])?["role"] as? String == "user" { clock.heard = clock.heard ?? Date() }
         case "conversation.item.input_audio_transcription.completed":
+            resolveBargeInTranscript(event["transcript"] as? String ?? "", on: link)
             if let text = event["transcript"] as? String, !text.isEmpty {
                 lines.append(VoiceLine(role: .you, text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
@@ -2032,6 +2163,7 @@ final class VoiceModel {
             guard !usesLive || !liveSpeechStopped else { return }
             let id = (event["response"] as? [String: Any])?["id"] as? String
             if usesLive, awaitingAnswer, let id, id == liveContinuationAfter { return }
+            if !usesLive { clearBargeInMute(on: link) }
             activeResponse = id
             keepOpen()
             awaitingAnswer = false
@@ -2065,11 +2197,15 @@ final class VoiceModel {
             }
         case "output_audio_buffer.started":
             guard !usesLive || !liveSpeechStopped else { return }
+            clearBargeInMute(on: link)
+            progressSync.noteSpeech(at: lastActivity)
             trace("reply playback started (model event)")
             openingCapture?.audio.markRemoteReplied(session: number)
             phase = .speaking
             recordSpokenAnswer(at: Date())
         case "output_audio_buffer.stopped", "output_audio_buffer.cleared":
+            if type == "output_audio_buffer.cleared", playbackInterruption == .tentative { markInterrupted() }
+            clearBargeInMute(on: link)
             trace(type == "output_audio_buffer.cleared" ? "model cleared reply playback" : "reply playback stopped (model event)")
             // Cleared because the person started speaking over the answer: they are still being heard.
             if phase != .hearing { phase = calls.contains { $0.state == .running } ? .thinking : .listening }
@@ -2132,8 +2268,8 @@ final class VoiceModel {
         return state == .cancelled
     }
 
-    private static let liveStopPhrases: Set<String> = ["停", "停止", "停一下", "别动", "别做了", "stop", "cancel"]
-    private static let liveBackchannels: Set<String> = ["嗯", "哦", "好的", "好", "uh-huh", "mm-hmm"]
+    private static var liveStopPhrases: Set<String> { VoiceBargeInPolicy.stopPhrases }
+    private static var liveBackchannels: Set<String> { VoiceBargeInPolicy.backchannels }
 
     private func appendLiveSpeech(_ text: String, audio: Range<Int>?, itemID: String?) {
         if let itemID, itemID != liveCallerSpeech.itemID {
@@ -2153,14 +2289,11 @@ final class VoiceModel {
 
     /// Match whole clauses of the caller's speech since delegation, independent of subtitle grouping.
     private static func liveSpeechParts(_ text: String) -> [String] {
-        text.lowercased().split { ",，。.!！?？;；".contains($0) }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        VoiceBargeInPolicy.speechParts(text)
     }
 
     private static func liveRequestsStop(_ parts: [String]) -> Bool {
-        guard let first = parts.first, liveStopPhrases.contains(first) else { return false }
-        return parts.dropFirst().allSatisfy { part in liveStopPhrases.contains { $0.hasPrefix(part) } }
+        VoiceBargeInPolicy.requestsStop(parts)
     }
 
     private func cancelLiveTask() {
@@ -2207,8 +2340,12 @@ final class VoiceModel {
         result.delivered = ready && link?.send(["type": "response.item.create", "item": [
             "type": "function_call_output", "call_id": call.id, "output": output,
         ]]) == true
-        if let index = calls.firstIndex(where: { $0.id == call.id }) { calls[index] = result }
-        else { calls.append(result) }
+        if let index = calls.firstIndex(where: { $0.id == call.id }) {
+            if let progressTool = calls[index].progressTool { progressSync.toolAborted(progressTool) }
+            calls[index] = result
+        } else {
+            calls.append(result)
+        }
         log.add("voice", "tool \(call.name) \(state == .done ? "done" : "failed") | control: \(Self.sanitizeLogText(output, limit: 120))")
         if phase == .thinking, !answerDue { phase = .listening }
         endIfDone()
@@ -2219,7 +2356,7 @@ final class VoiceModel {
     private func resumeLiveAudio(_ link: VoiceConnection) {
         guard liveSpeechStopped else { return }
         liveSpeechStopped = false
-        link.setRemoteVolume(muted ? 0 : 1)
+        syncRemoteVolume(on: link)
     }
 
     /// Runs a call once. The same call_id again (a repeated event) is ignored.
@@ -2245,6 +2382,7 @@ final class VoiceModel {
         }
         var call = call
         call.silentResult = usesLive && liveSpeechStopped
+        if Self.phoneTools.contains(call.name) { call.progressTool = progressSync.toolStarted(at: time.now()) }
         calls.append(call)
         clock.call = clock.call ?? Date()
         clock.callNames.append(call.name)
@@ -2432,12 +2570,19 @@ final class VoiceModel {
                                                outputChars: output.count, state: state,
                                                screenBytes: screenBytes, screenOutcome: screenOutcome)
         log.add("voice", "tool \(calls[index].name) \(state == .done ? "done" : "failed") | \(summary)")
+        let progressUpdate: VoiceProgressSync.Update?
+        if calls[index].session == session, let progressTool = calls[index].progressTool {
+            progressUpdate = progressSync.toolCompleted(progressTool, name: calls[index].name, arguments: calls[index].arguments,
+                                                        output: rawToolOutput ?? output, failed: state != .done, at: time.now())
+        } else {
+            progressUpdate = nil
+        }
         if calls[index].silentResult {
             if phase == .thinking, !answerDue { phase = .listening }
             endIfDone()
             return
         }
-        deliver(index)
+        deliver(index, progressUpdate: progressUpdate)
     }
 
     private static func sanitizeLogText(_ text: String, limit: Int) -> String {
@@ -2544,7 +2689,7 @@ final class VoiceModel {
 
     /// Hands a finished call to the model: as its function_call_output in the session that asked, or as a
     /// note in a later session. With no session, it waits for the next one.
-    private func deliver(_ index: Int) {
+    private func deliver(_ index: Int, progressUpdate: VoiceProgressSync.Update? = nil) {
         guard appAudio == nil, let link, ready, !calls[index].delivered,
               !calls[index].silentResult, calls[index].state != .running else { return }
         let call = calls[index]
@@ -2567,6 +2712,9 @@ final class VoiceModel {
         if usesLive, stopped(call) {
             endIfDone()
             return
+        }
+        if let progressUpdate, sameSession, !liveSpeechStopped, phase != .hearing, phase != .speaking {
+            _ = link.send(usesLive ? note(progressUpdate.liveCommentary, spoken: true) : note(progressUpdate.realtimeNote))
         }
         wantsResponse = sameSession || !usesLive
         flush()

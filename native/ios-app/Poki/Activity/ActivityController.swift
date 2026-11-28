@@ -377,6 +377,36 @@ final class ActivityController {
     /// Updates that change what the person must do or know go out at once, ahead of plain progress.
     private static func isCritical(_ state: PokiState, after old: PokiState) -> Bool {
         state.phase != old.phase || state.approval?.id != old.approval?.id || state.decision != old.decision || state.pin != old.pin
+            || (state.phase == .idle && state.voice != old.voice)
+    }
+
+    /// Clears a finished or stopped run outcome when a new voice turn or talk begins,
+    /// immediately returning the Live Activity to `.idle` so the active voice state displays at once.
+    func clearRunOutcome(voice: PokiState.Voice? = nil) {
+        guard state.phase.isRunOutcome else {
+            if let voice, state.voice != voice {
+                update { $0.voice = voice }
+            }
+            return
+        }
+        eventTimer?.cancel()
+        update { state in
+            state.phase = .idle
+            state.headline = "Waiting for agent"
+            state.previous = nil
+            state.stepCount = 0
+            state.failedCount = 0
+            state.failedSteps = nil
+            state.since = nil
+            state.endedAt = nil
+            state.event = nil
+            state.plan = nil
+            state.result = nil
+            state.task = nil
+            state.thumbnailVersion = 0
+            if let url = SharedContainer.thumbnailURL { try? FileManager.default.removeItem(at: url) }
+            if let voice { state.voice = voice }
+        }
     }
 
     /// A run of steps counts as finished after `finishAfter` without a new one, for an agent that does
