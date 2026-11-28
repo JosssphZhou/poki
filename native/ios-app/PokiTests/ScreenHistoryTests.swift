@@ -216,6 +216,85 @@ final class ScreenHistoryTests: XCTestCase {
         }
     }
 
+    func testAutomaticPruningRejectsInFlightSummaryOfRemovedReads() async {
+        let store = HistoryStore.shared
+        let start = Date().addingTimeInterval(-2 * 86_400)
+        store.add(at: start, app: "com.apple.mobilenotes", title: "Notes", text: "Old shopping list")
+        let generation = await store.summaryGeneration()
+        let source = await store.recent()
+        XCTAssertEqual(source.map(\.text), ["Old shopping list"])
+
+        store.prune(days: 7)
+        let afterNoOp = await store.summaryGeneration()
+        XCTAssertEqual(afterNoOp, generation)
+
+        store.prune(days: 1, summaryDays: 7)
+        let remaining = await store.recent()
+        XCTAssertEqual(remaining.map(\.text), [""])
+        let saved = await store.keep(.init(title: "Old list", body: "Old shopping list"),
+                                     start: start, generation: generation)
+        XCTAssertFalse(saved)
+        let stale = await store.note(start: start)
+        XCTAssertNil(stale)
+    }
+
+    func testRetentionChangeReloadsHistoryAfterPruning() async {
+        let capture = HistoryCapture()
+        let original = capture.retentionDays
+        defer { capture.retentionDays = original }
+        let store = HistoryStore.shared
+        let start = Date().addingTimeInterval(-4 * 86_400)
+        store.add(at: start, app: "com.apple.mobilenotes", title: "Notes", text: "Old shopping list")
+        let source = await store.recent()
+        XCTAssertEqual(source.map(\.text), ["Old shopping list"])
+        let before = capture.changes
+        capture.retentionDays = 3
+
+        let deadline = ContinuousClock.now + .seconds(2)
+        while capture.changes == before, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(capture.changes, before)
+        let remaining = await store.recent()
+        XCTAssertFalse(remaining.contains { !$0.text.isEmpty })
+    }
+
+    func testPruningReloadsSurvivingSummaryForAnAlreadyVisibleTile() async {
+        let capture = HistoryCapture()
+        let oldRetention = capture.retentionDays
+        let oldSummaryDays = capture.summaryDays
+        let store = HistoryStore.shared
+        let notes = BacktapeNotes.shared
+        let zoom = BacktapeZoom.days
+        let start = zoom.start(Date().addingTimeInterval(-4 * 86_400))
+        let tile = BacktapeTile(zoom: zoom, span: .init(start: start, end: zoom.end(start), entries: []))
+        defer {
+            notes.disappeared(tile)
+            notes.reset()
+            capture.retentionDays = oldRetention
+            capture.summaryDays = oldSummaryDays
+        }
+        capture.summaryDays = 14
+        store.add(at: start, app: "com.apple.mobilenotes", title: "Notes", text: "Fixture text")
+        let generation = await store.summaryGeneration()
+        let note = BacktapeNote(title: "Retained note", body: "Fixture summary")
+        let stored = await store.keep(note, start: zoom.key(start), generation: generation)
+        XCTAssertTrue(stored)
+        notes.appeared(tile)
+        let firstDeadline = ContinuousClock.now + .seconds(2)
+        while notes.notes[tile.id] == nil, ContinuousClock.now < firstDeadline { await Task.yield() }
+        XCTAssertEqual(notes.notes[tile.id], note)
+
+        let before = capture.changes
+        capture.retentionDays = 3
+        let deadline = ContinuousClock.now + .seconds(2)
+        while (capture.changes == before || notes.notes[tile.id] == nil), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertGreaterThan(capture.changes, before)
+        XCTAssertEqual(notes.notes[tile.id], note)
+    }
+
     func testClearingEverythingLeavesNoReadsSummariesOrRecord() async {
         let capture = HistoryCapture()
         HistoryStore.shared.add(at: Date(), app: "com.apple.mobilenotes", title: "Notes", text: "Shopping list")
