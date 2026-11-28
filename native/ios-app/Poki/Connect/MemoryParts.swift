@@ -539,6 +539,16 @@ struct MemoryPageEditor: View {
                         .lineLimit(6...30)
                         .focused($focused)
                         .accessibilityIdentifier("memory.pageEditor")
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-pokiUITestMemoryPageConflict") {
+                        Button("Apply synthetic background write") {
+                            library.writePage(app, text: "Updated synthetic memory", locked: false)
+                        }
+                        .accessibilityIdentifier("memory.fixture.write")
+                        Text(verbatim: library.pageLines(app).map(\.text).joined(separator: "\n"))
+                            .accessibilityIdentifier("memory.fixture.saved")
+                    }
+                    #endif
                 } footer: {
                     Group {
                         Text("Each line is one memory. Remove a line to forget it.")

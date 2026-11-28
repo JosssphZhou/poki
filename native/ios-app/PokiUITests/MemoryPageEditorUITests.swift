@@ -15,9 +15,11 @@ final class MemoryPageEditorUITests: XCTestCase {
         let editor = field.exists ? field : view
         editor.tap()
         editor.typeText(" Owner draft")
-        let delay = expectation(description: "Real store update after editor snapshot")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { delay.fulfill() }
-        wait(for: [delay], timeout: 5)
+        app.buttons["memory.fixture.write"].tap()
+        let saved = app.staticTexts["memory.fixture.saved"]
+        let landed = NSPredicate(format: "label == %@", "Updated synthetic memory")
+        expectation(for: landed, evaluatedWith: saved)
+        waitForExpectations(timeout: 5)
         app.buttons["memory.pageEditor.save"].tap()
         let alert = app.alerts["Memory Page Changed"]
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
@@ -28,6 +30,7 @@ final class MemoryPageEditorUITests: XCTestCase {
         alert.buttons["OK"].tap()
         XCTAssertTrue(editor.exists)
         XCTAssertTrue((editor.value as? String)?.contains("Owner draft") == true)
+        XCTAssertEqual(saved.label, "Updated synthetic memory")
         XCTAssertTrue(app.buttons["memory.pageEditor.save"].exists)
     }
 

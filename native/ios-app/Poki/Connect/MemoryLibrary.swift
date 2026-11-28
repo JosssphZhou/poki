@@ -193,19 +193,7 @@ final class MemoryLibrary {
     func pageSummary(_ app: String?) -> String? { store?.page(app)?.summary }
     func pageLocked(_ app: String?) -> Bool { store?.page(app)?.isLocked == true }
 
-    func pageForEditing(_ app: String?) -> StoredMemoryPage? {
-        let snapshot = store?.page(app)
-        #if DEBUG
-        // Disposable real-store race for the mounted editor regression. Normal launches never run it.
-        if ProcessInfo.processInfo.arguments.contains("-pokiUITestMemoryPageConflict"), let store {
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1))
-                store.writePage(app: app, text: "Updated synthetic memory", by: "Poki")
-            }
-        }
-        #endif
-        return snapshot
-    }
+    func pageForEditing(_ app: String?) -> StoredMemoryPage? { store?.page(app) }
 
     func savePageEdit(_ app: String?, original: StoredMemoryPage?, text: String, locked: Bool) -> Bool {
         guard let store else {
