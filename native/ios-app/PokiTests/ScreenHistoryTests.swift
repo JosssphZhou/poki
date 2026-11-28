@@ -1,3 +1,5 @@
+import PiSwiftAgent
+import PiSwiftAI
 import PokiCore
 import UIKit
 import XCTest
@@ -337,6 +339,32 @@ final class ScreenHistoryTests: XCTestCase {
         XCTAssertEqual(turnedOff.text, "Screen History is not turned on.")
     }
 
+    func testPersonalContextIsHiddenFromTheCatalogWhileAskingIsOff() {
+        let prior = SensesUse.shared.agentAsks
+        defer { SensesUse.shared.agentAsks = prior }
+        HistoryCapture.shared.enabled = true
+        SensesUse.shared.agentAsks = true
+        XCTAssertTrue(SensesContext.offeredNow)
+        XCTAssertTrue(Harness.toolSpecs(inSplitView: false, includeScreenHistory: false).map(\.name).contains(SensesContext.name))
+        SensesUse.shared.agentAsks = false
+        XCTAssertFalse(SensesContext.offeredNow)
+        for split in [false, true] {
+            XCTAssertFalse(Harness.toolSpecs(inSplitView: split, includeScreenHistory: false, includePersonalContext: SensesContext.offeredNow)
+                .map(\.name).contains(SensesContext.name))
+        }
+    }
+
+    func testPiRequestBoundaryDropsPersonalContextWhenAskingTurnedOffAfterPreparation() {
+        let declared = [PiSwiftAI.Message.system(SystemMessage(content: .text("Instructions"),
+                                                              toolsAdded: [AITool(name: SensesContext.name, description: "", parameters: [:]), AITool(name: "look", description: "", parameters: [:])]))]
+        let names = { (messages: [PiSwiftAI.Message]) in getCurrentTools(messages).map(\.name) }
+        XCTAssertTrue(names(declared).contains(SensesContext.name))
+        XCTAssertTrue(names(PiLoop.withoutRevokedPersonalContext(declared, offered: true)).contains(SensesContext.name))
+        let sent = names(PiLoop.withoutRevokedPersonalContext(declared, offered: false))
+        XCTAssertFalse(sent.contains(SensesContext.name))
+        XCTAssertTrue(sent.contains("look"))
+    }
+
     func testScreenHistoryToolQueriesStoredReadsByTimeSpanAppAndKeyword() async throws {
         let now = Date()
         let calendar = Calendar.current
@@ -613,14 +641,15 @@ final class ScreenHistoryTests: XCTestCase {
         // Since the Senses work (6600edd8) Poki's own chat never declares the raw screen_history
         // query, on or off: Screen History reaches it only through personal_context, answered and
         // checked on this iPhone. So no request offers the raw tool or carries its screen text, and
-        // every one keeps personal_context, through the switch going off and on.
+        // personal_context is declared only while Screen History is on, so the request made while the
+        // switch is off (the third) leaves it out.
         func hasContextTool(_ request: [String: Any]) -> Bool {
             let tools = request["tools"] as? [[String: Any]] ?? []
             return tools.contains { ($0["function"] as? [String: Any])?["name"] as? String == SensesContext.name }
         }
         for (turn, request) in requests.enumerated() {
             XCTAssertFalse(hasHistoryTool(request), "request \(turn) offers the raw screen_history query")
-            XCTAssertTrue(hasContextTool(request), "request \(turn) lost personal_context")
+            XCTAssertEqual(hasContextTool(request), [true, true, false, true][turn], "request \(turn) personal_context offer")
             XCTAssertFalse(FakeCompletions.system(request).contains(PokiCore.screenHistoryInstructions), "request \(turn)")
             XCTAssertFalse(payload(request).contains(canary), "request \(turn) carries raw screen text")
         }

@@ -3001,6 +3001,131 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(Self.cards(in: chat).count, 1, "Direct engine widened task must render the 12306 result card")
     }
 
+    func testDirectEngineRefusesUndeclaredToolCalls() async throws {
+        let openAIKeyAccount = "model-key.openai"
+        let priorKey = try Keychain.read(openAIKeyAccount)
+        let priorEngine = UserDefaults.standard.object(forKey: "chatEngine")
+        let priorOpenAIModel = UserDefaults.standard.object(forKey: "chat.model.openai")
+        let priorAsks = SensesUse.shared.agentAsks
+        defer {
+            URLProtocol.unregisterClass(OpenAIResponsesStub.self)
+            OpenAIResponsesStub.clear()
+            if let priorKey { try? Keychain.write(priorKey, account: openAIKeyAccount) }
+            else { Keychain.delete(openAIKeyAccount) }
+            UserDefaults.standard.set(priorEngine, forKey: "chatEngine")
+            UserDefaults.standard.set(priorOpenAIModel, forKey: "chat.model.openai")
+            SensesUse.shared.agentAsks = priorAsks
+        }
+        try Keychain.write(Data("sk-test-direct-engine".utf8), account: openAIKeyAccount)
+        UserDefaults.standard.set("direct", forKey: "chatEngine")
+        SensesUse.shared.agentAsks = false
+        ModelKeys.selectedProvider = .openai
+        ModelKeys.selectedModel = "gpt-6.1-terra"
+
+        func call(_ id: String, _ name: String) -> String {
+            Self.json(["id": "resp_\(id)", "status": "completed",
+                       "output": [["type": "function_call", "call_id": id, "name": name, "arguments": "{\"question\":\"What was I reading?\"}"]]])
+        }
+        let done = Self.json(["id": "resp_done", "status": "completed",
+                              "output": [["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "Done."]]]]])
+        OpenAIResponsesStub.clear()
+        OpenAIResponsesStub.replies = [
+            (200, "application/json", call("raw", "screen_history")),
+            (200, "application/json", call("context", SensesContext.name)),
+            (200, "application/json", done),
+        ]
+        URLProtocol.registerClass(OpenAIResponsesStub.self)
+
+        let automation = FakeAutomation()
+        _ = automation.prepare()
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation,
+                           transport: SessionScreenTransport(session: automation))
+        app.inProcessReadyForProbe()
+        self.app = app
+        let chat = ChatModel(app: app, kind: .poki)
+        chat.newConversation()
+        defer { SessionStore.shared.delete(chat.sessionID) }
+
+        try await Self.ask(chat, "What was I reading earlier?")
+
+        let requests = OpenAIResponsesStub.requests.filter { $0.json["tools"] != nil }
+        guard requests.count == 3 else { return XCTFail("Expected three model requests, got \(requests.count)") }
+        func declared(_ request: [String: Any]) -> Set<String> {
+            Set((request["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String })
+        }
+        func output(_ request: [String: Any], callID: String) -> String {
+            let items = (request["input"] as? [[String: Any]] ?? []).filter {
+                $0["type"] as? String == "function_call_output" && $0["call_id"] as? String == callID
+            }
+            return Self.json(["items": items])
+        }
+        XCTAssertFalse(declared(requests[0].json).contains("screen_history"))
+        XCTAssertFalse(declared(requests[0].json).contains(SensesContext.name), "personal_context is hidden while asking is off")
+        let raw = output(requests[2].json, callID: "raw")
+        XCTAssertTrue(raw.contains("This tool is not available"), "an undeclared screen_history call is refused")
+        XCTAssertFalse(raw.contains("Screen History is not turned on"), "screen_history must not reach Core")
+        let context = output(requests[2].json, callID: "context")
+        XCTAssertTrue(context.contains("This tool is not available"), "an undeclared personal_context call is refused")
+        XCTAssertFalse(context.contains("has not turned this on"), "personal_context must not run while it is hidden")
+        XCTAssertFalse(chat.calls.contains { $0.name == "screen_history" || $0.name == SensesContext.name }, "a refused tool never enters the call log")
+    }
+
+    func testRestoredSessionContextFollowsTheSwitchInAnOpenConversation() async throws {
+        let openAIKeyAccount = "model-key.openai"
+        let priorKey = try Keychain.read(openAIKeyAccount)
+        let priorEngine = UserDefaults.standard.object(forKey: "chatEngine")
+        let priorOpenAIModel = UserDefaults.standard.object(forKey: "chat.model.openai")
+        let priorAsks = SensesUse.shared.agentAsks
+        let priorEnabled = HistoryCapture.shared.enabled
+        defer {
+            URLProtocol.unregisterClass(OpenAIResponsesStub.self)
+            OpenAIResponsesStub.clear()
+            if let priorKey { try? Keychain.write(priorKey, account: openAIKeyAccount) }
+            else { Keychain.delete(openAIKeyAccount) }
+            UserDefaults.standard.set(priorEngine, forKey: "chatEngine")
+            UserDefaults.standard.set(priorOpenAIModel, forKey: "chat.model.openai")
+            SensesUse.shared.agentAsks = priorAsks
+            HistoryCapture.shared.enabled = priorEnabled
+        }
+        try Keychain.write(Data("sk-test-direct-engine".utf8), account: openAIKeyAccount)
+        UserDefaults.standard.set("direct", forKey: "chatEngine")
+        ModelKeys.selectedProvider = .openai
+        ModelKeys.selectedModel = "gpt-6.1-terra"
+        HistoryCapture.shared.enabled = true
+        SensesUse.shared.agentAsks = true
+
+        let reply = Self.json(["id": "resp_done", "status": "completed",
+                               "output": [["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "Done."]]]]])
+        OpenAIResponsesStub.clear()
+        OpenAIResponsesStub.replies = Array(repeating: (200, "application/json", reply), count: 3)
+        URLProtocol.registerClass(OpenAIResponsesStub.self)
+
+        let automation = FakeAutomation()
+        _ = automation.prepare()
+        let app = AppModel(launcher: FakeLauncher(), pairer: FakePairing(), automation: automation,
+                           transport: SessionScreenTransport(session: automation))
+        app.inProcessReadyForProbe()
+        self.app = app
+        let chat = ChatModel(app: app, kind: .poki)
+        let saved = SavedSession(id: "open-\(UUID().uuidString)", kind: .poki, client: nil, title: "Reading",
+                                 started: Date(), updated: Date(), live: false, outcome: .done,
+                                 entries: [ChatEntry(.you("What was I reading?", delivered: true))],
+                                 calls: [CallRecord(name: SensesContext.name, arguments: "{}", answer: "OPEN_SESSION_SUMMARY_CANARY", ms: 1, ok: true)])
+        chat.restore(saved)
+        defer { SessionStore.shared.delete(chat.sessionID) }
+
+        try await Self.ask(chat, "First")
+        SensesUse.shared.agentAsks = false
+        try await Self.ask(chat, "Second")
+        SensesUse.shared.agentAsks = true
+        try await Self.ask(chat, "Third")
+
+        let requests = OpenAIResponsesStub.requests.filter { $0.json["tools"] != nil }
+        guard requests.count == 3 else { return XCTFail("Expected three model requests, got \(requests.count)") }
+        let carries = requests.map { String(decoding: $0.body, as: UTF8.self).contains("OPEN_SESSION_SUMMARY_CANARY") }
+        XCTAssertEqual(carries, [true, false, true], "the restored summary follows the switch on each send")
+    }
+
     func testZeroNoteTasksOmitMemoryAttributionAndObsoleteFinishField() async throws {
         let priorNotes = SkillStore.shared.notes
         let backup = priorNotes.isEmpty ? nil : try SkillStore.shared.exportData()

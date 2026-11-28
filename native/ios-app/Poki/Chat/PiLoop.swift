@@ -251,6 +251,7 @@ final class PiLoop {
                 if !allowed, getCurrentTools(messages).contains(where: { $0.name == "screen_history" }) {
                     messages.append(.system(SystemMessage(content: .text(""), toolsRemoved: [ToolReference(name: "screen_history")])))
                 }
+                messages = Self.withoutRevokedPersonalContext(messages, offered: SensesContext.offeredNow)
                 var options = options
                 if let endpoint { options.httpClient = endpoint }
                 if provider == .custom {
@@ -427,6 +428,13 @@ final class PiLoop {
         agent.messages = messages
     }
 
+    /// The last request boundary: credentials may refresh after prepareRequest, so a switch turned off
+    /// meanwhile still takes personal_context out of what the model is told.
+    nonisolated static func withoutRevokedPersonalContext(_ messages: [PiSwiftAI.Message], offered: Bool) -> [PiSwiftAI.Message] {
+        guard !offered, getCurrentTools(messages).contains(where: { $0.name == SensesContext.name }) else { return messages }
+        return messages + [.system(SystemMessage(content: .text(""), toolsRemoved: [ToolReference(name: SensesContext.name)]))]
+    }
+
     private nonisolated static func availableTools(_ variants: [ToolVariant], allowed: Bool,
                                                    includeMemoryAttribution: Bool,
                                                    includeCountedScroll: Bool,
@@ -441,6 +449,7 @@ final class PiLoop {
                 tool = cache.tool(resultCardMode: resultCardMode)
             }
             if tool.name == "screen_history", !allowed { return nil }
+            if tool.name == SensesContext.name, !SensesContext.offeredNow { return nil }
             if tool.name == "get_screenshot", resultCardMode == .none { return nil }
             if tool.name == "count_messages", !includeCountedScroll { return nil }
             if tool.name == Harness.countedScrollReplyTool, !(includeCountedScroll && includeCountedScrollReply) { return nil }
